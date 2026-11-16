@@ -1,111 +1,111 @@
 # Linter architecture research
 
-This document records the design evidence used to evolve `kicad-clippy`. The goal is to reuse mature infrastructure where it fits while preserving KiCad-specific electrical and geometric semantics.
+This document records architectural research and the library choices actually adopted by `kicad-clippy`. The objective is to delete generic infrastructure from this repository and delegate it to maintained, purpose-built crates, while retaining only KiCad-specific rules and contracts.
 
-## Findings from established lint systems
+## Established linter architecture
 
 ### Rust compiler and Clippy
 
-The Rust compiler separates a lint's declaration (stable name, default level and documentation) from the pass that detects it. A lint may be emitted by zero, one or several passes; there is deliberately no one-to-one relationship between a lint ID and an implementation. Registration is centralized in a `LintStore`, duplicate names are rejected, registration completes before analysis, and the store is then shared immutably. Passes are grouped by the phase and information they need (syntax, resolved structures, type information, MIR); checks that need information produced elsewhere can run at that point rather than forcing every lint into one visitor.
+The Rust compiler separates a lint's declaration (stable name, default level and documentation) from the pass that detects it. A lint may be emitted by zero, one or several passes; there is deliberately no one-to-one relationship between a lint ID and an implementation. Registration is centralized in a `LintStore`, duplicate names are rejected, registration completes before analysis, and the store is then shared immutably. Passes are grouped by the phase and information they need (syntax, resolved structures, type information, MIR).
 
 Sources:
 - [Rust Compiler Development Guide: LintStore](https://rustc-dev-guide.rust-lang.org/diagnostics/lintstore.html)
 - [Rust Compiler Development Guide: Errors and lints](https://rustc-dev-guide.rust-lang.org/diagnostics.html)
 - [Rust compiler lint crate](https://doc.rust-lang.org/nightly/nightly-rustc/rustc_lint/index.html)
 
-Implications:
-1. Keep rule identity and metadata independent from the check implementation.
-2. Allow one analysis pass to emit diagnostics for multiple rule IDs, and allow a rule to consume several shared analyses.
-3. Register built-ins in one place, reject duplicates, then freeze the registry before running checks.
-4. Schedule checks according to required facts: parsed syntax, resolved symbol geometry, physical wire topology, native netlist, or profile metadata.
-5. Do not equate a rule ID with a Rust module or a single function.
+The useful architectural implications are to keep rule identity separate from implementations, share analysis results, reject duplicate registrations, and schedule checks according to the facts they require. The standalone application should reuse these ideas, not depend on `rustc_private` or attempt to load Clippy's compiler plugins.
 
-Clippy's in-process compiler integration is not a suitable plugin ABI for this standalone application. Reusing the architecture is useful; depending on rustc-private crates is not.
+## Reuse decisions
 
-## Existing Rust libraries
+The following table distinguishes adopted libraries from alternatives that remain unadopted. A dependency is not a success by itself: it should replace code, reduce maintenance surface, or provide a demonstrably better algorithm.
 
-| Concern | Library | Adopted use / decision |
-| --- | --- | --- |
-| Lossless S-expression parsing and source spans | [`kiutils_sexpr`](https://docs.rs/kiutils_sexpr/0.1.1/) | Already supplies a lossless CST with byte spans and round-trip validation. Keep it; replacing it with a generic CST would add grammar work without removing the parser boundary. |
-| Diagnostic source snippets and terminal rendering | [`miette`](https://docs.rs/miette/7.6.0/miette/) | Adopted in the CLI for diagnostic codes, severity, source labels, source excerpts and help text. The JSON `Diagnostic` remains the stable interchange contract; the adapter stays at the CLI boundary. |
-| Alternative file/span diagnostics | [`codespan-reporting`](https://docs.rs/codespan-reporting/latest/codespan_reporting/) | Not added. `miette` already supplies the needed terminal rendering; maintaining two source-map/rendering systems would duplicate responsibilities. Reconsider only if multi-file editor/source-map requirements exceed miette's model. |
-| Planar geometry algorithms | [`geo`](https://docs.rs/geo/0.31.0/geo/) | Adopted for line intersections, Bentley–Ottmann sweep enumeration, point-to-segment distance, point-in-polygon, and rectangle/primitive predicates. Application code retains KiCad's millimetre tolerance policy, pin exemptions, explicit junction semantics and diagnostic wording. |
-| Curves and affine transforms | [`kurbo`](https://docs.rs/kurbo/0.13.1/kurbo/) | Adopted for adaptive Bézier/arc flattening and symbol-local affine transforms. KiCad's three-point arc interpretation remains an adapter that constructs a curve; curve subdivision and matrix math are delegated. |
-| Spatial candidate indexing | [`rstar`](https://docs.rs/rstar/0.12.2/rstar/) | Not directly adopted. Profile the remaining clearance scans first; add an R*-tree only where it measurably replaces repeated all-pairs candidate enumeration. It must remain a broad phase followed by exact rule-specific predicates. |
-| Robust predicates | [`robust`](https://docs.rs/robust/1.2.0/robust/) | Not added directly. The adopted geometry stack already has robust-predicate support in its dependency graph; a second numerical-geometry implementation would need an identified uncovered case. |
+| Concern | Library | Status | What it replaces / why it fits |
+| --- | --- | --- | --- |
+| Lossless KiCad S-expression parsing | [`kiutils_sexpr`](https://crates.io/crates/kiutils_sexpr) | Adopted | Provides the CST and original byte spans. Replacing it with another parser would duplicate grammar and source-preservation work. |
+| Terminal diagnostics and source excerpts | [`miette`](https://docs.rs/miette/7.6.0/miette/) | Adopted | Renders named source files, labeled byte spans, severity, diagnostic codes, help and source excerpts. The CLI adapts the project's existing `Diagnostic` to miette; JSON remains the stable interchange schema. |
+| General planar geometry | [`geo`](https://docs.rs/geo/0.31.0/geo/) | Adopted | Replaces handwritten segment-intersection classification, point-to-segment distance, point-in-polygon, and rectangle/polygon predicates. Its Bentley–Ottmann sweep replaces the nested all-pairs wire-intersection scan. |
+| Curve flattening | [`kurbo`](https://docs.rs/kurbo/0.13.1/kurbo/) | Adopted | Replaces hand-written recursive cubic Bézier subdivision and manual arc sampling with adaptive path flattening at a schematic-space tolerance. |
+| Spatial indexing | [`rstar`](https://docs.rs/rstar/0.12.2/rstar/) | Not used directly | Geo's sweep-line algorithm already addresses the current all-wire intersection scan. Do not add a second index until profiling shows a remaining broad-phase bottleneck in a different workload. |
+| Robust geometric predicates | [`robust`](https://docs.rs/robust/1.2.0/robust/) | Not used directly | Geo already supplies the predicates used by the current rules. Reconsider only if fixtures expose specific numerical-degeneracy cases that require a separate robust-predicate layer. |
+| Alternative source diagnostic renderer | [`codespan-reporting`](https://docs.rs/codespan-reporting/latest/codespan_reporting/) | Not used | It overlaps with miette's source-map and span-rendering responsibilities. Keeping both would create competing source/diagnostic abstractions. |
 
-The library choices above are candidates, not blanket replacements. In particular, geospatial defaults and epsilon rules must not silently change the project's millimetre coordinate model or KiCad's explicit-junction connectivity contract.
+### Important semantic boundary
 
+The libraries own generic algorithms; the project owns KiCad meaning. The application still defines the coordinate unit (millimetres), tolerance policy, explicit-junction semantics, pin-anchor exceptions, wire-island semantics, rule IDs, diagnostic messages and source-to-schematic context. A generic geometry library must not decide whether two KiCad wires are electrically connected.
 
-## Substitution results and code-reduction rule
+Geo's rectangle/polygon operations are used with explicit project tolerance expansion where prior rules used an epsilon. Curve flattening uses a project-selected 0.01 mm tolerance. Those values are policy, not library defaults.
 
-The library substitutions are deliberately limited to generic algorithms. In the reviewed PR baseline, `generic.rs` was 3,523 lines / 115,651 bytes. After the `geo` and `kurbo` substitutions, the same module was 3,434 lines / 113,959 bytes: a net reduction of 89 lines and 1,692 bytes, including added regression coverage. `SourceFile` also dropped from roughly 4.9 KB to 2.8 KB by removing its duplicate line-start index; `miette` now computes display locations from the retained byte spans and shared source buffer.
+## Code reduction achieved
 
-This is an initial measurable reduction, not a claim that the remaining rules are fully library-backed. Keep application-specific code when it encodes KiCad semantics; prefer a library when the code is a general-purpose algorithm (curve flattening, affine transforms, polygon predicates, source rendering). Do not add dependencies solely to hide a short, stable KiCad-specific predicate.
+Against the feature-branch state before this simplification pass (`90b19a296472eb955482e6ba2ceae94a7b46a0fd`), the three directly refactored implementation files changed as follows:
+
+| File | Before | After | Net change |
+| --- | ---: | ---: | ---: |
+| `generic.rs` | 3,523 lines | 3,419 lines | -104 |
+| `source.rs` | 177 lines | 104 lines | -73 |
+| CLI `main.rs` | 331 lines | 375 lines | +44 |
+| **Combined** | **4,031 lines** | **3,898 lines** | **-133** |
+
+This is a net reduction of 133 source lines across the geometry kernel, source mapping, and terminal renderer. The CLI adapter grew because it now passes structured diagnostics to miette, but that is outweighed by deleting the duplicate source line-index and line/column implementation and by moving generic geometry and curve algorithms into their libraries. The comparison is a file line-count delta, not a claim about all repository code or runtime performance.
 
 ## Target architecture
 
-Use a staged, immutable analysis pipeline:
-
 ```text
-source + CLI rule policy + optional project profile
-                  |
-                  v
-       lossless CST + source map
-                  |
-                  v
-    typed schematic model / UUID index
-                  |
-        +---------+----------+
-        |                    |
-        v                    v
- geometry analysis      connectivity analysis
-        |                    |
-        +---------+----------+
-                  |
-          shared RuleContext
-                  |
-       phase-specific rule passes
-                  |
-          normalized findings
-                  |
-      text / JSON / SARIF renderers
+KiCad source
+    |
+    v
+kiutils_sexpr lossless CST + byte spans
+    |
+    v
+typed schematic facts and KiCad-specific context
+    |
+    +------ geo: intersections, distances, polygons, rectangles
+    |
+    +------ kurbo: adaptive curve flattening
+    |
+    v
+phase-specific RulePass implementations
+    |
+    v
+stable Diagnostic contract
+    |
+    +------ JSON: serde serialization (unchanged schema)
+    |
+    +------ miette: labeled source diagnostics in the CLI
 ```
 
-### Responsibilities
+### Ownership rules
 
-- **Parser:** preserve original source, CST nodes, spans and parse errors.
-- **Semantic model:** resolve sheet hierarchy, placed symbols, embedded library symbols, UUIDs and typed object references once.
-- **Geometry analysis:** expose normalized points, segments, bounds, arcs and curves in millimetres; centralize tolerances and intersection semantics.
-- **Connectivity analysis:** distinguish physical wire-only components from KiCad netlist membership and label semantics. Never let labels create physical edges.
-- **Rule engine:** own rule registration, effective levels, typed options, pass dependencies and deterministic execution.
-- **Profiles:** hold project-specific intent and contracts; keep generic rule policy separate from component metadata.
-- **Diagnostics:** use stable typed built-in IDs, retain external ERC codes, spans, sheet paths, UUIDs and physical locations.
-- **Renderers:** consume normalized diagnostics; terminal formatting must not alter diagnostic meaning.
-- **Fix planner:** propose structured, preconditioned edits separately from read-only analysis; verify by reparsing and rerunning relevant checks.
+- **Parser:** preserve original source and the lossless CST; rely on CST-provided spans.
+- **Source file:** retain the path and shared original text. Do not maintain a second line-start index solely for terminal presentation.
+- **Geometry adapter:** convert KiCad primitives to library types and apply KiCad-specific tolerances and exemptions. Do not reimplement general intersections, distances or containment.
+- **Curves:** retain only the KiCad start/mid/end interpretation needed to construct an arc; delegate path flattening to kurbo.
+- **Connectivity:** keep explicit junctions, pin anchors, label scope and physical wire islands as application logic.
+- **Rule engine:** keep typed IDs, metadata, registration, pass dependencies and deterministic execution.
+- **Diagnostics:** preserve the project's stable JSON contract; adapt it to miette only at the CLI rendering boundary.
+- **Profiles:** hold project-specific intent and contracts, not generic geometry or terminal formatting.
+- **Fix planner:** remain separate from read-only analysis and require preconditions plus post-edit validation.
 
 ## Rule IDs and extensibility
 
-Built-in rules are a closed, compile-time set and should be referenced through `BuiltinRuleId`, not repeated string literals. Their string forms remain stable external codes for JSON, documentation and integrations. Native ERC codes and future third-party rule namespaces are open-ended external identifiers and should remain a separate representation.
+Built-in rules are a closed, compile-time set and are referenced through `BuiltinRuleId`. Their string forms remain stable external codes for JSON, documentation and integrations. Native ERC codes and future third-party rule namespaces remain open-ended external identifiers.
 
-A built-in rule ID is not a plugin entry point. An initial in-process RulePass API over immutable shared facts is now implemented; external Rust crates can register passes programmatically. Before treating it as a stable third-party contract, version the trait/context, formalize typed options and analysis dependencies, and define diagnostic compatibility policy. Third-party dynamic libraries or WASM rule packs should wait until those contracts and resource limits are stable.
+The in-process `RulePass` API over immutable shared facts is implemented. External Rust crates can register passes programmatically. Before treating it as a stable third-party contract, version the trait/context, formalize typed options and analysis dependencies, and define diagnostic compatibility policy. Dynamic libraries or WASM rule packs should wait until those contracts and resource limits are stable.
 
-Configuration should use structured rule keys and typed per-rule option structs, with a small set of named presets. Unknown rule IDs, invalid option values, duplicate declarations and conflicting overrides should fail with actionable configuration errors rather than being silently ignored.
+Configuration should use structured rule keys and typed per-rule options. Unknown rule IDs, invalid option values, duplicate declarations and conflicting overrides should fail with actionable configuration errors rather than being silently ignored.
 
-## Migration sequence
+## Next code-reduction opportunities
 
-1. Establish typed built-in identifiers and one metadata catalogue.
-2. Continue extracting reusable schematic facts, geometry primitives, tolerance policy and wire topology from the remaining large rule implementation module.
-3. Build shared indexes once per schematic; use spatial indexes only where profiling demonstrates an all-pairs bottleneck.
-4. Extend the initial geometry, label and annotation RulePass implementations into semantic, connectivity and project-contract phases over an immutable RuleContext.
-5. Add separate generic rule-policy configuration and validated per-rule options.
-6. Add source-labeled terminal rendering and SARIF as adapters over the existing diagnostic contract.
-7. Add verified fix proposals only after edit preconditions and post-fix connectivity checks exist.
-8. Consider external rule packs only after the in-process API is stable and documented.
+1. Continue splitting `generic.rs` by domain, but move reusable primitives and predicates into libraries instead of extracting private helper modules that merely relocate the same code.
+2. Profile label/field/text collision checks. Where a library's sweep or R-tree can remove an actual all-pairs scan, use it as a candidate generator and preserve exact KiCad predicates.
+3. Inspect text-width estimation and terminal formatting for mature typography/rendering libraries before writing more glyph/layout code.
+4. Evaluate source parsing and diagnostic conversions by counting code removed, dependencies added, and maintenance responsibilities eliminated.
+5. Keep only adapters where coordinate conversion or KiCad-specific semantics require them; do not create a wrapper layer that reproduces a library's API.
 
 ## Explicit non-goals
 
 - Replacing KiCad native ERC or inferring electrical correctness from geometry alone.
-- Replacing the existing lossless parser without a demonstrated correctness or maintenance benefit.
-- Introducing a dynamic plugin ABI before the rule API is stable.
-- Replacing every custom geometry predicate with a geospatial library without checking coordinate, topology and tolerance semantics.
+- Replacing the lossless parser without a demonstrated correctness or maintenance benefit.
+- Introducing a dynamic plugin ABI before the in-process rule API is stable.
+- Adding libraries merely to increase the dependency count.
+- Replacing KiCad-specific connectivity semantics with generic geometric intersection.
