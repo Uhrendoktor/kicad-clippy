@@ -45,6 +45,14 @@ pub struct SchematicGroupFact {
 }
 
 #[derive(Clone, Debug)]
+pub struct SchematicFrameFact {
+    /// UUID of the top-level schematic rectangle.
+    pub uuid: String,
+    /// Frame bounds as (left, top, right, bottom), in millimetres.
+    pub bounds_mm: (f64, f64, f64, f64),
+}
+
+#[derive(Clone, Debug)]
 pub struct TextBoxFact {
     /// UUID of the schematic text box.
     pub uuid: String,
@@ -60,6 +68,8 @@ pub struct SchematicFacts {
     pub text_boxes: Vec<TextBoxFact>,
     /// Native `KiCad` schematic groups.
     pub groups: Vec<SchematicGroupFact>,
+    /// Top-level rectangular frames on the schematic sheet.
+    pub frames: Vec<SchematicFrameFact>,
 }
 
 impl SchematicFacts {
@@ -125,6 +135,46 @@ impl SchematicFacts {
                 name,
                 uuid,
                 member_uuids,
+            });
+        }
+        for node in children(root, "rectangle") {
+            let Some(uuid) = child_list(node, "uuid")
+                .and_then(list_items)
+                .and_then(|items| items.get(1))
+                .and_then(|item| atom_value(item, document.source().text()))
+            else {
+                continue;
+            };
+            let Some(start) = child_list(node, "start")
+                .and_then(list_items)
+                .and_then(|items| {
+                    Some((
+                        number(items.get(1)?, document.source().text())?,
+                        number(items.get(2)?, document.source().text())?,
+                    ))
+                })
+            else {
+                continue;
+            };
+            let Some(end) = child_list(node, "end")
+                .and_then(list_items)
+                .and_then(|items| {
+                    Some((
+                        number(items.get(1)?, document.source().text())?,
+                        number(items.get(2)?, document.source().text())?,
+                    ))
+                })
+            else {
+                continue;
+            };
+            facts.frames.push(SchematicFrameFact {
+                uuid,
+                bounds_mm: (
+                    start.0.min(end.0),
+                    start.1.min(end.1),
+                    start.0.max(end.0),
+                    start.1.max(end.1),
+                ),
             });
         }
         for node in children(root, "text_box") {
