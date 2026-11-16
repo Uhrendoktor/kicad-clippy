@@ -37,6 +37,12 @@ enum Commands {
         /// Explicit path or command name for kicad-cli.
         #[arg(long, value_name = "PATH")]
         kicad_cli: Option<PathBuf>,
+        /// JSON project profile containing component-intent metadata.
+        #[arg(long, value_name = "FILE")]
+        profile: Option<PathBuf>,
+        /// Require complete component-intent metadata (requires --profile).
+        #[arg(long)]
+        strict: bool,
     },
 }
 
@@ -56,6 +62,10 @@ enum CliError {
     Erc(#[from] kicad_clippy_erc::ErcError),
     #[error("KiCad CLI was not found; install KiCad or pass --kicad-cli PATH")]
     KiCadCliNotFound,
+    #[error(transparent)]
+    Metadata(#[from] kicad_clippy_rules::MetadataError),
+    #[error("--strict requires --profile FILE")]
+    StrictNeedsProfile,
     #[error("failed to serialize JSON output: {0}")]
     Json(#[from] serde_json::Error),
     #[error("failed to write CLI output: {0}")]
@@ -124,7 +134,9 @@ fn execute(cli: Cli) -> Result<ExitCode, CliError> {
             format,
             skip_erc,
             kicad_cli,
-        } => lint(&schematic, format, skip_erc, kicad_cli),
+            profile,
+            strict,
+        } => lint(&schematic, format, skip_erc, kicad_cli, profile, strict),
     }
 }
 
@@ -133,7 +145,12 @@ fn lint(
     format: OutputFormat,
     skip_erc: bool,
     explicit_cli: Option<PathBuf>,
+    profile_path: Option<PathBuf>,
+    strict: bool,
 ) -> Result<ExitCode, CliError> {
+    if strict && profile_path.is_none() {
+        return Err(CliError::StrictNeedsProfile);
+    }
     let schematic = SchematicDocument::from_path(schematic_path)?;
     let erc_report = if skip_erc {
         None
@@ -142,10 +159,18 @@ fn lint(
         Some(run_native_erc(cli_path, schematic_path)?)
     };
 
-    let (kicad_version, diagnostics) = match erc_report {
+    let (kicad_version, mut diagnostics) = match erc_report {
         Some(report) => (report.kicad_version, report.diagnostics),
         None => (None, Vec::new()),
     };
+    diagnostics.extend(run_builtin_rules(&schematic).diagnostics);
+    if let Some(path) = profile_path {
+        let mut profile = LintProfile::from_path(path)?;
+        if strict {
+            profile.mode = ProfileMode::Strict;
+        }
+        diagnostics.extend(profile.validate(&schematic));
+    }
     let summary = Summary::from_diagnostics(&diagnostics);
     let output = LintOutput {
         schema_version: "1",
@@ -202,10 +227,7 @@ fn render_text(output: &LintOutput) -> Result<(), io::Error> {
         output.summary.notes,
         output.summary.excluded
     )?;
-    writeln!(
-        stdout,
-        "Custom SCH rules are not migrated yet; this build runs the native ERC engine only."
-    )?;
+    writeln!(stdout, "Built-in schematic rules: active")?;
     Ok(())
 }
 
