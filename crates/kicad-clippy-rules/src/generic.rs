@@ -1,11 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use geo::algorithm::line_intersection::line_intersection;
 use geo::{
     Contains, Coord, Distance, Euclidean, Intersects, Line, LineIntersection, LineString,
     Point as GeoPoint, Polygon, Rect as GeoRect,
     algorithm::sweep::{Cross, Intersections},
 };
-use geo::algorithm::line_intersection::line_intersection;
 use kicad_clippy_core::{
     BuiltinRuleId, ByteSpan, Diagnostic, RelatedLocation, SchematicLocation, Severity,
 };
