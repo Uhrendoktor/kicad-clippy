@@ -2081,21 +2081,11 @@ fn wire_components(
         }
     }
 
-    // Preserve deterministic, zero-based component labels by assigning IDs in
-    // the caller's sorted point order rather than exposing UnionFind roots.
-    let mut component_by_root = BTreeMap::new();
-    let mut component_ids = BTreeMap::new();
-    for (index, point) in points.iter().enumerate() {
-        let root = components.find(index);
-        let component_id = if let Some(&id) = component_by_root.get(&root) {
-            id
-        } else {
-            let id = component_by_root.len();
-            component_by_root.insert(root, id);
-            id
-        };
-        component_ids.insert(point_key(*point), component_id);
-    }
+    let component_ids = points
+        .iter()
+        .enumerate()
+        .map(|(index, point)| (point_key(*point), components.find(index)))
+        .collect();
 
     (component_ids, endpoint_degree)
 }
