@@ -519,16 +519,86 @@ fn polyline_primitive_points(node: &Node, source: &str) -> Option<Vec<(f64, f64)
 }
 
 fn arc_primitive_points(node: &Node, source: &str) -> Option<Vec<(f64, f64)>> {
-    ["start", "mid", "end"]
-        .into_iter()
-        .map(|name| {
-            let items = child_list(node, name).and_then(list_items)?;
-            Some((
-                number(items.get(1)?, source)?,
-                number(items.get(2)?, source)?,
-            ))
-        })
-        .collect()
+    let point = |name| {
+        let items = child_list(node, name).and_then(list_items)?;
+        Some((
+            number(items.get(1)?, source)?,
+            number(items.get(2)?, source)?,
+        ))
+    };
+    sample_arc_through_three_points(point("start")?, point("mid")?, point("end")?)
+}
+
+fn sample_arc_through_three_points(
+    start: (f64, f64),
+    mid: (f64, f64),
+    end: (f64, f64),
+) -> Option<Vec<(f64, f64)>> {
+    let determinant = 2.0
+        * (start.0 * (mid.1 - end.1)
+            + mid.0 * (end.1 - start.1)
+            + end.0 * (start.1 - mid.1));
+    if determinant.abs() <= 1.0e-9 {
+        return Some(vec![start, mid, end]);
+    }
+
+    let start_squared = start.0.mul_add(start.0, start.1 * start.1);
+    let mid_squared = mid.0.mul_add(mid.0, mid.1 * mid.1);
+    let end_squared = end.0.mul_add(end.0, end.1 * end.1);
+    let center_x = (start_squared * (mid.1 - end.1)
+        + mid_squared * (end.1 - start.1)
+        + end_squared * (start.1 - mid.1))
+        / determinant;
+    let center_y = (start_squared * (end.0 - mid.0)
+        + mid_squared * (start.0 - end.0)
+        + end_squared * (mid.0 - start.0))
+        / determinant;
+    let radius = (start.0 - center_x).hypot(start.1 - center_y);
+    if !radius.is_finite() || radius <= 1.0e-9 {
+        return Some(vec![start, mid, end]);
+    }
+
+    let start_angle = (start.1 - center_y).atan2(start.0 - center_x);
+    let mid_angle = (mid.1 - center_y).atan2(mid.0 - center_x);
+    let end_angle = (end.1 - center_y).atan2(end.0 - center_x);
+    let counter_clockwise_sweep = (end_angle - start_angle).rem_euclid(std::f64::consts::TAU);
+    let mid_sweep = (mid_angle - start_angle).rem_euclid(std::f64::consts::TAU);
+    let sweep = if mid_sweep <= counter_clockwise_sweep + 1.0e-9 {
+        counter_clockwise_sweep
+    } else {
+        counter_clockwise_sweep - std::f64::consts::TAU
+    };
+    if sweep.abs() <= 1.0e-9 {
+        return Some(vec![start, mid, end]);
+    }
+
+    const MAX_STEP_RADIANS: f64 = 5.0_f64.to_radians();
+    const MAX_SAGITTA_MM: f64 = 0.01;
+    const MAX_SEGMENTS: usize = 4096;
+    let sagitta_step = if radius > MAX_SAGITTA_MM {
+        2.0 * (1.0 - MAX_SAGITTA_MM / radius).clamp(-1.0, 1.0).acos()
+    } else {
+        MAX_STEP_RADIANS
+    };
+    let step = sagitta_step.min(MAX_STEP_RADIANS).max(1.0e-6);
+    let segment_count = (sweep.abs() / step).ceil().max(2.0) as usize;
+    let segment_count = segment_count.min(MAX_SEGMENTS);
+    let mut points = Vec::with_capacity(segment_count + 1);
+    for index in 0..=segment_count {
+        if index == 0 {
+            points.push(start);
+        } else if index == segment_count {
+            points.push(end);
+        } else {
+            let ratio = index as f64 / segment_count as f64;
+            let angle = start_angle + sweep * ratio;
+            points.push((
+                center_x + radius * angle.cos(),
+                center_y + radius * angle.sin(),
+            ));
+        }
+    }
+    Some(points)
 }
 
 fn transform_primitive_points(
@@ -2702,6 +2772,58 @@ mod tests {
                 .diagnostics
                 .iter()
                 .any(|item| item.code == "SCH013" && item.message.contains("symbol body Q1"))
+        );
+    }
+
+    #[test]
+    fn wire_obstacle_detects_wire_near_the_true_three_point_arc_path() {
+        let doc = document(
+            r#"
+            (lib_symbols
+              (symbol "Test:Arc"
+                (symbol "Arc_1_1"
+                  (arc (start -2 0) (mid 0 2) (end 2 0)
+                    (stroke (width 0.254)) (fill (type none)))
+                )
+              )
+            )
+            (symbol (lib_id "Test:Arc") (at 10 10 0)
+              (property "Reference" "U1" (at 10 10 0) (effects (font (size 1 1))))
+            )
+            (wire (pts (xy 11.414 8.4) (xy 11.414 8.8)))
+            "#,
+        );
+        assert!(
+            run_builtin_rules(&doc)
+                .diagnostics
+                .iter()
+                .any(|item| item.code == "SCH013" && item.message.contains("symbol body U1"))
+        );
+    }
+
+    #[test]
+    fn arc_midpoint_selects_the_correct_sweep_direction() {
+        let doc = document(
+            r#"
+            (lib_symbols
+              (symbol "Test:Arc"
+                (symbol "Arc_1_1"
+                  (arc (start -2 0) (mid 0 -2) (end 2 0)
+                    (stroke (width 0.254)) (fill (type none)))
+                )
+              )
+            )
+            (symbol (lib_id "Test:Arc") (at 10 10 0)
+              (property "Reference" "U1" (at 10 10 0) (effects (font (size 1 1))))
+            )
+            (wire (pts (xy 11.414 8.4) (xy 11.414 8.8)))
+            "#,
+        );
+        assert!(
+            !run_builtin_rules(&doc)
+                .diagnostics
+                .iter()
+                .any(|item| item.code == "SCH013" && item.message.contains("symbol body U1"))
         );
     }
 
