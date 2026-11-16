@@ -285,9 +285,7 @@ fn validate_kicad_group_membership(
         return vec![Diagnostic::new(
             "SCH007",
             Severity::Error,
-            format!(
-                "profile group {group_id} references missing KiCad group UUID {expected_uuid}"
-            ),
+            format!("profile group {group_id} references missing KiCad group UUID {expected_uuid}"),
         )];
     };
 
@@ -326,9 +324,7 @@ fn validate_kicad_group_membership(
         let Some(uuid) = component.uuid.as_deref() else {
             continue;
         };
-        if native_group.member_uuids.contains(uuid)
-            && !group.members.contains(&component.reference)
-        {
+        if native_group.member_uuids.contains(uuid) && !group.members.contains(&component.reference) {
             diagnostics.push(Diagnostic::new(
                 "SCH007",
                 Severity::Error,
@@ -914,7 +910,8 @@ mod tests {
             profile
                 .validate(&schematic)
                 .iter()
-                .any(|item| item.code == "SCH007" && item.message.contains("does not contain symbol UUID"))
+                .any(|item| item.code == "SCH007"
+                    && item.message.contains("does not contain symbol UUID"))
         );
     }
 
@@ -937,7 +934,8 @@ mod tests {
             profile
                 .validate(&schematic)
                 .iter()
-                .any(|item| item.code == "SCH007" && item.message.contains("missing KiCad group UUID"))
+                .any(|item| item.code == "SCH007"
+                    && item.message.contains("missing KiCad group UUID"))
         );
     }
 
