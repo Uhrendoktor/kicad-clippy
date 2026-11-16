@@ -18,7 +18,8 @@ The exact status and limitations for every rule are maintained in [rules.md](rul
 
 - Generic schematic rules: SCH001–SCH003, SCH005, SCH008, SCH010 (partial), SCH011, SCH015, SCH018, and SCH019.
 - Project-profile rules: SCH006, SCH007, SCH009, SCH012 (partial), SCH014, SCH016, SCH017, SCH020, SCH021, and SCH022.
-- SCH004 physical direct-wire connectivity and SCH013 symbol-primitive wire-obstacle checks remain pending.
+- SCH004 has partial profile-driven support for declared physical direct-wire pin pairs; general common-pin groups and inferred connectivity contracts remain pending.
+- SCH013 symbol-primitive wire-obstacle checks remain pending.
 
 Some migrated rules intentionally implement only a subset of their historical requirements. In particular, current SCH009 checks member symbol origins against a referenced rectangle, SCH010 checks text-field overlap using estimated text bounds, SCH012 checks configured inset for member origins and the description text box, and SCH015 checks the placement of explicit no-connect markers. These do not yet prove full symbol, pin, field, label, wire, or note containment/clearance.
 
@@ -34,11 +35,10 @@ The profile format is deliberately explicit; project-specific expectations are n
 
 ## Next: physical connectivity and symbol geometry
 
-1. Build a reusable physical-wire graph that splits segments at wire endpoints, junctions, and resolved placed-symbol pin coordinates. Labels must never create physical connectivity edges.
-2. Add profile-declared direct pin-to-pin wire contracts and common physical pin groups for SCH004. Validate that pairs/groups share a physical wire network and that declared direct-wire connections are not being substituted by labels.
-3. Use embedded symbol primitive geometry to implement SCH013 wire-obstacle checks, including lines, rectangles, circles, arcs, and polygons.
-4. Extend frame and field rules beyond symbol origins and estimated text boxes: check actual pin positions, visible field extents, labels, wire segments, and annotation bounds against frames and obstacles.
-5. Improve multi-unit, alternate-convert, mirrored, and non-cardinal symbol transform coverage, with conservative skips for geometry that cannot be resolved.
+1. Extend the current physical-wire graph and profile-declared SCH004 direct-wire pin-pair checks to general common-pin groups, required single-label contracts, and broader project-declared physical connectivity. Labels must never create physical connectivity edges.
+2. Use embedded symbol primitive geometry to implement SCH013 wire-obstacle checks, including lines, rectangles, circles, arcs, and polygons.
+3. Extend frame and field rules beyond symbol origins and estimated text boxes: check actual pin positions, visible field extents, labels, wire segments, and annotation bounds against frames and obstacles.
+4. Improve multi-unit, alternate-convert, mirrored, and non-cardinal symbol transform coverage, with conservative skips for geometry that cannot be resolved.
 
 ## Rule configuration and extensibility
 
