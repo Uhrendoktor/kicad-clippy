@@ -26,6 +26,8 @@ pub use metadata::{
 pub struct RuleContext<'a> {
     document: &'a SchematicDocument,
     facts: &'a SchematicFacts,
+    segments: &'a [generic::Segment],
+    junctions: &'a [generic::Point],
 }
 
 impl<'a> RuleContext<'a> {
@@ -76,8 +78,13 @@ impl RuleEngine {
     #[must_use]
     pub fn with_builtins() -> Self {
         let mut engine = Self::new();
-        let pass = generic::BuiltinSchematicPass;
-        engine.passes.insert(pass.name(), Box::new(pass));
+        for pass in [
+            Box::new(generic::BuiltinGeometryPass) as Box<dyn RulePass>,
+            Box::new(generic::BuiltinLabelPass),
+            Box::new(generic::BuiltinAnnotationPass),
+        ] {
+            engine.passes.insert(pass.name(), pass);
+        }
         engine
     }
 
@@ -106,7 +113,18 @@ impl RuleEngine {
     #[must_use]
     pub fn run(&self, document: &SchematicDocument) -> RuleRun {
         let facts = SchematicFacts::from_document(document);
-        let context = RuleContext { document, facts: &facts };
+        let Some(root) = document.cst().nodes.first() else {
+            return RuleRun::default();
+        };
+        let source = document.source().text();
+        let segments = generic::collect_segments(root, source);
+        let junctions = generic::collect_points(root, source, "junction");
+        let context = RuleContext {
+            document,
+            facts: &facts,
+            segments: &segments,
+            junctions: &junctions,
+        };
         let diagnostics = self
             .passes
             .values()
@@ -115,7 +133,7 @@ impl RuleEngine {
 
         RuleRun {
             diagnostics,
-            wires: facts.wires.len(),
+            wires: segments.len(),
             components: facts.components.len(),
         }
     }
@@ -163,7 +181,7 @@ mod tests {
         let document = SchematicDocument::from_text("fixture.kicad_sch", "(kicad_sch)")?;
         let mut engine = RuleEngine::new();
         engine.register_pass(ExternalExamplePass)?;
-        assert_eq!(engine.len(), 1);
+        assert_eq!(engine.len(), 3);
 
         let result = engine.run(&document);
         assert_eq!(result.diagnostics.len(), 1);
