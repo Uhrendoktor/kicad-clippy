@@ -1647,6 +1647,99 @@ mod tests {
     }
 
     #[test]
+    fn common_pin_group_allows_label_joined_islands_when_wire_connection_is_not_required() {
+        let schematic = direct_wire_schematic(
+            r#"
+            (wire (pts (xy 10 10) (xy 12 10)))
+            (wire (pts (xy 20 10) (xy 18 10)))
+            (label "SENSE" (at 10 10 0) (effects (font (size 1 1))))
+            (label "SENSE" (at 20 10 0) (effects (font (size 1 1))))
+            "#,
+        );
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"common_pin_groups":[{"name":"SENSE","pins":["U1.1","R1.1"]}]}"#,
+        )
+        .expect("profile parses");
+        assert!(
+            !profile
+                .validate(&schematic)
+                .iter()
+                .any(|item| item.code == "SCH004")
+        );
+    }
+
+    #[test]
+    fn common_pin_group_rejects_duplicate_and_unresolvable_pin_references() {
+        let schematic = direct_wire_schematic(r"(wire (pts (xy 10 10) (xy 20 10)))");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"common_pin_groups":[{"name":"SENSE","pins":["U1.1","U1.1"]},{"name":"VBUS","pins":["U1.99","R1.1"]}]}"#,
+        )
+        .expect("profile parses");
+        let diagnostics: Vec<_> = profile
+            .validate(&schematic)
+            .into_iter()
+            .filter(|item| item.code == "SCH004")
+            .collect();
+        assert_eq!(diagnostics.len(), 2);
+        assert!(
+            diagnostics
+                .iter()
+                .any(|item| item.message.contains("two distinct REF.PIN entries"))
+        );
+        assert!(
+            diagnostics
+                .iter()
+                .any(|item| item.message.contains("missing or unsupported pin U1.99"))
+        );
+    }
+
+    #[test]
+    fn direct_wire_pair_does_not_connect_at_an_unmarked_crossing() {
+        let schematic = direct_wire_schematic(
+            r#"
+            (wire (pts (xy 10 10) (xy 16 10)))
+            (wire (pts (xy 20 10) (xy 20 16)))
+            (wire (pts (xy 20 16) (xy 14 16)))
+            (wire (pts (xy 14 16) (xy 14 4)))
+            "#,
+        );
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"direct_wire_pairs":[{"first":"U1.1","second":"R1.1"}]}"#,
+        )
+        .expect("profile parses");
+        assert!(
+            profile
+                .validate(&schematic)
+                .iter()
+                .any(|item| item.code == "SCH004"
+                    && item.message.contains("must share one physical wire-only network"))
+        );
+    }
+
+    #[test]
+    fn direct_wire_pair_connects_at_a_crossing_with_an_explicit_junction() {
+        let schematic = direct_wire_schematic(
+            r#"
+            (wire (pts (xy 10 10) (xy 16 10)))
+            (wire (pts (xy 20 10) (xy 20 16)))
+            (wire (pts (xy 20 16) (xy 14 16)))
+            (wire (pts (xy 14 16) (xy 14 4)))
+            (junction (at 14 10) (diameter 0) (color 0 0 0 0))
+            "#,
+        );
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"direct_wire_pairs":[{"first":"U1.1","second":"R1.1"}]}"#,
+        )
+        .expect("profile parses");
+        assert!(
+            !profile
+                .validate(&schematic)
+                .iter()
+                .any(|item| item.code == "SCH004")
+        );
+    }
+
+    #[test]
     fn common_pin_group_enforces_exactly_one_matching_label() {
         let schematic = direct_wire_schematic(
             r#"
