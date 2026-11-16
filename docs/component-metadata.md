@@ -99,7 +99,7 @@ The netlist adapter now verifies actual target-pin and return-terminal net membe
 
 ## Functional group documentation
 
-Profiles can also declare functional groups. Each group identifies its component members, the members requiring documentation, the UUID of its rendered description text box, and evidence. It can also set `kicad_group_uuid` to bind the profile contract to a native KiCad group object and `minimum_member_origin_spacing_mm` to declare a minimum Euclidean distance between member symbol origins. For each documented component, the function and rationale phrases must appear in that text box.
+Profiles can also declare functional groups. Each group identifies its component members, the members requiring documentation, the UUID of its rendered description text box, and evidence. It can also set `kicad_group_uuid` to bind the profile contract to a native KiCad group object, `frame_uuid` to reference a drawn schematic rectangle that encloses group members, and `minimum_member_origin_spacing_mm` to declare a minimum Euclidean distance between member symbol origins. For each documented component, the function and rationale phrases must appear in that text box.
 
     {
       "groups": {
@@ -108,6 +108,7 @@ Profiles can also declare functional groups. Each group identifies its component
           "documentation_members": ["R1", "R4"],
           "description_uuid": "00000000-0000-0000-0000-000000000000",
           "kicad_group_uuid": "11111111-1111-4111-8111-111111111111",
+          "frame_uuid": "22222222-2222-4222-8222-222222222222",
           "component_purposes": {
             "R1": {
               "function": "Series current limiter at VBUS_VS_DISCH",
@@ -123,7 +124,7 @@ Profiles can also declare functional groups. Each group identifies its component
       }
     }
 
-A group is valid when it cites a document/page/figure or a reviewed screenshot asset, its members exist in the schematic, its description text box UUID resolves, and all component-purpose phrases are present. When `kicad_group_uuid` is set, SCH007 also resolves the native KiCad group and verifies that its placed-symbol members match the profile's component references in both directions. The native group check is opt-in so existing version-1 profiles without this field remain valid. This ports the original SCH017/SCH020 group-documentation intent while adding a native grouping contract.
+A group is valid when it cites a document/page/figure or a reviewed screenshot asset, its members exist in the schematic, its description text box UUID resolves, and all component-purpose phrases are present. When `kicad_group_uuid` is set, SCH007 also resolves the native KiCad group and verifies that its placed-symbol members match the profile's component references in both directions. The native group check is opt-in so existing version-1 profiles without this field remain valid. When `frame_uuid` is set, SCH009 resolves the top-level KiCad rectangle with that UUID and checks that each declared member's symbol origin is inside the frame. This does not yet test the symbol body, pins, fields, labels, wires or notes against the rectangle edges. SCH006 separately checks minimum pairwise origin spacing. This ports the original SCH017/SCH020 group-documentation intent while adding native grouping and frame-origin contracts.
 
 ## Netlist-backed decoupling verification
 

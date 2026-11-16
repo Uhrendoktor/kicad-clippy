@@ -12,7 +12,7 @@ The historical checker defines stable IDs SCH001–SCH020. The Rust migration pr
 | SCH006 | Component spacing | Implemented when group profiles declare `minimum_member_origin_spacing_mm`: enforces Euclidean spacing between placed symbol origins; not a body-clearance check |
 | SCH007 | Group metadata | Implemented when profiles provide `kicad_group_uuid`: resolves native KiCad group and verifies placed-symbol membership against declared component references |
 | SCH008 | Annotation text-box geometry | Implemented: required geometry/font/margins, sizing, overlap and wire penetration |
-| SCH009 | Group containment | Pending symbol/pin/field/frame geometry |
+| SCH009 | Group containment | Implemented opt-in: checks that each profile group member's placed-symbol origin lies inside its referenced top-level KiCad rectangle; symbol/body/pin/field extents remain pending |
 | SCH010 | Symbol field clearance | Pending actual embedded symbol primitives and text glyph geometry |
 | SCH011 | Block annotation structure | Implemented: multiline text boxes require a visible border |
 | SCH012 | Frame content clearance | Pending |
