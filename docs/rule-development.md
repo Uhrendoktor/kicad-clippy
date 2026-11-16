@@ -1,87 +1,88 @@
 # Rule development
 
-This document describes the rule metadata available today and the constraints for the future executable rule API.
+## Built-in rule catalogue
 
-## Current rule metadata
+The built-in rule implementation lives in `kicad-clippy-rules`. The shared rule descriptors are exposed through `kicad-clippy-core`.
 
-The `kicad-clippy-core` crate currently exposes `RuleDescriptor`, `RuleLevel`, `RuleRegistry`, and `RuleRegistryError`.
+List all registered rules:
 
-A descriptor records a stable ID and explanatory metadata:
-
-```rust
-use kicad_clippy_core::{RuleDescriptor, RuleLevel, RuleRegistry, RuleRegistryError};
-
-fn register_builtin_rules(
-    registry: &mut RuleRegistry,
-) -> Result<(), RuleRegistryError> {
-    let descriptor = RuleDescriptor::new(
-        "SCH001",
-        "wire geometry",
-        "layout",
-        "Keep schematic wires orthogonal.",
-        "Orthogonal routing is easier to inspect and maintain.",
-        RuleLevel::Deny,
-    );
-
-    registry.register(descriptor)
-}
+```sh
+kicad-clippy rules
+kicad-clippy rules --format json
 ```
 
-The registry is deterministic and rejects duplicate identifiers. Levels are:
+The catalogue keeps stable IDs SCH001–SCH020 from the original Python linter and adds SCH021–SCH025. Rule IDs are public identifiers and must not be recycled. Native KiCad ERC findings use their separate `KICAD/ERC/<type>` namespace.
 
-| Level | Intended behavior |
+See [rules.md](rules.md) for the full list and default levels.
+
+## Rule levels and presets
+
+| Level | Meaning |
 | --- | --- |
-| `Allow` | Disable a rule. |
-| `Warn` | Report a non-blocking finding. |
-| `Deny` | Report an error that fails a lint run. |
+| `allow` | Do not emit this rule's diagnostics. |
+| `warn` | Emit a warning. |
+| `deny` | Emit an error that fails the lint run. |
 
-The current CLI does not yet load or execute descriptors, and it does not expose a `rules` command. The example above demonstrates metadata registration only.
+The `recommended` preset uses descriptor defaults. The `strict` preset promotes warnings to errors and makes SCH024 component metadata mandatory for all detected capacitors. Explicit per-rule level overrides take precedence. The `generic` preset skips project-profile rules.
 
-## Stable identifiers
+## Design profiles
 
-Use a stable, uppercase identifier for built-in schematic rules. The legacy project rules use the `SCHnnn` namespace. Native KiCad findings use `KICAD/ERC/<type>`.
+Profiles are versioned JSON documents. Their schema is represented by typed Rust structures in `config.rs` and rejects unrecognized keys.
 
-Once published, a rule ID should not be reassigned to a different check. If a rule is retired, document that status rather than recycling its ID.
+A design profile can declare:
 
-## Required rule documentation
+- Functional groups with titles, members, description phrases, and component purpose/rationale requirements.
+- Direct physical pin-to-pin wire pairs, common-net contracts and explicit no-connect requirements.
+- Ground pin orientations, adjacency, component/property distance constraints and per-group wire-length budgets.
+- DNP-approved components and title-block fields.
+- Shared datasheet/page/figure evidence.
+- Typed component-intent metadata.
 
-Each future built-in rule should have:
+## Typed component metadata
 
-- A stable ID and concise name.
-- A category such as geometry, labels, annotation, documentation, profile, or project contract.
-- A one-sentence summary.
-- An explanation of the engineering reason for the rule.
-- A default level appropriate to its impact and subjectivity.
-- Optional help text and a documentation link.
-- Rule-specific options with validated types and documented defaults.
+Each metadata record has a stable component reference, component kind, role, function, and rationale. The role is a typed enum rather than an arbitrary free-form string. Type-specific metadata can add terminal references, associated pins, return nets, related components and protected nets.
 
-Prefer objective correctness and layout invariants as errors. Keep subjective style or documentation preferences as warnings by default until a project profile chooses otherwise.
+The first automated component-intent check supports:
 
-## Rule implementation contract (planned)
+- Type classification against the placed symbol reference and embedded library identifier.
+- Role/type compatibility.
+- Non-empty function and engineering rationale.
+- Strict-mode metadata presence for every detected capacitor.
+- Required target and terminal metadata for decoupling capacitors.
 
-The execution trait and public context API have not been implemented yet. The intended contract is:
+For each decoupling capacitor, declare:
 
-1. Rules receive immutable semantic schematic context.
-2. Shared analyses and spatial/connectivity indexes are computed once and reused.
-3. Rules emit normalized diagnostics through a common reporter.
-4. Rules do not mutate the parsed model.
-5. Any source edits are proposed by a separate fix planner with an applicability level and preconditions.
+- `associated_pin`: the exact IC pin it serves, in `REFERENCE.NUMBER` form.
+- `connection_pin`: the capacitor library terminal number wired to that IC pin.
+- `return_pin`: the capacitor terminal that returns to the common reference net.
+- `return_net`: expected label/net name (normally `GND`).
+- Optional `cluster`: a shared identifier for review/documentation.
+- Optional `max_distance_mm`: override for terminal-to-target-pin distance.
 
-Do not create a parallel rule registry or invent an unofficial plugin interface before the public API is designed and versioned.
+At profile level, set `decoupling_max_pin_distance_mm` and `decoupling_max_cluster_spacing_mm`. The linter then verifies that the target IC pin and capacitor connection terminal share a physical wire island (labels do not bridge a disconnected wire island), that the return terminal is wired and carries the declared net label, that all decouplers for one target pin are close to one another, and that they share one physical return island.
 
-## Tests required for each rule
+This is a schematic intent check. It cannot prove PCB-side capacitor placement, return-current path quality, loop inductance, effective capacitance under bias, voltage derating, ESR/ESL, or PDN impedance.
 
-When the rule engine lands, each rule should include:
+Other typed roles are included for resistors, diodes, inductors, transistors, ICs, connectors and test points. Their specific circuit checks should be added only with explicit pin/terminal contracts and positive/negative fixtures. For example, a resistor role can state the nets it connects; a protection diode can identify the nets it protects; a back-to-back switch can name its paired transistor. Avoid inferring these details from component references alone.
 
-- A positive fixture that triggers the diagnostic.
-- A negative fixture proving that valid input is accepted.
-- Boundary cases for coordinate tolerances, hierarchy, and source mapping where relevant.
-- A diagnostic snapshot covering code, severity, message, explanation, and location.
-- An expected fixed-output fixture for machine-applicable fixes.
-- A regression fixture for every discovered false positive or false negative.
+## Writing a new rule
 
-Tests must not rely solely on a diagnostic count. Assert the affected objects and location data.
+Each rule needs:
 
-## Contributing a new rule
+- Stable ID and name.
+- Category, summary and engineering explanation.
+- Default severity justified by impact and subjectivity.
+- Typed, validated configuration options with documented defaults.
+- A positive fixture that produces a finding.
+- A negative fixture proving valid input passes.
+- Boundary cases for hierarchy, symbol rotation, tolerances and source mapping.
+- Diagnostic assertions for code, severity, explanation, source span and physical location.
+- Regression fixtures for every discovered false positive or false negative.
 
-Until the execution API is available, a new rule proposal should include its ID, purpose, positive/negative schematic fixtures, default level rationale, and any required semantic/geometry analysis. Keep the proposed check separate from native ERC unless it represents a genuine additional design-quality constraint.
+Prefer sharing semantic indexes and geometry analyses rather than recomputing them independently in each rule. Rules must not mutate the parsed model.
+
+## Fixes and future extensions
+
+Fix proposals remain a separate layer. A fix must state applicability and preconditions, preserve connectivity, and be verified by a fresh KiCad CLI export/ERC run. Geometry fixes must never change coordinates blindly without understanding pin topology and frame constraints.
+
+Third-party dynamic rule plugins are not implemented. Keep the built-in rule API small and versioned before adding native plugin loading or sandboxing.
