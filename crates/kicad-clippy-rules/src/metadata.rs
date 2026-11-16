@@ -167,7 +167,7 @@ impl LintProfile {
         self.validate_with_netlist(document, None)
     }
 
-    /// Validate declared intent against the schematic and an exported KiCad netlist.
+    /// Validate declared intent against the schematic and an exported `KiCad` netlist.
     #[must_use]
     pub fn validate_with_netlist(
         &self,
@@ -574,10 +574,7 @@ fn validate_decoupling_nets(
         (None, _) => diagnostics.push(Diagnostic::new(
             "SCH022",
             Severity::Error,
-            format!(
-                "target pin {}.{} is absent from the exported KiCad netlist",
-                target_reference, target_pin
-            ),
+            format!("target pin {target_reference}.{target_pin} is absent from the exported KiCad netlist"),
         )),
         (_, None) => diagnostics.push(Diagnostic::new(
             "SCH022",
