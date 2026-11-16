@@ -76,6 +76,24 @@ Example resistor metadata:
 
 These contracts make metadata extensible by component family and variant. SCH021 validates role-specific declaration completeness. SCH014 verifies each `pin_nets` and connector `pin.N` mapping against the exported KiCad netlist, reporting mismatched nets and pins absent from the export. A profile supplied to the CLI triggers netlist export; calling the profile API without a netlist produces a warning when pin-to-net contracts are present.
 
+## Physical direct-wire contracts
+
+SCH014 checks logical net membership in KiCad's exported netlist. Some design requirements are stricter: two pins must be joined by visible wire segments, and a label must not be used as a substitute for that physical connection. Profiles can declare these pairs separately:
+
+    {
+      "schema_version": 1,
+      "direct_wire_pairs": [
+        { "first": "U1.21", "second": "C1.1" },
+        { "first": "T4.3", "second": "T1.2" },
+        { "first": "T1.2", "second": "R10.1" }
+      ],
+      "forbidden_direct_wire_labels": ["FET_MID"]
+    }
+
+SCH004 resolves each `REF.PIN` against the embedded symbol definition and its placed transform, verifies that both pin anchors lie on wire segments, then checks that both pins belong to the same physical wire component. Wire segments are split at endpoints, pin coordinates, junctions and label anchors; only wire segments create connectivity edges. Matching local or hierarchical label names do not join separate islands. Labels anchored directly on a declared direct-wire pin are reported, and configured forbidden names are checked only on the physical wire components covered by those contracts.
+
+This is an opt-in, pairwise contract. It does not automatically infer which pins should be directly connected, replace KiCad ERC, or yet provide the more general common-net/single-label group contract from the historical checker. Unsupported embedded pin transforms and pins that cannot be resolved are reported as unresolved instead of being guessed.
+
 ## Component role vocabulary
 
 | Kind | Common roles | Additional intent worth recording |
