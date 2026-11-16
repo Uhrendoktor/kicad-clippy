@@ -165,10 +165,20 @@ fn collect_frame_facts(root: &Node, source: &str) -> Vec<SchematicFrameFact> {
                 .and_then(|item| atom_value(item, source))?;
             let start = child_list(node, "start")
                 .and_then(list_items)
-                .and_then(|items| Some((number(items.get(1)?, source)?, number(items.get(2)?, source)?)))?;
+                .and_then(|items| {
+                    Some((
+                        number(items.get(1)?, source)?,
+                        number(items.get(2)?, source)?,
+                    ))
+                })?;
             let end = child_list(node, "end")
                 .and_then(list_items)
-                .and_then(|items| Some((number(items.get(1)?, source)?, number(items.get(2)?, source)?)))?;
+                .and_then(|items| {
+                    Some((
+                        number(items.get(1)?, source)?,
+                        number(items.get(2)?, source)?,
+                    ))
+                })?;
             Some(SchematicFrameFact {
                 uuid,
                 bounds_mm: (
