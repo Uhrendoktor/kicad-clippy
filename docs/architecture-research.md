@@ -87,9 +87,9 @@ Configuration should use structured rule keys and typed per-rule option structs,
 ## Migration sequence
 
 1. Establish typed built-in identifiers and one metadata catalogue.
-2. Extract reusable schematic facts, geometry primitives, tolerance policy and wire topology from the monolithic rule module.
+2. Continue extracting reusable schematic facts, geometry primitives, tolerance policy and wire topology from the remaining large rule implementation module.
 3. Build shared indexes once per schematic; use spatial indexes only where profiling demonstrates an all-pairs bottleneck.
-4. Introduce phase-specific rule passes and an immutable `RuleContext`.
+4. Extend the initial geometry, label and annotation RulePass implementations into semantic, connectivity and project-contract phases over an immutable RuleContext.
 5. Add separate generic rule-policy configuration and validated per-rule options.
 6. Add source-labeled terminal rendering and SARIF as adapters over the existing diagnostic contract.
 7. Add verified fix proposals only after edit preconditions and post-fix connectivity checks exist.
