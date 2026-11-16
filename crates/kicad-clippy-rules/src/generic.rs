@@ -15,7 +15,7 @@ use kicad_clippy_core::{
 use kicad_clippy_parser::SchematicDocument;
 use kiutils_sexpr::{Atom, Node};
 use kurbo::{
-    Affine, Arc as CurveArc, PathEl, Point as CurvePoint, Shape, Vec2,
+    Affine, Arc as CurveArc, PathEl, Point as CurvePoint, Rect as CurveRect, Shape, Vec2,
     flatten as flatten_curve_path,
 };
 use petgraph::unionfind::UnionFind;
@@ -1802,11 +1802,11 @@ fn text_visual_bounds(value: &str, node: &Node) -> Option<Bounds> {
         .and_then(|font| font.get(1))
         .and_then(number)
         .unwrap_or(1.0);
-    let width = newstroke_text_advance_ratio(value) * font_size;
+    let width = (newstroke_text_advance_ratio(value) * font_size).max(font_size);
     let height = font_size * 1.55;
-    let x = number(at.get(1)?)?;
-    let y = number(at.get(2)?)?;
+    let anchor = Vec2::new(number(at.get(1)?)?, number(at.get(2)?)?);
     let angle = at.get(3).and_then(number).unwrap_or(0.0);
+
     let justify = effects.and_then(|effects| child_list(effects, "justify"));
     let justify_items = justify.and_then(list_items);
     let justify_name = justify_items
@@ -1814,57 +1814,34 @@ fn text_visual_bounds(value: &str, node: &Node) -> Option<Bounds> {
         .and_then(atom_value)
         .unwrap_or_else(|| "center".to_owned());
     let left = match justify_name.as_str() {
-        "left" => x,
-        "right" => x - width,
-        _ => x - width / 2.0,
+        "left" => 0.0,
+        "right" => -width,
+        _ => -width / 2.0,
     };
-    if (angle - 90.0).abs() < 0.001 {
-        let top = if justify_name == "left" {
-            y - width
-        } else if justify_name == "right" {
-            y
-        } else {
-            y - width / 2.0
-        };
-        return Some(Bounds {
-            x: x - height / 2.0,
-            y: top,
-            width: height,
-            height: width,
-        });
-    }
-    if (angle - 270.0).abs() < 0.001 {
-        let top = if justify_name == "left" {
-            y
-        } else if justify_name == "right" {
-            y - width
-        } else {
-            y - width / 2.0
-        };
-        return Some(Bounds {
-            x: x - height / 2.0,
-            y: top,
-            width: height,
-            height: width,
-        });
-    }
-    if justify_items
-        .and_then(|items| items.get(2))
-        .and_then(atom_value)
-        .is_some_and(|value| value == "top")
-    {
-        return Some(Bounds {
-            x: left,
-            y,
-            width,
-            height,
-        });
-    }
+
+    // KiCad's anchor and justification define a local text rectangle. Kurbo
+    // applies the cardinal rotation and returns its world-space AABB.
+    let (top, rotation) = if (angle - 90.0).abs() < 0.001 {
+        (-height / 2.0, -std::f64::consts::FRAC_PI_2)
+    } else if (angle - 270.0).abs() < 0.001 {
+        (-height / 2.0, std::f64::consts::FRAC_PI_2)
+    } else {
+        let top_aligned = justify_items
+            .and_then(|items| items.get(2))
+            .and_then(atom_value)
+            .is_some_and(|value| value == "top");
+        (if top_aligned { 0.0 } else { -height }, 0.0)
+    };
+
+    let local_bounds = CurveRect::new(left, top, left + width, top + height);
+    let transform = Affine::translate(anchor) * Affine::rotate(rotation);
+    let bounds = transform.transform_rect_bbox(local_bounds);
+
     Some(Bounds {
-        x: left,
-        y: y - height,
-        width,
-        height,
+        x: bounds.x0,
+        y: bounds.y0,
+        width: bounds.width(),
+        height: bounds.height(),
     })
 }
 
@@ -2802,6 +2779,37 @@ mod tests {
         let labels = super::collect_labels(root);
         assert_eq!(labels.len(), 1);
         assert_eq!(labels[0].1, "first\nsecond");
+    }
+
+    #[test]
+    fn text_bounds_use_kurbo_for_cardinal_rotation_and_justification() {
+        let width = super::newstroke_text_advance_ratio("AB");
+        let height = 1.55;
+        let cases = [
+            (0.0, "left", "bottom", 10.0, 20.0 - height, width, height),
+            (0.0, "left", "top", 10.0, 20.0, width, height),
+            (0.0, "center", "bottom", 10.0 - width / 2.0, 20.0 - height, width, height),
+            (90.0, "left", "center", 10.0 - height / 2.0, 20.0 - width, height, width),
+            (90.0, "right", "center", 10.0 - height / 2.0, 20.0, height, width),
+            (90.0, "center", "center", 10.0 - height / 2.0, 20.0 - width / 2.0, height, width),
+            (270.0, "left", "center", 10.0 - height / 2.0, 20.0, height, width),
+            (270.0, "right", "center", 10.0 - height / 2.0, 20.0 - width, height, width),
+        ];
+
+        for (angle, horizontal, vertical, x, y, expected_width, expected_height) in cases {
+            let source = format!(
+                r#"(label "AB" (at 10 20 {angle}) (effects (font (size 1 1)) (justify {horizontal} {vertical})))"#
+            );
+            let doc = document(&source);
+            let root = doc.cst().nodes.first().expect("schematic root");
+            let node = super::children(root, "label").next().expect("label node");
+            let bounds = super::text_visual_bounds("AB", node).expect("text bounds");
+
+            assert!((bounds.x - x).abs() < 0.001);
+            assert!((bounds.y - y).abs() < 0.001);
+            assert!((bounds.width - expected_width).abs() < 0.001);
+            assert!((bounds.height - expected_height).abs() < 0.001);
+        }
     }
 
     #[test]
