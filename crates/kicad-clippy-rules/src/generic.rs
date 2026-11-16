@@ -71,6 +71,16 @@ pub struct SchematicPinFact {
 }
 
 #[derive(Clone, Debug)]
+pub struct SchematicFieldFact {
+    /// Placed-symbol reference.
+    pub reference: String,
+    /// KiCad property name, such as `Reference`, `Value`, or `Footprint`.
+    pub name: String,
+    /// Estimated visible glyph bounds as (left, top, right, bottom), in millimetres.
+    pub bounds_mm: (f64, f64, f64, f64),
+}
+
+#[derive(Clone, Debug)]
 pub struct SchematicPrimitiveFact {
     /// Placed-symbol reference that owns this primitive.
     pub reference: String,
@@ -118,6 +128,8 @@ pub struct SchematicFacts {
     pub wires: Vec<SchematicWireFact>,
     /// Resolved placed-symbol pin coordinates.
     pub pins: Vec<SchematicPinFact>,
+    /// Estimated bounds for visible symbol property glyphs.
+    pub visible_fields: Vec<SchematicFieldFact>,
     /// Transformed outlines from embedded symbol primitives.
     pub symbol_primitives: Vec<SchematicPrimitiveFact>,
     /// Label anchors used to ensure labels are not mistaken for physical wires.
@@ -139,6 +151,7 @@ impl SchematicFacts {
             frames: collect_frame_facts(root, source),
             wires: collect_wire_facts(root, source),
             pins: collect_pin_facts(root, source),
+            visible_fields: collect_symbol_field_facts(root, source),
             symbol_primitives: collect_symbol_primitive_facts(root, source),
             labels: collect_label_facts(root, source),
             junctions: collect_points(root, source, "junction")
@@ -344,6 +357,54 @@ fn collect_pin_facts(root: &Node, source: &str) -> Vec<SchematicPinFact> {
         }
     }
     pins
+}
+
+fn collect_symbol_field_facts(root: &Node, source: &str) -> Vec<SchematicFieldFact> {
+    let mut fields = Vec::new();
+    for symbol in children(root, "symbol") {
+        let reference = children(symbol, "property").find_map(|property| {
+            let items = list_items(property)?;
+            if atom_value(items.get(1)?, source)? == "Reference" {
+                atom_value(items.get(2)?, source)
+            } else {
+                None
+            }
+        });
+        let Some(reference) = reference else {
+            continue;
+        };
+        for property in children(symbol, "property") {
+            if property_is_hidden(property) {
+                continue;
+            }
+            let Some(items) = list_items(property) else {
+                continue;
+            };
+            let Some(name) = items.get(1).and_then(|item| atom_value(item, source)) else {
+                continue;
+            };
+            let Some(value) = items.get(2).and_then(|item| atom_value(item, source)) else {
+                continue;
+            };
+            if value.trim().is_empty() {
+                continue;
+            }
+            let Some(bounds) = text_visual_bounds(&value, property, source) else {
+                continue;
+            };
+            fields.push(SchematicFieldFact {
+                reference: reference.clone(),
+                name,
+                bounds_mm: (
+                    bounds.x,
+                    bounds.y,
+                    bounds.x + bounds.width,
+                    bounds.y + bounds.height,
+                ),
+            });
+        }
+    }
+    fields
 }
 
 fn collect_symbol_primitive_facts(root: &Node, source: &str) -> Vec<SchematicPrimitiveFact> {
