@@ -599,6 +599,39 @@ mod tests {
     }
 
     #[test]
+    fn group_evidence_and_component_purpose_must_match_rendered_description() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "group-test.kicad_sch",
+            r#"(kicad_sch (symbol (lib_id "Device:R") (property "Reference" "R1" (at 1 1 0))) (text_box "R1: Pull up resistor. Why: I2C uses open-drain signalling." (uuid "description-1")))"#,
+        )
+        .expect("fixture parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"groups":{"i2c":{"members":["R1"],"documentation_members":["R1"],"description_uuid":"description-1","component_purposes":{"R1":{"function":"Pull up resistor","rationale":"I2C uses open-drain signalling"}},"evidence":{"document":"Controller datasheet","page":12,"figure":"Figure 3"}}}}"#,
+        )
+        .expect("profile parses");
+        let diagnostics = profile.validate(&schematic);
+        assert!(!diagnostics
+            .iter()
+            .any(|item| item.code == "SCH017" || item.code == "SCH020"));
+    }
+
+    #[test]
+    fn group_without_evidence_or_purpose_phrases_is_rejected() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "group-test.kicad_sch",
+            r#"(kicad_sch (symbol (lib_id "Device:R") (property "Reference" "R1" (at 1 1 0))) (text_box "A resistor." (uuid "description-1")))"#,
+        )
+        .expect("fixture parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"groups":{"i2c":{"members":["R1"],"documentation_members":["R1"],"description_uuid":"description-1","component_purposes":{"R1":{"function":"Pull up resistor","rationale":"I2C uses open-drain signalling"}},"evidence":{}}}}"#,
+        )
+        .expect("profile parses");
+        let diagnostics = profile.validate(&schematic);
+        assert!(diagnostics.iter().any(|item| item.code == "SCH017"));
+        assert!(diagnostics.iter().any(|item| item.code == "SCH020"));
+    }
+
+    #[test]
     fn decoupling_intent_preserves_pin_and_terminal_mapping() {
         let json = r#"{"schema_version":1,"mode":"strict","components":{"C1":{"kind":"capacitor","role":"decoupling","function":"Local bypass","rationale":"Minimize loop area","decoupling":{"target_pin":"U1.21","target_terminal":"1","return_terminal":"2","return_net":"GND","cluster":"U1.VREG_1V2"}}}}"#;
         let profile: LintProfile = serde_json::from_str(json).expect("valid fixture");
