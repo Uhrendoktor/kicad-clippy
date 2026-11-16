@@ -121,3 +121,13 @@ Profiles can also declare functional groups. Each group identifies its component
     }
 
 A group is valid when it cites a document/page/figure or a reviewed screenshot asset, its members exist in the schematic, its description text box UUID resolves, and all component-purpose phrases are present. This ports the original SCH017/SCH020 group-documentation intent while keeping component intent reusable for other checks.
+
+## Netlist-backed decoupling verification
+
+When a project profile is supplied, kicad-clippy exports a flattened netlist through KiCad CLI and checks:
+
+1. The capacitor target terminal is on the same exported net as the declared target IC pin.
+2. The capacitor return terminal is on the declared return net.
+3. Decouplers for one target pin agree on their return net and cluster identifier.
+
+This proves logical pin-to-net membership. It does not yet prove that the connection is a direct wire rather than a label-mediated connection, nor does it prove physical proximity; those require wire-island and transformed symbol-pin geometry checks.
