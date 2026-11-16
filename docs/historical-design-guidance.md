@@ -50,6 +50,6 @@ These are candidates, not silently enabled universal requirements:
 - Connector pin-map completeness and interface-boundary checks.
 - Test-point coverage for important power, reset, programming and measurement nets.
 - Functional-group completeness and evidence/source traceability.
-- Detect local net labels that accidentally substitute for a physical local connection where visible wire is required.
+- Detect local net labels that accidentally substitute for a physical local connection where visible wire is required.\n- Require I²C/open-drain pull-ups on nets whose declared interface role requires them.\n- Require a current-limiting path for LED indicators, with the resistor path and expected current documented.\n- Check for a DC bias/return path on declared analog nodes that otherwise contain only capacitors and high-impedance/connector terminals.\n- Check declared power-input protection paths (fuse, reverse-polarity protection, TVS/clamp) as a project contract, not as a universal rule.\n- Verify that declared IC supply pins have decoupling metadata and that each required supply domain has at least one decoupler.
 
 Introduce candidates with configurable profiles and positive/negative fixtures. Avoid duplicating native ERC checks such as pin-type conflicts or unconnected pins.
