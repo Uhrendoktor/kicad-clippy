@@ -165,12 +165,22 @@ fn validate_component_intent(reference: &str, intent: &ComponentIntent) -> Vec<D
         ));
     }
     if intent.kind == ComponentKind::Capacitor && intent.role.0 == "decoupling" {
-        diagnostics.extend(validate_decoupling_intent(reference, intent.decoupling.as_ref()));
+        diagnostics.extend(validate_decoupling_intent(
+            reference,
+            intent.decoupling.as_ref(),
+        ));
     }
     if intent.kind == ComponentKind::Capacitor
         && !matches!(
             intent.role.0.as_str(),
-            "decoupling" | "bulk" | "filter" | "timing" | "coupling" | "snubber" | "reservoir" | "safety"
+            "decoupling"
+                | "bulk"
+                | "filter"
+                | "timing"
+                | "coupling"
+                | "snubber"
+                | "reservoir"
+                | "safety"
         )
     {
         diagnostics.push(Diagnostic::new(
@@ -232,21 +242,28 @@ fn validate_decoupling_intent(
     diagnostics
 }
 
-fn validate_decoupler_groups(
-    components: &BTreeMap<String, ComponentIntent>,
-) -> Vec<Diagnostic> {
+fn validate_decoupler_groups(components: &BTreeMap<String, ComponentIntent>) -> Vec<Diagnostic> {
     let mut by_target: BTreeMap<&str, Vec<&DecouplingIntent>> = BTreeMap::new();
     for intent in components.values() {
         if intent.kind == ComponentKind::Capacitor && intent.role.0 == "decoupling" {
             if let Some(contract) = &intent.decoupling {
-                by_target.entry(&contract.target_pin).or_default().push(contract);
+                by_target
+                    .entry(&contract.target_pin)
+                    .or_default()
+                    .push(contract);
             }
         }
     }
     let mut diagnostics = Vec::new();
     for (target, capacitors) in by_target {
-        let returns: BTreeSet<_> = capacitors.iter().map(|item| item.return_net.as_str()).collect();
-        let clusters: BTreeSet<_> = capacitors.iter().map(|item| item.cluster.as_str()).collect();
+        let returns: BTreeSet<_> = capacitors
+            .iter()
+            .map(|item| item.return_net.as_str())
+            .collect();
+        let clusters: BTreeSet<_> = capacitors
+            .iter()
+            .map(|item| item.cluster.as_str())
+            .collect();
         if returns.len() > 1 {
             diagnostics.push(Diagnostic::new(
                 "SCH022",
