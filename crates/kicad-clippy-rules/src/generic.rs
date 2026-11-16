@@ -815,7 +815,7 @@ pub(crate) struct BuiltinGeometryPass;
 
 impl RulePass for BuiltinGeometryPass {
     fn name(&self) -> &'static str {
-        "kicad-clippy.geometry"
+        "01-kicad-clippy.geometry"
     }
 
     fn run(&self, context: &RuleContext<'_>) -> Vec<Diagnostic> {
@@ -828,7 +828,7 @@ pub(crate) struct BuiltinLabelPass;
 
 impl RulePass for BuiltinLabelPass {
     fn name(&self) -> &'static str {
-        "kicad-clippy.labels"
+        "02-kicad-clippy.labels"
     }
 
     fn run(&self, context: &RuleContext<'_>) -> Vec<Diagnostic> {
@@ -841,7 +841,7 @@ pub(crate) struct BuiltinAnnotationPass;
 
 impl RulePass for BuiltinAnnotationPass {
     fn name(&self) -> &'static str {
-        "kicad-clippy.annotations"
+        "03-kicad-clippy.annotations"
     }
 
     fn run(&self, context: &RuleContext<'_>) -> Vec<Diagnostic> {
