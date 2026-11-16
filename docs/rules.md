@@ -29,4 +29,8 @@ The historical checker defines stable IDs SCH001–SCH020. The Rust migration pr
 
 KiCad native ERC remains the electrical authority. Rust rules must not duplicate pin-type conflicts, undriven power pins, or native unconnected-pin analysis. Rules requiring exact pin-to-net facts must consume KiCad's exported netlist, not infer connectivity from equal label strings.
 
-SCH005 intentionally checks only connected-wire axis alignment; KiCad native ERC remains responsible for electrical pin compatibility and unconnected-pin findings. Pin layouts that cannot be resolved from the embedded symbol definition or use non-cardinal symbol rotation are skipped rather than guessed.\n\nA rule ID is not considered ported merely because it appears in the catalogue. A rule becomes implemented only when it has positive and negative tests and a documented analysis model.
+SCH005 intentionally checks only connected-wire axis alignment; KiCad native ERC remains responsible for electrical pin compatibility and unconnected-pin findings. Pin layouts that cannot be resolved from the embedded symbol definition or use non-cardinal symbol rotation are skipped rather than guessed.
+
+SCH015 checks only no-connect marker placement against embedded pin coordinates; it skips the rule if any placed symbol pin model is incomplete or unsupported. KiCad native ERC remains responsible for electrical unconnected-pin analysis.
+
+A rule ID is not considered ported merely because it appears in the catalogue. A rule becomes implemented only when it has positive and negative tests and a documented analysis model.

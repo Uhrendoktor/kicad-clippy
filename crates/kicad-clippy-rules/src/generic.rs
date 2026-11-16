@@ -173,6 +173,9 @@ fn check_instance_pin_orientation(
     let Some(transform) = read_symbol_transform(instance, source) else {
         return Vec::new();
     };
+    if transform.reference.starts_with('#') {
+        return Vec::new();
+    }
     let Some(lib_id) = child_list(instance, "lib_id")
         .and_then(list_items)
         .and_then(|items| items.get(1))
@@ -282,9 +285,6 @@ fn read_symbol_transform(instance: &Node, source: &str) -> Option<SymbolTransfor
             None
         }
     })?;
-    if reference.starts_with('#') {
-        return None;
-    }
     let at = child_list(instance, "at").and_then(list_items)?;
     let origin = Point {
         x: number(at.get(1)?, source)?,
@@ -1577,9 +1577,10 @@ mod tests {
     }
 
     #[test]
-    fn correctly_placed_no_connect_marker_is_accepted() {
+    fn correctly_placed_no_connect_marker_is_accepted_even_for_power_symbols() {
+        let power_symbol = EMBEDDED_PIN.replace("\"J1\"", "\"#PWR001\"");
         let doc = document(&format!(
-            "{EMBEDDED_PIN} (no_connect (at 10 7.46) (uuid \"no-connect-id\"))"
+            "{power_symbol} (no_connect (at 10 7.46) (uuid \"no-connect-id\"))"
         ));
         assert!(
             !run_builtin_rules(&doc)
