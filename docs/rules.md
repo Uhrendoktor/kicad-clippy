@@ -4,17 +4,17 @@ The historical checker defines stable IDs SCH001–SCH020. The Rust migration pr
 
 | ID | Historical rule | Rust status |
 | --- | --- | --- |
-| SCH001 | Wire geometry | Implemented: orthogonal segments, zero-length wires, crossings and unmarked T-junctions |
+| SCH001 | Wire geometry | Implemented: endpoint count, orthogonal segments, zero-length wires, collinear overlap, crossings and unmarked T-junctions |
 | SCH002 | Label topology | Implemented: physical wire-island graph, local-label reuse across distinct islands, duplicate-label detection on one island, and hierarchical twig termination |
-| SCH003 | Label/wire glyph overlap | Pending exact text-glyph bounds |
+| SCH003 | Label/wire glyph overlap | Implemented: estimated visible glyph bounds and strict wire-interior intersection |
 | SCH004 | Physical net connectivity | Pending exported-netlist and physical wire-graph integration |
 | SCH005 | Pin orientation | Pending transformed embedded-pin geometry |
 | SCH006 | Component spacing | Pending profile-driven spacing limits |
 | SCH007 | Group metadata | Pending profile-driven group extraction |
-| SCH008 | Annotation text-box geometry | Pending |
+| SCH008 | Annotation text-box geometry | Implemented: required geometry/font/margins, sizing, overlap and wire penetration |
 | SCH009 | Group containment | Pending symbol/pin/field/frame geometry |
 | SCH010 | Symbol field clearance | Pending actual embedded symbol primitives and text glyph geometry |
-| SCH011 | Block annotation structure | Pending; historical multiline-outline contract recorded |
+| SCH011 | Block annotation structure | Implemented: multiline text boxes require a visible border |
 | SCH012 | Frame content clearance | Pending |
 | SCH013 | Wire obstacle clearance | Pending embedded symbol primitive geometry |
 | SCH014 | Shared pin/net contracts | Pending KiCad-exported netlist mapping |
