@@ -1940,16 +1940,7 @@ fn wire_overlaps_bounds(segment: Segment, bounds: Bounds, strict: bool) -> bool 
         return false;
     }
 
-    let wire = MultiLineString::new(vec![LineString::new(vec![
-        Coord {
-            x: segment.start.x,
-            y: segment.start.y,
-        },
-        Coord {
-            x: segment.end.x,
-            y: segment.end.y,
-        },
-    ])]);
+    let wire = MultiLineString::new(vec![LineString::new(vec![segment.start, segment.end])]);
     let clipped = geo_rect(clipped_bounds).to_polygon().clip(&wire, false);
 
     Euclidean.length(&clipped) > TOLERANCE
