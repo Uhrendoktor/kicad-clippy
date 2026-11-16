@@ -10,6 +10,7 @@ rust-version.workspace = true
 
 [dependencies]
 kicad-clippy-core = { path = "../kicad-clippy-core" }
+kiutils_sexpr = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
