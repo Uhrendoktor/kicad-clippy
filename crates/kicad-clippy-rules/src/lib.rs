@@ -8,5 +8,5 @@ mod metadata;
 pub use generic::{RuleRun, run_builtin_rules};
 pub use metadata::{
     ComponentIntent, ComponentKind, ComponentPurpose, ComponentRole, DecouplingIntent,
-    GroupEvidence, GroupIntent, LintProfile, MetadataError, ProfileMode,
+    DirectWirePair, GroupEvidence, GroupIntent, LintProfile, MetadataError, ProfileMode,
 };
