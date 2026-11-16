@@ -1178,6 +1178,7 @@ mod tests {
     #![allow(clippy::expect_used)]
     use std::collections::BTreeMap;
 
+    use kicad_clippy_core::Severity;
     use kicad_clippy_erc::{Netlist, PinRef};
 
     use super::{ComponentKind, ComponentRole, LintProfile, ProfileMode};
