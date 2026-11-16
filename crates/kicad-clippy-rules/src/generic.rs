@@ -269,9 +269,65 @@ fn inspect_text_box(
     index: usize,
     source: &str,
 ) -> (Option<TextBoxRecord>, Vec<Diagnostic>) {
+    let (metrics, error) = read_text_box_metrics(node, index, source);
+    let Some(metrics) = metrics else {
+        return (None, error.into_iter().collect());
+    };
+    let (required_width, required_height) =
+        required_text_box_size(&metrics.label, metrics.font_size, metrics.padding);
+    let mut diagnostics = Vec::new();
+    if metrics.bounds.width + 0.001 < required_width
+        || metrics.bounds.height + 0.001 < required_height
+    {
+        diagnostics.push(at_span(
+            "SCH008",
+            format!(
+                "text_box {index} is undersized ({:.2}x{:.2} mm); needs {required_width:.2}x{required_height:.2} mm",
+                metrics.bounds.width, metrics.bounds.height
+            ),
+            metrics.span,
+        ));
+    }
+    if metrics.stroke_width <= 0.0
+        && metrics.bounds.width + 0.001 < required_width + 10.16
+    {
+        diagnostics.push(at_span(
+            "SCH008",
+            format!(
+                "unbordered text_box {index} needs at least {:.2} mm width for reliable single-line rendering",
+                required_width + 10.16
+            ),
+            metrics.span,
+        ));
+    }
+    (
+        Some(TextBoxRecord {
+            id: format!("text_box-{index}"),
+            bounds: metrics.bounds,
+            span: metrics.span,
+        }),
+        diagnostics,
+    )
+}
+
+#[derive(Clone, Debug)]
+struct TextBoxMetrics {
+    label: String,
+    bounds: Bounds,
+    font_size: f64,
+    padding: f64,
+    stroke_width: f64,
+    span: ByteSpan,
+}
+
+fn read_text_box_metrics(
+    node: &Node,
+    index: usize,
+    source: &str,
+) -> (Option<TextBoxMetrics>, Option<Diagnostic>) {
     let span = span_of(node);
     let Some(items) = list_items(node) else {
-        return (None, vec![at_span("SCH008", format!("text_box {index} is malformed"), span)]);
+        return (None, Some(at_span("SCH008", format!("text_box {index} is malformed"), span)));
     };
     let label = items
         .get(1)
@@ -291,11 +347,11 @@ fn inspect_text_box(
     else {
         return (
             None,
-            vec![at_span(
+            Some(at_span(
                 "SCH008",
                 format!("text_box {index} is missing geometry, margins or font"),
                 span,
-            )],
+            )),
         );
     };
     let pads: Option<Vec<f64>> = margins
@@ -306,17 +362,17 @@ fn inspect_text_box(
     let Some(pads) = pads else {
         return (
             None,
-            vec![at_span("SCH008", format!("text_box {index} has invalid margins"), span)],
+            Some(at_span("SCH008", format!("text_box {index} has invalid margins"), span)),
         );
     };
     if pads.len() != 4 || pads.iter().any(|pad| (pad - 1.27).abs() > 0.001) {
         return (
             None,
-            vec![at_span(
+            Some(at_span(
                 "SCH008",
                 format!("text_box {index} must have 1.27 mm equal padding"),
                 span,
-            )],
+            )),
         );
     }
     let dimensions = (
@@ -328,48 +384,29 @@ fn inspect_text_box(
     let (Some(x), Some(y), Some(width), Some(height)) = dimensions else {
         return (
             None,
-            vec![at_span(
+            Some(at_span(
                 "SCH008",
                 format!("text_box {index} has invalid dimensions"),
                 span,
-            )],
+            )),
         );
     };
-
-    let (required_width, required_height) = required_text_box_size(&label, font_size, pads[0]);
-    let mut diagnostics = Vec::new();
-    if width + 0.001 < required_width || height + 0.001 < required_height {
-        diagnostics.push(at_span(
-            "SCH008",
-            format!(
-                "text_box {index} is undersized ({width:.2}x{height:.2} mm); needs {required_width:.2}x{required_height:.2} mm"
-            ),
-            span,
-        ));
-    }
     let stroke_width = child_list(node, "stroke")
         .and_then(|stroke| child_list(stroke, "width"))
         .and_then(list_items)
         .and_then(|width| width.get(1))
         .and_then(|item| number(item, source))
         .unwrap_or(-1.0);
-    if stroke_width <= 0.0 && width + 0.001 < required_width + 10.16 {
-        diagnostics.push(at_span(
-            "SCH008",
-            format!(
-                "unbordered text_box {index} needs at least {:.2} mm width for reliable single-line rendering",
-                required_width + 10.16
-            ),
-            span,
-        ));
-    }
     (
-        Some(TextBoxRecord {
-            id: format!("text_box-{index}"),
+        Some(TextBoxMetrics {
+            label,
             bounds: Bounds { x, y, width, height },
+            font_size,
+            padding: pads[0],
+            stroke_width,
             span,
         }),
-        diagnostics,
+        None,
     )
 }
 
