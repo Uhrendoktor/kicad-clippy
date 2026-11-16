@@ -294,12 +294,7 @@ fn collect_pin_facts(root: &Node, source: &str) -> Vec<SchematicPinFact> {
         }) else {
             continue;
         };
-        for pin in embedded_symbol_pins(
-            library_symbol,
-            transform.unit,
-            transform.convert,
-            source,
-        ) {
+        for pin in embedded_symbol_pins(library_symbol, transform.unit, transform.convert, source) {
             let Some(number) = child_list(pin, "number")
                 .and_then(list_items)
                 .and_then(|items| items.get(1))
@@ -327,10 +322,7 @@ fn collect_pin_facts(root: &Node, source: &str) -> Vec<SchematicPinFact> {
             pins.push(SchematicPinFact {
                 reference: transform.reference.clone(),
                 number,
-                position_mm: (
-                    transform.origin.x + x_offset,
-                    transform.origin.y + y_offset,
-                ),
+                position_mm: (transform.origin.x + x_offset, transform.origin.y + y_offset),
             });
         }
     }
@@ -1444,9 +1436,7 @@ fn point_key(point: Point) -> String {
     format!("{:.3}:{:.3}", point.x, point.y)
 }
 
-pub(crate) fn physical_wire_component_ids(
-    facts: &SchematicFacts,
-) -> BTreeMap<String, usize> {
+pub(crate) fn physical_wire_component_ids(facts: &SchematicFacts) -> BTreeMap<String, usize> {
     let segments: Vec<_> = facts
         .wires
         .iter()
@@ -1489,7 +1479,6 @@ pub(crate) fn physical_wire_component_ids(
     points.dedup_by_key(|point| point_key(*point));
     wire_components(&segments, &points).0
 }
-
 
 fn check_label_text_collisions(root: &Node, source: &str) -> Vec<Diagnostic> {
     let mut labels = Vec::new();
