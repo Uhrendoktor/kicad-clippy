@@ -11,7 +11,7 @@ A Rust-based linter for KiCad schematic files. `kicad-clippy` combines repositor
 - Parses a `.kicad_sch` file as a lossless S-expression document and checks its root type.
 - Runs native ERC using `kicad-cli sch erc --format json --severity-all`.
 - Normalizes ERC violations from the per-sheet JSON report, preserving severity, exclusion state, sheet paths, affected item UUIDs, and physical coordinates.
-- Runs built-in geometry and label rules with source spans and schematic coordinates.\n- Loads versioned JSON project profiles and validates strict component metadata, including pin-specific decoupling intent.\n- Exposes shared UTF-8 byte spans, line/column mapping, diagnostic types, rule descriptors, levels, and a deterministic rule registry.
+- Runs built-in geometry and label rules with source spans and schematic coordinates.\n- Loads versioned JSON project profiles and validates strict component metadata, including pin-specific decoupling intent and role-specific connection contracts for passive, protection, switching and connector parts.\n- Exposes shared UTF-8 byte spans, line/column mapping, diagnostic types, rule descriptors, levels, and a deterministic rule registry.
 - Emits human-readable or JSON diagnostics with an exit code based on active ERC errors.
 
 The full SCH001–SCH020 catalogue is not yet ported. Rules that need transformed symbol geometry, hierarchical netlists, or group frames remain pending. SARIF and verified fixes are also pending.
