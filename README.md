@@ -18,7 +18,7 @@ A Rust-based linter for KiCad schematic files. `kicad-clippy` combines repositor
 - Exposes shared UTF-8 byte spans, line/column mapping, diagnostic types, rule descriptors, levels, and a deterministic rule registry.
 - Emits human-readable or JSON diagnostics while retaining KiCad ERC as the authority for electrical violations.
 
-This remains a partial migration, not a complete schematic-style audit. SCH004 physical direct-wire connectivity and SCH013 symbol-primitive wire-obstacle checks are pending. SCH009, SCH010, SCH012 and SCH015 have narrower documented scopes than their historical rule descriptions. SARIF, verified automatic fixes and editor integration are also pending.
+This remains a partial migration, not a complete schematic-style audit. SCH004 supports profile-declared direct-wire pairs and common-pin groups but does not infer every physical connection; SCH013 symbol-primitive wire-obstacle checks remain pending. SCH009, SCH010, SCH012 and SCH015 have narrower documented scopes than their historical rule descriptions. SARIF, verified automatic fixes and editor integration are also pending.
 
 ## Requirements
 
