@@ -5,6 +5,7 @@ use std::{
 };
 
 use kicad_clippy_core::{Diagnostic, Severity};
+use kicad_clippy_erc::Netlist;
 use kicad_clippy_parser::SchematicDocument;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -163,6 +164,16 @@ impl LintProfile {
     /// Validate declared intent against placed components in the schematic.
     #[must_use]
     pub fn validate(&self, document: &SchematicDocument) -> Vec<Diagnostic> {
+        self.validate_with_netlist(document, None)
+    }
+
+    /// Validate declared intent against the schematic and an exported KiCad netlist.
+    #[must_use]
+    pub fn validate_with_netlist(
+        &self,
+        document: &SchematicDocument,
+        netlist: Option<&Netlist>,
+    ) -> Vec<Diagnostic> {
         let facts = SchematicFacts::from_document(document);
         let references: BTreeSet<_> = facts
             .components
@@ -172,7 +183,7 @@ impl LintProfile {
         let mut diagnostics = self.validate_profile_references(&references);
         for component in &facts.components {
             if let Some(intent) = self.components.get(&component.reference) {
-                diagnostics.extend(validate_component_intent(&component.reference, intent));
+                diagnostics.extend(validate_component_intent(&component.reference, intent, netlist));
             } else if self.mode == ProfileMode::Strict
                 && !self.ignore_components.contains(&component.reference)
             {
@@ -374,7 +385,11 @@ fn validate_group_phrase(
     }
 }
 
-fn validate_component_intent(reference: &str, intent: &ComponentIntent) -> Vec<Diagnostic> {
+fn validate_component_intent(
+    reference: &str,
+    intent: &ComponentIntent,
+    netlist: Option<&Netlist>,
+) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     if intent.function.as_deref().is_none_or(str::is_empty)
         || intent.rationale.as_deref().is_none_or(str::is_empty)
@@ -480,6 +495,7 @@ fn validate_role_contract(reference: &str, intent: &ComponentIntent) -> Vec<Diag
 fn validate_decoupling_intent(
     reference: &str,
     contract: Option<&DecouplingIntent>,
+    netlist: Option<&Netlist>,
 ) -> Vec<Diagnostic> {
     let Some(contract) = contract else {
         return vec![Diagnostic::new(
@@ -520,6 +536,72 @@ fn validate_decoupling_intent(
             Severity::Error,
             format!("{reference} maps both decoupling terminals to the same capacitor terminal"),
         ));
+    }
+    if let Some(netlist) = netlist {
+        diagnostics.extend(validate_decoupling_nets(reference, contract, netlist));
+    }
+    diagnostics
+}
+
+fn validate_decoupling_nets(
+    reference: &str,
+    contract: &DecouplingIntent,
+    netlist: &Netlist,
+) -> Vec<Diagnostic> {
+    let Some((target_reference, target_pin)) = contract.target_pin.rsplit_once('.') else {
+        return Vec::new();
+    };
+    let target_net = netlist.net_for_pin(target_reference, target_pin);
+    let capacitor_target_net = netlist.net_for_pin(reference, &contract.target_terminal);
+    let capacitor_return_net = netlist.net_for_pin(reference, &contract.return_terminal);
+    let mut diagnostics = Vec::new();
+
+    match (target_net, capacitor_target_net) {
+        (Some(target), Some(capacitor)) if target == capacitor => {}
+        (Some(target), Some(capacitor)) => diagnostics.push(Diagnostic::new(
+            "SCH022",
+            Severity::Error,
+            format!(
+                "{reference} terminal {} is on {capacitor}, but {}.{} is on {target}",
+                contract.target_terminal, target_reference, target_pin
+            ),
+        )),
+        (None, _) => diagnostics.push(Diagnostic::new(
+            "SCH022",
+            Severity::Error,
+            format!(
+                "target pin {}.{} is absent from the exported KiCad netlist",
+                target_reference, target_pin
+            ),
+        )),
+        (_, None) => diagnostics.push(Diagnostic::new(
+            "SCH022",
+            Severity::Error,
+            format!(
+                "{}.{} is absent from the exported KiCad netlist",
+                reference, contract.target_terminal
+            ),
+        )),
+    }
+
+    match capacitor_return_net {
+        Some(actual) if actual == contract.return_net => {}
+        Some(actual) => diagnostics.push(Diagnostic::new(
+            "SCH022",
+            Severity::Error,
+            format!(
+                "{reference} return terminal {} is on {actual}, expected {}",
+                contract.return_terminal, contract.return_net
+            ),
+        )),
+        None => diagnostics.push(Diagnostic::new(
+            "SCH022",
+            Severity::Error,
+            format!(
+                "{}.{} is absent from the exported KiCad netlist",
+                reference, contract.return_terminal
+            ),
+        )),
     }
     diagnostics
 }
