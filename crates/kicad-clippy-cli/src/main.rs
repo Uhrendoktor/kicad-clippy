@@ -277,7 +277,10 @@ fn render_diagnostic(
             Severity::Note => RenderSeverity::Advice,
         });
 
-    if let Some(span) = diagnostic.span.filter(|span| span.is_valid_for(source.text())) {
+    if let Some(span) = diagnostic
+        .span
+        .filter(|span| span.is_valid_for(source.text()))
+    {
         rendered = rendered.with_label(LabeledSpan::new_primary_with_span(
             Some("here".to_owned()),
             span.start..span.end,
