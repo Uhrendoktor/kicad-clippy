@@ -1,18 +1,19 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use geo::{
+    Contains, Coord, Covers, Distance, Euclidean, Intersects, Line, LineIntersection, LineString,
+    Point as GeoPoint, Polygon, Rect as GeoRect,
+    algorithm::sweep::{Cross, Intersections},
+    line_intersection,
+};
 use kicad_clippy_core::{
     BuiltinRuleId, ByteSpan, Diagnostic, RelatedLocation, SchematicLocation, Severity,
 };
 use kicad_clippy_parser::SchematicDocument;
-use geo::{
-    Contains, Coord, Covers, Distance, Euclidean, Intersects, Line, LineIntersection, LineString,
-    Point as GeoPoint, Polygon, Rect as GeoRect, algorithm::sweep::{Cross, Intersections},
-    line_intersection,
-};
+use kiutils_sexpr::{Atom, Node};
 use kurbo::{
     Arc as CurveArc, PathEl, Point as CurvePoint, Shape, Vec2, flatten as flatten_curve_path,
 };
-use kiutils_sexpr::{Atom, Node};
 
 use crate::{RuleContext, RulePass};
 
@@ -1057,7 +1058,10 @@ fn wire_endpoint_is_pin(endpoint: Point, reference: &str, pins: &[SchematicPinFa
 
 fn geo_line(start: Point, end: Point) -> Line<f64> {
     Line::new(
-        Coord { x: start.x, y: start.y },
+        Coord {
+            x: start.x,
+            y: start.y,
+        },
         Coord { x: end.x, y: end.y },
     )
 }
@@ -1075,12 +1079,21 @@ fn segment_intersection_points(
 
     match line_intersection(&first_line, &second_line) {
         Some(LineIntersection::SinglePoint { intersection, .. }) => {
-            vec![Point { x: intersection.x, y: intersection.y }]
+            vec![Point {
+                x: intersection.x,
+                y: intersection.y,
+            }]
         }
         Some(LineIntersection::Collinear { intersection }) => {
             let points = [
-                Point { x: intersection.start.x, y: intersection.start.y },
-                Point { x: intersection.end.x, y: intersection.end.y },
+                Point {
+                    x: intersection.start.x,
+                    y: intersection.start.y,
+                },
+                Point {
+                    x: intersection.end.x,
+                    y: intersection.end.y,
+                },
             ];
             if distance(points[0], points[1]) <= 0.001 {
                 vec![points[0]]
@@ -1093,17 +1106,11 @@ fn segment_intersection_points(
 }
 
 fn point_on_segment_any(point: Point, start: Point, end: Point) -> bool {
-    Euclidean.distance(
-        &GeoPoint::new(point.x, point.y),
-        &geo_line(start, end),
-    ) <= 0.001
+    Euclidean.distance(&GeoPoint::new(point.x, point.y), &geo_line(start, end)) <= 0.001
 }
 
 fn point_segment_distance(point: Point, start: Point, end: Point) -> f64 {
-    Euclidean.distance(
-        &GeoPoint::new(point.x, point.y),
-        &geo_line(start, end),
-    )
+    Euclidean.distance(&GeoPoint::new(point.x, point.y), &geo_line(start, end))
 }
 
 fn point_in_polygon(point: Point, polygon: &[(f64, f64)]) -> bool {
@@ -1121,8 +1128,7 @@ fn point_in_polygon(point: Point, polygon: &[(f64, f64)]) -> bool {
         }
     }
 
-    Polygon::new(LineString::new(ring), Vec::new())
-        .covers(&GeoPoint::new(point.x, point.y))
+    Polygon::new(LineString::new(ring), Vec::new()).covers(&GeoPoint::new(point.x, point.y))
 }
 
 fn check_pin_orientation(root: &Node, source: &str, segments: &[Segment]) -> Vec<Diagnostic> {
@@ -1562,7 +1568,6 @@ fn collect_invalid_wire_diagnostics(root: &Node) -> Vec<Diagnostic> {
     });
     diagnostics
 }
-
 
 fn check_label_wire_clearance(root: &Node, source: &str, segments: &[Segment]) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
@@ -2483,10 +2488,22 @@ fn symbol_primitive_contains_bounds(bounds: Bounds, primitive: &SchematicPrimiti
         let opposite_x = bounds.x + bounds.width;
         let opposite_y = bounds.y + bounds.height;
         return [
-            Point { x: bounds.x, y: bounds.y },
-            Point { x: opposite_x, y: bounds.y },
-            Point { x: opposite_x, y: opposite_y },
-            Point { x: bounds.x, y: opposite_y },
+            Point {
+                x: bounds.x,
+                y: bounds.y,
+            },
+            Point {
+                x: opposite_x,
+                y: bounds.y,
+            },
+            Point {
+                x: opposite_x,
+                y: opposite_y,
+            },
+            Point {
+                x: bounds.x,
+                y: opposite_y,
+            },
         ]
         .iter()
         .all(|corner| distance(*corner, center) <= inner_radius + 0.001);
@@ -2678,7 +2695,6 @@ fn is_endpoint(point: Point, segment: Segment) -> bool {
 fn distance(first: Point, second: Point) -> f64 {
     (first.x - second.x).hypot(first.y - second.y)
 }
-
 
 fn at_segment(code: BuiltinRuleId, message: &str, segment: Segment) -> Diagnostic {
     let mut diagnostic = Diagnostic::new(code, Severity::Error, message);
@@ -3099,9 +3115,7 @@ mod tests {
 
     #[test]
     fn sweep_line_reports_crossing_wires_with_the_intersection_location() {
-        let doc = document(
-            r"(wire (pts (xy 0 0) (xy 4 0))) (wire (pts (xy 2 -2) (xy 2 2)))",
-        );
+        let doc = document(r"(wire (pts (xy 0 0) (xy 4 0))) (wire (pts (xy 2 -2) (xy 2 2)))");
         let finding = run_builtin_rules(&doc)
             .diagnostics
             .into_iter()
@@ -3114,21 +3128,23 @@ mod tests {
 
     #[test]
     fn sweep_line_requires_an_explicit_marker_for_t_junctions() {
-        let missing = document(
-            r"(wire (pts (xy 0 0) (xy 4 0))) (wire (pts (xy 2 0) (xy 2 2)))",
+        let missing = document(r"(wire (pts (xy 0 0) (xy 4 0))) (wire (pts (xy 2 0) (xy 2 2)))");
+        assert!(
+            run_builtin_rules(&missing)
+                .diagnostics
+                .iter()
+                .any(|item| item.code == "SCH001" && item.message.contains("T-junction"))
         );
-        assert!(run_builtin_rules(&missing)
-            .diagnostics
-            .iter()
-            .any(|item| item.code == "SCH001" && item.message.contains("T-junction")));
 
         let marked = document(
             r#"(wire (pts (xy 0 0) (xy 4 0))) (wire (pts (xy 2 0) (xy 2 2))) (junction (at 2 0) (diameter 0.6) (color 0 0 0 0) (uuid "junction"))"#,
         );
-        assert!(!run_builtin_rules(&marked)
-            .diagnostics
-            .iter()
-            .any(|item| item.code == "SCH001" && item.message.contains("T-junction")));
+        assert!(
+            !run_builtin_rules(&marked)
+                .diagnostics
+                .iter()
+                .any(|item| item.code == "SCH001" && item.message.contains("T-junction"))
+        );
     }
 
     #[test]
