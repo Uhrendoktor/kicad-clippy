@@ -87,7 +87,6 @@ pub struct ComponentIntent {
     pub power_rating_min_w: Option<f64>,
 }
 
-
 /// Component-specific text that must appear in the owning group description.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct ComponentPurpose {
@@ -245,7 +244,9 @@ fn validate_group(
         return diagnostics;
     };
     diagnostics.extend(validate_group_component_purposes(
-        group_id, group, description,
+        group_id,
+        group,
+        description,
     ));
     diagnostics
 }
@@ -325,9 +326,7 @@ fn validate_group_component_purposes(
             diagnostics.push(Diagnostic::new(
                 "SCH020",
                 Severity::Error,
-                format!(
-                    "group {group_id} must list {reference} as a documentation member"
-                ),
+                format!("group {group_id} must list {reference} as a documentation member"),
             ));
         }
         validate_group_phrase(
@@ -650,9 +649,11 @@ mod tests {
         )
         .expect("profile parses");
         let diagnostics = profile.validate(&schematic);
-        assert!(!diagnostics
-            .iter()
-            .any(|item| item.code == "SCH017" || item.code == "SCH020"));
+        assert!(
+            !diagnostics
+                .iter()
+                .any(|item| item.code == "SCH017" || item.code == "SCH020")
+        );
     }
 
     #[test]
