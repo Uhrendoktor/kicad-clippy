@@ -127,7 +127,6 @@ pub fn run_builtin_rules(document: &SchematicDocument) -> RuleRun {
     }
 }
 
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PinAxis {
     Horizontal,
@@ -241,15 +240,13 @@ fn check_pin_orientation(root: &Node, source: &str, segments: &[Segment]) -> Vec
             let (Some(pin_x), Some(pin_y), Some(pin_angle)) = (
                 pin_at.get(1).and_then(|item| number(item, source)),
                 pin_at.get(2).and_then(|item| number(item, source)),
-                pin_at
-                    .get(3)
-                    .and_then(|item| number(item, source)),
+                pin_at.get(3).and_then(|item| number(item, source)),
             ) else {
                 continue;
             };
-            let Some((x_offset, y_offset)) = transform_symbol_point(
-                pin_x, pin_y, rotation, mirror.as_deref(),
-            ) else {
+            let Some((x_offset, y_offset)) =
+                transform_symbol_point(pin_x, pin_y, rotation, mirror.as_deref())
+            else {
                 continue;
             };
             let point = Point {
@@ -273,11 +270,9 @@ fn check_pin_orientation(root: &Node, source: &str, segments: &[Segment]) -> Vec
             if touching_segments.is_empty() {
                 continue;
             }
-            let has_aligned_segment = touching_segments.iter().any(|segment| {
-                match expected_axis {
-                    PinAxis::Horizontal => (segment.start.y - segment.end.y).abs() < 0.001,
-                    PinAxis::Vertical => (segment.start.x - segment.end.x).abs() < 0.001,
-                }
+            let has_aligned_segment = touching_segments.iter().any(|segment| match expected_axis {
+                PinAxis::Horizontal => (segment.start.y - segment.end.y).abs() < 0.001,
+                PinAxis::Vertical => (segment.start.x - segment.end.x).abs() < 0.001,
             });
             if has_aligned_segment {
                 continue;
@@ -311,9 +306,7 @@ fn cardinal_rotation(angle: f64) -> Option<i32> {
     let normalized = angle.rem_euclid(360.0);
     [(0.0, 0), (90.0, 90), (180.0, 180), (270.0, 270)]
         .into_iter()
-        .find_map(|(degrees, rotation)| {
-            ((normalized - degrees).abs() <= 0.001).then_some(rotation)
-        })
+        .find_map(|(degrees, rotation)| ((normalized - degrees).abs() <= 0.001).then_some(rotation))
 }
 
 fn transform_symbol_point(
@@ -337,11 +330,7 @@ fn transform_symbol_point(
     })
 }
 
-fn transform_symbol_vector(
-    angle: f64,
-    rotation: i32,
-    mirror: Option<&str>,
-) -> Option<(f64, f64)> {
+fn transform_symbol_vector(angle: f64, rotation: i32, mirror: Option<&str>) -> Option<(f64, f64)> {
     let radians = angle.to_radians();
     let (mut x, mut y) = (radians.cos(), radians.sin());
     match mirror {
@@ -1385,7 +1374,6 @@ mod tests {
             .expect("fixture parses")
     }
 
-
     const EMBEDDED_PIN: &str = r#"
         (lib_symbols
           (symbol "Device:Test"
@@ -1406,10 +1394,12 @@ mod tests {
         let doc = document(&format!(
             "{EMBEDDED_PIN} (wire (pts (xy 10 7.46) (xy 11.27 7.46)))"
         ));
-        assert!(run_builtin_rules(&doc)
-            .diagnostics
-            .iter()
-            .any(|item| item.code == "SCH005" && item.message.contains("J1 pin 1")));
+        assert!(
+            run_builtin_rules(&doc)
+                .diagnostics
+                .iter()
+                .any(|item| item.code == "SCH005" && item.message.contains("J1 pin 1"))
+        );
     }
 
     #[test]
@@ -1417,10 +1407,12 @@ mod tests {
         let doc = document(&format!(
             "{EMBEDDED_PIN} (wire (pts (xy 10 7.46) (xy 10 6.19)))"
         ));
-        assert!(!run_builtin_rules(&doc)
-            .diagnostics
-            .iter()
-            .any(|item| item.code == "SCH005"));
+        assert!(
+            !run_builtin_rules(&doc)
+                .diagnostics
+                .iter()
+                .any(|item| item.code == "SCH005")
+        );
     }
 
     #[test]
@@ -1441,10 +1433,12 @@ mod tests {
             (wire (pts (xy 10 12.54) (xy 10 13.81)))
             "#,
         );
-        assert!(!run_builtin_rules(&doc)
-            .diagnostics
-            .iter()
-            .any(|item| item.code == "SCH005"));
+        assert!(
+            !run_builtin_rules(&doc)
+                .diagnostics
+                .iter()
+                .any(|item| item.code == "SCH005")
+        );
     }
 
     #[test]
