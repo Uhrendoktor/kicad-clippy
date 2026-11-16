@@ -442,6 +442,7 @@ dependencies = [
  "kicad-clippy-core",
  "kiutils_sexpr",
  "thiserror",
+ "unescaper",
 ]
 
 [[package]]
@@ -457,7 +458,6 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
- "unescaper",
 ]
 
 [[package]]
