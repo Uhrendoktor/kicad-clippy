@@ -599,10 +599,7 @@ fn polyline_primitive_points(node: &Node, source: &str) -> Option<Vec<(f64, f64)
 fn arc_primitive_points(node: &Node, source: &str) -> Option<Vec<(f64, f64)>> {
     let point = |name| {
         let items = child_list(node, name).and_then(list_items)?;
-        Some((
-            number(items.get(1)?)?,
-            number(items.get(2)?)?,
-        ))
+        Some((number(items.get(1)?)?, number(items.get(2)?)?))
     };
     Some(sample_arc_through_three_points(
         point("start")?,
