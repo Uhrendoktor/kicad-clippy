@@ -74,7 +74,7 @@ pub struct SchematicPinFact {
 pub struct SchematicFieldFact {
     /// Placed-symbol reference.
     pub reference: String,
-    /// KiCad property name, such as `Reference`, `Value`, or `Footprint`.
+    /// `KiCad` property name, such as `Reference`, `Value`, or `Footprint`.
     pub name: String,
     /// Estimated visible glyph bounds as (left, top, right, bottom), in millimetres.
     pub bounds_mm: (f64, f64, f64, f64),
