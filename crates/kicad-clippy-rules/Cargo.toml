@@ -18,6 +18,8 @@ kiutils_sexpr = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+vector-text-core.workspace = true
+vector-text-newstroke.workspace = true
 
 [lints]
 workspace = true
