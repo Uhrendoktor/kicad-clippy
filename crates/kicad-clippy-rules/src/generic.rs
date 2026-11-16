@@ -11,11 +11,11 @@ use kicad_clippy_core::{
 };
 use kicad_clippy_parser::SchematicDocument;
 use kiutils_sexpr::{Atom, Node};
-use petgraph::unionfind::UnionFind;
 use kurbo::{
     Affine, Arc as CurveArc, PathEl, Point as CurvePoint, Shape, Vec2,
     flatten as flatten_curve_path,
 };
+use petgraph::unionfind::UnionFind;
 
 use crate::{RuleContext, RulePass};
 
