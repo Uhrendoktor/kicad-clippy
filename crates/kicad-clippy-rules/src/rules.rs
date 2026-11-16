@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use kicad_clippy_core::{
-    Diagnostic, RelatedLocation, RuleDescriptor, RuleLevel, RuleRegistry, Severity,
+    Diagnostic, RuleDescriptor, RuleLevel, RuleRegistry, Severity,
     SchematicLocation,
 };
 use kicad_clippy_parser::SchematicDocument;
@@ -11,9 +11,8 @@ use crate::{
     AdjacencyContract, CommonNetContract, DesignGroup, DesignProfile, PinPair, RuleConfig,
     RuleConfigError,
     model::{
-        Label, Point, Primitive, Rect, SchematicModel, Segment, TOL, head, direct_nodes,
-        line_hits_rect, midpoint, point_in_polygon, point_on_segment,
-        primitive_intersects_segment, segment_intersections, span,
+        Point, Rect, SchematicModel, Segment, TOL, atom_at, direct_nodes,
+        line_hits_rect, point_on_segment, primitive_intersects_segment, span,
     },
 };
 
