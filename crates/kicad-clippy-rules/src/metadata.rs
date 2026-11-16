@@ -88,7 +88,7 @@ pub struct ComponentIntent {
 }
 
 /// Component-specific text that must appear in the owning group description.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ComponentPurpose {
     /// Electrical function.
     pub function: Option<String>,
@@ -97,7 +97,7 @@ pub struct ComponentPurpose {
 }
 
 /// Source evidence for a functional schematic group.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct GroupEvidence {
     /// Document title or identifier.
     pub document: Option<String>,
@@ -110,7 +110,7 @@ pub struct GroupEvidence {
 }
 
 /// Profile-level description and membership contract for one functional group.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct GroupIntent {
     /// References belonging to the functional group.
     #[serde(default)]
@@ -391,6 +391,7 @@ fn validate_component_intent(reference: &str, intent: &ComponentIntent) -> Vec<D
             intent.decoupling.as_ref(),
         ));
     }
+    diagnostics.extend(validate_role_contract(reference, intent));
     if intent.kind == ComponentKind::Capacitor
         && !matches!(
             intent.role.0.as_str(),
