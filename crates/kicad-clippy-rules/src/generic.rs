@@ -294,11 +294,8 @@ fn pin_orientation_diagnostic(
         x: transform.origin.x + x_offset,
         y: transform.origin.y + y_offset,
     };
-    let (axis_x, axis_y) = transform_symbol_vector(
-        pin_angle,
-        transform.rotation,
-        transform.mirror.as_deref(),
-    )?;
+    let (axis_x, axis_y) =
+        transform_symbol_vector(pin_angle, transform.rotation, transform.mirror.as_deref())?;
     let expected_axis = if axis_x.abs() >= axis_y.abs() {
         PinAxis::Horizontal
     } else {
