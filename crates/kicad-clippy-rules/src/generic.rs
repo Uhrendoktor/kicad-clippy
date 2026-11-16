@@ -142,161 +142,197 @@ impl PinAxis {
     }
 }
 
+#[derive(Clone, Debug)]
+struct SymbolTransform {
+    reference: String,
+    origin: Point,
+    rotation: i32,
+    mirror: Option<String>,
+    unit: u32,
+    convert: u32,
+}
+
 fn check_pin_orientation(root: &Node, source: &str, segments: &[Segment]) -> Vec<Diagnostic> {
     let Some(library_symbols) = child_list(root, "lib_symbols") else {
         return Vec::new();
     };
-    let mut diagnostics = Vec::new();
+    children(root, "symbol")
+        .flat_map(|instance| {
+            check_instance_pin_orientation(instance, library_symbols, source, segments)
+        })
+        .collect()
+}
 
-    for instance in children(root, "symbol") {
-        let Some(lib_id) = child_list(instance, "lib_id")
-            .and_then(list_items)
+fn check_instance_pin_orientation(
+    instance: &Node,
+    library_symbols: &Node,
+    source: &str,
+    segments: &[Segment],
+) -> Vec<Diagnostic> {
+    let Some(transform) = read_symbol_transform(instance, source) else {
+        return Vec::new();
+    };
+    let Some(lib_id) = child_list(instance, "lib_id")
+        .and_then(list_items)
+        .and_then(|items| items.get(1))
+        .and_then(|item| atom_value(item, source))
+    else {
+        return Vec::new();
+    };
+    let Some(library_symbol) = children(library_symbols, "symbol").find(|definition| {
+        list_items(definition)
+            .and_then(|items| items.get(1))
+            .and_then(|item| atom_value(item, source))
+            .is_some_and(|name| name == lib_id)
+    }) else {
+        return Vec::new();
+    };
+
+    embedded_symbol_pins(library_symbol, transform.unit, transform.convert, source)
+        .into_iter()
+        .filter_map(|pin| pin_orientation_diagnostic(instance, pin, &transform, source, segments))
+        .collect()
+}
+
+fn read_symbol_transform(instance: &Node, source: &str) -> Option<SymbolTransform> {
+    let reference = children(instance, "property").find_map(|property| {
+        let items = list_items(property)?;
+        if atom_value(items.get(1)?, source)? == "Reference" {
+            atom_value(items.get(2)?, source)
+        } else {
+            None
+        }
+    })?;
+    if reference.starts_with('#') {
+        return None;
+    }
+    let at = child_list(instance, "at").and_then(list_items)?;
+    let origin = Point {
+        x: number(at.get(1)?, source)?,
+        y: number(at.get(2)?, source)?,
+    };
+    let rotation = cardinal_rotation(
+        at.get(3)
+            .and_then(|item| number(item, source))
+            .unwrap_or(0.0),
+    )?;
+    let unit = instance_integer(instance, "unit", source).unwrap_or(1);
+    let convert = instance_integer(instance, "convert", source).unwrap_or(1);
+    let mirror = child_list(instance, "mirror")
+        .and_then(list_items)
+        .and_then(|items| items.get(1))
+        .and_then(|item| atom_value(item, source));
+    if mirror
+        .as_ref()
+        .is_some_and(|value| value != "x" && value != "y")
+    {
+        return None;
+    }
+    Some(SymbolTransform {
+        reference,
+        origin,
+        rotation,
+        mirror,
+        unit,
+        convert,
+    })
+}
+
+fn instance_integer(instance: &Node, name: &str, source: &str) -> Option<u32> {
+    child_list(instance, name)
+        .and_then(list_items)
+        .and_then(|items| items.get(1))
+        .and_then(|item| atom_value(item, source))
+        .and_then(|value| value.parse().ok())
+}
+
+fn embedded_symbol_pins<'a>(
+    library_symbol: &'a Node,
+    unit: u32,
+    convert: u32,
+    source: &str,
+) -> Vec<&'a Node> {
+    let mut pin_nodes = Vec::new();
+    for sub_symbol in children(library_symbol, "symbol") {
+        let Some(name) = list_items(sub_symbol)
             .and_then(|items| items.get(1))
             .and_then(|item| atom_value(item, source))
         else {
             continue;
         };
-        let Some(reference) = children(instance, "property").find_map(|property| {
-            let items = list_items(property)?;
-            if atom_value(items.get(1)?, source)? == "Reference" {
-                atom_value(items.get(2)?, source)
-            } else {
-                None
-            }
-        }) else {
+        let Some((sub_unit, sub_convert)) = sub_symbol_unit_convert(&name) else {
             continue;
         };
-        if reference.starts_with('#') {
-            continue;
-        }
-        let Some(instance_at) = child_list(instance, "at").and_then(list_items) else {
-            continue;
-        };
-        let (Some(origin_x), Some(origin_y)) = (
-            instance_at.get(1).and_then(|item| number(item, source)),
-            instance_at.get(2).and_then(|item| number(item, source)),
-        ) else {
-            continue;
-        };
-        let rotation = instance_at
-            .get(3)
-            .and_then(|item| number(item, source))
-            .unwrap_or(0.0);
-        let Some(rotation) = cardinal_rotation(rotation) else {
-            continue;
-        };
-        let unit = child_list(instance, "unit")
-            .and_then(list_items)
-            .and_then(|items| items.get(1))
-            .and_then(|item| atom_value(item, source))
-            .and_then(|value| value.parse::<u32>().ok())
-            .unwrap_or(1);
-        let convert = child_list(instance, "convert")
-            .and_then(list_items)
-            .and_then(|items| items.get(1))
-            .and_then(|item| atom_value(item, source))
-            .and_then(|value| value.parse::<u32>().ok())
-            .unwrap_or(1);
-        let mirror = child_list(instance, "mirror")
-            .and_then(list_items)
-            .and_then(|items| items.get(1))
-            .and_then(|item| atom_value(item, source));
-        if mirror
-            .as_ref()
-            .is_some_and(|value| value != "x" && value != "y")
-        {
-            continue;
-        }
-
-        let Some(library_symbol) = children(library_symbols, "symbol").find(|definition| {
-            list_items(definition)
-                .and_then(|items| items.get(1))
-                .and_then(|item| atom_value(item, source))
-                .is_some_and(|name| name == lib_id)
-        }) else {
-            continue;
-        };
-
-        let mut pin_nodes = Vec::new();
-        for sub_symbol in children(library_symbol, "symbol") {
-            let Some(name) = list_items(sub_symbol)
-                .and_then(|items| items.get(1))
-                .and_then(|item| atom_value(item, source))
-            else {
-                continue;
-            };
-            let Some((sub_unit, sub_convert)) = sub_symbol_unit_convert(&name) else {
-                continue;
-            };
-            if (sub_unit == 0 || sub_unit == unit) && sub_convert == convert {
-                pin_nodes.extend(children(sub_symbol, "pin"));
-            }
-        }
-        if pin_nodes.is_empty() {
-            pin_nodes.extend(children(library_symbol, "pin"));
-        }
-
-        for pin in pin_nodes {
-            let Some(pin_at) = child_list(pin, "at").and_then(list_items) else {
-                continue;
-            };
-            let (Some(pin_x), Some(pin_y), Some(pin_angle)) = (
-                pin_at.get(1).and_then(|item| number(item, source)),
-                pin_at.get(2).and_then(|item| number(item, source)),
-                pin_at.get(3).and_then(|item| number(item, source)),
-            ) else {
-                continue;
-            };
-            let Some((x_offset, y_offset)) =
-                transform_symbol_point(pin_x, pin_y, rotation, mirror.as_deref())
-            else {
-                continue;
-            };
-            let point = Point {
-                x: origin_x + x_offset,
-                y: origin_y + y_offset,
-            };
-            let Some((axis_x, axis_y)) =
-                transform_symbol_vector(pin_angle, rotation, mirror.as_deref())
-            else {
-                continue;
-            };
-            let expected_axis = if axis_x.abs() >= axis_y.abs() {
-                PinAxis::Horizontal
-            } else {
-                PinAxis::Vertical
-            };
-            let touching_segments: Vec<_> = segments
-                .iter()
-                .filter(|segment| point_on_segment(point, segment))
-                .collect();
-            if touching_segments.is_empty() {
-                continue;
-            }
-            let has_aligned_segment = touching_segments.iter().any(|segment| match expected_axis {
-                PinAxis::Horizontal => (segment.start.y - segment.end.y).abs() < 0.001,
-                PinAxis::Vertical => (segment.start.x - segment.end.x).abs() < 0.001,
-            });
-            if has_aligned_segment {
-                continue;
-            }
-            let pin_number = child_list(pin, "number")
-                .and_then(list_items)
-                .and_then(|items| items.get(1))
-                .and_then(|item| atom_value(item, source))
-                .unwrap_or_else(|| "?".to_owned());
-            diagnostics.push(at_point(
-                "SCH005",
-                format!(
-                    "{reference} pin {pin_number} faces {} but its connected wire is not aligned with the pin",
-                    expected_axis.as_str()
-                ),
-                point,
-                span_of(instance),
-            ));
+        if (sub_unit == 0 || sub_unit == unit) && sub_convert == convert {
+            pin_nodes.extend(children(sub_symbol, "pin"));
         }
     }
-    diagnostics
+    if pin_nodes.is_empty() {
+        pin_nodes.extend(children(library_symbol, "pin"));
+    }
+    pin_nodes
+}
+
+fn pin_orientation_diagnostic(
+    instance: &Node,
+    pin: &Node,
+    transform: &SymbolTransform,
+    source: &str,
+    segments: &[Segment],
+) -> Option<Diagnostic> {
+    let at = child_list(pin, "at").and_then(list_items)?;
+    let pin_x = number(at.get(1)?, source)?;
+    let pin_y = number(at.get(2)?, source)?;
+    let pin_angle = number(at.get(3)?, source)?;
+    let (x_offset, y_offset) = transform_symbol_point(
+        pin_x,
+        pin_y,
+        transform.rotation,
+        transform.mirror.as_deref(),
+    )?;
+    let point = Point {
+        x: transform.origin.x + x_offset,
+        y: transform.origin.y + y_offset,
+    };
+    let (axis_x, axis_y) = transform_symbol_vector(
+        pin_angle,
+        transform.rotation,
+        transform.mirror.as_deref(),
+    )?;
+    let expected_axis = if axis_x.abs() >= axis_y.abs() {
+        PinAxis::Horizontal
+    } else {
+        PinAxis::Vertical
+    };
+    let touching_segments: Vec<_> = segments
+        .iter()
+        .filter(|segment| point_on_segment(point, segment))
+        .collect();
+    if touching_segments.is_empty() {
+        return None;
+    }
+    let aligned = touching_segments.iter().any(|segment| match expected_axis {
+        PinAxis::Horizontal => (segment.start.y - segment.end.y).abs() < 0.001,
+        PinAxis::Vertical => (segment.start.x - segment.end.x).abs() < 0.001,
+    });
+    if aligned {
+        return None;
+    }
+    let pin_number = child_list(pin, "number")
+        .and_then(list_items)
+        .and_then(|items| items.get(1))
+        .and_then(|item| atom_value(item, source))
+        .unwrap_or_else(|| "?".to_owned());
+    Some(at_point(
+        "SCH005",
+        format!(
+            "{} pin {pin_number} faces {} but its connected wire is not aligned with the pin",
+            transform.reference,
+            expected_axis.as_str()
+        ),
+        point,
+        span_of(instance),
+    ))
 }
 
 fn sub_symbol_unit_convert(name: &str) -> Option<(u32, u32)> {
