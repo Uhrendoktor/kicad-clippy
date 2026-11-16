@@ -19,7 +19,7 @@ It does **not** yet run custom schematic rules, load a TOML profile, emit SARIF,
 ## Requirements
 
 - Rust stable (edition 2024; minimum Rust 1.85).
-- KiCad CLI (`kicad-cli` or `kicad-cli-nightly`) for native ERC.
+- A KiCad CLI build with `sch erc` and JSON report support. The native-ERC CI test uses KiCad development nightly; older system packages may not include the schematic ERC subcommand.
 - A KiCad schematic file ending in `.kicad_sch`.
 
 The parser-only mode can be used without KiCad installed.
