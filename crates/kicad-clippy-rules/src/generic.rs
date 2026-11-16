@@ -1999,12 +1999,12 @@ fn check_label_topology(root: &Node, source: &str, segments: &[Segment]) -> Vec<
         points.push(segment.start);
         points.push(segment.end);
     }
-    points.extend(junctions);
+    points.extend(junctions.iter().copied());
     points.extend(labels.iter().map(|(_, _, point, _)| *point));
     points.sort_by_key(|point| point_key(*point));
     points.dedup_by_key(|point| point_key(*point));
 
-    let (component_ids, endpoint_degree) = wire_components(segments, &points);
+    let (component_ids, endpoint_degree) = wire_components(segments, &points, &junctions);
 
     let mut totals: BTreeMap<String, usize> = BTreeMap::new();
     let mut island_uses: BTreeMap<(String, usize), usize> = BTreeMap::new();
@@ -2069,6 +2069,7 @@ fn check_label_topology(root: &Node, source: &str, segments: &[Segment]) -> Vec<
 fn wire_components(
     segments: &[Segment],
     points: &[Point],
+    junctions: &[Point],
 ) -> (BTreeMap<String, usize>, BTreeMap<String, usize>) {
     let mut adjacency: BTreeMap<String, Vec<String>> = points
         .iter()
@@ -2083,6 +2084,10 @@ fn wire_components(
             .iter()
             .copied()
             .filter(|point| point_on_segment(*point, segment))
+            .filter(|point| {
+                is_endpoint(*point, *segment)
+                    || !has_unmarked_wire_endpoint(*point, *segment, segments, junctions)
+            })
             .collect();
         split.sort_by(|first, second| {
             if horizontal {
@@ -2132,6 +2137,21 @@ fn point_key(point: Point) -> String {
     format!("{:.3}:{:.3}", point.x, point.y)
 }
 
+fn has_unmarked_wire_endpoint(
+    point: Point,
+    segment: Segment,
+    segments: &[Segment],
+    junctions: &[Point],
+) -> bool {
+    let terminates_another_wire = segments
+        .iter()
+        .any(|other| !is_endpoint(point, *segment) && is_endpoint(point, *other));
+    terminates_another_wire
+        && !junctions
+            .iter()
+            .any(|junction| distance(*junction, point) < 0.001)
+}
+
 pub fn physical_wire_component_ids(facts: &SchematicFacts) -> BTreeMap<String, usize> {
     let segments: Vec<_> = facts
         .wires
@@ -2167,13 +2187,18 @@ pub fn physical_wire_component_ids(facts: &SchematicFacts) -> BTreeMap<String, u
         x: label.position_mm.0,
         y: label.position_mm.1,
     }));
-    points.extend(facts.junctions.iter().map(|junction| Point {
-        x: junction.0,
-        y: junction.1,
-    }));
+    let junctions: Vec<_> = facts
+        .junctions
+        .iter()
+        .map(|junction| Point {
+            x: junction.0,
+            y: junction.1,
+        })
+        .collect();
+    points.extend(junctions.iter().copied());
     points.sort_by_key(|point| point_key(*point));
     points.dedup_by_key(|point| point_key(*point));
-    wire_components(&segments, &points).0
+    wire_components(&segments, &points, &junctions).0
 }
 
 fn check_label_text_collisions(root: &Node, source: &str) -> Vec<Diagnostic> {
