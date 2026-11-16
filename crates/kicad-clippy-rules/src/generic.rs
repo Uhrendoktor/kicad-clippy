@@ -335,7 +335,7 @@ fn collect_pin_facts(root: &Node) -> Vec<SchematicPinFact> {
             continue;
         };
         for pin in embedded_symbol_pins(library_symbol, transform.unit, transform.convert) {
-            let Some(number) = child_list(pin, "number")
+            let Some(pin_number) = child_list(pin, "number")
                 .and_then(list_items)
                 .and_then(|items| items.get(1))
                 .and_then(atom_value)
@@ -360,7 +360,7 @@ fn collect_pin_facts(root: &Node) -> Vec<SchematicPinFact> {
             };
             pins.push(SchematicPinFact {
                 reference: transform.reference.clone(),
-                number,
+                number: pin_number,
                 position_mm: (transform.origin.x + x_offset, transform.origin.y + y_offset),
             });
         }
