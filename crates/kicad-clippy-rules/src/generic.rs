@@ -1949,6 +1949,24 @@ fn wire_overlaps_bounds(segment: Segment, bounds: Bounds, strict: bool) -> bool 
         return false;
     }
 
+    // Geo's line clip includes polygon boundaries. Preserve the old strict
+    // comparison at the tolerance edge before delegating interval clipping.
+    let axis = if horizontal {
+        segment.start.y
+    } else {
+        segment.start.x
+    };
+    let (lower, upper) = if horizontal {
+        (clipped_bounds.y, clipped_bounds.y + clipped_bounds.height)
+    } else {
+        (clipped_bounds.x, clipped_bounds.x + clipped_bounds.width)
+    };
+    if (strict && (axis <= lower || axis >= upper))
+        || (!strict && (axis < lower || axis > upper))
+    {
+        return false;
+    }
+
     let wire = MultiLineString::new(vec![LineString::new(vec![
         Coord {
             x: segment.start.x,
@@ -2675,11 +2693,18 @@ mod tests {
         assert!(!super::strict_line_hits_bounds(horizontal(0.0), bounds));
         assert!(super::strict_line_hits_bounds(horizontal(5.0), bounds));
         assert!(super::line_hits_bounds(horizontal(-0.0005), bounds));
+        assert!(super::line_hits_bounds(horizontal(-0.001), bounds));
         assert!(!super::line_hits_bounds(horizontal(-0.002), bounds));
+        assert!(!super::strict_line_hits_bounds(horizontal(0.001), bounds));
+        assert!(super::strict_line_hits_bounds(horizontal(0.0011), bounds));
+        assert!(!super::strict_line_hits_bounds(horizontal(9.999), bounds));
 
         assert!(super::line_hits_bounds(vertical(10.0), bounds));
         assert!(!super::strict_line_hits_bounds(vertical(10.0), bounds));
         assert!(super::strict_line_hits_bounds(vertical(5.0), bounds));
+        assert!(!super::strict_line_hits_bounds(vertical(0.001), bounds));
+        assert!(super::strict_line_hits_bounds(vertical(0.0011), bounds));
+        assert!(!super::strict_line_hits_bounds(vertical(9.999), bounds));
         assert!(!super::line_hits_bounds(
             super::Segment {
                 start: super::Point { x: -1.0, y: -1.0 },
