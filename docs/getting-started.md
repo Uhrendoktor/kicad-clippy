@@ -7,7 +7,7 @@ This guide builds and runs the current `kicad-clippy` CLI against a KiCad schema
 Install:
 
 - Rust stable with Cargo, rustfmt, and Clippy. The project uses Rust 2024 edition and declares Rust 1.85 as its minimum supported version.
-- KiCad, including `kicad-cli`, for native Electrical Rules Checker (ERC) execution.
+- A KiCad development build whose `kicad-cli` provides `sch erc` with JSON output. The standalone CI smoke test currently uses the KiCad development nightly; older distribution-packaged CLI builds may only provide schematic export.
 - Git to clone the repository.
 
 Confirm the tools are available:
