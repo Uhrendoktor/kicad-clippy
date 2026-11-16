@@ -32,6 +32,49 @@ For a decoupler, metadata distinguishes the IC pin from the capacitor terminal: 
 
 Strict mode requires metadata for every placed component except references explicitly listed in ignore_components. Metadata for references absent from the schematic is an error. Every declared component must include a useful function and rationale.
 
+## Role-specific connection contracts
+
+Besides the decoupling block, every component intent can carry two extensible maps:
+
+- connections: named electrical terminals/nodes mapped to a net name or a reference/pin such as U1.21.
+- attributes: role-specific facts such as interface_standard, orientation, expected_state, or a protected interface.
+
+The first required contracts are:
+
+| Component role | Required connection keys |
+| --- | --- |
+| Bulk capacitor | rail, return |
+| Resistor pull_up / pull_down | signal, rail |
+| Resistor divider | high, tap, low |
+| Resistor series / current_limit / current_sense | input, output |
+| Resistor gate_bias | gate, bias, return |
+| Resistor discharge / bleeder | storage, return |
+| Diode esd / clamp | protected, return |
+| Diode flyback | anode, cathode, switched_node, return |
+| Diode reverse_polarity | input, protected_output |
+| Inductor / ferrite bead | input, output |
+| Transistor / FET | control, switched_high, switched_low |
+| Connector | interface_standard attribute and at least one pin.N mapping |
+
+Example resistor metadata:
+
+    {
+      "kind": "resistor",
+      "role": "pull_up",
+      "function": "Pull SDA to the 3.3 V logic rail",
+      "rationale": "I2C uses open-drain signalling",
+      "connections": {
+        "signal": "SDA",
+        "rail": "3V3"
+      },
+      "attributes": {
+        "nominal_value": "4.7k",
+        "tolerance": "1%"
+      }
+    }
+
+These contracts make the metadata extensible by component family and variant. They validate declared intent completeness; proving the actual pin-to-net mapping still requires the exported KiCad netlist.
+
 ## Component role vocabulary
 
 | Kind | Common roles | Additional intent worth recording |
