@@ -201,7 +201,7 @@ fn check_pin_orientation(root: &Node, source: &str, segments: &[Segment]) -> Vec
             .and_then(list_items)
             .and_then(|items| items.get(1))
             .and_then(|item| atom_value(item, source));
-        if mirror.is_some_and(|value| value != "x" && value != "y") {
+        if mirror.as_ref().is_some_and(|value| value != "x" && value != "y") {
             continue;
         }
 
