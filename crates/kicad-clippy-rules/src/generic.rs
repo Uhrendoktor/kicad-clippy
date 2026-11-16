@@ -346,7 +346,6 @@ fn collect_pin_facts(root: &Node, source: &str) -> Vec<SchematicPinFact> {
     pins
 }
 
-
 fn collect_symbol_primitive_facts(root: &Node, source: &str) -> Vec<SchematicPrimitiveFact> {
     let Some(library_symbols) = child_list(root, "lib_symbols") else {
         return Vec::new();
@@ -508,7 +507,10 @@ fn polyline_primitive_points(node: &Node, source: &str) -> Option<Vec<(f64, f64)
     let points: Vec<_> = children(points, "xy")
         .filter_map(|point| {
             let items = list_items(point)?;
-            Some((number(items.get(1)?, source)?, number(items.get(2)?, source)?))
+            Some((
+                number(items.get(1)?, source)?,
+                number(items.get(2)?, source)?,
+            ))
         })
         .collect();
     (points.len() >= 2).then_some(points)
@@ -531,12 +533,8 @@ fn transform_primitive_points(
     points
         .iter()
         .map(|(x, y)| {
-            let (offset_x, offset_y) = transform_symbol_point(
-                *x,
-                *y,
-                transform.rotation,
-                transform.mirror.as_deref(),
-            )?;
+            let (offset_x, offset_y) =
+                transform_symbol_point(*x, *y, transform.rotation, transform.mirror.as_deref())?;
             Some((transform.origin.x + offset_x, transform.origin.y + offset_y))
         })
         .collect()
@@ -611,7 +609,6 @@ struct SymbolTransform {
     convert: u32,
 }
 
-
 fn check_wire_obstacles(
     root: &Node,
     source: &str,
@@ -621,9 +618,7 @@ fn check_wire_obstacles(
     let fields = collect_visible_field_bounds(root, source);
     let text_boxes: Vec<_> = children(root, "text_box")
         .enumerate()
-        .filter_map(|(index, node)| {
-            text_box_bounds(node, source).map(|bounds| (index, bounds))
-        })
+        .filter_map(|(index, node)| text_box_bounds(node, source).map(|bounds| (index, bounds)))
         .collect();
     let mut diagnostics = Vec::new();
 
@@ -636,7 +631,10 @@ fn check_wire_obstacles(
                 reported_symbols.insert(primitive.reference.clone());
                 diagnostics.push(at_segment(
                     "SCH013",
-                    &format!("wire {wire_index} penetrates symbol body {}", primitive.reference),
+                    &format!(
+                        "wire {wire_index} penetrates symbol body {}",
+                        primitive.reference
+                    ),
                     *segment,
                 ));
             }
@@ -681,10 +679,7 @@ fn check_wire_obstacles(
     diagnostics
 }
 
-fn collect_visible_field_bounds(
-    root: &Node,
-    source: &str,
-) -> Vec<(String, Bounds, ByteSpan)> {
+fn collect_visible_field_bounds(root: &Node, source: &str) -> Vec<(String, Bounds, ByteSpan)> {
     let mut fields = Vec::new();
     for symbol in children(root, "symbol") {
         let reference = children(symbol, "property").find_map(|property| {
@@ -780,17 +775,11 @@ fn wire_intersection_is_allowed_pin(
     reference: &str,
     pins: &[SchematicPinFact],
 ) -> bool {
-    (distance(point, wire.start) <= 0.001
-        && wire_endpoint_is_pin(wire.start, reference, pins))
-        || (distance(point, wire.end) <= 0.001
-            && wire_endpoint_is_pin(wire.end, reference, pins))
+    (distance(point, wire.start) <= 0.001 && wire_endpoint_is_pin(wire.start, reference, pins))
+        || (distance(point, wire.end) <= 0.001 && wire_endpoint_is_pin(wire.end, reference, pins))
 }
 
-fn wire_endpoint_is_pin(
-    endpoint: Point,
-    reference: &str,
-    pins: &[SchematicPinFact],
-) -> bool {
+fn wire_endpoint_is_pin(endpoint: Point, reference: &str, pins: &[SchematicPinFact]) -> bool {
     pins.iter().any(|pin| {
         pin.reference == reference
             && distance(
@@ -870,9 +859,8 @@ fn point_segment_distance(point: Point, start: Point, end: Point) -> f64 {
     if length_squared <= 0.000_001 {
         return distance(point, start);
     }
-    let projection = (((point.x - start.x) * dx + (point.y - start.y) * dy)
-        / length_squared)
-        .clamp(0.0, 1.0);
+    let projection =
+        (((point.x - start.x) * dx + (point.y - start.y) * dy) / length_squared).clamp(0.0, 1.0);
     distance(
         point,
         Point {
@@ -900,9 +888,8 @@ fn point_in_polygon(point: Point, polygon: &[(f64, f64)]) -> bool {
             return true;
         }
         if (first.y > point.y) != (second.y > point.y) {
-            let crossing_x = (second.x - first.x) * (point.y - first.y)
-                / (second.y - first.y)
-                + first.x;
+            let crossing_x =
+                (second.x - first.x) * (point.y - first.y) / (second.y - first.y) + first.x;
             if point.x < crossing_x {
                 inside = !inside;
             }
@@ -2624,11 +2611,9 @@ mod tests {
                 .iter()
                 .any(|item| item.code == "SCH013" && item.message.contains("intermediate pin U3.2"))
         );
-        assert!(
-            diagnostics
-                .iter()
-                .any(|item| item.code == "SCH013" && item.message.contains("symbol field U3 Reference"))
-        );
+        assert!(diagnostics.iter().any(
+            |item| item.code == "SCH013" && item.message.contains("symbol field U3 Reference")
+        ));
         assert!(
             diagnostics
                 .iter()
