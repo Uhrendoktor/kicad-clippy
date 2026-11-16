@@ -680,6 +680,10 @@ pub enum MetadataError {
 #[cfg(test)]
 mod tests {
     #![allow(clippy::expect_used)]
+    use std::collections::BTreeMap;
+
+    use kicad_clippy_erc::{Netlist, PinRef};
+
     use super::{ComponentKind, ComponentRole, LintProfile, ProfileMode};
 
     #[test]
@@ -753,6 +757,56 @@ mod tests {
         let diagnostics = profile.validate(&schematic);
         assert!(diagnostics.iter().any(|item| item.code == "SCH017"));
         assert!(diagnostics.iter().any(|item| item.code == "SCH020"));
+    }
+
+    fn decoupling_netlist(capacitor_target_net: &str) -> Netlist {
+        Netlist {
+            pin_nets: BTreeMap::from([
+                (
+                    PinRef {
+                        reference: "U1".to_owned(),
+                        pin: "21".to_owned(),
+                    },
+                    "VREG_1V2".to_owned(),
+                ),
+                (
+                    PinRef {
+                        reference: "C1".to_owned(),
+                        pin: "1".to_owned(),
+                    },
+                    capacitor_target_net.to_owned(),
+                ),
+                (
+                    PinRef {
+                        reference: "C1".to_owned(),
+                        pin: "2".to_owned(),
+                    },
+                    "GND".to_owned(),
+                ),
+            ]),
+            ..Netlist::default()
+        }
+    }
+
+    #[test]
+    fn decoupling_terminals_are_checked_against_exported_pin_nets() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "decoupling-test.kicad_sch",
+            r#"(kicad_sch (symbol (lib_id "Device:C") (property "Reference" "C1" (at 1 1 0))) (symbol (lib_id "MyLib:U") (property "Reference" "U1" (at 2 2 0))))"#,
+        )
+        .expect("fixture parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"components":{"C1":{"kind":"capacitor","role":"decoupling","function":"Local bypass","rationale":"Minimize loop area","decoupling":{"target_pin":"U1.21","target_terminal":"1","return_terminal":"2","return_net":"GND","cluster":"U1.VREG_1V2"}}}}"#,
+        )
+        .expect("profile parses");
+        assert!(!profile
+            .validate_with_netlist(&schematic, Some(&decoupling_netlist("VREG_1V2")))
+            .iter()
+            .any(|item| item.code == "SCH022"));
+        assert!(profile
+            .validate_with_netlist(&schematic, Some(&decoupling_netlist("VBUS")))
+            .iter()
+            .any(|item| item.code == "SCH022"));
     }
 
     #[test]
