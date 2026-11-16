@@ -4,7 +4,7 @@
 
 A Rust-based linter for KiCad schematic files. `kicad-clippy` combines repository-specific schematic quality rules with KiCad's native Electrical Rules Checker (ERC). Native ERC remains the authority for electrical-rule findings; custom rules add layout, annotation, documentation, and project-profile checks.
 
-> **Project status: early development.** The Rust implementation now runs the migrated schematic rules (SCH001, SCH002, SCH003, SCH008, SCH011, SCH019) and supports project component-intent profiles (SCH020–SCH022). The remaining historical rules are tracked explicitly in the rule status table. See [scope and roadmap](docs/roadmap.md).
+> **Project status: early development.** The Rust implementation now runs the migrated schematic rules (SCH001, SCH002, SCH003, SCH008, SCH011, SCH018, SCH019) and supports project component-intent profiles (SCH020–SCH022). The remaining historical rules are tracked explicitly in the rule status table. See [scope and roadmap](docs/roadmap.md).
 
 ## What it does today
 
