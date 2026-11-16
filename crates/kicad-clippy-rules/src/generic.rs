@@ -30,9 +30,16 @@ pub struct ComponentFact {
     pub reference: String,
 }
 
+#[derive(Clone, Debug)]
+pub struct TextBoxFact {
+    pub uuid: String,
+    pub text: String,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct SchematicFacts {
     pub components: Vec<ComponentFact>,
+    pub text_boxes: Vec<TextBoxFact>,
 }
 
 impl SchematicFacts {
@@ -80,7 +87,6 @@ impl SchematicFacts {
         });
         facts
     }
-}
 }
 
 /// Result of the built-in rule pass.
