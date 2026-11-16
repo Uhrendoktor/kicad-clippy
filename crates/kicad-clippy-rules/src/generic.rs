@@ -1941,13 +1941,13 @@ fn wire_overlaps_bounds(segment: Segment, bounds: Bounds, strict: bool) -> bool 
     let clipped_bounds = if horizontal {
         Bounds {
             y: bounds.y + inset,
-            height: bounds.height - 2.0 * inset,
+            height: 2.0_f64.mul_add(-inset, bounds.height),
             ..bounds
         }
     } else {
         Bounds {
             x: bounds.x + inset,
-            width: bounds.width - 2.0 * inset,
+            width: 2.0_f64.mul_add(-inset, bounds.width),
             ..bounds
         }
     };
