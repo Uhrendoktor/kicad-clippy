@@ -40,7 +40,7 @@ kicad-clippy-core ------ source spans, diagnostics, typed built-in IDs,
 
 ## Parser and source locations
 
-The parser uses `kiutils_sexpr` as a lossless concrete-syntax-tree parser. `SchematicDocument` retains a `SourceFile` and the CST. The original text is not canonicalized or rewritten. Parser nodes already carry UTF-8 byte spans, so a second generic CST/span framework would duplicate rather than simplify the current boundary.
+The parser uses `kiutils_sexpr` as a lossless concrete-syntax-tree parser. `SchematicDocument` retains a `SourceFile` and the CST. The original text is not canonicalized or rewritten. Parser nodes already carry UTF-8 byte spans, so a second generic CST/span framework would duplicate rather than simplify the current boundary. The typed alternatives and their current gaps are evaluated in [architecture research](architecture-research.md); none currently replaces all rule-critical fact extraction without introducing a second parser or losing source provenance.
 
 The CST's `raw` buffer and token spans remain unchanged. At the `SchematicDocument` boundary, the parser adapter uses each quoted atom's original span to pass the token contents through `unescaper`, replacing the parser's quoted payload with the semantic KiCad string. This keeps exact source reproduction available through `CstDocument::to_lossless_string()` while ensuring rule passes see real newlines, quotes and literal backslashes. The rules layer no longer slices source text or threads a source argument through its geometry and annotation helpers just to decode strings.
 
@@ -73,11 +73,11 @@ Built-in IDs are represented in Rust by `BuiltinRuleId` (SCH001–SCH022). Conve
 The implementation delegates generic algorithms rather than maintaining parallel versions:
 
 - `geo` supplies planar intersection predicates, sweep-line wire intersection enumeration, point/segment distance, polygon containment and rectangle intersection. The rule layer still applies KiCad-specific tolerances, explicit-junction handling and pin exceptions.
-- `kurbo` supplies adaptive curve flattening for cubic Bézier and circular-arc paths plus affine matrix operations for placed-symbol rotation and mirroring. The rules layer retains KiCad's local-to-sheet coordinate convention and applies the symbol origin.
+- `kurbo` supplies adaptive curve flattening for cubic Bézier and circular-arc paths, affine transforms for placed-symbol rotation/mirroring, and transformed rectangle bounds for cardinal text rotations. The rules layer retains KiCad's local-to-sheet coordinate convention and applies the symbol/text anchor and justification.
 - `miette` supplies terminal diagnostic labels and source excerpts. `Diagnostic` remains the JSON-compatible project schema, and its adapter is confined to the CLI.
 - `unescaper` decodes quoted S-expression text once at the parser boundary from original byte-span slices; the raw CST buffer and source spans are preserved.
 - `petgraph::UnionFind` supplies the generic disjoint-set structure for physical wire components; the rules layer alone decides which schematic points are joined by KiCad wire/junction semantics.
-- `vector-text-newstroke` supplies KiCad's actual stroke-font glyph geometry and advance metrics; the rules layer applies its existing font-size and text-box policy margins. A narrow adapter extracts total advance from renderer output because the crate does not publish a separate measurement API.
+- `vector-text-newstroke` supplies KiCad's actual stroke-font glyph geometry, advance and vertical extent. A narrow adapter extracts the advance from a trailing known glyph and the height from rendered point extents because the crate does not publish a separate measurement API. The rules layer retains font sizing, multiline line spacing and text-box padding policy.
 
 Do not add a second source renderer or geometry kernel. Introduce spatial indexing only after profiling demonstrates a remaining candidate-scan bottleneck.
 
