@@ -112,9 +112,8 @@ impl RuleEngine {
         let Some(root) = document.cst().nodes.first() else {
             return RuleRun::default();
         };
-        let source = document.source().text();
-        let segments = generic::collect_segments(root, source);
-        let junctions = generic::collect_points(root, source, "junction");
+        let segments = generic::collect_segments(root);
+        let junctions = generic::collect_points(root, "junction");
         let facts = SchematicFacts::from_document_with_geometry(document, &segments, &junctions);
         let context = RuleContext {
             document,
