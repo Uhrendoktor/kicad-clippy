@@ -9,15 +9,15 @@ use kiutils_sexpr::{Atom, Node};
 use crate::{RuleContext, RulePass};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct Point {
-    pub(crate) x: f64,
-    pub(crate) y: f64,
+pub struct Point {
+    pub x: f64,
+    pub y: f64,
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Segment {
-    pub(crate) start: Point,
-    pub(crate) end: Point,
+pub struct Segment {
+    pub start: Point,
+    pub end: Point,
     pub(crate) span: ByteSpan,
 }
 
@@ -143,6 +143,7 @@ pub struct SchematicFacts {
 }
 
 impl SchematicFacts {
+    #[must_use]
     pub fn from_document(document: &SchematicDocument) -> Self {
         let Some(root) = document.cst().nodes.first() else {
             return Self::default();
@@ -820,7 +821,7 @@ pub struct RuleRun {
 }
 
 /// Built-in geometry and pin-placement analysis pass.
-pub(crate) struct BuiltinGeometryPass;
+pub struct BuiltinGeometryPass;
 
 impl RulePass for BuiltinGeometryPass {
     fn name(&self) -> &'static str {
@@ -833,7 +834,7 @@ impl RulePass for BuiltinGeometryPass {
 }
 
 /// Built-in physical-wire topology and label analysis pass.
-pub(crate) struct BuiltinLabelPass;
+pub struct BuiltinLabelPass;
 
 impl RulePass for BuiltinLabelPass {
     fn name(&self) -> &'static str {
@@ -846,7 +847,7 @@ impl RulePass for BuiltinLabelPass {
 }
 
 /// Built-in annotation and visible-field layout analysis pass.
-pub(crate) struct BuiltinAnnotationPass;
+pub struct BuiltinAnnotationPass;
 
 impl RulePass for BuiltinAnnotationPass {
     fn name(&self) -> &'static str {
@@ -864,7 +865,7 @@ pub fn run_builtin_rules(document: &SchematicDocument) -> RuleRun {
     crate::RuleEngine::with_builtins().run(document)
 }
 
-pub(crate) fn run_geometry_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
+pub fn run_geometry_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
     let Some(root) = context.document().cst().nodes.first() else {
         return Vec::new();
     };
@@ -881,7 +882,7 @@ pub(crate) fn run_geometry_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> 
     diagnostics
 }
 
-pub(crate) fn run_label_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
+pub fn run_label_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
     let Some(root) = context.document().cst().nodes.first() else {
         return Vec::new();
     };
@@ -893,7 +894,7 @@ pub(crate) fn run_label_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
     diagnostics
 }
 
-pub(crate) fn run_annotation_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
+pub fn run_annotation_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
     let Some(root) = context.document().cst().nodes.first() else {
         return Vec::new();
     };
@@ -2274,6 +2275,7 @@ fn has_unmarked_wire_endpoint(point: Point, segments: &[Segment], junctions: &[P
             .any(|junction| distance(*junction, point) < 0.001)
 }
 
+#[must_use]
 pub fn physical_wire_component_ids(facts: &SchematicFacts) -> BTreeMap<String, usize> {
     let segments: Vec<_> = facts
         .wires
@@ -2722,7 +2724,7 @@ const fn span_of(node: &Node) -> ByteSpan {
     }
 }
 
-pub(crate) fn collect_segments(root: &Node, source: &str) -> Vec<Segment> {
+pub fn collect_segments(root: &Node, source: &str) -> Vec<Segment> {
     let mut segments = Vec::new();
     walk(root, &mut |node| {
         if head(node) != Some("wire") {
@@ -2751,7 +2753,7 @@ pub(crate) fn collect_segments(root: &Node, source: &str) -> Vec<Segment> {
     segments
 }
 
-pub(crate) fn collect_points(root: &Node, source: &str, name: &str) -> Vec<Point> {
+pub fn collect_points(root: &Node, source: &str, name: &str) -> Vec<Point> {
     let mut points = Vec::new();
     walk(root, &mut |node| {
         if head(node) == Some(name) {
