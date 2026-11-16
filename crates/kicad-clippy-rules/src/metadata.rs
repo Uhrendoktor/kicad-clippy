@@ -2427,9 +2427,10 @@ mod tests {
         )
         .expect("profile parses");
         assert!(
-            profile.validate(&schematic).iter().any(|item| {
-                item.code == "SCH009" && item.message.contains("member pin R1.1")
-            })
+            profile
+                .validate(&schematic)
+                .iter()
+                .any(|item| { item.code == "SCH009" && item.message.contains("member pin R1.1") })
         );
     }
 
@@ -2453,11 +2454,9 @@ mod tests {
             r#"{"schema_version":1,"groups":{"power-input":{"members":["R1"],"description_uuid":"description-1","frame_uuid":"frame-1","evidence":{"document":"Power input design note","page":2,"figure":"Figure 1"}}}}"#,
         )
         .expect("profile parses");
-        assert!(
-            profile.validate(&schematic).iter().any(|item| {
-                item.code == "SCH009" && item.message.contains("member field R1 Value")
-            })
-        );
+        assert!(profile.validate(&schematic).iter().any(|item| {
+            item.code == "SCH009" && item.message.contains("member field R1 Value")
+        }));
     }
 
     #[test]
@@ -2481,13 +2480,11 @@ mod tests {
             r#"{"schema_version":1,"groups":{"power-input":{"members":["R1"],"description_uuid":"description-1","frame_uuid":"frame-1","evidence":{"document":"Power input design note","page":2,"figure":"Figure 1"}}}}"#,
         )
         .expect("profile parses");
-        assert!(
-            profile.validate(&schematic).iter().any(|item| {
-                item.code == "SCH009"
-                    && item.message.contains("description text box")
-                    && item.message.contains("extends outside frame")
-            })
-        );
+        assert!(profile.validate(&schematic).iter().any(|item| {
+            item.code == "SCH009"
+                && item.message.contains("description text box")
+                && item.message.contains("extends outside frame")
+        }));
     }
 
     #[test]
