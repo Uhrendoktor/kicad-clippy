@@ -301,6 +301,16 @@ pub struct ComponentMetadata {
     pub return_net: Option<String>,
     /// Shared cluster key, usually the same as `associated_pin`.
     pub cluster: Option<String>,
+    /// Other components that form a typed multi-part function, such as a MOSFET pair.
+    #[serde(default)]
+    pub related_components: Vec<String>,
+    /// Expected net on the first/forward terminal for resistor/diode/switch contracts.
+    pub from_net: Option<String>,
+    /// Expected net on the second/return terminal for resistor/diode/switch contracts.
+    pub to_net: Option<String>,
+    /// Nets protected by a clamp/ESD component.
+    #[serde(default)]
+    pub protected_nets: Vec<String>,
     /// Maximum connection-terminal to target-pin distance in millimetres.
     pub max_distance_mm: Option<f64>,
 }
