@@ -107,7 +107,7 @@ Common-pin groups can express the complementary case where several pins must car
 
 For each pin, SCH004 requires a resolved embedded pin coordinate attached to a physical wire and a matching label on that pin's physical wire component. `wire_connected` additionally requires all listed pins to share one wire-only component. `single_label` requires exactly one matching label across the resolved components. Label names never create graph edges, so separately wired islands with matching labels do not satisfy a wire-connected group.
 
-This is an opt-in, pairwise contract. It does not automatically infer which pins should be directly connected, replace KiCad ERC, or yet provide the more general common-net/single-label group contract from the historical checker. Unsupported embedded pin transforms and pins that cannot be resolved are reported as unresolved instead of being guessed.
+These are opt-in profile contracts. `direct_wire_pairs` require the named pin pair to be attached to and joined by one physical wire-only component; a local or hierarchical label cannot substitute for that path. `common_pin_groups` require each listed pin to have a physical wire attachment and the expected label on its wire component. Set `wire_connected` to require all pins in the group to share one physical wire-only component, and `single_label` to require exactly one matching label across the resolved components. These checks do not infer all intended connections automatically or replace KiCad ERC. Unsupported embedded pin transforms and pins that cannot be resolved are reported as unresolved rather than guessed.
 
 ## Component role vocabulary
 
@@ -128,7 +128,7 @@ This is an opt-in, pairwise contract. It does not automatically infer which pins
 - SCH014: explicit component pin-to-net contracts against exported KiCad netlist membership, including connector `pin.N` maps.
 - SCH022: decoupling metadata completeness, valid target-pin notation, distinct capacitor terminals, and consistent return net and cluster for capacitors assigned to the same IC pin.
 
-The netlist adapter now verifies actual target-pin and return-terminal net membership for decoupling capacitors. Direct wire-only connectivity, physical proximity, and shared-copper geometry still require the physical wire graph and transformed symbol-pin geometry; matching labels or metadata strings alone are not evidence of a direct physical connection.
+The netlist adapter verifies actual target-pin and return-terminal net membership for decoupling capacitors. SCH004 separately checks profile-declared direct-wire pairs and common-pin groups against the physical wire graph built from transformed embedded-symbol pin coordinates. The graph never uses matching label names as connectivity edges. Automatic inference of every physical connection, physical proximity constraints, and shared-copper geometry analysis remain pending.
 
 ## Functional group documentation
 
