@@ -17,6 +17,14 @@ struct Segment {
     span: ByteSpan,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct Bounds {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+
 #[derive(Clone, Debug)]
 pub struct ComponentFact {
     pub reference: String,
@@ -76,8 +84,11 @@ pub fn run_builtin_rules(document: &SchematicDocument) -> RuleRun {
     let source = document.source().text();
     let segments = collect_segments(root, source);
     let junctions = collect_points(root, source, "junction");
-    let mut diagnostics = check_wire_geometry(&segments, &junctions);
+    let mut diagnostics = check_wire_geometry(root, source, &segments, &junctions);
     diagnostics.extend(check_label_topology(root, source, &segments));
+    diagnostics.extend(check_label_wire_clearance(root, source, &segments));
+    diagnostics.extend(check_text_box_layout(root, source, &segments));
+    diagnostics.extend(check_block_annotation_structure(root, source));
     diagnostics.extend(check_label_kind_consistency(root, source));
 
     RuleRun {
@@ -87,8 +98,13 @@ pub fn run_builtin_rules(document: &SchematicDocument) -> RuleRun {
     }
 }
 
-fn check_wire_geometry(segments: &[Segment], junctions: &[Point]) -> Vec<Diagnostic> {
-    let mut diagnostics = Vec::new();
+fn check_wire_geometry(
+    root: &Node,
+    source: &str,
+    segments: &[Segment],
+    junctions: &[Point],
+) -> Vec<Diagnostic> {
+    let mut diagnostics = collect_invalid_wire_diagnostics(root, source);
     for (index, segment) in segments.iter().enumerate() {
         if distance(segment.start, segment.end) < 0.001 {
             diagnostics.push(at_segment("SCH001", "wire has zero length", *segment));
@@ -102,6 +118,14 @@ fn check_wire_geometry(segments: &[Segment], junctions: &[Point]) -> Vec<Diagnos
             ));
         }
         for other in segments.iter().skip(index + 1) {
+            if collinear_overlap(*segment, *other) {
+                diagnostics.push(at_segment(
+                    "SCH001",
+                    "collinear wire segments overlap",
+                    *segment,
+                ));
+                continue;
+            }
             if let Some(point) = intersection(*segment, *other) {
                 let first_end = is_endpoint(point, *segment);
                 let second_end = is_endpoint(point, *other);
@@ -144,6 +168,396 @@ fn check_wire_geometry(segments: &[Segment], junctions: &[Point]) -> Vec<Diagnos
         }
     }
     diagnostics
+}
+
+fn collect_invalid_wire_diagnostics(root: &Node, source: &str) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+    walk(root, &mut |node| {
+        if head(node) != Some("wire") {
+            return;
+        }
+        let point_count = child_list(node, "pts")
+            .map(|points| children(points, "xy").count())
+            .unwrap_or_default();
+        if point_count != 2 {
+            diagnostics.push(at_segment(
+                "SCH001",
+                "wire must have exactly two endpoints",
+                Segment {
+                    start: Point { x: 0.0, y: 0.0 },
+                    end: Point { x: 0.0, y: 0.0 },
+                    span: span_of(node),
+                },
+            ));
+        }
+    });
+    let _ = source;
+    diagnostics
+}
+
+fn collinear_overlap(first: Segment, second: Segment) -> bool {
+    let first_horizontal = (first.start.y - first.end.y).abs() < 0.001;
+    let second_horizontal = (second.start.y - second.end.y).abs() < 0.001;
+    if first_horizontal != second_horizontal {
+        return false;
+    }
+    let overlap = if first_horizontal && (first.start.y - second.start.y).abs() < 0.001 {
+        first.start.x.max(first.end.x).min(second.start.x.max(second.end.x))
+            - first.start.x.min(first.end.x).max(second.start.x.min(second.end.x))
+    } else if !first_horizontal && (first.start.x - second.start.x).abs() < 0.001 {
+        first.start.y.max(first.end.y).min(second.start.y.max(second.end.y))
+            - first.start.y.min(first.end.y).max(second.start.y.min(second.end.y))
+    } else {
+        0.0
+    };
+    overlap > 0.001
+}
+
+fn check_label_wire_clearance(
+    root: &Node,
+    source: &str,
+    segments: &[Segment],
+) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+    for (kind, label, _point, span, node) in collect_label_nodes(root, source) {
+        if !matches!(kind.as_str(), "label" | "hierarchical_label") {
+            continue;
+        }
+        let Some(bounds) = text_visual_bounds(&label, node, source) else {
+            continue;
+        };
+        if segments.iter().any(|segment| strict_line_hits_bounds(*segment, bounds)) {
+            diagnostics.push(at_span(
+                "SCH003",
+                format!("{kind} {label:?} overlaps a wire's visible glyph area"),
+                span,
+            ));
+        }
+    }
+    diagnostics
+}
+
+fn check_text_box_layout(root: &Node, source: &str, segments: &[Segment]) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+    let free_text = collect_nodes(root, "text");
+    for node in free_text {
+        diagnostics.push(at_span(
+            "SCH008",
+            "free-standing annotation text is forbidden; use a KiCad text box",
+            span_of(node),
+        ));
+    }
+
+    let mut boxes: Vec<(String, Bounds, ByteSpan)> = Vec::new();
+    for (index, node) in collect_nodes(root, "text_box").into_iter().enumerate() {
+        let items = match list_items(node) {
+            Some(items) => items,
+            None => continue,
+        };
+        let label = items
+            .get(1)
+            .and_then(|item| atom_value(item, source))
+            .unwrap_or_default();
+        let at = child_list(node, "at").and_then(|item| list_items(item));
+        let size = child_list(node, "size").and_then(|item| list_items(item));
+        let margins = child_list(node, "margins").and_then(|item| list_items(item));
+        let font_size = child_list(node, "effects")
+            .and_then(|effects| child_list(effects, "font"))
+            .and_then(|font| child_list(font, "size"))
+            .and_then(|font| list_items(font))
+            .and_then(|font| font.get(1))
+            .and_then(|item| number(item, source));
+        let (Some(at), Some(size), Some(margins), Some(font_size)) =
+            (at, size, margins, font_size)
+        else {
+            diagnostics.push(at_span(
+                "SCH008",
+                format!("text_box {index} is missing geometry, margins or font"),
+                span_of(node),
+            ));
+            continue;
+        };
+        let pad_values: Option<Vec<f64>> = margins
+            .iter()
+            .skip(1)
+            .map(|item| number(item, source))
+            .collect();
+        let Some(pads) = pad_values else {
+            diagnostics.push(at_span(
+                "SCH008",
+                format!("text_box {index} has invalid margins"),
+                span_of(node),
+            ));
+            continue;
+        };
+        if pads.len() != 4 || pads.iter().any(|pad| (pad - 1.27).abs() > 0.001) {
+            diagnostics.push(at_span(
+                "SCH008",
+                format!("text_box {index} must have 1.27 mm equal padding"),
+                span_of(node),
+            ));
+            continue;
+        }
+        let (Some(x), Some(y), Some(width), Some(height)) = (
+            at.get(1).and_then(|item| number(item, source)),
+            at.get(2).and_then(|item| number(item, source)),
+            size.get(1).and_then(|item| number(item, source)),
+            size.get(2).and_then(|item| number(item, source)),
+        ) else {
+            diagnostics.push(at_span(
+                "SCH008",
+                format!("text_box {index} has invalid dimensions"),
+                span_of(node),
+            ));
+            continue;
+        };
+        let (required_width, required_height) = required_text_box_size(&label, font_size, pads[0]);
+        if width + 0.001 < required_width || height + 0.001 < required_height {
+            diagnostics.push(at_span(
+                "SCH008",
+                format!(
+                    "text_box {index} is undersized ({width:.2}x{height:.2} mm); needs {required_width:.2}x{required_height:.2} mm"
+                ),
+                span_of(node),
+            ));
+        }
+        let stroke_width = child_list(node, "stroke")
+            .and_then(|stroke| child_list(stroke, "width"))
+            .and_then(|width| list_items(width))
+            .and_then(|width| width.get(1))
+            .and_then(|item| number(item, source))
+            .unwrap_or(-1.0);
+        if stroke_width <= 0.0 && width + 0.001 < required_width + 10.16 {
+            diagnostics.push(at_span(
+                "SCH008",
+                format!(
+                    "unbordered text_box {index} needs at least {:.2} mm width for reliable single-line rendering",
+                    required_width + 10.16
+                ),
+                span_of(node),
+            ));
+        }
+        boxes.push((
+            format!("text_box-{index}"),
+            Bounds { x, y, width, height },
+            span_of(node),
+        ));
+    }
+    for (index, (first_id, first, first_span)) in boxes.iter().enumerate() {
+        for (second_id, second, _second_span) in boxes.iter().skip(index + 1) {
+            if bounds_overlap(*first, *second) {
+                diagnostics.push(at_span(
+                    "SCH008",
+                    format!("text boxes overlap: {first_id} and {second_id}"),
+                    *first_span,
+                ));
+            }
+        }
+        if segments.iter().any(|segment| line_hits_bounds(*segment, *first)) {
+            diagnostics.push(at_span(
+                "SCH008",
+                format!("a wire penetrates text box {first_id}"),
+                *first_span,
+            ));
+        }
+    }
+    diagnostics
+}
+
+fn check_block_annotation_structure(root: &Node, source: &str) -> Vec<Diagnostic> {
+    collect_nodes(root, "text_box")
+        .into_iter()
+        .filter_map(|node| {
+            let items = list_items(node)?;
+            let value = atom_value(items.get(1)?, source)?;
+            let multiline = value.contains('\n') || value.contains('\r');
+            let stroke_width = child_list(node, "stroke")
+                .and_then(|stroke| child_list(stroke, "width"))
+                .and_then(|width| list_items(width))
+                .and_then(|width| width.get(1))
+                .and_then(|item| number(item, source))
+                .unwrap_or(-1.0);
+            (multiline && stroke_width <= 0.0).then(|| {
+                at_span(
+                    "SCH011",
+                    "multiline annotation must be a single line or have its own visible box outline",
+                    span_of(node),
+                )
+            })
+        })
+        .collect()
+}
+
+fn collect_nodes<'a>(root: &'a Node, name: &'a str) -> Vec<&'a Node> {
+    let mut nodes = Vec::new();
+    walk(root, &mut |node| {
+        if head(node) == Some(name) {
+            nodes.push(node);
+        }
+    });
+    nodes
+}
+
+fn collect_label_nodes<'a>(
+    root: &'a Node,
+    source: &str,
+) -> Vec<(String, String, Point, ByteSpan, &'a Node)> {
+    let mut labels = Vec::new();
+    for node in collect_nodes(root, "label")
+        .into_iter()
+        .chain(collect_nodes(root, "hierarchical_label"))
+        .chain(collect_nodes(root, "global_label"))
+    {
+        let Some(items) = list_items(node) else {
+            continue;
+        };
+        let Some(label) = items.get(1).and_then(|item| atom_value(item, source)) else {
+            continue;
+        };
+        let Some(point) = point_from_at(node, source) else {
+            continue;
+        };
+        let Some(kind) = head(node) else {
+            continue;
+        };
+        labels.push((kind.to_owned(), label, point, span_of(node), node));
+    }
+    labels
+}
+
+fn text_visual_bounds(value: &str, node: &Node, source: &str) -> Option<Bounds> {
+    let at = child_list(node, "at").and_then(list_items)?;
+    let effects = child_list(node, "effects");
+    let font_size = effects
+        .and_then(|effects| child_list(effects, "font"))
+        .and_then(|font| child_list(font, "size"))
+        .and_then(list_items)
+        .and_then(|font| font.get(1))
+        .and_then(|item| number(item, source))
+        .unwrap_or(1.0);
+    let width = (value.chars().map(char_advance).sum::<f64>() * font_size * 1.12)
+        .max(font_size);
+    let height = font_size * 1.55;
+    let x = number(at.get(1)?, source)?;
+    let y = number(at.get(2)?, source)?;
+    let angle = at.get(3).and_then(|item| number(item, source)).unwrap_or(0.0);
+    let justify = effects.and_then(|effects| child_list(effects, "justify"));
+    let justify_items = justify.and_then(list_items);
+    let justify_name = justify_items
+        .and_then(|items| items.get(1))
+        .and_then(|item| atom_value(item, source))
+        .unwrap_or_else(|| "center".to_owned());
+    let left = match justify_name.as_str() {
+        "left" => x,
+        "right" => x - width,
+        _ => x - width / 2.0,
+    };
+    if (angle - 90.0).abs() < 0.001 {
+        let top = if justify_name == "left" {
+            y - width
+        } else if justify_name == "right" {
+            y
+        } else {
+            y - width / 2.0
+        };
+        return Some(Bounds { x: x - height / 2.0, y: top, width: height, height: width });
+    }
+    if (angle - 270.0).abs() < 0.001 {
+        let top = if justify_name == "left" {
+            y
+        } else if justify_name == "right" {
+            y - width
+        } else {
+            y - width / 2.0
+        };
+        return Some(Bounds { x: x - height / 2.0, y: top, width: height, height: width });
+    }
+    if justify_items
+        .and_then(|items| items.get(2))
+        .and_then(|item| atom_value(item, source))
+        .is_some_and(|value| value == "top")
+    {
+        return Some(Bounds { x: left, y, width, height });
+    }
+    Some(Bounds { x: left, y: y - height, width, height })
+}
+
+fn char_advance(character: char) -> f64 {
+    if "ilI.,:;!|'".contains(character) {
+        0.30
+    } else if "MW@%&".contains(character) {
+        0.90
+    } else if character.is_whitespace() {
+        0.34
+    } else if character.is_uppercase() || character.is_ascii_digit() {
+        0.64
+    } else {
+        0.55
+    }
+}
+
+fn required_text_box_size(value: &str, font_size: f64, padding: f64) -> (f64, f64) {
+    let lines: Vec<_> = value.lines().collect();
+    let line_count = lines.len().max(1);
+    let max_width = lines
+        .iter()
+        .map(|line| line.chars().map(char_advance).sum::<f64>())
+        .fold(0.0_f64, f64::max);
+    (
+        2.0 * padding + (max_width * font_size * 1.30).max(font_size),
+        2.0 * padding + line_count as f64 * font_size * 1.55,
+    )
+}
+
+fn bounds_overlap(first: Bounds, second: Bounds) -> bool {
+    (first.x + first.width).min(second.x + second.width) - first.x.max(second.x) > 0.001
+        && (first.y + first.height).min(second.y + second.height) - first.y.max(second.y) > 0.001
+}
+
+fn line_hits_bounds(segment: Segment, bounds: Bounds) -> bool {
+    let tolerance = 0.001;
+    let horizontal = (segment.start.y - segment.end.y).abs() < tolerance;
+    if horizontal {
+        bounds.y - tolerance <= segment.start.y
+            && segment.start.y <= bounds.y + bounds.height + tolerance
+            && segment.start.x.max(segment.end.x).min(bounds.x + bounds.width)
+                - segment.start.x.min(segment.end.x).max(bounds.x)
+                > tolerance
+    } else if (segment.start.x - segment.end.x).abs() < tolerance {
+        bounds.x - tolerance <= segment.start.x
+            && segment.start.x <= bounds.x + bounds.width + tolerance
+            && segment.start.y.max(segment.end.y).min(bounds.y + bounds.height)
+                - segment.start.y.min(segment.end.y).max(bounds.y)
+                > tolerance
+    } else {
+        false
+    }
+}
+
+fn strict_line_hits_bounds(segment: Segment, bounds: Bounds) -> bool {
+    let tolerance = 0.001;
+    let horizontal = (segment.start.y - segment.end.y).abs() < tolerance;
+    if horizontal {
+        bounds.y + tolerance < segment.start.y
+            && segment.start.y < bounds.y + bounds.height - tolerance
+            && segment.start.x.max(segment.end.x).min(bounds.x + bounds.width)
+                - segment.start.x.min(segment.end.x).max(bounds.x)
+                > tolerance
+    } else if (segment.start.x - segment.end.x).abs() < tolerance {
+        bounds.x + tolerance < segment.start.x
+            && segment.start.x < bounds.x + bounds.width - tolerance
+            && segment.start.y.max(segment.end.y).min(bounds.y + bounds.height)
+                - segment.start.y.min(segment.end.y).max(bounds.y)
+                > tolerance
+    } else {
+        false
+    }
+}
+
+fn at_span(code: &str, message: impl Into<String>, span: ByteSpan) -> Diagnostic {
+    let mut diagnostic = Diagnostic::new(code, Severity::Error, message);
+    diagnostic.span = Some(span);
+    diagnostic
 }
 
 fn check_label_topology(root: &Node, source: &str, segments: &[Segment]) -> Vec<Diagnostic> {
