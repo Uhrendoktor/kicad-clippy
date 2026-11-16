@@ -35,13 +35,13 @@ Levels are:
 
 ## Execution model
 
-The intended runtime has one immutable `RuleContext` containing the parsed document, semantic facts, geometry indexes, physical connectivity graph, optional native netlist, and validated project profile. Rules declare which analysis products they require. The engine computes each shared analysis once and schedules rules in deterministic phase order.
+The in-process rule engine is implemented. `RuleEngine` collects schematic facts, wire segments and junctions once, builds an immutable `RuleContext`, then executes registered `RulePass` implementations in stable name order. Duplicate pass names are rejected. The built-in checks currently run as geometry/pin-placement, label/topology, and annotation/field passes. A pass may emit diagnostics for several rule IDs; a rule ID does not need its own one-to-one implementation module.
 
-Suggested phases:
+The current shared context exposes the parsed document, schematic facts, segments and junctions. The longer-term analysis phases remain:
 
-1. **Syntax:** facts available directly from the lossless CST and source spans.
+1. **Syntax:** facts from the lossless CST and source byte spans.
 2. **Semantic:** resolved symbols, UUIDs, hierarchy, fields and embedded library definitions.
-3. **Geometry:** normalized primitives, bounds, pin anchors and spatial candidate indexes.
+3. **Geometry:** library-backed primitives and predicates, with KiCad-specific tolerances and pin anchors.
 4. **Connectivity:** explicit-junction physical wire components and native netlist membership.
 5. **Project contracts:** profile-declared component intent, groups, frames and evidence.
 
@@ -49,7 +49,7 @@ Rules receive immutable context and return normalized diagnostics. They do not m
 
 ## External extensions
 
-Do not introduce dynamic libraries or WASM rule packs yet. First stabilize the in-process trait, context, option schema, diagnostic compatibility policy, and resource limits. Third-party extensions should be an optional later layer over that stable API, not a dependency of built-in checks.
+The in-process `RulePass` extension point is available to Rust crates that can link to `kicad-clippy-rules`. It is not yet a versioned third-party compatibility contract: the trait/context, options, analysis dependencies, diagnostic compatibility policy and resource limits still need formalization. Dynamic libraries or WASM rule packs remain deferred until those contracts are stable.
 
 ## Tests required for each rule
 
