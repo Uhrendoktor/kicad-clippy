@@ -18,17 +18,17 @@ struct Segment {
 }
 
 #[derive(Clone, Debug)]
-pub(super) struct ComponentFact {
-    pub(super) reference: String,
+pub struct ComponentFact {
+    pub reference: String,
 }
 
 #[derive(Clone, Debug, Default)]
-pub(super) struct SchematicFacts {
-    pub(super) components: Vec<ComponentFact>,
+pub struct SchematicFacts {
+    pub components: Vec<ComponentFact>,
 }
 
 impl SchematicFacts {
-    pub(super) fn from_document(document: &SchematicDocument) -> Self {
+    pub fn from_document(document: &SchematicDocument) -> Self {
         let mut facts = Self::default();
         let Some(root) = document.cst().nodes.first() else {
             return facts;
