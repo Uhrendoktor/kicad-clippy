@@ -93,7 +93,7 @@ These contracts make the metadata extensible by component family and variant. Th
 - SCH021: strict-mode completeness, unknown component references and capacitor role sanity.
 - SCH022: decoupling metadata completeness, valid target-pin notation, distinct capacitor terminals, and consistent return net and cluster for capacitors assigned to the same IC pin.
 
-The first metadata implementation validates intent declarations. It does not yet prove physical connectivity, pin-to-net membership, proximity or shared copper. Those checks must use the KiCad-exported netlist plus physical wire graph and transformed symbol-pin geometry; matching labels or metadata strings alone are not evidence of a physical connection.
+The netlist adapter now verifies actual target-pin and return-terminal net membership for decoupling capacitors. Direct wire-only connectivity, physical proximity, and shared-copper geometry still require the physical wire graph and transformed symbol-pin geometry; matching labels or metadata strings alone are not evidence of a direct physical connection.
 
 ## Functional group documentation
 
