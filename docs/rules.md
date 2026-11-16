@@ -29,7 +29,7 @@ The historical checker defines stable IDs SCH001–SCH020. The Rust migration pr
 
 KiCad native ERC remains the electrical authority. Rust rules must not duplicate pin-type conflicts, undriven power pins, or native unconnected-pin analysis. Rules requiring exact pin-to-net facts must consume KiCad's exported netlist, not infer connectivity from equal label strings.
 
-SCH004 is an opt-in physical contract for profile-declared `direct_wire_pairs` and `common_pin_groups`. It verifies resolved pin anchors are attached to wire segments; direct pairs and groups with `wire_connected` must belong to the same wire-only component. Common-pin groups also require the expected label on each pin component and can require exactly one matching label; labels do not create graph edges. It does not infer all physical-net intent automatically or replace native ERC.
+SCH004 is an opt-in physical contract for profile-declared `direct_wire_pairs` and `common_pin_groups`. It verifies resolved pin anchors are attached to wire segments; direct pairs and groups with `wire_connected` must belong to the same wire-only component. Common-pin groups also require the expected label on each pin component and can require exactly one matching label. With `netlist_connected`, they additionally require every listed pin to resolve to the same exported KiCad net. Labels do not create physical graph edges. It does not infer all physical-net intent automatically or replace native ERC.
 
 SCH004’s physical graph follows SCH001’s explicit-junction contract: an endpoint touching the interior of another segment is not joined to that segment unless a junction marker is present. End-to-end wire segments remain connected without an additional junction marker.
 

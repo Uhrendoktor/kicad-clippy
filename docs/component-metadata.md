@@ -100,12 +100,13 @@ Common-pin groups can express the complementary case where several pins must car
           "name": "VBUS",
           "pins": ["J1.1", "U1.4", "R8.1"],
           "wire_connected": true,
+          "netlist_connected": true,
           "single_label": true
         }
       ]
     }
 
-For each pin, SCH004 requires a resolved embedded pin coordinate attached to a physical wire and a matching label on that pin's physical wire component. `wire_connected` additionally requires all listed pins to share one wire-only component. `single_label` requires exactly one matching label across the resolved components. Label names never create graph edges, so separately wired islands with matching labels do not satisfy a wire-connected group.
+For each pin, SCH004 requires a resolved embedded pin coordinate attached to a physical wire and a matching label on that pin's physical wire component. `wire_connected` additionally requires all listed pins to share one wire-only component. `single_label` requires exactly one matching label across the resolved components. Set `netlist_connected` to additionally require all listed pins to resolve to the same net in the KiCad-exported netlist; this is separate from `wire_connected`, which checks physical wire-only topology. When `netlist_connected` is requested through the profile API without a netlist, SCH004 emits a warning that the logical check was not performed. Label names never create graph edges, so separately wired islands with matching labels do not satisfy a wire-connected group.
 
 These are opt-in profile contracts. `direct_wire_pairs` require the named pin pair to be attached to and joined by one physical wire-only component; a local or hierarchical label cannot substitute for that path. `common_pin_groups` require each listed pin to have a physical wire attachment and the expected label on its wire component. Set `wire_connected` to require all pins in the group to share one physical wire-only component, and `single_label` to require exactly one matching label across the resolved components. These checks do not infer all intended connections automatically or replace KiCad ERC. Unsupported embedded pin transforms and pins that cannot be resolved are reported as unresolved rather than guessed.
 
