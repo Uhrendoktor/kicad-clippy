@@ -7,7 +7,8 @@ mod model;
 mod rules;
 
 pub use config::{
-    AdjacencyContract, CommonNetContract, ComponentPurpose, DesignGroup, DesignProfile,
-    DocumentEvidence, PinPair, RuleConfig, RuleConfigError,
+    AdjacencyContract, CommonNetContract, ComponentKind, ComponentMetadata, ComponentPurpose,
+    ComponentRole, DesignGroup, DesignProfile, DocumentEvidence, PinPair, RuleConfig,
+    RuleConfigError,
 };
 pub use rules::{available_rules, run_rules};
