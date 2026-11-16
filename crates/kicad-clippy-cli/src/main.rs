@@ -261,8 +261,7 @@ fn render_diagnostic(
         let _ = write!(
             message,
             " at ({:.3} mm, {:.3} mm)",
-            location.x_mm,
-            location.y_mm
+            location.x_mm, location.y_mm
         );
     }
     if let Some(sheet_path) = &diagnostic.sheet_path {
@@ -310,8 +309,7 @@ fn render_diagnostic(
                     let _ = write!(
                         description,
                         " at ({:.3} mm, {:.3} mm)",
-                        location.x_mm,
-                        location.y_mm
+                        location.x_mm, location.y_mm
                     );
                 }
                 description
