@@ -79,7 +79,7 @@ pub struct ComponentIntent {
     /// Named electrical connections, expressed as nets or reference/pin pairs.
     #[serde(default)]
     pub connections: BTreeMap<String, String>,
-    /// Component pin number mapped to its expected KiCad net name.
+    /// Component pin number mapped to its expected `KiCad` net name.
     #[serde(default)]
     pub pin_nets: BTreeMap<String, String>,
     /// Extensible role-specific attributes such as interface standard or orientation.
