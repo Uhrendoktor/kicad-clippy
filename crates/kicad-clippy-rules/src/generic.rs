@@ -9,6 +9,9 @@ use geo::{
     Point as GeoPoint, Polygon, Rect as GeoRect, algorithm::sweep::{Cross, Intersections},
     line_intersection,
 };
+use kurbo::{
+    Arc as CurveArc, PathEl, Point as CurvePoint, Shape, Vec2, flatten as flatten_curve_path,
+};
 use kiutils_sexpr::{Atom, Node};
 
 use crate::{RuleContext, RulePass};
@@ -619,6 +622,30 @@ fn arc_primitive_points(node: &Node, source: &str) -> Option<Vec<(f64, f64)>> {
     ))
 }
 
+const CURVE_FLATTEN_TOLERANCE_MM: f64 = 0.01;
+
+fn flattened_curve_points(
+    path: impl IntoIterator<Item = PathEl>,
+    start: (f64, f64),
+    end: (f64, f64),
+) -> Vec<(f64, f64)> {
+    let mut points = Vec::new();
+    flatten_curve_path(path, CURVE_FLATTEN_TOLERANCE_MM, |element| {
+        if let PathEl::MoveTo(point) | PathEl::LineTo(point) = element {
+            points.push((point.x, point.y));
+        }
+    });
+
+    if points.is_empty() {
+        return vec![start, end];
+    }
+    points[0] = start;
+    if let Some(last) = points.last_mut() {
+        *last = end;
+    }
+    points
+}
+
 fn bezier_primitive_points(node: &Node, source: &str) -> Option<Vec<(f64, f64)>> {
     let points_node = child_list(node, "pts")?;
     let coordinates: Option<Vec<_>> = children(points_node, "xy")
@@ -630,94 +657,18 @@ fn bezier_primitive_points(node: &Node, source: &str) -> Option<Vec<(f64, f64)>>
             ))
         })
         .collect();
-    let coordinates = coordinates?;
-    if coordinates.len() != 4 {
+    let [start, control_one, control_two, end] = coordinates?.as_slice() else {
         return None;
-    }
-    let start = *coordinates.first()?;
-    let control_one = *coordinates.get(1)?;
-    let control_two = *coordinates.get(2)?;
-    let end = *coordinates.get(3)?;
-    let mut samples = Vec::with_capacity(32);
-    samples.push(start);
-    append_cubic_bezier_samples(start, control_one, control_two, end, 0, &mut samples);
-    Some(samples)
-}
-
-fn append_cubic_bezier_samples(
-    start: (f64, f64),
-    control_one: (f64, f64),
-    control_two: (f64, f64),
-    end: (f64, f64),
-    depth: u8,
-    samples: &mut Vec<(f64, f64)>,
-) {
-    const MAX_DEPTH: u8 = 12;
-    const MAX_FLATNESS_MM: f64 = 0.01;
-
-    if depth >= MAX_DEPTH
-        || cubic_bezier_flatness(start, control_one, control_two, end) <= MAX_FLATNESS_MM
-    {
-        samples.push(end);
-        return;
-    }
-
-    let start_to_control_one = midpoint_pair(start, control_one);
-    let control_one_to_control_two = midpoint_pair(control_one, control_two);
-    let control_two_to_end = midpoint_pair(control_two, end);
-    let left_inner = midpoint_pair(start_to_control_one, control_one_to_control_two);
-    let right_inner = midpoint_pair(control_one_to_control_two, control_two_to_end);
-    let split_point = midpoint_pair(left_inner, right_inner);
-
-    append_cubic_bezier_samples(
-        start,
-        start_to_control_one,
-        left_inner,
-        split_point,
-        depth + 1,
-        samples,
-    );
-    append_cubic_bezier_samples(
-        split_point,
-        right_inner,
-        control_two_to_end,
-        end,
-        depth + 1,
-        samples,
-    );
-}
-
-fn cubic_bezier_flatness(
-    start: (f64, f64),
-    control_one: (f64, f64),
-    control_two: (f64, f64),
-    end: (f64, f64),
-) -> f64 {
-    let start = Point {
-        x: start.0,
-        y: start.1,
     };
-    let control_one = Point {
-        x: control_one.0,
-        y: control_one.1,
-    };
-    let control_two = Point {
-        x: control_two.0,
-        y: control_two.1,
-    };
-    let end = Point { x: end.0, y: end.1 };
-    point_segment_distance(control_one, start, end).max(point_segment_distance(
-        control_two,
-        start,
-        end,
-    ))
-}
-
-const fn midpoint_pair(first: (f64, f64), second: (f64, f64)) -> (f64, f64) {
-    (
-        f64::midpoint(first.0, second.0),
-        f64::midpoint(first.1, second.1),
-    )
+    let path = [
+        PathEl::MoveTo(CurvePoint::new(start.0, start.1)),
+        PathEl::CurveTo(
+            CurvePoint::new(control_one.0, control_one.1),
+            CurvePoint::new(control_two.0, control_two.1),
+            CurvePoint::new(end.0, end.1),
+        ),
+    ];
+    Some(flattened_curve_points(path, *start, *end))
 }
 
 fn sample_arc_through_three_points(
@@ -725,11 +676,6 @@ fn sample_arc_through_three_points(
     mid: (f64, f64),
     end: (f64, f64),
 ) -> Vec<(f64, f64)> {
-    const MAX_STEP_RADIANS: f64 = std::f64::consts::PI / 36.0;
-    const MAX_SAGITTA_MM: f64 = 0.01;
-    const MAX_SEGMENT_COUNT: usize = 4096;
-    const MAX_SEGMENT_COUNT_F64: f64 = 4096.0;
-
     let determinant = 2.0
         * end.0.mul_add(
             start.1 - mid.1,
@@ -769,31 +715,14 @@ fn sample_arc_through_three_points(
         return vec![start, mid, end];
     }
 
-    let sagitta_step = if radius > MAX_SAGITTA_MM {
-        2.0 * (1.0 - MAX_SAGITTA_MM / radius).clamp(-1.0, 1.0).acos()
-    } else {
-        MAX_STEP_RADIANS
-    };
-    let step = sagitta_step
-        .min(MAX_STEP_RADIANS)
-        .max(sweep.abs() / MAX_SEGMENT_COUNT_F64)
-        .max(1.0e-6);
-    let mut points = Vec::with_capacity(32);
-    points.push(start);
-    let mut traversed = step;
-    for _ in 1..MAX_SEGMENT_COUNT {
-        if traversed >= sweep.abs() {
-            break;
-        }
-        let angle = sweep.signum().mul_add(traversed, start_angle);
-        points.push((
-            radius.mul_add(angle.cos(), center_x),
-            radius.mul_add(angle.sin(), center_y),
-        ));
-        traversed += step;
-    }
-    points.push(end);
-    points
+    let arc = CurveArc::new(
+        CurvePoint::new(center_x, center_y),
+        Vec2::new(radius, radius),
+        start_angle,
+        sweep,
+        0.0,
+    );
+    flattened_curve_points(arc.path_elements(CURVE_FLATTEN_TOLERANCE_MM), start, end)
 }
 
 fn transform_primitive_points(
