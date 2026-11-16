@@ -1105,10 +1105,10 @@ mod tests {
     #[test]
     fn rule_catalogue_preserves_sch_ids_and_adds_research_rules() -> Result<(), Box<dyn Error>> {
         let registry = super::available_rules()?;
-        for number in 1..=23 {
+        for number in 1..=25 {
             assert!(registry.get(&format!("SCH{number:03}")).is_some());
         }
-        assert_eq!(registry.len(), 23);
+        assert_eq!(registry.len(), 25);
         Ok(())
     }
 
@@ -1128,6 +1128,28 @@ mod tests {
         let document = SchematicDocument::from_text("fixture.kicad_sch", source)?;
         let diagnostics = run_rules(&document, &RuleConfig::default())?;
         assert!(diagnostics.iter().any(|item| item.code == "SCH022"));
+        Ok(())
+    }
+
+    #[test]
+    fn strict_mode_requires_metadata_for_each_capacitor() -> Result<(), Box<dyn Error>> {
+        let source = "(kicad_sch (version 20250101) (generator eeschema) (uuid \"root\") (symbol \"Device:C\" (lib_id \"Device:C\") (at 10 10 0) (property \"Reference\" \"C1\" (at 10 12 0) (effects (font (size 1 1)))) (property \"Value\" \"100nF\" (at 10 8 0) (effects (font (size 1 1))))) (title_block (title \"Fixture\")))";
+        let document = SchematicDocument::from_text("fixture.kicad_sch", source)?;
+        let mut config = RuleConfig::default();
+        config.preset = "strict".to_owned();
+        let diagnostics = run_rules(&document, &config)?;
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "SCH024" && item.message.contains("C1")
+        }));
+        Ok(())
+    }
+
+    #[test]
+    fn recommended_mode_does_not_require_component_metadata() -> Result<(), Box<dyn Error>> {
+        let source = "(kicad_sch (version 20250101) (generator eeschema) (uuid \"root\") (symbol \"Device:C\" (lib_id \"Device:C\") (at 10 10 0) (property \"Reference\" \"C1\" (at 10 12 0) (effects (font (size 1 1)))) (property \"Value\" \"100nF\" (at 10 8 0) (effects (font (size 1 1))))) (title_block (title \"Fixture\")))";
+        let document = SchematicDocument::from_text("fixture.kicad_sch", source)?;
+        let diagnostics = run_rules(&document, &RuleConfig::default())?;
+        assert!(!diagnostics.iter().any(|item| item.code == "SCH024"));
         Ok(())
     }
 
