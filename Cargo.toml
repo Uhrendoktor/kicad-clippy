@@ -4,6 +4,7 @@ members = [
     "crates/kicad-clippy-core",
     "crates/kicad-clippy-parser",
     "crates/kicad-clippy-erc",
+    "crates/kicad-clippy-rules",
     "crates/kicad-clippy-cli",
 ]
 default-members = ["crates/kicad-clippy-cli"]
