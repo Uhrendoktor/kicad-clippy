@@ -52,6 +52,14 @@ pub struct SchematicFrameFact {
     pub bounds_mm: (f64, f64, f64, f64),
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct SchematicWireFact {
+    /// First endpoint of the wire segment in millimetres.
+    pub start_mm: (f64, f64),
+    /// Second endpoint of the wire segment in millimetres.
+    pub end_mm: (f64, f64),
+}
+
 #[derive(Clone, Debug)]
 pub struct TextBoxFact {
     /// UUID of the schematic text box.
@@ -72,6 +80,8 @@ pub struct SchematicFacts {
     pub groups: Vec<SchematicGroupFact>,
     /// Top-level rectangular frames on the schematic sheet.
     pub frames: Vec<SchematicFrameFact>,
+    /// Two-ended wire segments used by frame-scoped layout rules.
+    pub wires: Vec<SchematicWireFact>,
 }
 
 impl SchematicFacts {
@@ -85,6 +95,7 @@ impl SchematicFacts {
             text_boxes: collect_text_box_facts(root, source),
             groups: collect_group_facts(root, source),
             frames: collect_frame_facts(root, source),
+            wires: collect_wire_facts(root, source),
         }
     }
 }
@@ -202,6 +213,17 @@ fn collect_frame_facts(root: &Node, source: &str) -> Vec<SchematicFrameFact> {
                     start.1.max(end.1),
                 ),
             })
+        })
+        .collect()
+}
+
+ 
+fn collect_wire_facts(root: &Node, source: &str) -> Vec<SchematicWireFact> {
+    collect_segments(root, source)
+        .into_iter()
+        .map(|segment| SchematicWireFact {
+            start_mm: (segment.start.x, segment.start.y),
+            end_mm: (segment.end.x, segment.end.y),
         })
         .collect()
 }
