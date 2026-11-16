@@ -80,6 +80,9 @@ pub struct CommonPinNetGroup {
     /// Require all listed pins to share one continuous wire-only component.
     #[serde(default)]
     pub wire_connected: bool,
+    /// Require all listed pins to resolve to the same net in KiCad's exported netlist.
+    #[serde(default)]
+    pub netlist_connected: bool,
     /// Require exactly one matching label across the resolved wire components.
     #[serde(default)]
     pub single_label: bool,
@@ -256,7 +259,11 @@ impl LintProfile {
             &self.forbidden_direct_wire_labels,
             &facts,
         ));
-        diagnostics.extend(validate_common_pin_groups(&self.common_pin_groups, &facts));
+        diagnostics.extend(validate_common_pin_groups(
+            &self.common_pin_groups,
+            &facts,
+            netlist,
+        ));
         diagnostics
     }
 
@@ -437,6 +444,7 @@ fn validate_forbidden_direct_wire_labels(
 fn validate_common_pin_groups(
     groups: &[CommonPinNetGroup],
     facts: &SchematicFacts,
+    netlist: Option<&Netlist>,
 ) -> Vec<Diagnostic> {
     if groups.is_empty() {
         return Vec::new();
@@ -445,6 +453,7 @@ fn validate_common_pin_groups(
     let mut diagnostics = Vec::new();
     for group in groups {
         diagnostics.extend(validate_common_pin_group(group, facts, &component_ids));
+        diagnostics.extend(validate_common_pin_group_netlist(group, netlist));
     }
     diagnostics
 }
@@ -480,6 +489,61 @@ fn validate_common_pin_group(
                 ),
             ));
         }
+    }
+    diagnostics
+}
+
+fn validate_common_pin_group_netlist(
+    group: &CommonPinNetGroup,
+    netlist: Option<&Netlist>,
+) -> Vec<Diagnostic> {
+    if !group.netlist_connected {
+        return Vec::new();
+    }
+    let Some(netlist) = netlist else {
+        return vec![Diagnostic::new(
+            "SCH004",
+            Severity::Warning,
+            format!(
+                "common pin group {:?} requests netlist_connected but no exported KiCad netlist was supplied",
+                group.name
+            ),
+        )];
+    };
+
+    let mut nets = BTreeSet::new();
+    let mut diagnostics = Vec::new();
+    for pin_ref in &group.pins {
+        let Some((reference, pin_number)) = pin_ref.rsplit_once('.') else {
+            continue;
+        };
+        if !valid_pin_ref(pin_ref) {
+            continue;
+        }
+        match netlist.net_for_pin(reference, pin_number) {
+            Some(net_name) => {
+                nets.insert(net_name.to_owned());
+            }
+            None => diagnostics.push(Diagnostic::new(
+                "SCH004",
+                Severity::Error,
+                format!(
+                    "{pin_ref} in common pin group {:?} is absent from the exported KiCad netlist",
+                    group.name
+                ),
+            )),
+        }
+    }
+    if nets.len() > 1 {
+        diagnostics.push(Diagnostic::new(
+            "SCH004",
+            Severity::Error,
+            format!(
+                "pins in common pin group {:?} resolve to different exported KiCad nets: {}",
+                group.name,
+                nets.into_iter().collect::<Vec<_>>().join(", ")
+            ),
+        ));
     }
     diagnostics
 }
@@ -1898,6 +1962,126 @@ mod tests {
                 .validate(&schematic)
                 .iter()
                 .any(|item| item.code == "SCH004" && item.message.contains("share exactly one"))
+        );
+    }
+
+    fn common_pin_netlist(
+        first_net: Option<&str>,
+        second_net: Option<&str>,
+    ) -> Netlist {
+        let mut pin_nets = BTreeMap::new();
+        if let Some(net) = first_net {
+            pin_nets.insert(
+                PinRef {
+                    reference: "U1".to_owned(),
+                    pin: "1".to_owned(),
+                },
+                net.to_owned(),
+            );
+        }
+        if let Some(net) = second_net {
+            pin_nets.insert(
+                PinRef {
+                    reference: "R1".to_owned(),
+                    pin: "1".to_owned(),
+                },
+                net.to_owned(),
+            );
+        }
+        Netlist {
+            pin_nets,
+            ..Netlist::default()
+        }
+    }
+
+    #[test]
+    fn common_pin_group_can_require_one_exported_kicad_net() {
+        let schematic = direct_wire_schematic(
+            r#"
+            (wire (pts (xy 10 10) (xy 20 10)))
+            (label "SENSE" (at 10 10 0) (effects (font (size 1 1))))
+            "#,
+        );
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"common_pin_groups":[{"name":"SENSE","pins":["U1.1","R1.1"],"netlist_connected":true}]}"#,
+        )
+        .expect("profile parses");
+        let diagnostics = profile.validate_with_netlist(
+            &schematic,
+            Some(&common_pin_netlist(Some("SENSE"), Some("SENSE"))),
+        );
+        assert!(
+            !diagnostics.iter().any(|item| {
+                item.code == "SCH004" && item.message.contains("different exported KiCad nets")
+            })
+        );
+    }
+
+    #[test]
+    fn common_pin_group_rejects_different_exported_kicad_nets() {
+        let schematic = direct_wire_schematic(
+            r#"
+            (wire (pts (xy 10 10) (xy 20 10)))
+            (label "SENSE" (at 10 10 0) (effects (font (size 1 1))))
+            "#,
+        );
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"common_pin_groups":[{"name":"SENSE","pins":["U1.1","R1.1"],"netlist_connected":true}]}"#,
+        )
+        .expect("profile parses");
+        let diagnostics = profile.validate_with_netlist(
+            &schematic,
+            Some(&common_pin_netlist(Some("SENSE"), Some("OTHER"))),
+        );
+        assert!(
+            diagnostics.iter().any(|item| {
+                item.code == "SCH004" && item.message.contains("different exported KiCad nets")
+            })
+        );
+    }
+
+    #[test]
+    fn common_pin_group_reports_pins_missing_from_exported_netlist() {
+        let schematic = direct_wire_schematic(
+            r#"
+            (wire (pts (xy 10 10) (xy 20 10)))
+            (label "SENSE" (at 10 10 0) (effects (font (size 1 1))))
+            "#,
+        );
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"common_pin_groups":[{"name":"SENSE","pins":["U1.1","R1.1"],"netlist_connected":true}]}"#,
+        )
+        .expect("profile parses");
+        let diagnostics = profile.validate_with_netlist(
+            &schematic,
+            Some(&common_pin_netlist(Some("SENSE"), None)),
+        );
+        assert!(
+            diagnostics
+                .iter()
+                .any(|item| item.message.contains("R1.1") && item.message.contains("absent from the exported"))
+        );
+    }
+
+    #[test]
+    fn common_pin_group_warns_when_requested_netlist_is_not_supplied() {
+        let schematic = direct_wire_schematic(
+            r#"
+            (wire (pts (xy 10 10) (xy 20 10)))
+            (label "SENSE" (at 10 10 0) (effects (font (size 1 1))))
+            "#,
+        );
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"common_pin_groups":[{"name":"SENSE","pins":["U1.1","R1.1"],"netlist_connected":true}]}"#,
+        )
+        .expect("profile parses");
+        let diagnostics = profile.validate(&schematic);
+        assert!(
+            diagnostics.iter().any(|item| {
+                item.code == "SCH004"
+                    && item.severity == Severity::Warning
+                    && item.message.contains("no exported KiCad netlist was supplied")
+            })
         );
     }
 
