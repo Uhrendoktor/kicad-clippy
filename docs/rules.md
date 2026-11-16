@@ -19,7 +19,7 @@ The historical checker defines stable IDs SCH001–SCH020. The Rust migration pr
 | SCH013 | Wire obstacle clearance | Pending embedded symbol primitive geometry |
 | SCH014 | Shared pin/net contracts | Implemented for profile-declared component pins and connector `pin.N` mappings against exported KiCad netlist membership |
 | SCH015 | Required no-connect markers | Implemented: verifies each explicit no-connect marker coincides with an embedded placed-symbol pin; incomplete/non-cardinal pin models are conservatively skipped |
-| SCH016 | Wire compactness | Pending profile group/frame geometry |
+| SCH016 | Wire compactness | Implemented: per-group total length of wire segments wholly inside the referenced frame divided by a positive `wire_length_budget_mm`; over-budget results are warnings |
 | SCH017 | Circuit documentation | Implemented: group membership, description text-box UUID and document/page/figure or reviewed screenshot evidence |
 | SCH018 | Label text collision | Implemented: estimated glyph bounds against other labels, visible symbol fields and annotation boxes |
 | SCH019 | Label-kind consistency | Implemented |
