@@ -1566,7 +1566,7 @@ mod tests {
     #[test]
     fn no_connect_marker_must_coincide_with_a_placed_symbol_pin() {
         let doc = document(&format!(
-            "{EMBEDDED_PIN} (no_connect (at 11 11) (uuid \\"no-connect-id\\"))"
+            "{EMBEDDED_PIN} (no_connect (at 11 11) (uuid \"no-connect-id\"))"
         ));
         assert!(
             run_builtin_rules(&doc)
@@ -1579,7 +1579,7 @@ mod tests {
     #[test]
     fn correctly_placed_no_connect_marker_is_accepted() {
         let doc = document(&format!(
-            "{EMBEDDED_PIN} (no_connect (at 10 7.46) (uuid \\"no-connect-id\\"))"
+            "{EMBEDDED_PIN} (no_connect (at 10 7.46) (uuid \"no-connect-id\"))"
         ));
         assert!(
             !run_builtin_rules(&doc)
