@@ -795,6 +795,9 @@ fn validate_frame_clearance(
     diagnostics.extend(validate_member_pin_frame_clearance(
         group_id, group, facts, frame_uuid, bounds, clearance,
     ));
+    diagnostics.extend(validate_member_field_frame_clearance(
+        group_id, group, facts, frame_uuid, bounds, clearance,
+    ));
     diagnostics.extend(validate_description_frame_clearance(
         group_id, group, facts, frame_uuid, bounds, clearance,
     ));
@@ -881,6 +884,40 @@ fn validate_member_pin_frame_clearance(
                 format!(
                     "group {group_id} member pin {}.{} does not maintain {clearance:.2} mm clearance from frame {frame_uuid}",
                     pin.reference, pin.number
+                ),
+            ));
+        }
+    }
+    diagnostics
+}
+
+fn validate_member_field_frame_clearance(
+    group_id: &str,
+    group: &GroupIntent,
+    facts: &SchematicFacts,
+    frame_uuid: &str,
+    bounds: (f64, f64, f64, f64),
+    clearance: f64,
+) -> Vec<Diagnostic> {
+    let (left, top, right, bottom) = bounds;
+    let mut diagnostics = Vec::new();
+    for field in facts
+        .visible_fields
+        .iter()
+        .filter(|field| group.members.contains(&field.reference))
+    {
+        let (field_left, field_top, field_right, field_bottom) = field.bounds_mm;
+        let inside_clearance = field_left >= left + clearance - 0.001
+            && field_top >= top + clearance - 0.001
+            && field_right <= right - clearance + 0.001
+            && field_bottom <= bottom - clearance + 0.001;
+        if !inside_clearance {
+            diagnostics.push(Diagnostic::new(
+                "SCH012",
+                Severity::Error,
+                format!(
+                    "group {group_id} member field {} {} does not maintain {clearance:.2} mm clearance from frame {frame_uuid}",
+                    field.reference, field.name
                 ),
             ));
         }
@@ -2216,6 +2253,62 @@ mod tests {
                 )
                 (rectangle (start 0 0) (end 10 10) (uuid "frame-1"))
                 (text_box "Power input group" (at 3 5) (size 3 1)
+                    (margins 0.5 0.5 0.5 0.5)
+                    (stroke (width 0.1)) (uuid "description-1"))
+            )"#,
+        )
+        .expect("fixture parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"groups":{"power-input":{"members":["R1"],"description_uuid":"description-1","frame_uuid":"frame-1","minimum_frame_clearance_mm":1.0,"evidence":{"document":"Power input design note","page":2,"figure":"Figure 1"}}}}"#,
+        )
+        .expect("profile parses");
+        assert!(
+            !profile
+                .validate(&schematic)
+                .iter()
+                .any(|item| item.code == "SCH012")
+        );
+    }
+
+    #[test]
+    fn group_frame_clearance_checks_visible_member_field_bounds() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "group-field-frame-clearance-test.kicad_sch",
+            r#"(kicad_sch
+                (symbol (lib_id "Device:R") (at 3 3 0)
+                  (property "Reference" "R1" (at 3 4 0) (effects (font (size 1 1))))
+                  (property "Value" "10k" (at 0.5 3 0) (effects (font (size 1 1))))
+                )
+                (rectangle (start 0 0) (end 10 10) (uuid "frame-1"))
+                (text_box "Power input group" (at 3 5) (size 3 1)
+                    (margins 0.5 0.5 0.5 0.5)
+                    (stroke (width 0.1)) (uuid "description-1"))
+            )"#,
+        )
+        .expect("fixture parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"groups":{"power-input":{"members":["R1"],"description_uuid":"description-1","frame_uuid":"frame-1","minimum_frame_clearance_mm":1.0,"evidence":{"document":"Power input design note","page":2,"figure":"Figure 1"}}}}"#,
+        )
+        .expect("profile parses");
+        assert!(
+            profile.validate(&schematic).iter().any(|item| {
+                item.code == "SCH012"
+                    && item.message.contains("member field R1 Value does not maintain")
+            })
+        );
+    }
+
+    #[test]
+    fn group_frame_clearance_accepts_visible_member_fields_inside_the_configured_inset() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "group-field-frame-clearance-test.kicad_sch",
+            r#"(kicad_sch
+                (symbol (lib_id "Device:R") (at 3 3 0)
+                  (property "Reference" "R1" (at 3 4 0) (effects (font (size 1 1))))
+                  (property "Value" "10k" (at 4 5 0) (effects (font (size 1 1))))
+                )
+                (rectangle (start 0 0) (end 10 10) (uuid "frame-1"))
+                (text_box "Power input group" (at 3 6) (size 3 1)
                     (margins 0.5 0.5 0.5 0.5)
                     (stroke (width 0.1)) (uuid "description-1"))
             )"#,
