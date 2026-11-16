@@ -219,8 +219,8 @@ fn collect_component_facts(root: &Node) -> Vec<ComponentFact> {
                 .and_then(list_items)
                 .and_then(|at| Some((number(at.get(1)?)?, number(at.get(2)?)?)));
             Some(ComponentFact {
-                reference,
-                uuid,
+                reference: reference.to_owned(),
+                uuid: uuid.map(str::to_owned),
                 position_mm,
             })
         })
@@ -245,8 +245,8 @@ fn collect_text_box_facts(root: &Node) -> Vec<TextBoxFact> {
                 )
             });
             Some(TextBoxFact {
-                uuid,
-                text,
+                uuid: uuid.to_owned(),
+                text: text.to_owned(),
                 bounds_mm,
             })
         })
@@ -268,6 +268,7 @@ fn collect_group_facts(root: &Node) -> Vec<SchematicGroupFact> {
                 .flatten()
                 .skip(1)
                 .filter_map(atom_value)
+                .map(str::to_owned)
                 .collect();
             Some(SchematicGroupFact {
                 name,
@@ -365,7 +366,7 @@ fn collect_pin_facts(root: &Node) -> Vec<SchematicPinFact> {
             };
             pins.push(SchematicPinFact {
                 reference: transform.reference.clone(),
-                number: pin_number,
+                number: pin_number.to_owned(),
                 position_mm: (transform.origin.x + x_offset, transform.origin.y + y_offset),
             });
         }
@@ -403,12 +404,12 @@ fn collect_symbol_field_facts(root: &Node) -> Vec<SchematicFieldFact> {
             if value.trim().is_empty() {
                 continue;
             }
-            let Some(bounds) = text_visual_bounds(&value, property) else {
+            let Some(bounds) = text_visual_bounds(value, property) else {
                 continue;
             };
             fields.push(SchematicFieldFact {
-                reference: reference.clone(),
-                name,
+                reference: reference.to_owned(),
+                name: name.to_owned(),
                 bounds_mm: (
                     bounds.x,
                     bounds.y,
@@ -927,13 +928,13 @@ fn collect_visible_field_bounds(root: &Node) -> Vec<(String, Bounds, ByteSpan)> 
             let Some(name) = items.get(1).and_then(atom_value) else {
                 continue;
             };
-            if !matches!(name.as_str(), "Reference" | "Value") {
+            if !matches!(name, "Reference" | "Value") {
                 continue;
             }
             let Some(value) = items.get(2).and_then(atom_value) else {
                 continue;
             };
-            if let Some(bounds) = text_visual_bounds(&value, property) {
+            if let Some(bounds) = text_visual_bounds(value, property) {
                 fields.push((format!("{reference} {name}"), bounds, span_of(property)));
             }
         }
@@ -1211,17 +1212,14 @@ fn read_symbol_transform(instance: &Node) -> Option<SymbolTransform> {
         .and_then(list_items)
         .and_then(|items| items.get(1))
         .and_then(atom_value);
-    if mirror
-        .as_ref()
-        .is_some_and(|value| value != "x" && value != "y")
-    {
+    if mirror.is_some_and(|value| value != "x" && value != "y") {
         return None;
     }
     Some(SymbolTransform {
-        reference,
+        reference: reference.to_owned(),
         origin,
         rotation,
-        mirror,
+        mirror: mirror.map(str::to_owned),
         unit,
         convert,
     })
@@ -1759,7 +1757,7 @@ fn collect_label_nodes(root: &Node) -> Vec<(String, String, Point, ByteSpan, &No
         let Some(kind) = head(node) else {
             continue;
         };
-        labels.push((kind.to_owned(), label, point, span_of(node), node));
+        labels.push((kind.to_owned(), label.to_owned(), point, span_of(node), node));
     }
     labels
 }
@@ -1785,8 +1783,8 @@ fn text_visual_bounds(value: &str, node: &Node) -> Option<Bounds> {
     let justify_name = justify_items
         .and_then(|items| items.get(1))
         .and_then(atom_value)
-        .unwrap_or_else(|| "center".to_owned());
-    let left = match justify_name.as_str() {
+        .unwrap_or("center");
+    let left = match justify_name {
         "left" => 0.0,
         "right" => -width,
         _ => -width / 2.0,
@@ -2498,12 +2496,12 @@ fn children<'a>(node: &'a Node, name: &'a str) -> impl Iterator<Item = &'a Node>
         .filter(move |child| head(child) == Some(name))
 }
 
-fn atom_value(node: &Node) -> Option<String> {
+fn atom_value(node: &Node) -> Option<&str> {
     let Node::Atom { atom, .. } = node else {
         return None;
     };
     match atom {
-        Atom::Symbol(value) | Atom::Quoted(value) => Some(value.clone()),
+        Atom::Symbol(value) | Atom::Quoted(value) => Some(value.as_str()),
     }
 }
 
@@ -2589,7 +2587,7 @@ fn collect_labels(root: &Node) -> Vec<(String, String, Point, ByteSpan)> {
             return;
         };
         if let Some(point) = point_from_at(node) {
-            labels.push((kind.to_owned(), label, point, span_of(node)));
+            labels.push((kind.to_owned(), label.to_owned(), point, span_of(node)));
         }
     });
     labels
