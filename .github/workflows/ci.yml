@@ -123,3 +123,26 @@ jobs:
 
       - name: Run native ERC smoke test
         run: bash scripts/validate-native-erc.sh
+
+  # Temporary lockfile generation helper while introducing the geo dependency.
+  lockfile-refresh:
+    if: github.event_name == 'pull_request'
+    name: Generate updated Cargo.lock
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install stable Rust
+        run: rustup toolchain install stable --profile minimal
+
+      - name: Resolve the workspace dependency graph
+        run: cargo generate-lockfile
+
+      - name: Upload generated lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-cargo-lockfile
+          path: Cargo.lock
+          if-no-files-found: error
+          retention-days: 1
+
