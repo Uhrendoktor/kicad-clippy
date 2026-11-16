@@ -572,32 +572,34 @@ fn sample_arc_through_three_points(
         return Some(vec![start, mid, end]);
     }
 
-    const MAX_STEP_RADIANS: f64 = 5.0_f64.to_radians();
+    const MAX_STEP_RADIANS: f64 = std::f64::consts::PI / 36.0;
     const MAX_SAGITTA_MM: f64 = 0.01;
-    const MAX_SEGMENTS: usize = 4096;
+    const MAX_SEGMENT_COUNT: usize = 4096;
+    const MAX_SEGMENT_COUNT_F64: f64 = 4096.0;
     let sagitta_step = if radius > MAX_SAGITTA_MM {
         2.0 * (1.0 - MAX_SAGITTA_MM / radius).clamp(-1.0, 1.0).acos()
     } else {
         MAX_STEP_RADIANS
     };
-    let step = sagitta_step.min(MAX_STEP_RADIANS).max(1.0e-6);
-    let segment_count = (sweep.abs() / step).ceil().max(2.0) as usize;
-    let segment_count = segment_count.min(MAX_SEGMENTS);
-    let mut points = Vec::with_capacity(segment_count + 1);
-    for index in 0..=segment_count {
-        if index == 0 {
-            points.push(start);
-        } else if index == segment_count {
-            points.push(end);
-        } else {
-            let ratio = index as f64 / segment_count as f64;
-            let angle = start_angle + sweep * ratio;
-            points.push((
-                center_x + radius * angle.cos(),
-                center_y + radius * angle.sin(),
-            ));
+    let step = sagitta_step
+        .min(MAX_STEP_RADIANS)
+        .max(sweep.abs() / MAX_SEGMENT_COUNT_F64)
+        .max(1.0e-6);
+    let mut points = Vec::with_capacity(32);
+    points.push(start);
+    let mut traversed = step;
+    for _ in 1..MAX_SEGMENT_COUNT {
+        if traversed >= sweep.abs() {
+            break;
         }
+        let angle = start_angle + sweep.signum() * traversed;
+        points.push((
+            center_x + radius * angle.cos(),
+            center_y + radius * angle.sin(),
+        ));
+        traversed += step;
     }
+    points.push(end);
     Some(points)
 }
 
