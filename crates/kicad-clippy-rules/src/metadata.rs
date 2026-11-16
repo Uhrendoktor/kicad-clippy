@@ -395,10 +395,12 @@ mod tests {
             r#"{"schema_version":1,"components":{"R1":{"kind":"resistor","role":"pull_up","function":"Bias SDA high","rationale":"Required for open-drain I2C","connections":{"signal":"SDA","rail":"3V3"}}}}"#,
         )
         .expect("profile parses");
-        assert!(!profile
-            .validate(&schematic)
-            .iter()
-            .any(|item| item.code == "SCH021"));
+        assert!(
+            !profile
+                .validate(&schematic)
+                .iter()
+                .any(|item| item.code == "SCH021")
+        );
     }
 
     #[test]
@@ -412,10 +414,12 @@ mod tests {
             r#"{"schema_version":1,"components":{"R1":{"kind":"resistor","role":"pull_up","function":"Bias SDA high","rationale":"Required for open-drain I2C"}}}"#,
         )
         .expect("profile parses");
-        assert!(profile
-            .validate(&schematic)
-            .iter()
-            .any(|item| item.code == "SCH021" && item.message.contains("signal")));
+        assert!(
+            profile
+                .validate(&schematic)
+                .iter()
+                .any(|item| item.code == "SCH021" && item.message.contains("signal"))
+        );
     }
 
     #[test]
