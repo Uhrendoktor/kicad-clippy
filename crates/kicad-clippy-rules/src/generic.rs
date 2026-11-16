@@ -2137,11 +2137,7 @@ fn point_key(point: Point) -> String {
     format!("{:.3}:{:.3}", point.x, point.y)
 }
 
-fn has_unmarked_wire_endpoint(
-    point: Point,
-    segments: &[Segment],
-    junctions: &[Point],
-) -> bool {
+fn has_unmarked_wire_endpoint(point: Point, segments: &[Segment], junctions: &[Point]) -> bool {
     let terminates_another_wire = segments.iter().any(|other| is_endpoint(point, *other));
     terminates_another_wire
         && !junctions
