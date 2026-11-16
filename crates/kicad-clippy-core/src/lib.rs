@@ -10,4 +10,4 @@ pub mod source;
 pub use diagnostic::{Diagnostic, RelatedLocation, SchematicLocation, Severity};
 pub use rule_id::{BuiltinRuleId, UnknownBuiltinRuleId};
 pub use rules::{RuleDescriptor, RuleLevel, RuleRegistry, RuleRegistryError};
-pub use source::{ByteSpan, LineColumn, SourceFile};
+pub use source::{ByteSpan, SourceFile};
