@@ -87,6 +87,47 @@ pub struct ComponentIntent {
     pub power_rating_min_w: Option<f64>,
 }
 
+
+/// Component-specific text that must appear in the owning group description.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct ComponentPurpose {
+    /// Electrical function.
+    pub function: Option<String>,
+    /// Design rationale.
+    pub rationale: Option<String>,
+}
+
+/// Source evidence for a functional schematic group.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct GroupEvidence {
+    /// Document title or identifier.
+    pub document: Option<String>,
+    /// Page number in the cited document.
+    pub page: Option<u32>,
+    /// Figure, table or section identifier.
+    pub figure: Option<String>,
+    /// Reviewed screenshot asset identifier.
+    pub screenshot_asset: Option<String>,
+}
+
+/// Profile-level description and membership contract for one functional group.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct GroupIntent {
+    /// References belonging to the functional group.
+    #[serde(default)]
+    pub members: Vec<String>,
+    /// Members whose purpose must be described.
+    #[serde(default)]
+    pub documentation_members: Vec<String>,
+    /// UUID of the text box containing the rendered group description.
+    pub description_uuid: String,
+    /// Component-specific function and rationale phrases.
+    #[serde(default)]
+    pub component_purposes: BTreeMap<String, ComponentPurpose>,
+    /// Datasheet/document citation or reviewed screenshot evidence.
+    pub evidence: Option<GroupEvidence>,
+}
+
 /// Per-project rule configuration.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct LintProfile {
@@ -101,6 +142,9 @@ pub struct LintProfile {
     /// References intentionally exempt from strict metadata requirements.
     #[serde(default)]
     pub ignore_components: BTreeSet<String>,
+    /// Functional groups and their documentation/evidence contracts.
+    #[serde(default)]
+    pub groups: BTreeMap<String, GroupIntent>,
 }
 
 impl LintProfile {
@@ -141,6 +185,7 @@ impl LintProfile {
             }
         }
         diagnostics.extend(validate_decoupler_groups(&self.components));
+        diagnostics.extend(validate_groups(&self.groups, &facts));
         diagnostics
     }
 
@@ -156,6 +201,137 @@ impl LintProfile {
                 )
             })
             .collect()
+    }
+}
+
+fn validate_groups(
+    groups: &BTreeMap<String, GroupIntent>,
+    facts: &SchematicFacts,
+) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+    let references: BTreeSet<_> = facts
+        .components
+        .iter()
+        .map(|component| component.reference.as_str())
+        .collect();
+    for (group_id, group) in groups {
+        let evidence = group.evidence.as_ref();
+        let has_document_evidence = evidence.is_some_and(|item| {
+            item.document.as_deref().is_some_and(|value| !value.trim().is_empty())
+                && item.page.is_some()
+                && item.figure.as_deref().is_some_and(|value| !value.trim().is_empty())
+        });
+        let has_reviewed_asset = evidence
+            .and_then(|item| item.screenshot_asset.as_deref())
+            .is_some_and(|value| !value.trim().is_empty());
+        if !has_document_evidence && !has_reviewed_asset {
+            diagnostics.push(Diagnostic::new(
+                "SCH017",
+                Severity::Error,
+                format!(
+                    "group {group_id} must cite a document/page/figure or a reviewed screenshot asset"
+                ),
+            ));
+        }
+
+        for reference in &group.members {
+            if !references.contains(reference.as_str()) {
+                diagnostics.push(Diagnostic::new(
+                    "SCH017",
+                    Severity::Error,
+                    format!("group {group_id} contains missing component {reference}"),
+                ));
+            }
+        }
+        for reference in &group.documentation_members {
+            if !group.members.contains(reference) {
+                diagnostics.push(Diagnostic::new(
+                    "SCH020",
+                    Severity::Error,
+                    format!(
+                        "group {group_id} lists {reference} as a documentation member but not as a group member"
+                    ),
+                ));
+            }
+        }
+
+        let description = facts
+            .text_boxes
+            .iter()
+            .find(|text_box| text_box.uuid == group.description_uuid)
+            .map(|text_box| text_box.text.as_str());
+        let Some(description) = description else {
+            diagnostics.push(Diagnostic::new(
+                "SCH017",
+                Severity::Error,
+                format!(
+                    "group {group_id} description text box UUID {} is missing",
+                    group.description_uuid
+                ),
+            ));
+            continue;
+        };
+
+        for (reference, purpose) in &group.component_purposes {
+            if !group.members.contains(reference) {
+                diagnostics.push(Diagnostic::new(
+                    "SCH020",
+                    Severity::Error,
+                    format!("group {group_id} documents {reference}, which is not a group member"),
+                ));
+            }
+            if !group.documentation_members.contains(reference) {
+                diagnostics.push(Diagnostic::new(
+                    "SCH020",
+                    Severity::Error,
+                    format!(
+                        "group {group_id} must list {reference} as a documentation member"
+                    ),
+                ));
+            }
+            validate_group_phrase(
+                &mut diagnostics,
+                group_id,
+                reference,
+                "function",
+                purpose.function.as_deref(),
+                description,
+            );
+            validate_group_phrase(
+                &mut diagnostics,
+                group_id,
+                reference,
+                "rationale",
+                purpose.rationale.as_deref(),
+                description,
+            );
+        }
+    }
+    diagnostics
+}
+
+fn validate_group_phrase(
+    diagnostics: &mut Vec<Diagnostic>,
+    group_id: &str,
+    reference: &str,
+    field: &str,
+    phrase: Option<&str>,
+    description: &str,
+) {
+    let Some(phrase) = phrase.filter(|value| !value.trim().is_empty()) else {
+        diagnostics.push(Diagnostic::new(
+            "SCH020",
+            Severity::Error,
+            format!("group {group_id} must provide {reference} {field}"),
+        ));
+        return;
+    };
+    if !description.contains(phrase) {
+        diagnostics.push(Diagnostic::new(
+            "SCH020",
+            Severity::Error,
+            format!("group {group_id} description must include {reference} {field}"),
+        ));
     }
 }
 
