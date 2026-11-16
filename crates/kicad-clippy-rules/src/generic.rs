@@ -811,7 +811,14 @@ pub struct RuleRun {
 /// Run reusable rules that do not require a project profile.
 #[must_use]
 pub fn run_builtin_rules(document: &SchematicDocument) -> RuleRun {
-    let facts = SchematicFacts::from_document(document);
+    crate::RuleEngine::with_builtins().run(document)
+}
+
+/// Execute the built-in schematic checks with facts already collected by the engine.
+pub(crate) fn run_builtin_rules_with_facts(
+    document: &SchematicDocument,
+    facts: &SchematicFacts,
+) -> RuleRun {
     let Some(root) = document.cst().nodes.first() else {
         return RuleRun::default();
     };
