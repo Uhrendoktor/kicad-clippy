@@ -17,7 +17,6 @@ kiutils_sexpr = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-unescaper.workspace = true
 
 [lints]
 workspace = true
