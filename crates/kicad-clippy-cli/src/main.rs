@@ -8,7 +8,7 @@ use std::{
 
 use clap::{Parser, Subcommand, ValueEnum};
 use kicad_clippy_core::{Diagnostic, Severity};
-use kicad_clippy_erc::run_native_erc;
+use kicad_clippy_erc::{NetlistError, export_netlist, run_native_erc};
 use kicad_clippy_parser::SchematicDocument;
 use kicad_clippy_rules::{LintProfile, ProfileMode, run_builtin_rules};
 use serde::Serialize;
@@ -31,7 +31,7 @@ enum Commands {
         /// Output format.
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
-        /// Parse the file without launching `KiCad` ERC.
+        /// Skip ERC (profile checks may still invoke KiCad to export a netlist).
         #[arg(long)]
         skip_erc: bool,
         /// Explicit path or command name for kicad-cli.
@@ -154,11 +154,27 @@ fn lint(
         return Err(CliError::StrictNeedsProfile);
     }
     let schematic = SchematicDocument::from_path(schematic_path)?;
+    let needs_netlist = profile_path.is_some();
+    let cli = if skip_erc && !needs_netlist {
+        None
+    } else {
+        Some(resolve_kicad_cli(explicit_cli)?)
+    };
     let erc_report = if skip_erc {
         None
     } else {
-        let cli_path = resolve_kicad_cli(explicit_cli)?;
+        let Some(cli_path) = cli.as_deref() else {
+            return Err(CliError::KiCadCliNotFound);
+        };
         Some(run_native_erc(cli_path, schematic_path)?)
+    };
+    let netlist = if needs_netlist {
+        let Some(cli_path) = cli.as_deref() else {
+            return Err(CliError::KiCadCliNotFound);
+        };
+        Some(export_netlist(cli_path, schematic_path)?)
+    } else {
+        None
     };
 
     let (kicad_version, mut diagnostics) = match erc_report {
