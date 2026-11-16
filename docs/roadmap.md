@@ -21,7 +21,7 @@ The exact status and limitations for every rule are maintained in [rules.md](rul
 - SCH004 has partial profile-driven support for direct-wire pin pairs and common-pin groups with optional wire-only connectivity and single-label cardinality; automatic inference of all intended physical nets remains pending.
 - SCH013 has partial wire-obstacle coverage for embedded rectangles, polylines/polygons, circles and three-point arc paths, visible Reference/Value fields, intermediate pins and annotation text boxes; arc geometry is approximated by two chords.
 
-Some migrated rules intentionally implement only a subset of their historical requirements. In particular, current SCH009 checks member symbol origins against a referenced rectangle, SCH010 checks text-field overlap using estimated text bounds, SCH012 checks configured inset for member origins and the description text box, and SCH015 checks the placement of explicit no-connect markers. These do not yet prove full symbol, pin, field, label, wire, or note containment/clearance.
+Some migrated rules intentionally implement only a subset of their historical requirements. In particular, current SCH009 checks member symbol origins against a referenced rectangle, SCH010 checks visible-field overlap against embedded symbol outlines, wires, pins, labels and annotation boxes using estimated text bounds, SCH012 checks configured inset for member origins and the description text box, and SCH015 checks the placement of explicit no-connect markers. These do not yet prove full symbol, pin, field, label, wire, or note containment/clearance.
 
 ## Project profiles
 

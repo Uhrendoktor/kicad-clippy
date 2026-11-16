@@ -13,7 +13,7 @@ The historical checker defines stable IDs SCH001–SCH020. The Rust migration pr
 | SCH007 | Group metadata | Implemented when profiles provide `kicad_group_uuid`: resolves native KiCad group and verifies placed-symbol membership against declared component references |
 | SCH008 | Annotation text-box geometry | Implemented: required geometry/font/margins, sizing, overlap and wire penetration |
 | SCH009 | Group containment | Implemented opt-in: checks that each profile group member's placed-symbol origin lies inside its referenced top-level KiCad rectangle; symbol/body/pin/field extents remain pending |
-| SCH010 | Symbol field clearance | Implemented partial: detects overlaps between visible symbol fields and between fields and annotation boxes using estimated text bounds; symbol-body/primitive clearance remains pending |
+| SCH010 | Symbol field clearance | Implemented partial: estimated visible-field bounds are checked against other fields, own/other embedded symbol bodies, wires, pins, labels and annotation boxes; exact font rendering and maximum field-to-body spacing remain pending |
 | SCH011 | Block annotation structure | Implemented: multiline text boxes require a visible border |
 | SCH012 | Frame content clearance | Implemented partial: profile-defined inset checks for group member symbol origins and description text-box bounds relative to a referenced rectangle; other frame contents remain pending |
 | SCH013 | Wire obstacle clearance | Implemented partial: checks wires against selected-unit embedded rectangles, polylines/polygons, circles and three-point arc paths, plus intermediate pins, visible Reference/Value text and annotation boxes; arcs are chord approximations |
@@ -37,6 +37,6 @@ SCH015 checks only no-connect marker placement against embedded pin coordinates;
 
 SCH012 checks only the member symbol origins and the group description text-box rectangle against a configured frame inset. It does not currently include symbol extents, pins, wires, labels or other annotations.
 
-SCH010 estimates visible symbol-field text bounds from the stored field position, font size, angle and justification. It detects field-to-field and field-to-annotation-box overlap; it does not yet check symbol-body primitives or guarantee exact font-renderer geometry.
+SCH010 estimates visible symbol-field text bounds from the stored field position, font size, angle and justification. It checks field-to-field and field-to-annotation-box overlap, field-to-wire and field-to-pin collisions, label-glyph collisions, and intersections with the field's own or another symbol's embedded outline. A Value field fully contained within a closed symbol primitive is allowed. The bounds are estimates rather than KiCad's exact rendered glyph geometry; the historical maximum-distance-to-body rule and exact gaps are not implemented.
 
 A rule ID is not considered ported merely because it appears in the catalogue. A rule becomes implemented only when it has positive and negative tests and a documented analysis model.

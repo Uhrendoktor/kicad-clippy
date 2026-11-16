@@ -4,7 +4,7 @@
 
 A Rust-based linter for KiCad schematic files. `kicad-clippy` combines repository-specific schematic quality rules with KiCad's native Electrical Rules Checker (ERC). Native ERC remains the authority for electrical-rule findings; custom rules add layout, annotation, documentation, and project-profile checks.
 
-> **Project status: early development.** The migrated implementation currently covers generic schematic checks (SCH001–SCH003, SCH005, SCH008, SCH010 in part, SCH011, SCH015, SCH018 and SCH019) and project-profile checks (SCH004 in part, SCH006, SCH007, SCH009, SCH012 in part, SCH014, SCH016, SCH017 and SCH020–SCH022). SCH013 has partial embedded-primitive, intermediate-pin, visible-field and annotation-box wire-obstacle coverage; several implemented rules intentionally cover only a documented subset of their historical scope. See the [rule status table](docs/rules.md) and [scope and roadmap](docs/roadmap.md).
+> **Project status: early development.** The migrated implementation currently covers generic schematic checks (SCH001–SCH003, SCH005, SCH008, SCH010 (partial field clearance), SCH011, SCH015, SCH018 and SCH019) and project-profile checks (SCH004 in part, SCH006, SCH007, SCH009, SCH012 in part, SCH014, SCH016, SCH017 and SCH020–SCH022). SCH013 has partial embedded-primitive, intermediate-pin, visible-field and annotation-box wire-obstacle coverage; several implemented rules intentionally cover only a documented subset of their historical scope. See the [rule status table](docs/rules.md) and [scope and roadmap](docs/roadmap.md).
 
 ## What it does today
 
@@ -18,7 +18,7 @@ A Rust-based linter for KiCad schematic files. `kicad-clippy` combines repositor
 - Exposes shared UTF-8 byte spans, line/column mapping, diagnostic types, rule descriptors, levels, and a deterministic rule registry.
 - Emits human-readable or JSON diagnostics while retaining KiCad ERC as the authority for electrical violations.
 
-This remains a partial migration, not a complete schematic-style audit. SCH004 supports profile-declared direct-wire pairs and common-pin groups but does not infer every physical connection; SCH013 currently checks embedded primitive boundaries, intermediate pins, visible Reference/Value fields and annotation text boxes; selected transforms and arc geometry remain partial. SCH009, SCH010, SCH012 and SCH015 have narrower documented scopes than their historical rule descriptions. SARIF, verified automatic fixes and editor integration are also pending.
+This remains a partial migration, not a complete schematic-style audit. SCH004 supports profile-declared direct-wire pairs and common-pin groups but does not infer every physical connection; SCH013 currently checks embedded primitive boundaries, intermediate pins, visible Reference/Value fields and annotation text boxes; selected transforms and arc geometry remain partial. SCH009, SCH010, SCH012 and SCH015 have narrower documented scopes than their historical rule descriptions. SCH010 now checks visible fields against embedded symbol outlines, wires, pins, labels and annotation boxes, but uses estimated glyph bounds. SARIF, verified automatic fixes and editor integration are also pending.
 
 ## Requirements
 
