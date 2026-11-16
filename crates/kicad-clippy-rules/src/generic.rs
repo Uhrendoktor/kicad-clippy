@@ -12,7 +12,8 @@ use kicad_clippy_core::{
 use kicad_clippy_parser::SchematicDocument;
 use kiutils_sexpr::{Atom, Node};
 use kurbo::{
-    Arc as CurveArc, PathEl, Point as CurvePoint, Shape, Vec2, flatten as flatten_curve_path,
+    Affine, Arc as CurveArc, PathEl, Point as CurvePoint, Shape, Vec2,
+    flatten as flatten_curve_path,
 };
 
 use crate::{RuleContext, RulePass};
@@ -1338,18 +1339,15 @@ fn pin_orientation_diagnostic(
     let pin_x = number(at.get(1)?, source)?;
     let pin_y = number(at.get(2)?, source)?;
     let pin_angle = number(at.get(3)?, source)?;
-    let (x_offset, y_offset) = transform_symbol_point(
-        pin_x,
-        pin_y,
-        transform.rotation,
-        transform.mirror.as_deref(),
-    )?;
+    let affine = symbol_transform_affine(transform.rotation, transform.mirror.as_deref())?;
+    let pin_offset = affine * CurvePoint::new(pin_x, pin_y);
     let point = Point {
-        x: transform.origin.x + x_offset,
-        y: transform.origin.y + y_offset,
+        x: transform.origin.x + pin_offset.x,
+        y: transform.origin.y + pin_offset.y,
     };
-    let (axis_x, axis_y) =
-        transform_symbol_vector(pin_angle, transform.rotation, transform.mirror.as_deref())?;
+    let pin_angle = pin_angle.to_radians();
+    let axis = affine * CurvePoint::new(pin_angle.cos(), pin_angle.sin());
+    let (axis_x, axis_y) = (axis.x, axis.y);
     let expected_axis = if axis_x.abs() >= axis_y.abs() {
         PinAxis::Horizontal
     } else {
@@ -1399,43 +1397,37 @@ fn cardinal_rotation(angle: f64) -> Option<i32> {
         .find_map(|(degrees, rotation)| ((normalized - degrees).abs() <= 0.001).then_some(rotation))
 }
 
+/// Builds the common KiCad symbol-local to schematic-space linear transform.
+///
+/// KiCad's symbol coordinates use a Y-up library frame while schematic sheet
+/// coordinates are Y-down. The mirrors and cardinal rotations are delegated
+/// to Kurbo's affine implementation instead of duplicated point/vector math.
+fn symbol_transform_affine(rotation: i32, mirror: Option<&str>) -> Option<Affine> {
+    let rotation = match rotation {
+        0 => 0.0,
+        90 => std::f64::consts::FRAC_PI_2,
+        180 => std::f64::consts::PI,
+        270 => 3.0 * std::f64::consts::FRAC_PI_2,
+        _ => return None,
+    };
+    let mirror = match mirror {
+        Some("x") => Affine::FLIP_Y,
+        Some("y") => Affine::FLIP_X,
+        None => Affine::IDENTITY,
+        Some(_) => return None,
+    };
+
+    Some(Affine::FLIP_Y * Affine::rotate(rotation) * mirror)
+}
+
 fn transform_symbol_point(
-    mut x: f64,
-    mut y: f64,
+    x: f64,
+    y: f64,
     rotation: i32,
     mirror: Option<&str>,
 ) -> Option<(f64, f64)> {
-    match mirror {
-        Some("x") => y = -y,
-        Some("y") => x = -x,
-        None => {}
-        Some(_) => return None,
-    }
-    Some(match rotation {
-        0 => (x, -y),
-        90 => (-y, -x),
-        180 => (-x, y),
-        270 => (y, x),
-        _ => return None,
-    })
-}
-
-fn transform_symbol_vector(angle: f64, rotation: i32, mirror: Option<&str>) -> Option<(f64, f64)> {
-    let radians = angle.to_radians();
-    let (mut x, mut y) = (radians.cos(), radians.sin());
-    match mirror {
-        Some("x") => y = -y,
-        Some("y") => x = -x,
-        None => {}
-        Some(_) => return None,
-    }
-    Some(match rotation {
-        0 => (x, -y),
-        90 => (-y, -x),
-        180 => (-x, y),
-        270 => (y, x),
-        _ => return None,
-    })
+    let point = symbol_transform_affine(rotation, mirror)? * CurvePoint::new(x, y);
+    Some((point.x, point.y))
 }
 
 #[derive(Clone, Copy)]
@@ -2720,6 +2712,29 @@ mod tests {
     fn document(body: &str) -> SchematicDocument {
         SchematicDocument::from_text("fixture.kicad_sch", format!("(kicad_sch {body})"))
             .expect("fixture parses")
+    }
+
+    #[test]
+    fn kurbo_affine_matches_kicad_cardinal_symbol_transforms() {
+        let cases = [
+            (0, None, (2.0, -3.0)),
+            (90, None, (-3.0, -2.0)),
+            (180, None, (-2.0, 3.0)),
+            (270, None, (3.0, 2.0)),
+            (0, Some("x"), (2.0, 3.0)),
+            (0, Some("y"), (-2.0, -3.0)),
+            (90, Some("x"), (3.0, -2.0)),
+            (90, Some("y"), (-3.0, 2.0)),
+        ];
+
+        for (rotation, mirror, expected) in cases {
+            let actual = super::transform_symbol_point(2.0, 3.0, rotation, mirror)
+                .expect("supported KiCad transform");
+            assert!((actual.0 - expected.0).abs() < 0.001);
+            assert!((actual.1 - expected.1).abs() < 0.001);
+        }
+        assert!(super::transform_symbol_point(2.0, 3.0, 45, None).is_none());
+        assert!(super::transform_symbol_point(2.0, 3.0, 0, Some("diagonal")).is_none());
     }
 
     const EMBEDDED_PIN: &str = r#"
