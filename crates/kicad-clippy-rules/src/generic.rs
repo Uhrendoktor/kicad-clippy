@@ -526,7 +526,11 @@ fn arc_primitive_points(node: &Node, source: &str) -> Option<Vec<(f64, f64)>> {
             number(items.get(2)?, source)?,
         ))
     };
-    sample_arc_through_three_points(point("start")?, point("mid")?, point("end")?)
+    Some(sample_arc_through_three_points(
+        point("start")?,
+        point("mid")?,
+        point("end")?,
+    ))
 }
 
 fn sample_arc_through_three_points(
@@ -537,23 +541,29 @@ fn sample_arc_through_three_points(
     let determinant =
         2.0 * (start.0 * (mid.1 - end.1) + mid.0 * (end.1 - start.1) + end.0 * (start.1 - mid.1));
     if determinant.abs() <= 1.0e-9 {
-        return Some(vec![start, mid, end]);
+        return vec![start, mid, end];
     }
 
     let start_squared = start.0.mul_add(start.0, start.1 * start.1);
     let mid_squared = mid.0.mul_add(mid.0, mid.1 * mid.1);
     let end_squared = end.0.mul_add(end.0, end.1 * end.1);
-    let center_x = (start_squared * (mid.1 - end.1)
-        + mid_squared * (end.1 - start.1)
-        + end_squared * (start.1 - mid.1))
-        / determinant;
-    let center_y = (start_squared * (end.0 - mid.0)
-        + mid_squared * (start.0 - end.0)
-        + end_squared * (mid.0 - start.0))
-        / determinant;
+    let center_x = end_squared.mul_add(
+        start.1 - mid.1,
+        mid_squared.mul_add(
+            end.1 - start.1,
+            start_squared * (mid.1 - end.1),
+        ),
+    ) / determinant;
+    let center_y = end_squared.mul_add(
+        mid.0 - start.0,
+        mid_squared.mul_add(
+            start.0 - end.0,
+            start_squared * (end.0 - mid.0),
+        ),
+    ) / determinant;
     let radius = (start.0 - center_x).hypot(start.1 - center_y);
     if !radius.is_finite() || radius <= 1.0e-9 {
-        return Some(vec![start, mid, end]);
+        return vec![start, mid, end];
     }
 
     let start_angle = (start.1 - center_y).atan2(start.0 - center_x);
@@ -567,13 +577,8 @@ fn sample_arc_through_three_points(
         counter_clockwise_sweep - std::f64::consts::TAU
     };
     if sweep.abs() <= 1.0e-9 {
-        return Some(vec![start, mid, end]);
+        return vec![start, mid, end];
     }
-
-    const MAX_STEP_RADIANS: f64 = std::f64::consts::PI / 36.0;
-    const MAX_SAGITTA_MM: f64 = 0.01;
-    const MAX_SEGMENT_COUNT: usize = 4096;
-    const MAX_SEGMENT_COUNT_F64: f64 = 4096.0;
     let sagitta_step = if radius > MAX_SAGITTA_MM {
         2.0 * (1.0 - MAX_SAGITTA_MM / radius).clamp(-1.0, 1.0).acos()
     } else {
@@ -590,15 +595,15 @@ fn sample_arc_through_three_points(
         if traversed >= sweep.abs() {
             break;
         }
-        let angle = start_angle + sweep.signum() * traversed;
+        let angle = sweep.signum().mul_add(traversed, start_angle);
         points.push((
-            center_x + radius * angle.cos(),
-            center_y + radius * angle.sin(),
+            radius.mul_add(angle.cos(), center_x),
+            radius.mul_add(angle.sin(), center_y),
         ));
         traversed += step;
     }
     points.push(end);
-    Some(points)
+    points
 }
 
 fn transform_primitive_points(
