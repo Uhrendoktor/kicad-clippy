@@ -61,6 +61,26 @@ pub struct SchematicWireFact {
 }
 
 #[derive(Clone, Debug)]
+pub struct SchematicPinFact {
+    /// Placed-symbol reference.
+    pub reference: String,
+    /// Embedded library-symbol pin number.
+    pub number: String,
+    /// Transformed pin position on the sheet, in millimetres.
+    pub position_mm: (f64, f64),
+}
+
+#[derive(Clone, Debug)]
+pub struct SchematicLabelFact {
+    /// Label form: local, hierarchical_label, or global_label.
+    pub kind: String,
+    /// Label name.
+    pub name: String,
+    /// Label anchor on the sheet, in millimetres.
+    pub position_mm: (f64, f64),
+}
+
+#[derive(Clone, Debug)]
 pub struct TextBoxFact {
     /// UUID of the schematic text box.
     pub uuid: String,
@@ -82,6 +102,12 @@ pub struct SchematicFacts {
     pub frames: Vec<SchematicFrameFact>,
     /// Two-ended wire segments used by frame-scoped layout rules.
     pub wires: Vec<SchematicWireFact>,
+    /// Resolved placed-symbol pin coordinates.
+    pub pins: Vec<SchematicPinFact>,
+    /// Label anchors used to ensure labels are not mistaken for physical wires.
+    pub labels: Vec<SchematicLabelFact>,
+    /// Explicit junction marker coordinates.
+    pub junctions: Vec<(f64, f64)>,
 }
 
 impl SchematicFacts {
@@ -96,6 +122,12 @@ impl SchematicFacts {
             groups: collect_group_facts(root, source),
             frames: collect_frame_facts(root, source),
             wires: collect_wire_facts(root, source),
+            pins: collect_pin_facts(root, source),
+            labels: collect_label_facts(root, source),
+            junctions: collect_points(root, source, "junction")
+                .into_iter()
+                .map(|point| (point.x, point.y))
+                .collect(),
         }
     }
 }
@@ -225,6 +257,88 @@ fn collect_wire_facts(root: &Node, source: &str) -> Vec<SchematicWireFact> {
             end_mm: (segment.end.x, segment.end.y),
         })
         .collect()
+}
+
+fn collect_label_facts(root: &Node, source: &str) -> Vec<SchematicLabelFact> {
+    collect_labels(root, source)
+        .into_iter()
+        .map(|(kind, name, point, _span)| SchematicLabelFact {
+            kind,
+            name,
+            position_mm: (point.x, point.y),
+        })
+        .collect()
+}
+
+fn collect_pin_facts(root: &Node, source: &str) -> Vec<SchematicPinFact> {
+    let Some(library_symbols) = child_list(root, "lib_symbols") else {
+        return Vec::new();
+    };
+    let mut pins = Vec::new();
+    for instance in children(root, "symbol") {
+        let Some(lib_id) = child_list(instance, "lib_id")
+            .and_then(list_items)
+            .and_then(|items| items.get(1))
+            .and_then(|item| atom_value(item, source))
+        else {
+            continue;
+        };
+        let Some(transform) = read_symbol_transform(instance, source) else {
+            continue;
+        };
+        let Some(library_symbol) = children(library_symbols, "symbol").find(|definition| {
+            list_items(definition)
+                .and_then(|items| items.get(1))
+                .and_then(|item| atom_value(item, source))
+                .is_some_and(|name| name == lib_id)
+        }) else {
+            continue;
+        };
+        for pin in embedded_symbol_pins(
+            library_symbol,
+            transform.unit,
+            transform.convert,
+            source,
+        ) {
+            let Some(number) = child_list(pin, "number")
+                .and_then(list_items)
+                .and_then(|items| items.get(1))
+                .and_then(|item| atom_value(item, source))
+            else {
+                continue;
+            };
+            let Some(at) = child_list(pin, "at").and_then(list_items) else {
+                continue;
+            };
+            let (Some(pin_x), Some(pin_y)) = (
+                at.get(1).and_then(|item| number_value(item, source)),
+                at.get(2).and_then(|item| number_value(item, source)),
+            ) else {
+                continue;
+            };
+            let Some((x_offset, y_offset)) = transform_symbol_point(
+                pin_x,
+                pin_y,
+                transform.rotation,
+                transform.mirror.as_deref(),
+            ) else {
+                continue;
+            };
+            pins.push(SchematicPinFact {
+                reference: transform.reference.clone(),
+                number,
+                position_mm: (
+                    transform.origin.x + x_offset,
+                    transform.origin.y + y_offset,
+                ),
+            });
+        }
+    }
+    pins
+}
+
+fn number_value(node: &Node, source: &str) -> Option<f64> {
+    number(node, source)
 }
 
 /// Result of the built-in rule pass.
@@ -1329,6 +1443,53 @@ fn wire_components(
 fn point_key(point: Point) -> String {
     format!("{:.3}:{:.3}", point.x, point.y)
 }
+
+pub(crate) fn physical_wire_component_ids(
+    facts: &SchematicFacts,
+) -> BTreeMap<String, usize> {
+    let segments: Vec<_> = facts
+        .wires
+        .iter()
+        .map(|wire| Segment {
+            start: Point {
+                x: wire.start_mm.0,
+                y: wire.start_mm.1,
+            },
+            end: Point {
+                x: wire.end_mm.0,
+                y: wire.end_mm.1,
+            },
+            span: ByteSpan::new(0, 0),
+        })
+        .collect();
+    let mut points = Vec::new();
+    for wire in &facts.wires {
+        points.push(Point {
+            x: wire.start_mm.0,
+            y: wire.start_mm.1,
+        });
+        points.push(Point {
+            x: wire.end_mm.0,
+            y: wire.end_mm.1,
+        });
+    }
+    points.extend(facts.pins.iter().map(|pin| Point {
+        x: pin.position_mm.0,
+        y: pin.position_mm.1,
+    }));
+    points.extend(facts.labels.iter().map(|label| Point {
+        x: label.position_mm.0,
+        y: label.position_mm.1,
+    }));
+    points.extend(facts.junctions.iter().map(|junction| Point {
+        x: junction.0,
+        y: junction.1,
+    }));
+    points.sort_by_key(|point| point_key(*point));
+    points.dedup_by_key(|point| point_key(*point));
+    wire_components(&segments, &points).0
+}
+
 
 fn check_label_text_collisions(root: &Node, source: &str) -> Vec<Diagnostic> {
     let mut labels = Vec::new();
