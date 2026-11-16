@@ -127,6 +127,9 @@ pub struct GroupIntent {
     /// Optional UUID of the native `KiCad` group whose component membership is enforced.
     #[serde(default)]
     pub kicad_group_uuid: Option<String>,
+    /// Optional UUID of the schematic rectangle that encloses the functional group.
+    #[serde(default)]
+    pub frame_uuid: Option<String>,
     /// Optional minimum Euclidean spacing between member symbol origins, in millimetres.
     #[serde(default)]
     pub minimum_member_origin_spacing_mm: Option<f64>,
@@ -252,6 +255,7 @@ fn validate_group(
     let mut diagnostics = validate_group_evidence(group_id, group);
     diagnostics.extend(validate_group_members(group_id, group, references));
     diagnostics.extend(validate_kicad_group_membership(group_id, group, facts));
+    diagnostics.extend(validate_group_containment(group_id, group, facts));
     diagnostics.extend(validate_group_spacing(group_id, group, facts));
     let description = facts
         .text_boxes
@@ -274,6 +278,66 @@ fn validate_group(
         group,
         description,
     ));
+    diagnostics
+}
+
+fn validate_group_containment(
+    group_id: &str,
+    group: &GroupIntent,
+    facts: &SchematicFacts,
+) -> Vec<Diagnostic> {
+    let Some(frame_uuid) = group.frame_uuid.as_deref() else {
+        return Vec::new();
+    };
+    let Some(frame) = facts.frames.iter().find(|frame| frame.uuid == frame_uuid) else {
+        return vec![Diagnostic::new(
+            "SCH009",
+            Severity::Error,
+            format!("group {group_id} references missing schematic frame UUID {frame_uuid}"),
+        )];
+    };
+    let (left, top, right, bottom) = frame.bounds_mm;
+    if left >= right || top >= bottom {
+        return vec![Diagnostic::new(
+            "SCH009",
+            Severity::Error,
+            format!("group {group_id} frame {frame_uuid} has invalid or zero-area bounds"),
+        )];
+    }
+
+    let mut diagnostics = Vec::new();
+    for reference in &group.members {
+        let Some(component) = facts
+            .components
+            .iter()
+            .find(|component| component.reference == *reference)
+        else {
+            continue;
+        };
+        let Some((x_mm, y_mm)) = component.position_mm else {
+            diagnostics.push(Diagnostic::new(
+                "SCH009",
+                Severity::Error,
+                format!(
+                    "group {group_id} member {reference} has no placed-symbol origin for frame containment validation"
+                ),
+            ));
+            continue;
+        };
+        let inside = x_mm >= left - 0.001
+            && x_mm <= right + 0.001
+            && y_mm >= top - 0.001
+            && y_mm <= bottom + 0.001;
+        if !inside {
+            diagnostics.push(Diagnostic::new(
+                "SCH009",
+                Severity::Error,
+                format!(
+                    "group {group_id} member {reference} origin ({x_mm:.2}, {y_mm:.2}) mm is outside frame {frame_uuid}"
+                ),
+            ));
+        }
+    }
     diagnostics
 }
 
@@ -927,6 +991,77 @@ mod tests {
                 .validate(&schematic)
                 .iter()
                 .any(|item| item.code == "SCH021" && item.message.contains("signal"))
+        );
+    }
+
+    #[test]
+    fn group_member_origins_must_be_inside_the_declared_schematic_frame() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "group-frame-test.kicad_sch",
+            r#"(kicad_sch
+                (symbol (lib_id "Device:R") (uuid "r1-uuid") (at 4 5 0)
+                    (property "Reference" "R1" (at 4 6 0)))
+                (rectangle (start 1 1) (end 8 9) (uuid "frame-1"))
+                (text_box "Power input group" (uuid "description-1"))
+            )"#,
+        )
+        .expect("fixture parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"groups":{"power-input":{"members":["R1"],"description_uuid":"description-1","frame_uuid":"frame-1","evidence":{"document":"Power input design note","page":2,"figure":"Figure 1"}}}}"#,
+        )
+        .expect("profile parses");
+        assert!(
+            !profile
+                .validate(&schematic)
+                .iter()
+                .any(|item| item.code == "SCH009")
+        );
+    }
+
+    #[test]
+    fn group_member_origin_outside_the_declared_schematic_frame_is_reported() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "group-frame-test.kicad_sch",
+            r#"(kicad_sch
+                (symbol (lib_id "Device:R") (uuid "r1-uuid") (at 9 5 0)
+                    (property "Reference" "R1" (at 9 6 0)))
+                (rectangle (start 1 1) (end 8 9) (uuid "frame-1"))
+                (text_box "Power input group" (uuid "description-1"))
+            )"#,
+        )
+        .expect("fixture parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"groups":{"power-input":{"members":["R1"],"description_uuid":"description-1","frame_uuid":"frame-1","evidence":{"document":"Power input design note","page":2,"figure":"Figure 1"}}}}"#,
+        )
+        .expect("profile parses");
+        assert!(
+            profile
+                .validate(&schematic)
+                .iter()
+                .any(|item| item.code == "SCH009" && item.message.contains("outside frame"))
+        );
+    }
+
+    #[test]
+    fn missing_group_frame_uuid_is_reported() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "group-frame-test.kicad_sch",
+            r#"(kicad_sch
+                (symbol (lib_id "Device:R") (uuid "r1-uuid") (at 4 5 0)
+                    (property "Reference" "R1" (at 4 6 0)))
+                (text_box "Power input group" (uuid "description-1"))
+            )"#,
+        )
+        .expect("fixture parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"groups":{"power-input":{"members":["R1"],"description_uuid":"description-1","frame_uuid":"missing-frame","evidence":{"document":"Power input design note","page":2,"figure":"Figure 1"}}}}"#,
+        )
+        .expect("profile parses");
+        assert!(
+            profile
+                .validate(&schematic)
+                .iter()
+                .any(|item| item.code == "SCH009" && item.message.contains("missing schematic frame UUID"))
         );
     }
 
