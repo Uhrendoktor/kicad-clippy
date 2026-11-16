@@ -751,6 +751,152 @@ impl RuleSink<'_, '_> {
         }
     }
 
+    fn rule_component_metadata(&mut self, profile: Option<&DesignProfile>) {
+        let metadata = profile.map_or(&[][..], |profile| profile.component_metadata.as_slice());
+        let mut by_reference = BTreeMap::new();
+        for item in metadata {
+            if by_reference.insert(item.reference.as_str(), item).is_some() {
+                self.emit("SCH024", None, None, format!("component metadata contains duplicate reference {}", item.reference));
+            }
+            let Some(symbol) = self.model.symbol(&item.reference) else {
+                self.emit("SCH024", None, None, format!("component metadata references missing symbol {}", item.reference));
+                continue;
+            };
+            if !symbol_matches_kind(symbol, item.kind) {
+                self.emit("SCH024", Some(symbol.node), Some(symbol.point), format!("{} is declared as {:?}, but its reference/library symbol does not match that component type", item.reference, item.kind));
+            }
+            if item.function.trim().is_empty() || item.rationale.trim().is_empty() {
+                self.emit("SCH024", Some(symbol.node), Some(symbol.point), format!("{} metadata must provide both function and rationale", item.reference));
+            }
+            if !role_matches_kind(item.kind, item.role) {
+                self.emit("SCH024", Some(symbol.node), Some(symbol.point), format!("role {:?} is not valid for component type {:?}", item.role, item.kind));
+            }
+            if item.kind == ComponentKind::Capacitor && item.role == ComponentRole::Decoupling {
+                for (field, value) in [
+                    ("associated_pin", item.associated_pin.as_deref()),
+                    ("connection_pin", item.connection_pin.as_deref()),
+                    ("return_pin", item.return_pin.as_deref()),
+                    ("return_net", item.return_net.as_deref()),
+                ] {
+                    if value.is_none_or(str::is_empty) {
+                        self.emit("SCH024", Some(symbol.node), Some(symbol.point), format!("decoupling capacitor {} must declare {field}", item.reference));
+                    }
+                }
+            }
+        }
+
+        let mut required = profile.map_or_else(Vec::new, |profile| profile.require_component_metadata_for.clone());
+        if self.config.preset == "strict" && !required.contains(&ComponentKind::Capacitor) {
+            required.push(ComponentKind::Capacitor);
+        }
+        required.sort();
+        required.dedup();
+        for symbol in &self.model.symbols {
+            for kind in &required {
+                if symbol_matches_kind(symbol, *kind)
+                    && !by_reference.contains_key(symbol.reference.as_str())
+                {
+                    self.emit("SCH024", Some(symbol.node), Some(symbol.point), format!("{} is a {:?} but has no declared component-intent metadata", symbol.reference, kind));
+                }
+            }
+        }
+    }
+
+    fn rule_decoupling_networks(&mut self, profile: Option<&DesignProfile>) {
+        let Some(profile) = profile else { return; };
+        let decouplers: Vec<&ComponentMetadata> = profile.component_metadata.iter()
+            .filter(|item| item.kind == ComponentKind::Capacitor && item.role == ComponentRole::Decoupling)
+            .collect();
+        if decouplers.is_empty() { return; }
+
+        let network = WireNetwork::new(self.model);
+        let mut clusters: BTreeMap<String, Vec<&ComponentMetadata>> = BTreeMap::new();
+        for item in &decouplers {
+            let target = item.associated_pin.as_deref().unwrap_or_default();
+            clusters.entry(target.to_owned()).or_default().push(item);
+
+            let Some(symbol) = self.model.symbol(&item.reference) else { continue; };
+            let (Some(target_id), Some(connection_number), Some(return_number), Some(return_net)) = (
+                item.associated_pin.as_deref(),
+                item.connection_pin.as_deref(),
+                item.return_pin.as_deref(),
+                item.return_net.as_deref(),
+            ) else { continue; };
+            let Some((target_ref, target_pin_number)) = parse_pin_reference(target_id) else {
+                self.emit("SCH025", Some(symbol.node), Some(symbol.point), format!("{} has invalid associated pin {:?}; expected REFERENCE.NUMBER", item.reference, target_id));
+                continue;
+            };
+            let (Some(target_pin), Some(connection_pin), Some(return_pin)) = (
+                self.model.pin(target_ref, target_pin_number),
+                self.model.pin(&item.reference, connection_number),
+                self.model.pin(&item.reference, return_number),
+            ) else {
+                self.emit("SCH025", Some(symbol.node), Some(symbol.point), format!("{} decoupling metadata references a missing target or capacitor terminal pin", item.reference));
+                continue;
+            };
+
+            if !network.physically_connected(self.model, target_pin.point, connection_pin.point) {
+                self.emit("SCH025", Some(symbol.node), Some(connection_pin.point), format!("{} terminal {} is not physically wire-connected to target {}", item.reference, connection_number, target_id));
+            }
+            let maximum_distance = item.max_distance_mm
+                .or(profile.decoupling_max_pin_distance_mm)
+                .unwrap_or(50.8);
+            let distance = target_pin.point.distance(connection_pin.point);
+            if distance > maximum_distance + TOL {
+                self.emit("SCH025", Some(symbol.node), Some(connection_pin.point), format!("{} decoupling terminal is {:.2} mm from target {}; maximum is {:.2} mm", item.reference, distance, target_id, maximum_distance));
+            }
+
+            if !self.model.is_wire_attached(return_pin.point) {
+                self.emit("SCH025", Some(symbol.node), Some(return_pin.point), format!("{} return terminal {} is not attached to a physical wire", item.reference, return_number));
+                continue;
+            }
+            let return_root = network.root_for(return_pin.point);
+            let has_return_label = self.model.labels.iter().any(|label| {
+                label.name == return_net && network.root_for(label.point) == return_root
+            });
+            if !has_return_label {
+                self.emit("SCH025", Some(symbol.node), Some(return_pin.point), format!("{} return terminal {} must be on the declared {} net", item.reference, return_number, return_net));
+            }
+        }
+
+        let maximum_spacing = profile.decoupling_max_cluster_spacing_mm.unwrap_or(25.4);
+        for (target, items) in clusters {
+            let mut returns = Vec::new();
+            let mut return_nets = BTreeSet::new();
+            let symbols: Vec<_> = items.iter().filter_map(|item| {
+                let symbol = self.model.symbol(&item.reference)?;
+                let return_number = item.return_pin.as_deref()?;
+                let return_pin = self.model.pin(&item.reference, return_number)?;
+                let return_root = network.root_for(return_pin.point)?;
+                return_nets.insert(item.return_net.clone().unwrap_or_default());
+                returns.push((item, return_pin.point, return_root));
+                Some((item, symbol))
+            }).collect();
+
+            for index in 0..symbols.len() {
+                for (other_metadata, other_symbol) in symbols.iter().skip(index + 1) {
+                    let (item, symbol) = symbols[index];
+                    let spacing = symbol.point.distance(other_symbol.point);
+                    if spacing > maximum_spacing + TOL {
+                        self.emit("SCH025", Some(symbol.node), Some(symbol.point), format!("decouplers {} and {} for {} are {:.2} mm apart; maximum cluster spacing is {:.2} mm", item.reference, other_metadata.reference, target, spacing, maximum_spacing));
+                    }
+                }
+            }
+
+            if returns.len() > 1 {
+                if return_nets.len() != 1 {
+                    self.emit("SCH025", None, None, format!("decouplers for {target} declare inconsistent return nets: {return_nets:?}"));
+                }
+                let first_root = returns[0].2;
+                for (item, point, root) in returns.iter().skip(1) {
+                    if *root != first_root {
+                        self.emit("SCH025", None, Some(*point), format!("decoupler {} does not share one physical return/GND network with the other capacitors for {target}", item.reference));
+                    }
+                }
+            }
+        }
+    }
+
     fn rule_symbol_grid(&mut self, grid: Option<f64>) {
         let Some(grid) = grid.filter(|grid| *grid > 0.0) else { return; };
         for symbol in &self.model.symbols {
