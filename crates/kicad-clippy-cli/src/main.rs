@@ -64,6 +64,8 @@ enum CliError {
     KiCadCliNotFound,
     #[error(transparent)]
     Metadata(#[from] kicad_clippy_rules::MetadataError),
+    #[error(transparent)]
+    Netlist(#[from] NetlistError),
     #[error("--strict requires --profile FILE")]
     StrictNeedsProfile,
     #[error("failed to serialize JSON output: {0}")]
@@ -169,7 +171,7 @@ fn lint(
         if strict {
             profile.mode = ProfileMode::Strict;
         }
-        diagnostics.extend(profile.validate(&schematic));
+        diagnostics.extend(profile.validate_with_netlist(&schematic, netlist.as_ref()));
     }
     let summary = Summary::from_diagnostics(&diagnostics);
     let output = LintOutput {
