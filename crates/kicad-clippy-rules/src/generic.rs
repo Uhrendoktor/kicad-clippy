@@ -2739,18 +2739,7 @@ fn collect_labels(root: &Node, source: &str) -> Vec<(String, String, Point, Byte
 }
 
 fn point_on_segment(point: Point, segment: &Segment) -> bool {
-    let tolerance = 0.001;
-    if (segment.start.y - segment.end.y).abs() < tolerance {
-        (point.y - segment.start.y).abs() < tolerance
-            && point.x >= segment.start.x.min(segment.end.x) - tolerance
-            && point.x <= segment.start.x.max(segment.end.x) + tolerance
-    } else if (segment.start.x - segment.end.x).abs() < tolerance {
-        (point.x - segment.start.x).abs() < tolerance
-            && point.y >= segment.start.y.min(segment.end.y) - tolerance
-            && point.y <= segment.start.y.max(segment.end.y) + tolerance
-    } else {
-        false
-    }
+    point_on_segment_any(point, segment.start, segment.end)
 }
 
 fn is_endpoint(point: Point, segment: Segment) -> bool {
@@ -3177,6 +3166,40 @@ mod tests {
                 .iter()
                 .any(|item| item.code == "SCH013" && item.message.contains("annotation text box"))
         );
+    }
+
+    #[test]
+    fn sweep_line_reports_crossing_wires_with_the_intersection_location() {
+        let doc = document(
+            r"(wire (pts (xy 0 0) (xy 4 0))) (wire (pts (xy 2 -2) (xy 2 2)))",
+        );
+        let finding = run_builtin_rules(&doc)
+            .diagnostics
+            .into_iter()
+            .find(|item| item.code == "SCH001" && item.message.contains("crossing"))
+            .expect("crossing wire pair is reported");
+        let location = finding.schematic_location.expect("crossing location");
+        assert!((location.x_mm - 2.0).abs() < 0.001);
+        assert!((location.y_mm - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn sweep_line_requires_an_explicit_marker_for_t_junctions() {
+        let missing = document(
+            r"(wire (pts (xy 0 0) (xy 4 0))) (wire (pts (xy 2 0) (xy 2 2)))",
+        );
+        assert!(run_builtin_rules(&missing)
+            .diagnostics
+            .iter()
+            .any(|item| item.code == "SCH001" && item.message.contains("T-junction")));
+
+        let marked = document(
+            r#"(wire (pts (xy 0 0) (xy 4 0))) (wire (pts (xy 2 0) (xy 2 2))) (junction (at 2 0) (diameter 0.6) (color 0 0 0 0) (uuid "junction"))"#,
+        );
+        assert!(!run_builtin_rules(&marked)
+            .diagnostics
+            .iter()
+            .any(|item| item.code == "SCH001" && item.message.contains("T-junction")));
     }
 
     #[test]
