@@ -7,16 +7,16 @@ use kiutils_sexpr::{Atom, Node};
 use crate::{RuleContext, RulePass};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-struct Point {
-    x: f64,
-    y: f64,
+pub(crate) struct Point {
+    pub(crate) x: f64,
+    pub(crate) y: f64,
 }
 
 #[derive(Clone, Copy, Debug)]
-struct Segment {
-    start: Point,
-    end: Point,
-    span: ByteSpan,
+pub(crate) struct Segment {
+    pub(crate) start: Point,
+    pub(crate) end: Point,
+    pub(crate) span: ByteSpan,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -810,16 +810,42 @@ pub struct RuleRun {
     pub components: usize,
 }
 
-/// Built-in pass for syntax-, geometry-, and label-oriented schematic checks.
-pub(crate) struct BuiltinSchematicPass;
+/// Built-in geometry and pin-placement analysis pass.
+pub(crate) struct BuiltinGeometryPass;
 
-impl RulePass for BuiltinSchematicPass {
+impl RulePass for BuiltinGeometryPass {
     fn name(&self) -> &'static str {
-        "kicad-clippy.builtin-schematic"
+        "kicad-clippy.geometry"
     }
 
     fn run(&self, context: &RuleContext<'_>) -> Vec<Diagnostic> {
-        run_builtin_rules_with_facts(context.document(), context.facts()).diagnostics
+        run_geometry_checks(context)
+    }
+}
+
+/// Built-in physical-wire topology and label analysis pass.
+pub(crate) struct BuiltinLabelPass;
+
+impl RulePass for BuiltinLabelPass {
+    fn name(&self) -> &'static str {
+        "kicad-clippy.labels"
+    }
+
+    fn run(&self, context: &RuleContext<'_>) -> Vec<Diagnostic> {
+        run_label_checks(context)
+    }
+}
+
+/// Built-in annotation and visible-field layout analysis pass.
+pub(crate) struct BuiltinAnnotationPass;
+
+impl RulePass for BuiltinAnnotationPass {
+    fn name(&self) -> &'static str {
+        "kicad-clippy.annotations"
+    }
+
+    fn run(&self, context: &RuleContext<'_>) -> Vec<Diagnostic> {
+        run_annotation_checks(context)
     }
 }
 
@@ -829,38 +855,50 @@ pub fn run_builtin_rules(document: &SchematicDocument) -> RuleRun {
     crate::RuleEngine::with_builtins().run(document)
 }
 
-/// Execute the built-in schematic checks with facts already collected by the engine.
-pub(crate) fn run_builtin_rules_with_facts(
-    document: &SchematicDocument,
-    facts: &SchematicFacts,
-) -> RuleRun {
-    let Some(root) = document.cst().nodes.first() else {
-        return RuleRun::default();
+pub(crate) fn run_geometry_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
+    let Some(root) = context.document().cst().nodes.first() else {
+        return Vec::new();
     };
-    let source = document.source().text();
-    let segments = collect_segments(root, source);
-    let junctions = collect_points(root, source, "junction");
-    let mut diagnostics = check_wire_geometry(root, &segments, &junctions);
-    diagnostics.extend(check_pin_orientation(root, source, &segments));
+    let source = context.document().source().text();
+    let mut diagnostics = check_wire_geometry(root, context.segments, context.junctions);
+    diagnostics.extend(check_pin_orientation(root, source, context.segments));
     diagnostics.extend(check_no_connect_markers(root, source));
-    diagnostics.extend(check_wire_obstacles(root, source, &segments, &facts));
-    diagnostics.extend(check_label_topology(root, source, &segments));
-    diagnostics.extend(check_label_wire_clearance(root, source, &segments));
-    diagnostics.extend(check_text_box_layout(root, source, &segments));
-    diagnostics.extend(check_block_annotation_structure(root, source));
-    diagnostics.extend(check_label_text_collisions(root, source));
-    diagnostics.extend(check_symbol_field_clearance(
-        root, source, &segments, &facts,
+    diagnostics.extend(check_wire_obstacles(
+        root,
+        source,
+        context.segments,
+        context.facts(),
     ));
-    diagnostics.extend(check_label_kind_consistency(root, source));
-
-    RuleRun {
-        diagnostics,
-        wires: segments.len(),
-        components: facts.components.len(),
-    }
+    diagnostics
 }
 
+pub(crate) fn run_label_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
+    let Some(root) = context.document().cst().nodes.first() else {
+        return Vec::new();
+    };
+    let source = context.document().source().text();
+    let mut diagnostics = check_label_topology(root, source, context.segments);
+    diagnostics.extend(check_label_wire_clearance(root, source, context.segments));
+    diagnostics.extend(check_label_text_collisions(root, source));
+    diagnostics.extend(check_label_kind_consistency(root, source));
+    diagnostics
+}
+
+pub(crate) fn run_annotation_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
+    let Some(root) = context.document().cst().nodes.first() else {
+        return Vec::new();
+    };
+    let source = context.document().source().text();
+    let mut diagnostics = check_text_box_layout(root, source, context.segments);
+    diagnostics.extend(check_block_annotation_structure(root, source));
+    diagnostics.extend(check_symbol_field_clearance(
+        root,
+        source,
+        context.segments,
+        context.facts(),
+    ));
+    diagnostics
+}
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PinAxis {
     Horizontal,
@@ -2642,7 +2680,7 @@ const fn span_of(node: &Node) -> ByteSpan {
     }
 }
 
-fn collect_segments(root: &Node, source: &str) -> Vec<Segment> {
+pub(crate) fn collect_segments(root: &Node, source: &str) -> Vec<Segment> {
     let mut segments = Vec::new();
     walk(root, &mut |node| {
         if head(node) != Some("wire") {
@@ -2671,7 +2709,7 @@ fn collect_segments(root: &Node, source: &str) -> Vec<Segment> {
     segments
 }
 
-fn collect_points(root: &Node, source: &str, name: &str) -> Vec<Point> {
+pub(crate) fn collect_points(root: &Node, source: &str, name: &str) -> Vec<Point> {
     let mut points = Vec::new();
     walk(root, &mut |node| {
         if head(node) == Some(name) {
