@@ -1,13 +1,13 @@
 #![forbid(unsafe_code)]
 
+//! Native `KiCad` Electrical Rules Checker adapter.
+
 mod netlist;
 
 pub use netlist::{
     Netlist, NetlistComponent, NetlistError, NetlistNet, NetlistNode, PinRef, export_netlist,
     parse_netlist_sexpr,
 };
-
-//! Native `KiCad` Electrical Rules Checker adapter.
 
 use std::{
     fs, io,
