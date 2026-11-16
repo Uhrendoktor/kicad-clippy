@@ -113,6 +113,7 @@ pub fn run_builtin_rules(document: &SchematicDocument) -> RuleRun {
     let junctions = collect_points(root, source, "junction");
     let mut diagnostics = check_wire_geometry(root, &segments, &junctions);
     diagnostics.extend(check_pin_orientation(root, source, &segments));
+    diagnostics.extend(check_no_connect_markers(root, source));
     diagnostics.extend(check_label_topology(root, source, &segments));
     diagnostics.extend(check_label_wire_clearance(root, source, &segments));
     diagnostics.extend(check_text_box_layout(root, source, &segments));
@@ -192,6 +193,84 @@ fn check_instance_pin_orientation(
         .into_iter()
         .filter_map(|pin| pin_orientation_diagnostic(instance, pin, &transform, source, segments))
         .collect()
+}
+
+fn check_no_connect_markers(root: &Node, source: &str) -> Vec<Diagnostic> {
+    let markers = collect_nodes(root, "no_connect");
+    if markers.is_empty() {
+        return Vec::new();
+    }
+    let Some(pin_positions) = collect_placed_pin_positions(root, source) else {
+        return Vec::new();
+    };
+    markers
+        .into_iter()
+        .filter_map(|marker| {
+            let point = point_from_at(marker, source)?;
+            let matches_pin = pin_positions
+                .iter()
+                .any(|pin| distance(*pin, point) < 0.001);
+            (!matches_pin).then(|| {
+                at_point(
+                    "SCH015",
+                    format!(
+                        "no-connect marker at ({:.3}, {:.3}) does not coincide with a placed symbol pin",
+                        point.x, point.y
+                    ),
+                    point,
+                    span_of(marker),
+                )
+            })
+        })
+        .collect()
+}
+
+fn collect_placed_pin_positions(root: &Node, source: &str) -> Option<Vec<Point>> {
+    let mut positions = Vec::new();
+    let Some(library_symbols) = child_list(root, "lib_symbols") else {
+        return Some(positions);
+    };
+    for instance in children(root, "symbol") {
+        let Some(lib_id) = child_list(instance, "lib_id")
+            .and_then(list_items)
+            .and_then(|items| items.get(1))
+            .and_then(|item| atom_value(item, source))
+        else {
+            continue;
+        };
+        let transform = read_symbol_transform(instance, source)?;
+        let library_symbol = children(library_symbols, "symbol").find(|definition| {
+            list_items(definition)
+                .and_then(|items| items.get(1))
+                .and_then(|item| atom_value(item, source))
+                .is_some_and(|name| name == lib_id)
+        })?;
+        let pins = embedded_symbol_pins(
+            library_symbol,
+            transform.unit,
+            transform.convert,
+            source,
+        );
+        if pins.is_empty() {
+            return None;
+        }
+        for pin in pins {
+            let at = child_list(pin, "at").and_then(list_items)?;
+            let pin_x = number(at.get(1)?, source)?;
+            let pin_y = number(at.get(2)?, source)?;
+            let (x_offset, y_offset) = transform_symbol_point(
+                pin_x,
+                pin_y,
+                transform.rotation,
+                transform.mirror.as_deref(),
+            )?;
+            positions.push(Point {
+                x: transform.origin.x + x_offset,
+                y: transform.origin.y + y_offset,
+            });
+        }
+    }
+    Some(positions)
 }
 
 fn read_symbol_transform(instance: &Node, source: &str) -> Option<SymbolTransform> {
@@ -1482,6 +1561,32 @@ mod tests {
         let doc = document(EMBEDDED_PIN);
         let run = run_builtin_rules(&doc);
         assert_eq!(run.components, 1);
+    }
+
+    #[test]
+    fn no_connect_marker_must_coincide_with_a_placed_symbol_pin() {
+        let doc = document(&format!(
+            "{EMBEDDED_PIN} (no_connect (at 11 11) (uuid \\"no-connect-id\\"))"
+        ));
+        assert!(
+            run_builtin_rules(&doc)
+                .diagnostics
+                .iter()
+                .any(|item| item.code == "SCH015" && item.message.contains("does not coincide"))
+        );
+    }
+
+    #[test]
+    fn correctly_placed_no_connect_marker_is_accepted() {
+        let doc = document(&format!(
+            "{EMBEDDED_PIN} (no_connect (at 10 7.46) (uuid \\"no-connect-id\\"))"
+        ));
+        assert!(
+            !run_builtin_rules(&doc)
+                .diagnostics
+                .iter()
+                .any(|item| item.code == "SCH015")
+        );
     }
 
     #[test]
