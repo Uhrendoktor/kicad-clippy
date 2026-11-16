@@ -1741,6 +1741,71 @@ mod tests {
         );
     }
 
+    fn direct_wire_t_junction_schematic(explicit_junction: bool) -> kicad_clippy_parser::SchematicDocument {
+        let junction = if explicit_junction {
+            r#"(junction (at 14 10) (diameter 0) (color 0 0 0 0))"#
+        } else {
+            ""
+        };
+        kicad_clippy_parser::SchematicDocument::from_text(
+            "direct-wire-t-junction-test.kicad_sch",
+            format!(
+                r#"(kicad_sch
+                    (lib_symbols
+                      (symbol "Test:OnePin"
+                        (symbol "OnePin_1_1"
+                          (pin passive line (at 0 0 0) (length 1.27)
+                            (name "1") (number "1"))
+                        )
+                      )
+                    )
+                    (symbol (lib_id "Test:OnePin") (at 10 10 0) (unit 1)
+                      (property "Reference" "U1" (at 10 10 0) (effects (font (size 1 1))))
+                    )
+                    (symbol (lib_id "Test:OnePin") (at 14 5 0) (unit 1)
+                      (property "Reference" "R1" (at 14 5 0) (effects (font (size 1 1))))
+                    )
+                    (wire (pts (xy 10 10) (xy 20 10)))
+                    (wire (pts (xy 14 10) (xy 14 5)))
+                    {junction}
+                )"#
+            ),
+        )
+        .expect("T-junction schematic parses")
+    }
+
+    #[test]
+    fn direct_wire_pair_does_not_connect_through_an_unmarked_t_junction() {
+        let schematic = direct_wire_t_junction_schematic(false);
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"direct_wire_pairs":[{"first":"U1.1","second":"R1.1"}]}"#,
+        )
+        .expect("profile parses");
+        assert!(
+            profile.validate(&schematic).iter().any(|item| {
+                item.code == "SCH004"
+                    && item
+                        .message
+                        .contains("must share one physical wire-only network")
+            })
+        );
+    }
+
+    #[test]
+    fn direct_wire_pair_connects_through_a_marked_t_junction() {
+        let schematic = direct_wire_t_junction_schematic(true);
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"direct_wire_pairs":[{"first":"U1.1","second":"R1.1"}]}"#,
+        )
+        .expect("profile parses");
+        assert!(
+            !profile
+                .validate(&schematic)
+                .iter()
+                .any(|item| item.code == "SCH004")
+        );
+    }
+
     #[test]
     fn common_pin_group_enforces_exactly_one_matching_label() {
         let schematic = direct_wire_schematic(
