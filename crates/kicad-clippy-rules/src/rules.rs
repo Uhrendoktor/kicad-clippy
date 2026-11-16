@@ -79,6 +79,10 @@ pub fn run_rules(
     if let Some(profile) = &config.profile {
         sink.run_profile_rules(profile);
     }
+    sink.rule_symbol_field_clearance(config.profile.as_ref());
+    sink.rule_multiline_annotations(config.profile.as_ref());
+    sink.rule_symbol_grid(config.profile.as_ref().and_then(|profile| profile.grid_mm));
+    sink.rule_title_block(config.profile.as_ref());
     Ok(sink.diagnostics)
 }
 
@@ -126,8 +130,6 @@ impl RuleSink<'_, '_> {
         self.rule_label_topology();
         self.rule_label_wire_clearance();
         self.rule_text_boxes();
-        self.rule_symbol_field_clearance(None);
-        self.rule_multiline_annotations(None);
         self.rule_wire_obstacles();
         self.rule_label_collisions();
         self.rule_label_kinds();
@@ -148,9 +150,6 @@ impl RuleSink<'_, '_> {
         self.rule_wire_budgets(profile);
         self.rule_circuit_documentation(profile);
         self.rule_multiline_annotations(Some(profile));
-        self.rule_symbol_field_clearance(Some(profile));
-        self.rule_symbol_grid(profile.grid_mm);
-        self.rule_title_block(Some(profile));
         self.rule_component_purposes(profile);
     }
 
@@ -520,7 +519,7 @@ impl RuleSink<'_, '_> {
             self.emit("SCH006", Some(right.node), Some(right.point), format!("adjacent components {}/{} are not aligned", pair.left, pair.right));
             return;
         }
-        let gap = (right.point.x - left.point.x).abs() - pair.body_width_mm;
+        let gap = right.point.x - left.point.x - pair.body_width_mm;
         if gap > pair.max_gap_mm + TOL {
             self.emit("SCH006", Some(right.node), Some(right.point), format!("components {}/{} have a {:.2} mm gap; maximum is {:.2} mm", pair.left, pair.right, gap, pair.max_gap_mm));
         }
@@ -577,7 +576,7 @@ impl RuleSink<'_, '_> {
                 for wire in &self.model.wires {
                     let start_inside = frame.contains(wire.start, 0.0);
                     let end_inside = frame.contains(wire.end, 0.0);
-                    if start_inside != end_inside && line_hits_rect(wire.start, wire.end, frame, true) {
+                    if !(start_inside && end_inside) && line_hits_rect(wire.start, wire.end, frame, true) {
                         self.emit("SCH009", None, Some(wire.start), format!("wire crosses functional frame {} boundary", group.id));
                     }
                 }
@@ -592,7 +591,6 @@ impl RuleSink<'_, '_> {
             }
         }
         let mut primary: Vec<_> = group_frames.iter().filter(|(group, _)| group.primary).collect();
-        primary.sort_by(|(left, _), (right, _)| left.id.cmp(&right.id));
         if let Some(expected_gap) = profile.group_gap_mm {
             for pair in primary.windows(2) {
                 let gap = pair[1].1.min.x - pair[0].1.max.x;
@@ -639,7 +637,6 @@ impl RuleSink<'_, '_> {
 
     fn check_common_net(&mut self, contract: &CommonNetContract, network: &WireNetwork) {
         let mut roots = BTreeSet::new();
-        let mut matching_labels = BTreeSet::new();
         for pin_id in &contract.pins {
             let Some((reference, number)) = parse_pin_reference(pin_id) else { continue; };
             let Some(pin) = self.model.pin(reference, number) else {
@@ -649,8 +646,6 @@ impl RuleSink<'_, '_> {
             let root = network.root_for(pin.point);
             if !self.model.labels.iter().any(|label| label.name == contract.name && network.root_for(label.point) == root) {
                 self.emit("SCH014", None, Some(pin.point), format!("pin {pin_id} must belong to common net {}", contract.name));
-            } else {
-                matching_labels.insert(root);
             }
             if let Some(root) = root { roots.insert(root); }
         }
@@ -663,7 +658,6 @@ impl RuleSink<'_, '_> {
                 self.emit("SCH014", None, None, format!("configured pins {:?} must share exactly one {} label; found {count}", contract.pins, contract.name));
             }
         }
-        let _ = matching_labels;
     }
 
     fn rule_no_connects(&mut self, profile: &DesignProfile) {
