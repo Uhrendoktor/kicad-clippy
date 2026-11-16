@@ -98,11 +98,7 @@ pub fn run_builtin_rules(document: &SchematicDocument) -> RuleRun {
     }
 }
 
-fn check_wire_geometry(
-    root: &Node,
-    segments: &[Segment],
-    junctions: &[Point],
-) -> Vec<Diagnostic> {
+fn check_wire_geometry(root: &Node, segments: &[Segment], junctions: &[Point]) -> Vec<Diagnostic> {
     let mut diagnostics = collect_invalid_wire_diagnostics(root);
     for (index, segment) in segments.iter().enumerate() {
         if distance(segment.start, segment.end) < 0.001 {
@@ -194,27 +190,38 @@ fn collinear_overlap(first: Segment, second: Segment) -> bool {
     let second_horizontal = (second.start.y - second.end.y).abs() < 0.001;
     let first_vertical = (first.start.x - first.end.x).abs() < 0.001;
     let second_vertical = (second.start.x - second.end.x).abs() < 0.001;
-    let overlap = if first_horizontal && second_horizontal
+    let overlap = if first_horizontal
+        && second_horizontal
         && (first.start.y - second.start.y).abs() < 0.001
     {
-        first.start.x.max(first.end.x).min(second.start.x.max(second.end.x))
-            - first.start.x.min(first.end.x).max(second.start.x.min(second.end.x))
-    } else if first_vertical && second_vertical
-        && (first.start.x - second.start.x).abs() < 0.001
-    {
-        first.start.y.max(first.end.y).min(second.start.y.max(second.end.y))
-            - first.start.y.min(first.end.y).max(second.start.y.min(second.end.y))
+        first
+            .start
+            .x
+            .max(first.end.x)
+            .min(second.start.x.max(second.end.x))
+            - first
+                .start
+                .x
+                .min(first.end.x)
+                .max(second.start.x.min(second.end.x))
+    } else if first_vertical && second_vertical && (first.start.x - second.start.x).abs() < 0.001 {
+        first
+            .start
+            .y
+            .max(first.end.y)
+            .min(second.start.y.max(second.end.y))
+            - first
+                .start
+                .y
+                .min(first.end.y)
+                .max(second.start.y.min(second.end.y))
     } else {
         0.0
     };
     overlap > 0.001
 }
 
-fn check_label_wire_clearance(
-    root: &Node,
-    source: &str,
-    segments: &[Segment],
-) -> Vec<Diagnostic> {
+fn check_label_wire_clearance(root: &Node, source: &str, segments: &[Segment]) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     for (kind, label, _point, span, node) in collect_label_nodes(root, source) {
         if !matches!(kind.as_str(), "label" | "hierarchical_label") {
@@ -223,7 +230,10 @@ fn check_label_wire_clearance(
         let Some(bounds) = text_visual_bounds(&label, node, source) else {
             continue;
         };
-        if segments.iter().any(|segment| strict_line_hits_bounds(*segment, bounds)) {
+        if segments
+            .iter()
+            .any(|segment| strict_line_hits_bounds(*segment, bounds))
+        {
             diagnostics.push(at_span(
                 "SCH003",
                 format!("{kind} {label:?} overlaps a wire's visible glyph area"),
@@ -288,9 +298,7 @@ fn inspect_text_box(
             metrics.span,
         ));
     }
-    if metrics.stroke_width <= 0.0
-        && metrics.bounds.width + 0.001 < required_width + 10.16
-    {
+    if metrics.stroke_width <= 0.0 && metrics.bounds.width + 0.001 < required_width + 10.16 {
         diagnostics.push(at_span(
             "SCH008",
             format!(
@@ -327,7 +335,14 @@ fn read_text_box_metrics(
 ) -> (Option<TextBoxMetrics>, Option<Diagnostic>) {
     let span = span_of(node);
     let Some(items) = list_items(node) else {
-        return (None, Some(at_span("SCH008", format!("text_box {index} is malformed"), span)));
+        return (
+            None,
+            Some(at_span(
+                "SCH008",
+                format!("text_box {index} is malformed"),
+                span,
+            )),
+        );
     };
     let label = items
         .get(1)
@@ -342,8 +357,7 @@ fn read_text_box_metrics(
         .and_then(list_items)
         .and_then(|font| font.get(1))
         .and_then(|item| number(item, source));
-    let (Some(at), Some(size), Some(margins), Some(font_size)) =
-        (at, size, margins, font_size)
+    let (Some(at), Some(size), Some(margins), Some(font_size)) = (at, size, margins, font_size)
     else {
         return (
             None,
@@ -362,7 +376,11 @@ fn read_text_box_metrics(
     let Some(pads) = pads else {
         return (
             None,
-            Some(at_span("SCH008", format!("text_box {index} has invalid margins"), span)),
+            Some(at_span(
+                "SCH008",
+                format!("text_box {index} has invalid margins"),
+                span,
+            )),
         );
     };
     if pads.len() != 4 || pads.iter().any(|pad| (pad - 1.27).abs() > 0.001) {
@@ -400,7 +418,12 @@ fn read_text_box_metrics(
     (
         Some(TextBoxMetrics {
             label,
-            bounds: Bounds { x, y, width, height },
+            bounds: Bounds {
+                x,
+                y,
+                width,
+                height,
+            },
             font_size,
             padding: pads[0],
             stroke_width,
@@ -410,10 +433,7 @@ fn read_text_box_metrics(
     )
 }
 
-fn check_text_box_interactions(
-    boxes: &[TextBoxRecord],
-    segments: &[Segment],
-) -> Vec<Diagnostic> {
+fn check_text_box_interactions(boxes: &[TextBoxRecord], segments: &[Segment]) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     for (index, first) in boxes.iter().enumerate() {
         for second in boxes.iter().skip(index + 1) {
@@ -507,12 +527,14 @@ fn text_visual_bounds(value: &str, node: &Node, source: &str) -> Option<Bounds> 
         .and_then(|font| font.get(1))
         .and_then(|item| number(item, source))
         .unwrap_or(1.0);
-    let width = (value.chars().map(char_advance).sum::<f64>() * font_size * 1.12)
-        .max(font_size);
+    let width = (value.chars().map(char_advance).sum::<f64>() * font_size * 1.12).max(font_size);
     let height = font_size * 1.55;
     let x = number(at.get(1)?, source)?;
     let y = number(at.get(2)?, source)?;
-    let angle = at.get(3).and_then(|item| number(item, source)).unwrap_or(0.0);
+    let angle = at
+        .get(3)
+        .and_then(|item| number(item, source))
+        .unwrap_or(0.0);
     let justify = effects.and_then(|effects| child_list(effects, "justify"));
     let justify_items = justify.and_then(list_items);
     let justify_name = justify_items
@@ -532,7 +554,12 @@ fn text_visual_bounds(value: &str, node: &Node, source: &str) -> Option<Bounds> 
         } else {
             y - width / 2.0
         };
-        return Some(Bounds { x: x - height / 2.0, y: top, width: height, height: width });
+        return Some(Bounds {
+            x: x - height / 2.0,
+            y: top,
+            width: height,
+            height: width,
+        });
     }
     if (angle - 270.0).abs() < 0.001 {
         let top = if justify_name == "left" {
@@ -542,16 +569,31 @@ fn text_visual_bounds(value: &str, node: &Node, source: &str) -> Option<Bounds> 
         } else {
             y - width / 2.0
         };
-        return Some(Bounds { x: x - height / 2.0, y: top, width: height, height: width });
+        return Some(Bounds {
+            x: x - height / 2.0,
+            y: top,
+            width: height,
+            height: width,
+        });
     }
     if justify_items
         .and_then(|items| items.get(2))
         .and_then(|item| atom_value(item, source))
         .is_some_and(|value| value == "top")
     {
-        return Some(Bounds { x: left, y, width, height });
+        return Some(Bounds {
+            x: left,
+            y,
+            width,
+            height,
+        });
     }
-    Some(Bounds { x: left, y: y - height, width, height })
+    Some(Bounds {
+        x: left,
+        y: y - height,
+        width,
+        height,
+    })
 }
 
 fn char_advance(character: char) -> f64 {
@@ -593,13 +635,21 @@ fn line_hits_bounds(segment: Segment, bounds: Bounds) -> bool {
     if horizontal {
         bounds.y - tolerance <= segment.start.y
             && segment.start.y <= bounds.y + bounds.height + tolerance
-            && segment.start.x.max(segment.end.x).min(bounds.x + bounds.width)
+            && segment
+                .start
+                .x
+                .max(segment.end.x)
+                .min(bounds.x + bounds.width)
                 - segment.start.x.min(segment.end.x).max(bounds.x)
                 > tolerance
     } else if (segment.start.x - segment.end.x).abs() < tolerance {
         bounds.x - tolerance <= segment.start.x
             && segment.start.x <= bounds.x + bounds.width + tolerance
-            && segment.start.y.max(segment.end.y).min(bounds.y + bounds.height)
+            && segment
+                .start
+                .y
+                .max(segment.end.y)
+                .min(bounds.y + bounds.height)
                 - segment.start.y.min(segment.end.y).max(bounds.y)
                 > tolerance
     } else {
@@ -613,13 +663,21 @@ fn strict_line_hits_bounds(segment: Segment, bounds: Bounds) -> bool {
     if horizontal {
         bounds.y + tolerance < segment.start.y
             && segment.start.y < bounds.y + bounds.height - tolerance
-            && segment.start.x.max(segment.end.x).min(bounds.x + bounds.width)
+            && segment
+                .start
+                .x
+                .max(segment.end.x)
+                .min(bounds.x + bounds.width)
                 - segment.start.x.min(segment.end.x).max(bounds.x)
                 > tolerance
     } else if (segment.start.x - segment.end.x).abs() < tolerance {
         bounds.x + tolerance < segment.start.x
             && segment.start.x < bounds.x + bounds.width - tolerance
-            && segment.start.y.max(segment.end.y).min(bounds.y + bounds.height)
+            && segment
+                .start
+                .y
+                .max(segment.end.y)
+                .min(bounds.y + bounds.height)
                 - segment.start.y.min(segment.end.y).max(bounds.y)
                 > tolerance
     } else {
@@ -1044,12 +1102,13 @@ mod tests {
 
     #[test]
     fn wire_overlap_is_rejected() {
-        let doc = document(
-            r"(wire (pts (xy 0 0) (xy 4 0))) (wire (pts (xy 2 0) (xy 6 0)))",
+        let doc = document(r"(wire (pts (xy 0 0) (xy 4 0))) (wire (pts (xy 2 0) (xy 6 0)))");
+        assert!(
+            run_builtin_rules(&doc)
+                .diagnostics
+                .iter()
+                .any(|item| { item.code == "SCH001" && item.message.contains("overlap") })
         );
-        assert!(run_builtin_rules(&doc).diagnostics.iter().any(|item| {
-            item.code == "SCH001" && item.message.contains("overlap")
-        }));
     }
 
     #[test]
@@ -1057,7 +1116,12 @@ mod tests {
         let doc = document(
             r#"(label "ABC" (at 5 5 0) (effects (font (size 1 1)))) (wire (pts (xy 3 4.2) (xy 7 4.2)))"#,
         );
-        assert!(run_builtin_rules(&doc).diagnostics.iter().any(|item| item.code == "SCH003"));
+        assert!(
+            run_builtin_rules(&doc)
+                .diagnostics
+                .iter()
+                .any(|item| item.code == "SCH003")
+        );
     }
 
     #[test]
@@ -1065,13 +1129,23 @@ mod tests {
         let doc = document(
             r#"(text_box "note" (at 1 1 0) (size 5 5) (margins 1.27 1.27 1.27 1.27) (stroke (width -1)) (effects (font (size 1 1))))"#,
         );
-        assert!(run_builtin_rules(&doc).diagnostics.iter().any(|item| item.code == "SCH008"));
+        assert!(
+            run_builtin_rules(&doc)
+                .diagnostics
+                .iter()
+                .any(|item| item.code == "SCH008")
+        );
     }
 
     #[test]
     fn free_standing_text_is_rejected() {
         let doc = document(r#"(text "note" (at 1 1 0) (effects (font (size 1 1))))"#);
-        assert!(run_builtin_rules(&doc).diagnostics.iter().any(|item| item.code == "SCH008"));
+        assert!(
+            run_builtin_rules(&doc)
+                .diagnostics
+                .iter()
+                .any(|item| item.code == "SCH008")
+        );
     }
 
     #[test]
@@ -1079,7 +1153,12 @@ mod tests {
         let doc = document(
             r#"(text_box "first line\nsecond line" (at 1 1 0) (size 40 8) (margins 1.27 1.27 1.27 1.27) (stroke (width -1)) (effects (font (size 1 1))))"#,
         );
-        assert!(run_builtin_rules(&doc).diagnostics.iter().any(|item| item.code == "SCH011"));
+        assert!(
+            run_builtin_rules(&doc)
+                .diagnostics
+                .iter()
+                .any(|item| item.code == "SCH011")
+        );
     }
 
     #[test]
