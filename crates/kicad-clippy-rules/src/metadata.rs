@@ -130,6 +130,9 @@ pub struct GroupIntent {
     /// Optional UUID of the schematic rectangle that encloses the functional group.
     #[serde(default)]
     pub frame_uuid: Option<String>,
+    /// Optional required clearance from group member origins and its description box to the frame edge.
+    #[serde(default)]
+    pub minimum_frame_clearance_mm: Option<f64>,
     /// Optional minimum Euclidean spacing between member symbol origins, in millimetres.
     #[serde(default)]
     pub minimum_member_origin_spacing_mm: Option<f64>,
@@ -256,6 +259,7 @@ fn validate_group(
     diagnostics.extend(validate_group_members(group_id, group, references));
     diagnostics.extend(validate_kicad_group_membership(group_id, group, facts));
     diagnostics.extend(validate_group_containment(group_id, group, facts));
+    diagnostics.extend(validate_frame_clearance(group_id, group, facts));
     diagnostics.extend(validate_group_spacing(group_id, group, facts));
     let description = facts
         .text_boxes
@@ -337,6 +341,123 @@ fn validate_group_containment(
                 ),
             ));
         }
+    }
+    diagnostics
+}
+
+fn validate_frame_clearance(
+    group_id: &str,
+    group: &GroupIntent,
+    facts: &SchematicFacts,
+) -> Vec<Diagnostic> {
+    let Some(clearance) = group.minimum_frame_clearance_mm else {
+        return Vec::new();
+    };
+    if !clearance.is_finite() || clearance < 0.0 {
+        return vec![Diagnostic::new(
+            "SCH012",
+            Severity::Error,
+            format!("group {group_id} minimum_frame_clearance_mm must be finite and non-negative"),
+        )];
+    }
+    let Some(frame_uuid) = group.frame_uuid.as_deref() else {
+        return vec![Diagnostic::new(
+            "SCH012",
+            Severity::Error,
+            format!("group {group_id} requests frame clearance but has no frame_uuid"),
+        )];
+    };
+    let Some(frame) = facts.frames.iter().find(|frame| frame.uuid == frame_uuid) else {
+        return vec![Diagnostic::new(
+            "SCH012",
+            Severity::Error,
+            format!("group {group_id} references missing schematic frame UUID {frame_uuid}"),
+        )];
+    };
+    let (left, top, right, bottom) = frame.bounds_mm;
+    if left >= right || top >= bottom || ![left, top, right, bottom].iter().all(|v| v.is_finite()) {
+        return vec![Diagnostic::new(
+            "SCH012",
+            Severity::Error,
+            format!("group {group_id} frame {frame_uuid} has invalid or zero-area bounds"),
+        )];
+    }
+    if right - left < 2.0 * clearance || bottom - top < 2.0 * clearance {
+        return vec![Diagnostic::new(
+            "SCH012",
+            Severity::Error,
+            format!(
+                "group {group_id} frame {frame_uuid} is too small to provide {clearance:.2} mm clearance on every side"
+            ),
+        )];
+    }
+
+    let mut diagnostics = Vec::new();
+    for reference in &group.members {
+        let Some(component) = facts
+            .components
+            .iter()
+            .find(|component| component.reference == *reference)
+        else {
+            continue;
+        };
+        let Some((x_mm, y_mm)) = component.position_mm else {
+            diagnostics.push(Diagnostic::new(
+                "SCH012",
+                Severity::Error,
+                format!(
+                    "group {group_id} member {reference} has no symbol origin for frame-clearance validation"
+                ),
+            ));
+            continue;
+        };
+        let inside_clearance = x_mm >= left + clearance - 0.001
+            && x_mm <= right - clearance + 0.001
+            && y_mm >= top + clearance - 0.001
+            && y_mm <= bottom - clearance + 0.001;
+        if !inside_clearance {
+            diagnostics.push(Diagnostic::new(
+                "SCH012",
+                Severity::Error,
+                format!(
+                    "group {group_id} member {reference} origin is within {clearance:.2} mm of frame {frame_uuid} edge"
+                ),
+            ));
+        }
+    }
+
+    match facts
+        .text_boxes
+        .iter()
+        .find(|text_box| text_box.uuid == group.description_uuid)
+    {
+        Some(text_box) => match text_box.bounds_mm {
+            Some((box_left, box_top, box_right, box_bottom)) => {
+                let text_inside_clearance = box_left >= left + clearance - 0.001
+                    && box_top >= top + clearance - 0.001
+                    && box_right <= right - clearance + 0.001
+                    && box_bottom <= bottom - clearance + 0.001;
+                if !text_inside_clearance {
+                    diagnostics.push(Diagnostic::new(
+                        "SCH012",
+                        Severity::Error,
+                        format!(
+                            "group {group_id} description text box {} does not maintain {clearance:.2} mm clearance from frame {frame_uuid}",
+                            text_box.uuid
+                        ),
+                    ));
+                }
+            }
+            None => diagnostics.push(Diagnostic::new(
+                "SCH012",
+                Severity::Error,
+                format!(
+                    "group {group_id} description text box {} has no usable geometry for frame-clearance validation",
+                    text_box.uuid
+                ),
+            )),
+        },
+        None => {}
     }
     diagnostics
 }
@@ -1063,6 +1184,84 @@ mod tests {
                 .iter()
                 .any(|item| item.code == "SCH009"
                     && item.message.contains("missing schematic frame UUID"))
+        );
+    }
+
+    #[test]
+    fn group_frame_clearance_accepts_member_and_description_inside_margin() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "group-frame-clearance-test.kicad_sch",
+            r#"(kicad_sch
+                (symbol (lib_id "Device:R") (uuid "r1-uuid") (at 3 3 0)
+                    (property "Reference" "R1" (at 3 4 0)))
+                (rectangle (start 0 0) (end 10 10) (uuid "frame-1"))
+                (text_box "Power input group" (at 3 5) (size 3 1)
+                    (margins 0.5 0.5 0.5 0.5)
+                    (stroke (width 0.1)) (uuid "description-1"))
+            )"#,
+        )
+        .expect("fixture parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"groups":{"power-input":{"members":["R1"],"description_uuid":"description-1","frame_uuid":"frame-1","minimum_frame_clearance_mm":1.0,"evidence":{"document":"Power input design note","page":2,"figure":"Figure 1"}}}}"#,
+        )
+        .expect("profile parses");
+        assert!(
+            !profile
+                .validate(&schematic)
+                .iter()
+                .any(|item| item.code == "SCH012")
+        );
+    }
+
+    #[test]
+    fn group_frame_clearance_reports_symbol_origin_near_frame_edge() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "group-frame-clearance-test.kicad_sch",
+            r#"(kicad_sch
+                (symbol (lib_id "Device:R") (uuid "r1-uuid") (at 0.5 3 0)
+                    (property "Reference" "R1" (at 0.5 4 0)))
+                (rectangle (start 0 0) (end 10 10) (uuid "frame-1"))
+                (text_box "Power input group" (at 3 5) (size 3 1)
+                    (margins 0.5 0.5 0.5 0.5)
+                    (stroke (width 0.1)) (uuid "description-1"))
+            )"#,
+        )
+        .expect("fixture parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"groups":{"power-input":{"members":["R1"],"description_uuid":"description-1","frame_uuid":"frame-1","minimum_frame_clearance_mm":1.0,"evidence":{"document":"Power input design note","page":2,"figure":"Figure 1"}}}}"#,
+        )
+        .expect("profile parses");
+        assert!(
+            profile
+                .validate(&schematic)
+                .iter()
+                .any(|item| item.code == "SCH012" && item.message.contains("origin is within"))
+        );
+    }
+
+    #[test]
+    fn group_frame_clearance_reports_description_box_near_frame_edge() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "group-frame-clearance-test.kicad_sch",
+            r#"(kicad_sch
+                (symbol (lib_id "Device:R") (uuid "r1-uuid") (at 3 3 0)
+                    (property "Reference" "R1" (at 3 4 0)))
+                (rectangle (start 0 0) (end 10 10) (uuid "frame-1"))
+                (text_box "Power input group" (at 0.5 5) (size 3 1)
+                    (margins 0.5 0.5 0.5 0.5)
+                    (stroke (width 0.1)) (uuid "description-1"))
+            )"#,
+        )
+        .expect("fixture parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"groups":{"power-input":{"members":["R1"],"description_uuid":"description-1","frame_uuid":"frame-1","minimum_frame_clearance_mm":1.0,"evidence":{"document":"Power input design note","page":2,"figure":"Figure 1"}}}}"#,
+        )
+        .expect("profile parses");
+        assert!(
+            profile
+                .validate(&schematic)
+                .iter()
+                .any(|item| item.code == "SCH012" && item.message.contains("description text box"))
         );
     }
 
