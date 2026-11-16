@@ -42,6 +42,8 @@ kicad-clippy-core ------ source spans, diagnostics, typed built-in IDs,
 
 The parser uses `kiutils_sexpr` as a lossless concrete-syntax-tree parser. `SchematicDocument` retains a `SourceFile` and the CST. The original text is not canonicalized or rewritten. Parser nodes already carry UTF-8 byte spans, so a second generic CST/span framework would duplicate rather than simplify the current boundary.
 
+The CST's `raw` buffer and token spans remain unchanged. At the `SchematicDocument` boundary, the parser adapter uses each quoted atom's original span to pass the token contents through `unescaper`, replacing the parser's quoted payload with the semantic KiCad string. This keeps exact source reproduction available through `CstDocument::to_lossless_string()` while ensuring rule passes see real newlines, quotes and literal backslashes. The rules layer no longer slices source text or threads a source argument through its geometry and annotation helpers just to decode strings.
+
 Source spans are half-open UTF-8 byte ranges `[start, end)`. `ByteSpan` validates ordering, source bounds and UTF-8 boundaries. `SourceFile` retains the path and one shared copy of the original source text; it deliberately does not build a second line-start index. The CLI passes validated byte ranges to `miette`, which resolves line/column display and renders source labels. This removes a parallel source-location implementation while keeping byte offsets as the canonical contract.
 
 This model intentionally distinguishes two coordinate systems:
@@ -73,6 +75,7 @@ The implementation delegates generic algorithms rather than maintaining parallel
 - `geo` supplies planar intersection predicates, sweep-line wire intersection enumeration, point/segment distance, polygon containment and rectangle intersection. The rule layer still applies KiCad-specific tolerances, explicit-junction handling and pin exceptions.
 - `kurbo` supplies adaptive curve flattening for cubic Bézier and circular-arc paths plus affine matrix operations for placed-symbol rotation and mirroring. The rules layer retains KiCad's local-to-sheet coordinate convention and applies the symbol origin.
 - `miette` supplies terminal diagnostic labels and source excerpts. `Diagnostic` remains the JSON-compatible project schema, and its adapter is confined to the CLI.
+- `unescaper` decodes quoted S-expression text once at the parser boundary from original byte-span slices; the raw CST buffer and source spans are preserved.
 
 Do not add a second source renderer or geometry kernel. Introduce spatial indexing only after profiling demonstrates a remaining candidate-scan bottleneck.
 
