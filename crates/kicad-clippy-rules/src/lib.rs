@@ -90,12 +90,12 @@ impl RuleEngine {
 
     /// Registers an in-process rule pass.
     ///
-    /// External rule crates can implement RulePass and register their pass
+    /// External rule crates can implement `RulePass` and register their pass
     /// without changing the built-in rule catalogue.
     ///
     /// # Errors
     ///
-    /// Returns RuleEngineError if a pass with the same name is already registered.
+    /// Returns `RuleEngineError` if a pass with the same name is already registered.
     pub fn register_pass(&mut self, pass: impl RulePass + 'static) -> Result<(), RuleEngineError> {
         match self.passes.entry(pass.name()) {
             Entry::Vacant(entry) => {
