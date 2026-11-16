@@ -217,7 +217,6 @@ fn collect_frame_facts(root: &Node, source: &str) -> Vec<SchematicFrameFact> {
         .collect()
 }
 
-
 fn collect_wire_facts(root: &Node, source: &str) -> Vec<SchematicWireFact> {
     collect_segments(root, source)
         .into_iter()
