@@ -1696,12 +1696,12 @@ mod tests {
     #[test]
     fn direct_wire_pair_does_not_connect_at_an_unmarked_crossing() {
         let schematic = direct_wire_schematic(
-            r#"
+            r"
             (wire (pts (xy 10 10) (xy 16 10)))
             (wire (pts (xy 20 10) (xy 20 16)))
             (wire (pts (xy 20 16) (xy 14 16)))
             (wire (pts (xy 14 16) (xy 14 4)))
-            "#,
+            ",
         );
         let profile: LintProfile = serde_json::from_str(
             r#"{"schema_version":1,"direct_wire_pairs":[{"first":"U1.1","second":"R1.1"}]}"#,
@@ -1718,13 +1718,13 @@ mod tests {
     #[test]
     fn direct_wire_pair_connects_at_a_crossing_with_an_explicit_junction() {
         let schematic = direct_wire_schematic(
-            r#"
+            r"
             (wire (pts (xy 10 10) (xy 16 10)))
             (wire (pts (xy 20 10) (xy 20 16)))
             (wire (pts (xy 20 16) (xy 14 16)))
             (wire (pts (xy 14 16) (xy 14 4)))
             (junction (at 14 10) (diameter 0) (color 0 0 0 0))
-            "#,
+            ",
         );
         let profile: LintProfile = serde_json::from_str(
             r#"{"schema_version":1,"direct_wire_pairs":[{"first":"U1.1","second":"R1.1"}]}"#,
