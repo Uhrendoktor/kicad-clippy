@@ -1669,7 +1669,7 @@ mod tests {
 
     #[test]
     fn common_pin_group_requires_a_label_on_each_physical_pin_network() {
-        let schematic = direct_wire_schematic(r#"(wire (pts (xy 10 10) (xy 20 10)))"#);
+        let schematic = direct_wire_schematic(r"(wire (pts (xy 10 10) (xy 20 10)))");
         let profile: LintProfile = serde_json::from_str(
             r#"{"schema_version":1,"common_pin_groups":[{"name":"SENSE","pins":["U1.1","R1.1"]}]}"#,
         )
