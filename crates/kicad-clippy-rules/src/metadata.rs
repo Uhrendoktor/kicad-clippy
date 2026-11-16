@@ -385,6 +385,40 @@ mod tests {
     use super::{ComponentKind, ComponentRole, LintProfile, ProfileMode};
 
     #[test]
+    fn resistor_roles_require_their_named_connection_contract() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "profile-test.kicad_sch",
+            r#"(kicad_sch (symbol (lib_id "Device:R") (property "Reference" "R1" (at 1 1 0))))"#,
+        )
+        .expect("fixture parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"components":{"R1":{"kind":"resistor","role":"pull_up","function":"Bias SDA high","rationale":"Required for open-drain I2C","connections":{"signal":"SDA","rail":"3V3"}}}}"#,
+        )
+        .expect("profile parses");
+        assert!(!profile
+            .validate(&schematic)
+            .iter()
+            .any(|item| item.code == "SCH021"));
+    }
+
+    #[test]
+    fn incomplete_resistor_role_contract_is_reported() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "profile-test.kicad_sch",
+            r#"(kicad_sch (symbol (lib_id "Device:R") (property "Reference" "R1" (at 1 1 0))))"#,
+        )
+        .expect("fixture parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"components":{"R1":{"kind":"resistor","role":"pull_up","function":"Bias SDA high","rationale":"Required for open-drain I2C"}}}"#,
+        )
+        .expect("profile parses");
+        assert!(profile
+            .validate(&schematic)
+            .iter()
+            .any(|item| item.code == "SCH021" && item.message.contains("signal")));
+    }
+
+    #[test]
     fn decoupling_intent_preserves_pin_and_terminal_mapping() {
         let json = r#"{"schema_version":1,"mode":"strict","components":{"C1":{"kind":"capacitor","role":"decoupling","function":"Local bypass","rationale":"Minimize loop area","decoupling":{"target_pin":"U1.21","target_terminal":"1","return_terminal":"2","return_net":"GND","cluster":"U1.VREG_1V2"}}}}"#;
         let profile: LintProfile = serde_json::from_str(json).expect("valid fixture");
