@@ -2,7 +2,7 @@
 
 //! Built-in schematic rules, project profiles, and the extensible rule-pass API.
 
-use std::collections::{btree_map::Entry, BTreeMap};
+use std::collections::{BTreeMap, btree_map::Entry};
 
 use kicad_clippy_core::Diagnostic;
 use kicad_clippy_parser::SchematicDocument;
@@ -96,10 +96,7 @@ impl RuleEngine {
     /// # Errors
     ///
     /// Returns RuleEngineError if a pass with the same name is already registered.
-    pub fn register_pass(
-        &mut self,
-        pass: impl RulePass + 'static,
-    ) -> Result<(), RuleEngineError> {
+    pub fn register_pass(&mut self, pass: impl RulePass + 'static) -> Result<(), RuleEngineError> {
         match self.passes.entry(pass.name()) {
             Entry::Vacant(entry) => {
                 entry.insert(Box::new(pass));
@@ -118,11 +115,7 @@ impl RuleEngine {
         let source = document.source().text();
         let segments = generic::collect_segments(root, source);
         let junctions = generic::collect_points(root, source, "junction");
-        let facts = SchematicFacts::from_document_with_geometry(
-            document,
-            &segments,
-            &junctions,
-        );
+        let facts = SchematicFacts::from_document_with_geometry(document, &segments, &junctions);
         let context = RuleContext {
             document,
             facts: &facts,
@@ -172,10 +165,7 @@ mod tests {
         }
 
         fn run(&self, context: &RuleContext<'_>) -> Vec<Diagnostic> {
-            let message = format!(
-                "analyzed {} component(s)",
-                context.facts().components.len()
-            );
+            let message = format!("analyzed {} component(s)", context.facts().components.len());
             vec![Diagnostic::new("EXAMPLE/EXTERNAL", Severity::Note, message)]
         }
     }
@@ -210,11 +200,13 @@ mod tests {
         let document = SchematicDocument::from_text("fixture.kicad_sch", "(kicad_sch)")?;
         let engine = RuleEngine::with_builtins();
         assert_eq!(engine.len(), 3);
-        assert!(!engine
-            .run(&document)
-            .diagnostics
-            .iter()
-            .any(|item| item.code.starts_with("SCH")));
+        assert!(
+            !engine
+                .run(&document)
+                .diagnostics
+                .iter()
+                .any(|item| item.code.starts_with("SCH"))
+        );
         Ok(())
     }
 }
