@@ -146,18 +146,38 @@ impl SchematicFacts {
             return Self::default();
         };
         let source = document.source().text();
+        let segments = collect_segments(root, source);
+        let junctions = collect_points(root, source, "junction");
+        Self::from_document_with_geometry(document, &segments, &junctions)
+    }
+
+    pub(crate) fn from_document_with_geometry(
+        document: &SchematicDocument,
+        segments: &[Segment],
+        junctions: &[Point],
+    ) -> Self {
+        let Some(root) = document.cst().nodes.first() else {
+            return Self::default();
+        };
+        let source = document.source().text();
         Self {
             components: collect_component_facts(root, source),
             text_boxes: collect_text_box_facts(root, source),
             groups: collect_group_facts(root, source),
             frames: collect_frame_facts(root, source),
-            wires: collect_wire_facts(root, source),
+            wires: segments
+                .iter()
+                .map(|segment| SchematicWireFact {
+                    start_mm: (segment.start.x, segment.start.y),
+                    end_mm: (segment.end.x, segment.end.y),
+                })
+                .collect(),
             pins: collect_pin_facts(root, source),
             visible_fields: collect_symbol_field_facts(root, source),
             symbol_primitives: collect_symbol_primitive_facts(root, source),
             labels: collect_label_facts(root, source),
-            junctions: collect_points(root, source, "junction")
-                .into_iter()
+            junctions: junctions
+                .iter()
                 .map(|point| (point.x, point.y))
                 .collect(),
         }
@@ -277,16 +297,6 @@ fn collect_frame_facts(root: &Node, source: &str) -> Vec<SchematicFrameFact> {
                     start.1.max(end.1),
                 ),
             })
-        })
-        .collect()
-}
-
-fn collect_wire_facts(root: &Node, source: &str) -> Vec<SchematicWireFact> {
-    collect_segments(root, source)
-        .into_iter()
-        .map(|segment| SchematicWireFact {
-            start_mm: (segment.start.x, segment.start.y),
-            end_mm: (segment.end.x, segment.end.y),
         })
         .collect()
 }
