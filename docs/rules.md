@@ -15,7 +15,7 @@ The historical checker defines stable IDs SCH001–SCH020. The Rust migration pr
 | SCH009 | Group containment | Implemented opt-in: checks that each profile group member's placed-symbol origin lies inside its referenced top-level KiCad rectangle; symbol/body/pin/field extents remain pending |
 | SCH010 | Symbol field clearance | Implemented partial: detects overlaps between visible symbol fields and between fields and annotation boxes using estimated text bounds; symbol-body/primitive clearance remains pending |
 | SCH011 | Block annotation structure | Implemented: multiline text boxes require a visible border |
-| SCH012 | Frame content clearance | Pending |
+| SCH012 | Frame content clearance | Implemented partial: profile-defined inset checks for group member symbol origins and description text-box bounds relative to a referenced rectangle; other frame contents remain pending |
 | SCH013 | Wire obstacle clearance | Pending embedded symbol primitive geometry |
 | SCH014 | Shared pin/net contracts | Implemented for profile-declared component pins and connector `pin.N` mappings against exported KiCad netlist membership |
 | SCH015 | Required no-connect markers | Implemented: verifies each explicit no-connect marker coincides with an embedded placed-symbol pin; incomplete/non-cardinal pin models are conservatively skipped |
@@ -32,6 +32,8 @@ KiCad native ERC remains the electrical authority. Rust rules must not duplicate
 SCH005 intentionally checks only connected-wire axis alignment; KiCad native ERC remains responsible for electrical pin compatibility and unconnected-pin findings. Pin layouts that cannot be resolved from the embedded symbol definition or use non-cardinal symbol rotation are skipped rather than guessed.
 
 SCH015 checks only no-connect marker placement against embedded pin coordinates; it skips the rule if any placed symbol pin model is incomplete or unsupported. KiCad native ERC remains responsible for electrical unconnected-pin analysis.
+
+SCH012 checks only the member symbol origins and the group description text-box rectangle against a configured frame inset. It does not currently include symbol extents, pins, wires, labels or other annotations.
 
 SCH010 estimates visible symbol-field text bounds from the stored field position, font size, angle and justification. It detects field-to-field and field-to-annotation-box overlap; it does not yet check symbol-body primitives or guarantee exact font-renderer geometry.
 
