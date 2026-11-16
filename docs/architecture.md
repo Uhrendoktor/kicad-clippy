@@ -42,7 +42,7 @@ kicad-clippy-core ------ source spans, diagnostics, typed built-in IDs,
 
 The parser uses `kiutils_sexpr` as a lossless concrete-syntax-tree parser. `SchematicDocument` retains a `SourceFile` and the CST. The original text is not canonicalized or rewritten. Parser nodes already carry UTF-8 byte spans, so a second generic CST/span framework would duplicate rather than simplify the current boundary.
 
-Source spans are half-open UTF-8 byte ranges `[start, end)`. The source mapper converts valid byte offsets to one-based line and Unicode-scalar column positions and rejects offsets that split a UTF-8 code point.
+Source spans are half-open UTF-8 byte ranges `[start, end)`. `ByteSpan` validates ordering, source bounds and UTF-8 boundaries. `SourceFile` retains the path and one shared copy of the original source text; it deliberately does not build a second line-start index. The CLI passes validated byte ranges to `miette`, which resolves line/column display and renders source labels. This removes a parallel source-location implementation while keeping byte offsets as the canonical contract.
 
 This model intentionally distinguishes two coordinate systems:
 
@@ -63,7 +63,18 @@ A `Diagnostic` includes a stable code and severity, message, optional explanatio
 
 Built-in IDs are represented in Rust by `BuiltinRuleId` (SCH001–SCH022). Conversion to strings occurs at the diagnostic/serialization boundary, preserving the existing external JSON code. Open-ended native ERC identifiers remain strings because KiCad controls that namespace.
 
-`RuleDescriptor` is metadata, `RuleRegistry` rejects duplicate IDs, and neither is the implementation of a rule. The rules crate now exposes a deterministic RuleEngine, an immutable RuleContext, and a RulePass extension trait. The engine collects SchematicFacts once, shares them with every registered pass, rejects duplicate pass names, and executes passes in stable name order. A pass can emit diagnostics for several rule IDs; a rule may be emitted by more than one pass. External Rust crates can implement RulePass and register it in-process. The CLI currently registers the built-in schematic pass; dynamic library and WASM loading are intentionally not part of this initial extension contract. The built-in checks are currently split into three deterministic passes: geometry/pin placement, physical-wire topology/labels, and annotation/field layout. Parsed source, schematic facts, wire segments and junction points are collected once and shared. Further extraction should separate semantic resolution, spatial indexing, physical connectivity and project-profile contracts as those shared analysis boundaries stabilize.
+`RuleDescriptor` is metadata, `RuleRegistry` rejects duplicate IDs, and neither is the implementation of a rule. The rules crate now exposes a deterministic RuleEngine, an immutable RuleContext, and a RulePass extension trait. The engine collects SchematicFacts once, shares them with every registered pass, rejects duplicate pass names, and executes passes in stable name order. A pass can emit diagnostics for several rule IDs; a rule may be emitted by more than one pass. External Rust crates can implement RulePass and register it in-process. The CLI currently registers the three built-in passes; dynamic library and WASM loading are intentionally not part of this initial extension contract. The built-in checks are currently split into three deterministic passes: geometry/pin placement, physical-wire topology/labels, and annotation/field layout. Parsed source, schematic facts, wire segments and junction points are collected once and shared. Further extraction should separate semantic resolution, spatial indexing, physical connectivity and project-profile contracts as those shared analysis boundaries stabilize.
+
+
+## Reused geometry and diagnostic libraries
+
+The implementation delegates generic algorithms rather than maintaining parallel versions:
+
+- `geo` supplies planar intersection predicates, sweep-line wire intersection enumeration, point/segment distance, polygon containment and rectangle intersection. The rule layer still applies KiCad-specific tolerances, explicit-junction handling and pin exceptions.
+- `kurbo` supplies adaptive curve flattening for Bezier/arc paths and affine transforms for placed-symbol geometry. The parser and rules layer translate KiCad's local coordinate conventions into library types.
+- `miette` supplies terminal diagnostic labels and source excerpts. `Diagnostic` remains the JSON-compatible project schema, and its adapter is confined to the CLI.
+
+Do not add a second source renderer or geometry kernel. Introduce spatial indexing only after profiling demonstrates a remaining candidate-scan bottleneck.
 
 ## Analysis pipeline
 
