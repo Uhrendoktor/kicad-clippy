@@ -1670,7 +1670,10 @@ mod tests {
 
     #[test]
     fn common_pin_group_rejects_duplicate_and_unresolvable_pin_references() {
-        let schematic = direct_wire_schematic(r"(wire (pts (xy 10 10) (xy 20 10)))");
+        let schematic = direct_wire_schematic(
+            r#"(wire (pts (xy 10 10) (xy 20 10)))
+               (label "VBUS" (at 20 10 0) (effects (font (size 1 1))))"#,
+        );
         let profile: LintProfile = serde_json::from_str(
             r#"{"schema_version":1,"common_pin_groups":[{"name":"SENSE","pins":["U1.1","U1.1"]},{"name":"VBUS","pins":["U1.99","R1.1"]}]}"#,
         )
