@@ -47,7 +47,7 @@ pub struct DecouplingIntent {
 }
 
 /// Declared purpose and engineering constraints for one component.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct ComponentIntent {
     /// Component family.
     pub kind: ComponentKind,
@@ -68,7 +68,7 @@ pub struct ComponentIntent {
 }
 
 /// Per-project rule configuration.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct LintProfile {
     /// Profile schema version.
     pub schema_version: u32,
