@@ -454,55 +454,82 @@ fn validate_common_pin_group(
     facts: &SchematicFacts,
     component_ids: &BTreeMap<String, usize>,
 ) -> Vec<Diagnostic> {
-    let group_name = group.name.trim();
-    let mut diagnostics = Vec::new();
-    if group_name.is_empty() {
-        diagnostics.push(Diagnostic::new(
-            "SCH004",
-            Severity::Error,
-            "common pin group must define a non-empty expected label/net name",
-        ));
-        return diagnostics;
+    if let Some(invalid) = common_pin_group_configuration_error(group) {
+        return vec![invalid];
     }
-    let unique_pins: BTreeSet<_> = group.pins.iter().collect();
-    if group.pins.len() < 2 || unique_pins.len() != group.pins.len() {
+    let (roots, mut diagnostics) =
+        resolve_common_pin_group_components(group, facts, component_ids);
+    if group.wire_connected && roots.len() > 1 {
         diagnostics.push(Diagnostic::new(
             "SCH004",
             Severity::Error,
             format!(
-                "common pin group {group_name:?} must list at least two distinct REF.PIN entries"
+                "configured pins {:?} must share one physical {} wire network",
+                group.pins, group.name
             ),
         ));
-        return diagnostics;
     }
-
-    let mut roots = BTreeSet::new();
-    for pin_ref in &group.pins {
-        let Some((reference, pin_number)) = pin_ref.rsplit_once('.') else {
+    if group.single_label {
+        let matching_labels = common_pin_group_label_count(group, &roots, facts, component_ids);
+        if matching_labels != 1 {
             diagnostics.push(Diagnostic::new(
                 "SCH004",
                 Severity::Error,
-                format!("common pin group {group_name:?} contains invalid pin reference {pin_ref:?}"),
+                format!(
+                    "configured pins {:?} must share exactly one {} label; found {matching_labels}",
+                    group.pins, group.name
+                ),
             ));
+        }
+    }
+    diagnostics
+}
+
+fn common_pin_group_configuration_error(
+    group: &CommonPinNetGroup,
+) -> Option<Diagnostic> {
+    let group_name = group.name.trim();
+    let unique_pins: BTreeSet<_> = group.pins.iter().collect();
+    let message = if group_name.is_empty() {
+        Some("common pin group must define a non-empty expected label/net name".to_owned())
+    } else if group.pins.len() < 2 || unique_pins.len() != group.pins.len() {
+        Some(format!(
+            "common pin group {group_name:?} must list at least two distinct REF.PIN entries"
+        ))
+    } else {
+        None
+    };
+    message.map(|message| Diagnostic::new("SCH004", Severity::Error, message))
+}
+
+fn resolve_common_pin_group_components(
+    group: &CommonPinNetGroup,
+    facts: &SchematicFacts,
+    component_ids: &BTreeMap<String, usize>,
+) -> (BTreeSet<usize>, Vec<Diagnostic>) {
+    let mut roots = BTreeSet::new();
+    let mut diagnostics = Vec::new();
+    for pin_ref in &group.pins {
+        let Some((reference, pin_number)) = pin_ref.rsplit_once('.') else {
+            diagnostics.push(invalid_common_pin_reference(&group.name, pin_ref));
             continue;
         };
         if !valid_pin_ref(pin_ref) {
-            diagnostics.push(Diagnostic::new(
-                "SCH004",
-                Severity::Error,
-                format!("common pin group {group_name:?} contains invalid pin reference {pin_ref:?}"),
-            ));
+            diagnostics.push(invalid_common_pin_reference(&group.name, pin_ref));
             continue;
         }
-        let Some(pin) = facts
+        let pin = facts
             .pins
             .iter()
-            .find(|item| item.reference == reference && item.number == pin_number)
-        else {
+            .find(|item| item.reference == reference && item.number == pin_number);
+        let Some(pin) = pin else {
             diagnostics.push(Diagnostic::new(
                 "SCH004",
                 Severity::Error,
-                format!("common pin group {group_name:?} references missing or unsupported pin {pin_ref}"),
+                format!(
+                    "common pin group {:?} references missing or unsupported pin {pin_ref}",
+                    group.name
+                ),
             ));
             continue;
         };
@@ -510,7 +537,10 @@ fn validate_common_pin_group(
             diagnostics.push(Diagnostic::new(
                 "SCH004",
                 Severity::Error,
-                format!("{pin_ref} in common pin group {group_name:?} is not attached to a physical wire"),
+                format!(
+                    "{pin_ref} in common pin group {:?} is not attached to a physical wire",
+                    group.name
+                ),
             ));
             continue;
         }
@@ -519,57 +549,54 @@ fn validate_common_pin_group(
             diagnostics.push(Diagnostic::new(
                 "SCH004",
                 Severity::Error,
-                format!("{pin_ref} in common pin group {group_name:?} has no resolved physical wire component"),
+                format!(
+                    "{pin_ref} in common pin group {:?} has no resolved physical wire component",
+                    group.name
+                ),
             ));
             continue;
         };
         roots.insert(component);
-        if !component_has_label(component, group_name, facts, component_ids) {
+        if !component_has_label(component, group.name.trim(), facts, component_ids) {
             diagnostics.push(Diagnostic::new(
                 "SCH004",
                 Severity::Error,
-                format!("{pin_ref} must belong to common net {group_name}"),
+                format!("{pin_ref} must belong to common net {}", group.name),
             ));
         }
     }
-
-    if group.wire_connected && roots.len() > 1 {
-        diagnostics.push(Diagnostic::new(
-            "SCH004",
-            Severity::Error,
-            format!(
-                "configured pins {:?} must share one physical {group_name} wire network",
-                group.pins
-            ),
-        ));
-    }
-    if group.single_label {
-        let matching_labels = facts
-            .labels
-            .iter()
-            .filter(|label| {
-                if label.name != group_name {
-                    return false;
-                }
-                let key = format!("{:.3}:{:.3}", label.position_mm.0, label.position_mm.1);
-                component_ids
-                    .get(&key)
-                    .is_some_and(|component| roots.contains(component))
-            })
-            .count();
-        if matching_labels != 1 {
-            diagnostics.push(Diagnostic::new(
-                "SCH004",
-                Severity::Error,
-                format!(
-                    "configured pins {:?} must share exactly one {group_name} label; found {matching_labels}",
-                    group.pins
-                ),
-            ));
-        }
-    }
-    diagnostics
+    (roots, diagnostics)
 }
+
+fn invalid_common_pin_reference(group_name: &str, pin_ref: &str) -> Diagnostic {
+    Diagnostic::new(
+        "SCH004",
+        Severity::Error,
+        format!("common pin group {group_name:?} contains invalid pin reference {pin_ref:?}"),
+    )
+}
+
+fn common_pin_group_label_count(
+    group: &CommonPinNetGroup,
+    roots: &BTreeSet<usize>,
+    facts: &SchematicFacts,
+    component_ids: &BTreeMap<String, usize>,
+) -> usize {
+    facts
+        .labels
+        .iter()
+        .filter(|label| {
+            if label.name != group.name.trim() {
+                return false;
+            }
+            let key = format!("{:.3}:{:.3}", label.position_mm.0, label.position_mm.1);
+            component_ids
+                .get(&key)
+                .is_some_and(|component| roots.contains(component))
+        })
+        .count()
+}
+
 
 fn component_has_label(
     component: usize,
