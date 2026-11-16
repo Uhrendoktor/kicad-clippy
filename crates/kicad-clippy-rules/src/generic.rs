@@ -1,11 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use geo::{
-    Contains, Coord, Covers, Distance, Euclidean, Intersects, Line, LineIntersection, LineString,
+    Contains, Coord, Distance, Euclidean, Intersects, Line, LineIntersection, LineString,
     Point as GeoPoint, Polygon, Rect as GeoRect,
     algorithm::sweep::{Cross, Intersections},
-    line_intersection,
 };
+use geo::algorithm::line_intersection::line_intersection;
 use kicad_clippy_core::{
     BuiltinRuleId, ByteSpan, Diagnostic, RelatedLocation, SchematicLocation, Severity,
 };
@@ -658,7 +658,8 @@ fn bezier_primitive_points(node: &Node, source: &str) -> Option<Vec<(f64, f64)>>
             ))
         })
         .collect();
-    let [start, control_one, control_two, end] = coordinates?.as_slice() else {
+    let coordinates = coordinates?;
+    let [start, control_one, control_two, end] = coordinates.as_slice() else {
         return None;
     };
     let path = [
@@ -1077,7 +1078,7 @@ fn segment_intersection_points(
     let first_line = geo_line(first.start, first.end);
     let second_line = geo_line(second_start, second_end);
 
-    match line_intersection(&first_line, &second_line) {
+    match line_intersection(first_line, second_line) {
         Some(LineIntersection::SinglePoint { intersection, .. }) => {
             vec![Point {
                 x: intersection.x,
@@ -1128,7 +1129,9 @@ fn point_in_polygon(point: Point, polygon: &[(f64, f64)]) -> bool {
         }
     }
 
-    Polygon::new(LineString::new(ring), Vec::new()).covers(&GeoPoint::new(point.x, point.y))
+    let geometry = Polygon::new(LineString::new(ring), Vec::new());
+    let query = GeoPoint::new(point.x, point.y);
+    geometry.contains(&query) || Euclidean.distance(&query, geometry.exterior()) <= 0.001
 }
 
 fn check_pin_orientation(root: &Node, source: &str, segments: &[Segment]) -> Vec<Diagnostic> {
@@ -2418,7 +2421,7 @@ fn point_in_bounds(point: Point, bounds: Bounds) -> bool {
         width: bounds.width + 0.002,
         height: bounds.height + 0.002,
     };
-    geo_rect(expanded).covers(&GeoPoint::new(point.x, point.y))
+    geo_rect(expanded).contains(&GeoPoint::new(point.x, point.y))
 }
 
 fn point_bounds_distance(point: Point, bounds: Bounds) -> f64 {
