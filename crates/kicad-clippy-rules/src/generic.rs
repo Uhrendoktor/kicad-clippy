@@ -34,7 +34,7 @@ pub struct ComponentFact {
 
 #[derive(Clone, Debug)]
 pub struct SchematicGroupFact {
-    /// Name shown by the native KiCad group.
+    /// Name shown by the native `KiCad` group.
     pub name: String,
     /// Stable UUID from the group's id field.
     pub uuid: String,
@@ -56,7 +56,7 @@ pub struct SchematicFacts {
     pub components: Vec<ComponentFact>,
     /// Text boxes used for group documentation.
     pub text_boxes: Vec<TextBoxFact>,
-    /// Native KiCad schematic groups.
+    /// Native `KiCad` schematic groups.
     pub groups: Vec<SchematicGroupFact>,
 }
 
