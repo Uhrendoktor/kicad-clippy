@@ -269,10 +269,9 @@ fn validate_direct_wire_connectivity(
 
     for pair in pairs {
         let pair_name = format!("{} / {}", pair.first, pair.second);
-        let (Some((first_reference, first_number)), Some((second_reference, second_number))) = (
-            pair.first.rsplit_once('.'),
-            pair.second.rsplit_once('.'),
-        ) else {
+        let (Some((first_reference, first_number)), Some((second_reference, second_number))) =
+            (pair.first.rsplit_once('.'), pair.second.rsplit_once('.'))
+        else {
             diagnostics.push(Diagnostic::new(
                 "SCH004",
                 Severity::Error,
@@ -280,9 +279,7 @@ fn validate_direct_wire_connectivity(
             ));
             continue;
         };
-        if !valid_pin_ref(&pair.first)
-            || !valid_pin_ref(&pair.second)
-            || pair.first == pair.second
+        if !valid_pin_ref(&pair.first) || !valid_pin_ref(&pair.second) || pair.first == pair.second
         {
             diagnostics.push(Diagnostic::new(
                 "SCH004",
@@ -291,17 +288,21 @@ fn validate_direct_wire_connectivity(
             ));
             continue;
         }
-        let first_pin = facts.pins.iter().find(|pin| {
-            pin.reference == first_reference && pin.number == first_number
-        });
-        let second_pin = facts.pins.iter().find(|pin| {
-            pin.reference == second_reference && pin.number == second_number
-        });
+        let first_pin = facts
+            .pins
+            .iter()
+            .find(|pin| pin.reference == first_reference && pin.number == first_number);
+        let second_pin = facts
+            .pins
+            .iter()
+            .find(|pin| pin.reference == second_reference && pin.number == second_number);
         let (Some(first_pin), Some(second_pin)) = (first_pin, second_pin) else {
             diagnostics.push(Diagnostic::new(
                 "SCH004",
                 Severity::Error,
-                format!("direct-wire pair {pair_name} references a missing or unsupported embedded pin"),
+                format!(
+                    "direct-wire pair {pair_name} references a missing or unsupported embedded pin"
+                ),
             ));
             continue;
         };
@@ -314,14 +315,18 @@ fn validate_direct_wire_connectivity(
             diagnostics.push(Diagnostic::new(
                 "SCH004",
                 Severity::Error,
-                format!("pin {}.{} is not attached to a physical wire segment", pair.first.split_once('.').map_or("", |value| value.0), first_number),
+                format!(
+                    "pin {first_reference}.{first_number} is not attached to a physical wire segment"
+                ),
             ));
         }
         if !second_attached {
             diagnostics.push(Diagnostic::new(
                 "SCH004",
                 Severity::Error,
-                format!("pin {}.{} is not attached to a physical wire segment", pair.second.split_once('.').map_or("", |value| value.0), second_number),
+                format!(
+                    "pin {second_reference}.{second_number} is not attached to a physical wire segment"
+                ),
             ));
         }
         if first_attached && second_attached {
@@ -338,9 +343,7 @@ fn validate_direct_wire_connectivity(
 
         for (pin_ref, point) in [(&pair.first, first_point), (&pair.second, second_point)] {
             for label in &facts.labels {
-                if label.kind != "global_label"
-                    && same_wire_point(label.position_mm, point)
-                {
+                if label.kind != "global_label" && same_wire_point(label.position_mm, point) {
                     diagnostics.push(Diagnostic::new(
                         "SCH004",
                         Severity::Error,
@@ -355,9 +358,11 @@ fn validate_direct_wire_connectivity(
     }
 
     for forbidden in forbidden_labels {
-        for label in facts.labels.iter().filter(|label| {
-            label.kind == "label" && label.name == *forbidden
-        }) {
+        for label in facts
+            .labels
+            .iter()
+            .filter(|label| label.kind == "label" && label.name == *forbidden)
+        {
             diagnostics.push(Diagnostic::new(
                 "SCH004",
                 Severity::Error,
@@ -378,10 +383,12 @@ fn point_is_on_wire(point: (f64, f64), facts: &SchematicFacts) -> bool {
             (point.1 - wire.start_mm.1).abs() <= 0.001
                 && point.0 >= wire.start_mm.0.min(wire.end_mm.0) - 0.001
                 && point.0 <= wire.start_mm.0.max(wire.end_mm.0) + 0.001
-        } else {
+        } else if (wire.start_mm.0 - wire.end_mm.0).abs() <= 0.001 {
             (point.0 - wire.start_mm.0).abs() <= 0.001
                 && point.1 >= wire.start_mm.1.min(wire.end_mm.1) - 0.001
                 && point.1 <= wire.start_mm.1.max(wire.end_mm.1) + 0.001
+        } else {
+            false
         }
     })
 }
@@ -1365,9 +1372,7 @@ mod tests {
 
     #[test]
     fn direct_wire_pair_passes_when_pins_share_a_continuous_wire() {
-        let schematic = direct_wire_schematic(
-            r#"(wire (pts (xy 10 10) (xy 20 10)))"#,
-        );
+        let schematic = direct_wire_schematic(r#"(wire (pts (xy 10 10) (xy 20 10)))"#);
         let profile: LintProfile = serde_json::from_str(
             r#"{"schema_version":1,"direct_wire_pairs":[{"first":"U1.1","second":"R1.1"}]}"#,
         )
@@ -1394,13 +1399,12 @@ mod tests {
             r#"{"schema_version":1,"direct_wire_pairs":[{"first":"U1.1","second":"R1.1"}]}"#,
         )
         .expect("profile parses");
-        assert!(
-            profile
-                .validate(&schematic)
-                .iter()
-                .any(|item| item.code == "SCH004"
-                    && item.message.contains("must share one physical wire-only network"))
-        );
+        assert!(profile.validate(&schematic).iter().any(|item| {
+            item.code == "SCH004"
+                && item
+                    .message
+                    .contains("must share one physical wire-only network")
+        }));
     }
 
     #[test]
@@ -1418,13 +1422,16 @@ mod tests {
         .expect("profile parses");
         let diagnostics = profile.validate(&schematic);
         assert!(
-            diagnostics.iter().any(|item| item.code == "SCH004"
-                && item.message.contains("shares its anchor with"))
+            diagnostics.iter().any(
+                |item| item.code == "SCH004" && item.message.contains("shares its anchor with")
+            )
         );
-        assert!(
-            diagnostics.iter().any(|item| item.code == "SCH004"
-                && item.message.contains("forbidden on a direct-wire-only network"))
-        );
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "SCH004"
+                && item
+                    .message
+                    .contains("forbidden on a direct-wire-only network")
+        }));
     }
 
     #[test]
@@ -1435,12 +1442,22 @@ mod tests {
         )
         .expect("profile parses");
         let diagnostics = profile.validate(&schematic);
-        assert_eq!(diagnostics.iter().filter(|item| item.code == "SCH004").count(), 2);
-        assert!(
-            diagnostics.iter().any(|item| item.message.contains("U1.1 is not attached"))
+        assert_eq!(
+            diagnostics
+                .iter()
+                .filter(|item| item.code == "SCH004")
+                .count(),
+            2
         );
         assert!(
-            diagnostics.iter().any(|item| item.message.contains("R1.1 is not attached"))
+            diagnostics
+                .iter()
+                .any(|item| item.message.contains("U1.1 is not attached"))
+        );
+        assert!(
+            diagnostics
+                .iter()
+                .any(|item| item.message.contains("R1.1 is not attached"))
         );
     }
 
