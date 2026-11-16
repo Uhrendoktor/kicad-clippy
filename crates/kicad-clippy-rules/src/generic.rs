@@ -5,8 +5,9 @@ use kicad_clippy_core::{
 };
 use kicad_clippy_parser::SchematicDocument;
 use geo::{
-    Coord, Covers, Distance, Euclidean, Line, LineIntersection, LineString, Point as GeoPoint,
-    Polygon, algorithm::sweep::{Cross, Intersections}, line_intersection,
+    Contains, Coord, Covers, Distance, Euclidean, Intersects, Line, LineIntersection, LineString,
+    Point as GeoPoint, Polygon, Rect as GeoRect, algorithm::sweep::{Cross, Intersections},
+    line_intersection,
 };
 use kiutils_sexpr::{Atom, Node};
 
@@ -2461,86 +2462,64 @@ fn check_symbol_field_clearance(
     diagnostics
 }
 
-fn bounds_corners(bounds: Bounds) -> [Point; 4] {
-    [
-        Point {
-            x: bounds.x,
-            y: bounds.y,
+fn geo_rect(bounds: Bounds) -> GeoRect<f64> {
+    let opposite_x = bounds.x + bounds.width;
+    let opposite_y = bounds.y + bounds.height;
+    GeoRect::new(
+        Coord {
+            x: bounds.x.min(opposite_x),
+            y: bounds.y.min(opposite_y),
         },
-        Point {
-            x: bounds.x + bounds.width,
-            y: bounds.y,
+        Coord {
+            x: bounds.x.max(opposite_x),
+            y: bounds.y.max(opposite_y),
         },
-        Point {
-            x: bounds.x + bounds.width,
-            y: bounds.y + bounds.height,
-        },
-        Point {
-            x: bounds.x,
-            y: bounds.y + bounds.height,
-        },
-    ]
+    )
 }
 
 fn point_in_bounds(point: Point, bounds: Bounds) -> bool {
-    point.x >= bounds.x - 0.001
-        && point.x <= bounds.x + bounds.width + 0.001
-        && point.y >= bounds.y - 0.001
-        && point.y <= bounds.y + bounds.height + 0.001
+    let expanded = Bounds {
+        x: bounds.x - 0.001,
+        y: bounds.y - 0.001,
+        width: bounds.width + 0.002,
+        height: bounds.height + 0.002,
+    };
+    geo_rect(expanded).covers(&GeoPoint::new(point.x, point.y))
 }
 
 fn point_bounds_distance(point: Point, bounds: Bounds) -> f64 {
-    let dx = (bounds.x - point.x)
-        .max(0.0)
-        .max(point.x - (bounds.x + bounds.width));
-    let dy = (bounds.y - point.y)
-        .max(0.0)
-        .max(point.y - (bounds.y + bounds.height));
-    dx.hypot(dy)
-}
-
-fn bounds_edges(bounds: Bounds) -> [(Point, Point); 4] {
-    let corners = bounds_corners(bounds);
-    [
-        (corners[0], corners[1]),
-        (corners[1], corners[2]),
-        (corners[2], corners[3]),
-        (corners[3], corners[0]),
-    ]
+    Euclidean.distance(&GeoPoint::new(point.x, point.y), &geo_rect(bounds))
 }
 
 fn segment_intersects_bounds(segment: Segment, bounds: Bounds) -> bool {
-    point_in_bounds(segment.start, bounds)
-        || point_in_bounds(segment.end, bounds)
-        || bounds_edges(bounds)
-            .into_iter()
-            .any(|(start, end)| !segment_intersection_points(segment, start, end).is_empty())
+    geo_line(segment.start, segment.end).intersects(&geo_rect(bounds))
 }
 
-fn primitive_edges(primitive: &SchematicPrimitiveFact) -> Vec<Segment> {
-    let points: Vec<_> = primitive
+fn schematic_polygon(primitive: &SchematicPrimitiveFact) -> Option<Polygon<f64>> {
+    if !primitive.closed || primitive.points_mm.len() < 3 {
+        return None;
+    }
+    let mut ring: Vec<_> = primitive
         .points_mm
         .iter()
-        .map(|(x, y)| Point { x: *x, y: *y })
+        .map(|(x, y)| Coord { x: *x, y: *y })
         .collect();
-    let mut edges: Vec<_> = points
-        .windows(2)
-        .map(|pair| Segment {
-            start: pair[0],
-            end: pair[1],
-            span: ByteSpan::new(0, 0),
-        })
-        .collect();
-    if primitive.closed && points.len() > 2 {
-        if let Some(last_point) = points.last().copied() {
-            edges.push(Segment {
-                start: last_point,
-                end: points[0],
-                span: ByteSpan::new(0, 0),
-            });
+    if ring.first() != ring.last() {
+        if let Some(first) = ring.first().copied() {
+            ring.push(first);
         }
     }
-    edges
+    Some(Polygon::new(LineString::new(ring), Vec::new()))
+}
+
+fn schematic_path(primitive: &SchematicPrimitiveFact) -> LineString<f64> {
+    LineString::new(
+        primitive
+            .points_mm
+            .iter()
+            .map(|(x, y)| Coord { x: *x, y: *y })
+            .collect(),
+    )
 }
 
 fn symbol_primitive_intersects_bounds(bounds: Bounds, primitive: &SchematicPrimitiveFact) -> bool {
@@ -2553,24 +2532,11 @@ fn symbol_primitive_intersects_bounds(bounds: Bounds, primitive: &SchematicPrimi
             <= radius + primitive.stroke_width_mm / 2.0 + 0.001;
     }
 
-    if primitive.closed
-        && bounds_corners(bounds)
-            .iter()
-            .any(|corner| point_in_polygon(*corner, &primitive.points_mm))
-    {
-        return true;
-    }
-    if primitive
-        .points_mm
-        .iter()
-        .map(|(x, y)| Point { x: *x, y: *y })
-        .any(|point| point_in_bounds(point, bounds))
-    {
-        return true;
-    }
-    primitive_edges(primitive)
-        .into_iter()
-        .any(|edge| segment_intersects_bounds(edge, bounds))
+    let rectangle = geo_rect(bounds);
+    schematic_polygon(primitive).map_or_else(
+        || schematic_path(primitive).intersects(&rectangle),
+        |polygon| polygon.intersects(&rectangle),
+    )
 }
 
 fn symbol_primitive_contains_bounds(bounds: Bounds, primitive: &SchematicPrimitiveFact) -> bool {
@@ -2583,17 +2549,21 @@ fn symbol_primitive_contains_bounds(bounds: Bounds, primitive: &SchematicPrimiti
             x: center_x,
             y: center_y,
         };
-        return bounds_corners(bounds)
-            .iter()
-            .all(|corner| distance(*corner, center) <= inner_radius + 0.001);
+        // Circle containment remains explicit because the current primitive
+        // fact stores a circle as center/radius rather than a polygonal ring.
+        let opposite_x = bounds.x + bounds.width;
+        let opposite_y = bounds.y + bounds.height;
+        return [
+            Point { x: bounds.x, y: bounds.y },
+            Point { x: opposite_x, y: bounds.y },
+            Point { x: opposite_x, y: opposite_y },
+            Point { x: bounds.x, y: opposite_y },
+        ]
+        .iter()
+        .all(|corner| distance(*corner, center) <= inner_radius + 0.001);
     }
-    primitive.closed
-        && bounds_corners(bounds)
-            .iter()
-            .all(|corner| point_in_polygon(*corner, &primitive.points_mm))
-        && !primitive_edges(primitive)
-            .into_iter()
-            .any(|edge| segment_intersects_bounds(edge, bounds))
+
+    schematic_polygon(primitive).is_some_and(|polygon| polygon.contains(&geo_rect(bounds)))
 }
 
 fn property_is_hidden(property: &Node) -> bool {
