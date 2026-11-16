@@ -1,87 +1,68 @@
 # Rule development
 
-This document describes the rule metadata available today and the constraints for the future executable rule API.
+This document describes the built-in rule identity and the intended execution contract.
 
-## Current rule metadata
+## Built-in identifiers
 
-The `kicad-clippy-core` crate currently exposes `RuleDescriptor`, `RuleLevel`, `RuleRegistry`, and `RuleRegistryError`.
-
-A descriptor records a stable ID and explanatory metadata:
+Use `BuiltinRuleId` for built-in rules. It is a closed enum covering SCH001–SCH022, provides stable string conversion for output, and rejects unknown built-in IDs when parsing. For example:
 
 ```rust
-use kicad_clippy_core::{RuleDescriptor, RuleLevel, RuleRegistry, RuleRegistryError};
+use kicad_clippy_core::{BuiltinRuleId, Diagnostic, Severity};
 
-fn register_builtin_rules(
-    registry: &mut RuleRegistry,
-) -> Result<(), RuleRegistryError> {
-    let descriptor = RuleDescriptor::new(
-        "SCH001",
-        "wire geometry",
-        "layout",
-        "Keep schematic wires orthogonal.",
-        "Orthogonal routing is easier to inspect and maintain.",
-        RuleLevel::Deny,
-    );
-
-    registry.register(descriptor)
-}
+let finding = Diagnostic::for_builtin_rule(
+    BuiltinRuleId::Sch001,
+    Severity::Error,
+    "wire is not orthogonal",
+);
+assert_eq!(finding.code, "SCH001");
 ```
 
-The registry is deterministic and rejects duplicate identifiers. Levels are:
+Use the open-ended string namespace only for external diagnostics such as `KICAD/ERC/<type>` and future third-party rule IDs. A string code in serialized JSON is a compatibility boundary; the Rust implementation should use typed built-in IDs.
 
-| Level | Intended behavior |
+## Metadata and registration
+
+`RuleDescriptor` records the stable ID and explanatory metadata: name, category, summary, explanation, default level, optional documentation URL and tags. `RuleRegistry` is deterministic and rejects duplicate IDs.
+
+A rule declaration is not its implementation. A check can emit more than one diagnostic, several checks can emit the same rule ID, and a single analysis pass can contribute findings to multiple rules. Keep metadata and execution separate.
+
+Levels are:
+
+| Level | Behavior |
 | --- | --- |
 | `Allow` | Disable a rule. |
-| `Warn` | Report a non-blocking finding. |
-| `Deny` | Report an error that fails a lint run. |
+| `Warn` | Emit a non-blocking finding. |
+| `Deny` | Emit an error that fails a lint run. |
 
-The current CLI does not yet load or execute descriptors, and it does not expose a `rules` command. The example above demonstrates metadata registration only.
+## Execution model
 
-## Stable identifiers
+The intended runtime has one immutable `RuleContext` containing the parsed document, semantic facts, geometry indexes, physical connectivity graph, optional native netlist, and validated project profile. Rules declare which analysis products they require. The engine computes each shared analysis once and schedules rules in deterministic phase order.
 
-Use a stable, uppercase identifier for built-in schematic rules. The legacy project rules use the `SCHnnn` namespace. Native KiCad findings use `KICAD/ERC/<type>`.
+Suggested phases:
 
-Once published, a rule ID should not be reassigned to a different check. If a rule is retired, document that status rather than recycling its ID.
+1. **Syntax:** facts available directly from the lossless CST and source spans.
+2. **Semantic:** resolved symbols, UUIDs, hierarchy, fields and embedded library definitions.
+3. **Geometry:** normalized primitives, bounds, pin anchors and spatial candidate indexes.
+4. **Connectivity:** explicit-junction physical wire components and native netlist membership.
+5. **Project contracts:** profile-declared component intent, groups, frames and evidence.
 
-## Required rule documentation
+Rules receive immutable context and return normalized diagnostics. They do not mutate the schematic. Configuration selects effective levels and typed options without changing rule implementations. The detailed rationale and library evaluation are in [architecture research](architecture-research.md).
 
-Each future built-in rule should have:
+## External extensions
 
-- A stable ID and concise name.
-- A category such as geometry, labels, annotation, documentation, profile, or project contract.
-- A one-sentence summary.
-- An explanation of the engineering reason for the rule.
-- A default level appropriate to its impact and subjectivity.
-- Optional help text and a documentation link.
-- Rule-specific options with validated types and documented defaults.
-
-Prefer objective correctness and layout invariants as errors. Keep subjective style or documentation preferences as warnings by default until a project profile chooses otherwise.
-
-## Rule implementation contract (planned)
-
-The execution trait and public context API have not been implemented yet. The intended contract is:
-
-1. Rules receive immutable semantic schematic context.
-2. Shared analyses and spatial/connectivity indexes are computed once and reused.
-3. Rules emit normalized diagnostics through a common reporter.
-4. Rules do not mutate the parsed model.
-5. Any source edits are proposed by a separate fix planner with an applicability level and preconditions.
-
-Do not create a parallel rule registry or invent an unofficial plugin interface before the public API is designed and versioned.
+Do not introduce dynamic libraries or WASM rule packs yet. First stabilize the in-process trait, context, option schema, diagnostic compatibility policy, and resource limits. Third-party extensions should be an optional later layer over that stable API, not a dependency of built-in checks.
 
 ## Tests required for each rule
 
-When the rule engine lands, each rule should include:
+Each rule should include:
 
 - A positive fixture that triggers the diagnostic.
-- A negative fixture proving that valid input is accepted.
-- Boundary cases for coordinate tolerances, hierarchy, and source mapping where relevant.
-- A diagnostic snapshot covering code, severity, message, explanation, and location.
-- An expected fixed-output fixture for machine-applicable fixes.
-- A regression fixture for every discovered false positive or false negative.
+- A negative fixture proving valid input is accepted.
+- Boundary cases for coordinate tolerances, hierarchy and source mapping where relevant.
+- A diagnostic assertion covering code, severity, message, explanation and location.
+- Regression fixtures for every discovered false positive or false negative.
 
-Tests must not rely solely on a diagnostic count. Assert the affected objects and location data.
+Tests must not rely solely on diagnostic counts. Assert affected objects and location data.
 
 ## Contributing a new rule
 
-Until the execution API is available, a new rule proposal should include its ID, purpose, positive/negative schematic fixtures, default level rationale, and any required semantic/geometry analysis. Keep the proposed check separate from native ERC unless it represents a genuine additional design-quality constraint.
+A new rule proposal should include its stable ID, purpose, default level rationale, positive/negative schematic fixtures, required analysis products, and limitations. Keep electrical semantics in native ERC unless the rule represents a distinct design-quality contract.

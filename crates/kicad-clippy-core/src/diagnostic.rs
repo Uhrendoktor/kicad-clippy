@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::source::ByteSpan;
+use crate::{rule_id::BuiltinRuleId, source::ByteSpan};
 
 /// Diagnostic severity used by native ERC and custom rules.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -94,6 +94,16 @@ impl Diagnostic {
         }
     }
 
+    /// Creates a diagnostic for a built-in rule without repeating its string code.
+    #[must_use]
+    pub fn for_builtin_rule(
+        rule: BuiltinRuleId,
+        severity: Severity,
+        message: impl Into<String>,
+    ) -> Self {
+        Self::new(rule, severity, message)
+    }
+
     /// Returns whether this diagnostic is an active error.
     #[must_use]
     pub const fn is_active_error(&self) -> bool {
@@ -104,12 +114,23 @@ impl Diagnostic {
 #[cfg(test)]
 mod tests {
     use super::{Diagnostic, Severity};
+    use crate::BuiltinRuleId;
 
     #[test]
     fn excluded_errors_do_not_fail_a_run() {
-        let mut diagnostic = Diagnostic::new("ERC/EXAMPLE", Severity::Error, "sample");
+        let mut diagnostic = Diagnostic::new("ERC/EXCLUDED", Severity::Error, "ignored");
         diagnostic.excluded = true;
 
         assert!(!diagnostic.is_active_error());
+    }
+
+    #[test]
+    fn builtin_diagnostic_keeps_the_stable_external_code() {
+        let diagnostic = Diagnostic::for_builtin_rule(
+            BuiltinRuleId::Sch001,
+            Severity::Error,
+            "wire is diagonal",
+        );
+        assert_eq!(diagnostic.code, "SCH001");
     }
 }
