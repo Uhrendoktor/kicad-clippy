@@ -70,6 +70,21 @@ pub struct DirectWirePair {
     pub second: String,
 }
 
+/// A profile-defined set of pins that must carry one named physical net.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CommonPinNetGroup {
+    /// Expected label/net name shared by all listed pin networks.
+    pub name: String,
+    /// Placed pins in REF.PIN form.
+    pub pins: Vec<String>,
+    /// Require all listed pins to share one continuous wire-only component.
+    #[serde(default)]
+    pub wire_connected: bool,
+    /// Require exactly one matching label across the resolved wire components.
+    #[serde(default)]
+    pub single_label: bool,
+}
+
 /// Declared purpose and engineering constraints for one component.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct ComponentIntent {
@@ -175,9 +190,12 @@ pub struct LintProfile {
     /// Pin pairs that must be joined by physical wires, not by labels.
     #[serde(default)]
     pub direct_wire_pairs: Vec<DirectWirePair>,
-    /// Local label names forbidden anywhere on direct-wire-only nets.
+    /// Local label names forbidden on physical networks covered by direct-wire pairs.
     #[serde(default)]
     pub forbidden_direct_wire_labels: BTreeSet<String>,
+    /// Pin groups requiring a named common physical/logical net contract.
+    #[serde(default)]
+    pub common_pin_groups: Vec<CommonPinNetGroup>,
 }
 
 impl LintProfile {
@@ -238,6 +256,7 @@ impl LintProfile {
             &self.forbidden_direct_wire_labels,
             &facts,
         ));
+        diagnostics.extend(validate_common_pin_groups(&self.common_pin_groups, &facts));
         diagnostics
     }
 
@@ -413,6 +432,158 @@ fn validate_forbidden_direct_wire_labels(
         ));
     }
     diagnostics
+}
+
+fn validate_common_pin_groups(
+    groups: &[CommonPinNetGroup],
+    facts: &SchematicFacts,
+) -> Vec<Diagnostic> {
+    if groups.is_empty() {
+        return Vec::new();
+    }
+    let component_ids = physical_wire_component_ids(facts);
+    let mut diagnostics = Vec::new();
+    for group in groups {
+        diagnostics.extend(validate_common_pin_group(group, facts, &component_ids));
+    }
+    diagnostics
+}
+
+fn validate_common_pin_group(
+    group: &CommonPinNetGroup,
+    facts: &SchematicFacts,
+    component_ids: &BTreeMap<String, usize>,
+) -> Vec<Diagnostic> {
+    let group_name = group.name.trim();
+    let mut diagnostics = Vec::new();
+    if group_name.is_empty() {
+        diagnostics.push(Diagnostic::new(
+            "SCH004",
+            Severity::Error,
+            "common pin group must define a non-empty expected label/net name",
+        ));
+        return diagnostics;
+    }
+    let unique_pins: BTreeSet<_> = group.pins.iter().collect();
+    if group.pins.len() < 2 || unique_pins.len() != group.pins.len() {
+        diagnostics.push(Diagnostic::new(
+            "SCH004",
+            Severity::Error,
+            format!(
+                "common pin group {group_name:?} must list at least two distinct REF.PIN entries"
+            ),
+        ));
+        return diagnostics;
+    }
+
+    let mut roots = BTreeSet::new();
+    for pin_ref in &group.pins {
+        let Some((reference, pin_number)) = pin_ref.rsplit_once('.') else {
+            diagnostics.push(Diagnostic::new(
+                "SCH004",
+                Severity::Error,
+                format!("common pin group {group_name:?} contains invalid pin reference {pin_ref:?}"),
+            ));
+            continue;
+        };
+        if !valid_pin_ref(pin_ref) {
+            diagnostics.push(Diagnostic::new(
+                "SCH004",
+                Severity::Error,
+                format!("common pin group {group_name:?} contains invalid pin reference {pin_ref:?}"),
+            ));
+            continue;
+        }
+        let Some(pin) = facts
+            .pins
+            .iter()
+            .find(|item| item.reference == reference && item.number == pin_number)
+        else {
+            diagnostics.push(Diagnostic::new(
+                "SCH004",
+                Severity::Error,
+                format!("common pin group {group_name:?} references missing or unsupported pin {pin_ref}"),
+            ));
+            continue;
+        };
+        if !point_is_on_wire(pin.position_mm, facts) {
+            diagnostics.push(Diagnostic::new(
+                "SCH004",
+                Severity::Error,
+                format!("{pin_ref} in common pin group {group_name:?} is not attached to a physical wire"),
+            ));
+            continue;
+        }
+        let key = format!("{:.3}:{:.3}", pin.position_mm.0, pin.position_mm.1);
+        let Some(component) = component_ids.get(&key).copied() else {
+            diagnostics.push(Diagnostic::new(
+                "SCH004",
+                Severity::Error,
+                format!("{pin_ref} in common pin group {group_name:?} has no resolved physical wire component"),
+            ));
+            continue;
+        };
+        roots.insert(component);
+        if !component_has_label(component, group_name, facts, component_ids) {
+            diagnostics.push(Diagnostic::new(
+                "SCH004",
+                Severity::Error,
+                format!("{pin_ref} must belong to common net {group_name}"),
+            ));
+        }
+    }
+
+    if group.wire_connected && roots.len() > 1 {
+        diagnostics.push(Diagnostic::new(
+            "SCH004",
+            Severity::Error,
+            format!(
+                "configured pins {:?} must share one physical {group_name} wire network",
+                group.pins
+            ),
+        ));
+    }
+    if group.single_label {
+        let matching_labels = facts
+            .labels
+            .iter()
+            .filter(|label| {
+                if label.name != group_name {
+                    return false;
+                }
+                let key = format!("{:.3}:{:.3}", label.position_mm.0, label.position_mm.1);
+                component_ids
+                    .get(&key)
+                    .is_some_and(|component| roots.contains(component))
+            })
+            .count();
+        if matching_labels != 1 {
+            diagnostics.push(Diagnostic::new(
+                "SCH004",
+                Severity::Error,
+                format!(
+                    "configured pins {:?} must share exactly one {group_name} label; found {matching_labels}",
+                    group.pins
+                ),
+            ));
+        }
+    }
+    diagnostics
+}
+
+fn component_has_label(
+    component: usize,
+    expected_name: &str,
+    facts: &SchematicFacts,
+    component_ids: &BTreeMap<String, usize>,
+) -> bool {
+    facts.labels.iter().any(|label| {
+        if label.name != expected_name {
+            return false;
+        }
+        let key = format!("{:.3}:{:.3}", label.position_mm.0, label.position_mm.1);
+        component_ids.get(&key) == Some(&component)
+    })
 }
 
 fn point_is_on_wire(point: (f64, f64), facts: &SchematicFacts) -> bool {
@@ -1407,6 +1578,84 @@ mod tests {
             ),
         )
         .expect("fixture parses")
+    }
+
+    #[test]
+    fn common_pin_group_accepts_one_named_label_on_a_shared_wire_network() {
+        let schematic = direct_wire_schematic(
+            r#"
+            (wire (pts (xy 10 10) (xy 20 10)))
+            (label "SENSE" (at 10 10 0) (effects (font (size 1 1))))
+            "#,
+        );
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"common_pin_groups":[{"name":"SENSE","pins":["U1.1","R1.1"],"wire_connected":true,"single_label":true}]}"#,
+        )
+        .expect("profile parses");
+        assert!(
+            !profile
+                .validate(&schematic)
+                .iter()
+                .any(|item| item.code == "SCH004")
+        );
+    }
+
+    #[test]
+    fn common_pin_group_rejects_disconnected_label_joined_islands() {
+        let schematic = direct_wire_schematic(
+            r#"
+            (wire (pts (xy 10 10) (xy 12 10)))
+            (wire (pts (xy 20 10) (xy 18 10)))
+            (label "SENSE" (at 10 10 0) (effects (font (size 1 1))))
+            (label "SENSE" (at 20 10 0) (effects (font (size 1 1))))
+            "#,
+        );
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"common_pin_groups":[{"name":"SENSE","pins":["U1.1","R1.1"],"wire_connected":true}]}"#,
+        )
+        .expect("profile parses");
+        assert!(
+            profile
+                .validate(&schematic)
+                .iter()
+                .any(|item| item.code == "SCH004" && item.message.contains("must share one physical"))
+        );
+    }
+
+    #[test]
+    fn common_pin_group_enforces_exactly_one_matching_label() {
+        let schematic = direct_wire_schematic(
+            r#"
+            (wire (pts (xy 10 10) (xy 20 10)))
+            (label "SENSE" (at 10 10 0) (effects (font (size 1 1))))
+            (label "SENSE" (at 20 10 0) (effects (font (size 1 1))))
+            "#,
+        );
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"common_pin_groups":[{"name":"SENSE","pins":["U1.1","R1.1"],"wire_connected":true,"single_label":true}]}"#,
+        )
+        .expect("profile parses");
+        assert!(
+            profile
+                .validate(&schematic)
+                .iter()
+                .any(|item| item.code == "SCH004" && item.message.contains("share exactly one"))
+        );
+    }
+
+    #[test]
+    fn common_pin_group_requires_a_label_on_each_physical_pin_network() {
+        let schematic = direct_wire_schematic(
+            r#"(wire (pts (xy 10 10) (xy 20 10)))"#,
+        );
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"common_pin_groups":[{"name":"SENSE","pins":["U1.1","R1.1"]}]}"#,
+        )
+        .expect("profile parses");
+        let diagnostics = profile.validate(&schematic);
+        assert_eq!(diagnostics.iter().filter(|item| item.code == "SCH004").count(), 2);
+        assert!(diagnostics.iter().any(|item| item.message.contains("U1.1 must belong to common net SENSE")));
+        assert!(diagnostics.iter().any(|item| item.message.contains("R1.1 must belong to common net SENSE")));
     }
 
     #[test]
