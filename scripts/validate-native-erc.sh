@@ -4,7 +4,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCHEMATIC="$ROOT/tests/fixtures/minimal.kicad_sch"
 REPORT="$(mktemp -t kicad-clippy-erc-XXXXXX.json)"
-trap 'rm -f "$REPORT"' EXIT
+PROFILE="$(mktemp -t kicad-clippy-profile-XXXXXX.json)"
+NETLIST_REPORT="$(mktemp -t kicad-clippy-netlist-XXXXXX.json)"
+trap 'rm -f "$REPORT" "$PROFILE" "$NETLIST_REPORT"' EXIT
 
 CLI="${KICAD_CLI:-}"
 if [[ -z "$CLI" ]]; then
@@ -46,3 +48,16 @@ if [[ "$LINTER_STATUS" -ne "$EXPECTED_STATUS" ]]; then
 fi
 
 echo "Native ERC adapter passed: KiCad $(jq -r '.kicad_version' "$REPORT"), $ACTIVE_ERRORS active errors."
+
+# Profile validation exports and parses KiCad's native flattened netlist,
+# even when ERC itself is explicitly skipped.
+printf '%s\n' '{"schema_version":1,"mode":"standard","components":{},"groups":{}}' > "$PROFILE"
+cargo run --locked --package kicad-clippy -- lint "$SCHEMATIC" --kicad-cli "$CLI" --skip-erc --profile "$PROFILE" --format json > "$NETLIST_REPORT"
+jq -e '
+  .syntax_valid == true
+  and .erc_skipped == true
+  and (.diagnostics | type == "array")
+  and (.summary.errors == ([.diagnostics[] | select(.severity == "error" and .excluded == false)] | length))
+' "$NETLIST_REPORT" >/dev/null
+
+echo "Native netlist export and pin-to-net parser passed."
