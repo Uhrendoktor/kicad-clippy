@@ -269,121 +269,144 @@ fn validate_direct_wire_connectivity(
     let mut diagnostics = Vec::new();
 
     for pair in pairs {
-        let pair_name = format!("{} / {}", pair.first, pair.second);
-        let (Some((first_reference, first_number)), Some((second_reference, second_number))) =
-            (pair.first.rsplit_once('.'), pair.second.rsplit_once('.'))
-        else {
-            diagnostics.push(Diagnostic::new(
-                "SCH004",
-                Severity::Error,
-                format!("direct-wire pair {pair_name} must use REF.PIN notation"),
-            ));
-            continue;
-        };
-        if !valid_pin_ref(&pair.first) || !valid_pin_ref(&pair.second) || pair.first == pair.second
-        {
-            diagnostics.push(Diagnostic::new(
-                "SCH004",
-                Severity::Error,
-                format!("direct-wire pair {pair_name} must identify two distinct valid pins"),
-            ));
-            continue;
-        }
-        let first_pin = facts
-            .pins
-            .iter()
-            .find(|pin| pin.reference == first_reference && pin.number == first_number);
-        let second_pin = facts
-            .pins
-            .iter()
-            .find(|pin| pin.reference == second_reference && pin.number == second_number);
-        let (Some(first_pin), Some(second_pin)) = (first_pin, second_pin) else {
-            diagnostics.push(Diagnostic::new(
-                "SCH004",
-                Severity::Error,
-                format!(
-                    "direct-wire pair {pair_name} references a missing or unsupported embedded pin"
-                ),
-            ));
-            continue;
-        };
+        let (mut pair_diagnostics, pair_components) =
+            validate_direct_wire_pair(pair, facts, &component_ids);
+        diagnostics.append(&mut pair_diagnostics);
+        protected_components.extend(pair_components);
+    }
+    diagnostics.extend(validate_forbidden_direct_wire_labels(
+        forbidden_labels,
+        &protected_components,
+        &component_ids,
+        facts,
+    ));
+    diagnostics
+}
 
-        let first_point = first_pin.position_mm;
-        let second_point = second_pin.position_mm;
-        let first_attached = point_is_on_wire(first_point, facts);
-        let second_attached = point_is_on_wire(second_point, facts);
-        if !first_attached {
+fn validate_direct_wire_pair(
+    pair: &DirectWirePair,
+    facts: &SchematicFacts,
+    component_ids: &BTreeMap<String, usize>,
+) -> (Vec<Diagnostic>, BTreeSet<usize>) {
+    let mut diagnostics = Vec::new();
+    let mut protected_components = BTreeSet::new();
+    let pair_name = format!("{} / {}", pair.first, pair.second);
+    let (Some((first_reference, first_number)), Some((second_reference, second_number))) =
+        (pair.first.rsplit_once('.'), pair.second.rsplit_once('.'))
+    else {
+        diagnostics.push(Diagnostic::new(
+            "SCH004",
+            Severity::Error,
+            format!("direct-wire pair {pair_name} must use REF.PIN notation"),
+        ));
+        return (diagnostics, protected_components);
+    };
+    if !valid_pin_ref(&pair.first) || !valid_pin_ref(&pair.second) || pair.first == pair.second {
+        diagnostics.push(Diagnostic::new(
+            "SCH004",
+            Severity::Error,
+            format!("direct-wire pair {pair_name} must identify two distinct valid pins"),
+        ));
+        return (diagnostics, protected_components);
+    }
+
+    let first_pin = facts
+        .pins
+        .iter()
+        .find(|pin| pin.reference == first_reference && pin.number == first_number);
+    let second_pin = facts
+        .pins
+        .iter()
+        .find(|pin| pin.reference == second_reference && pin.number == second_number);
+    let (Some(first_pin), Some(second_pin)) = (first_pin, second_pin) else {
+        diagnostics.push(Diagnostic::new(
+            "SCH004",
+            Severity::Error,
+            format!(
+                "direct-wire pair {pair_name} references a missing or unsupported embedded pin"
+            ),
+        ));
+        return (diagnostics, protected_components);
+    };
+
+    let first_point = first_pin.position_mm;
+    let second_point = second_pin.position_mm;
+    let first_attached = point_is_on_wire(first_point, facts);
+    let second_attached = point_is_on_wire(second_point, facts);
+    if !first_attached {
+        diagnostics.push(Diagnostic::new(
+            "SCH004",
+            Severity::Error,
+            format!("pin {first_reference}.{first_number} is not attached to a physical wire segment"),
+        ));
+    }
+    if !second_attached {
+        diagnostics.push(Diagnostic::new(
+            "SCH004",
+            Severity::Error,
+            format!("pin {second_reference}.{second_number} is not attached to a physical wire segment"),
+        ));
+    }
+    if first_attached && second_attached {
+        let first_key = format!("{:.3}:{:.3}", first_point.0, first_point.1);
+        let second_key = format!("{:.3}:{:.3}", second_point.0, second_point.1);
+        let first_component = component_ids.get(&first_key).copied();
+        let second_component = component_ids.get(&second_key).copied();
+        if first_component != second_component {
             diagnostics.push(Diagnostic::new(
                 "SCH004",
                 Severity::Error,
                 format!(
-                    "pin {first_reference}.{first_number} is not attached to a physical wire segment"
+                    "{} and {} must share one physical wire-only network; labels do not establish this connection",
+                    pair.first, pair.second
                 ),
             ));
         }
-        if !second_attached {
-            diagnostics.push(Diagnostic::new(
-                "SCH004",
-                Severity::Error,
-                format!(
-                    "pin {second_reference}.{second_number} is not attached to a physical wire segment"
-                ),
-            ));
-        }
-        if first_attached && second_attached {
-            let first_key = format!("{:.3}:{:.3}", first_point.0, first_point.1);
-            let second_key = format!("{:.3}:{:.3}", second_point.0, second_point.1);
-            let first_component = component_ids.get(&first_key).copied();
-            let second_component = component_ids.get(&second_key).copied();
-            if first_component != second_component {
+        protected_components.extend(first_component);
+        protected_components.extend(second_component);
+    }
+
+    for (pin_ref, point) in [(&pair.first, first_point), (&pair.second, second_point)] {
+        for label in &facts.labels {
+            if label.kind != "global_label" && same_wire_point(label.position_mm, point) {
                 diagnostics.push(Diagnostic::new(
                     "SCH004",
                     Severity::Error,
                     format!(
-                        "{} and {} must share one physical wire-only network; labels do not establish this connection",
-                        pair.first, pair.second
+                        "direct-wire pin {pin_ref} shares its anchor with {} {:?}; use a continuous wire-only connection",
+                        label.kind, label.name
                     ),
                 ));
             }
-            protected_components.extend(first_component);
-            protected_components.extend(second_component);
-        }
-
-        for (pin_ref, point) in [(&pair.first, first_point), (&pair.second, second_point)] {
-            for label in &facts.labels {
-                if label.kind != "global_label" && same_wire_point(label.position_mm, point) {
-                    diagnostics.push(Diagnostic::new(
-                        "SCH004",
-                        Severity::Error,
-                        format!(
-                            "direct-wire pin {pin_ref} shares its anchor with {} {:?}; use a continuous wire-only connection",
-                            label.kind, label.name
-                        ),
-                    ));
-                }
-            }
         }
     }
+    (diagnostics, protected_components)
+}
 
-    for forbidden in forbidden_labels {
-        for label in facts.labels.iter().filter(|label| {
-            if label.kind != "label" || label.name != *forbidden {
-                return false;
-            }
-            let key = format!("{:.3}:{:.3}", label.position_mm.0, label.position_mm.1);
-            component_ids
-                .get(&key)
-                .is_some_and(|component| protected_components.contains(component))
-        }) {
-            diagnostics.push(Diagnostic::new(
-                "SCH004",
-                Severity::Error,
-                format!(
-                    "local label {:?} is forbidden on a direct-wire-only network",
-                    label.name
-                ),
-            ));
+fn validate_forbidden_direct_wire_labels(
+    forbidden_labels: &BTreeSet<String>,
+    protected_components: &BTreeSet<usize>,
+    component_ids: &BTreeMap<String, usize>,
+    facts: &SchematicFacts,
+) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+    for label in facts.labels.iter().filter(|label| {
+        if label.kind != "label" || !forbidden_labels.contains(&label.name) {
+            return false;
         }
+        let key = format!("{:.3}:{:.3}", label.position_mm.0, label.position_mm.1);
+        component_ids
+            .get(&key)
+            .is_some_and(|component| protected_components.contains(component))
+    }) {
+        diagnostics.push(Diagnostic::new(
+            "SCH004",
+            Severity::Error,
+            format!(
+                "local label {:?} is forbidden on a direct-wire-only network",
+                label.name
+            ),
+        ));
     }
     diagnostics
 }
@@ -1359,7 +1382,7 @@ mod tests {
     fn direct_wire_schematic(wire_and_label_items: &str) -> kicad_clippy_parser::SchematicDocument {
         kicad_clippy_parser::SchematicDocument::from_text(
             "direct-wire-test.kicad_sch",
-            &format!(
+            format!(
                 r#"(kicad_sch
                     (lib_symbols
                       (symbol "Test:OnePin"
