@@ -163,6 +163,7 @@ dependencies = [
  "kicad-clippy-core",
  "kicad-clippy-erc",
  "kicad-clippy-parser",
+ "kicad-clippy-rules",
  "serde",
  "serde_json",
  "thiserror",
@@ -192,6 +193,17 @@ version = "0.1.0"
 dependencies = [
  "kicad-clippy-core",
  "kiutils_sexpr",
+ "thiserror",
+]
+
+[[package]]
+name = "kicad-clippy-rules"
+version = "0.1.0"
+dependencies = [
+ "kicad-clippy-core",
+ "kicad-clippy-parser",
+ "serde",
+ "serde_json",
  "thiserror",
 ]
 
