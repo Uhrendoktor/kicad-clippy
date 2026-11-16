@@ -211,8 +211,8 @@ pub fn parse_netlist_sexpr(contents: &str) -> Result<Netlist, NetlistError> {
 
     if let Some(nets) = child_list(root, "nets") {
         for net in children(nets, "net") {
-            let name = child_value(net, "name", contents)
-                .ok_or_else(|| missing_field("name", "net"))?;
+            let name =
+                child_value(net, "name", contents).ok_or_else(|| missing_field("name", "net"))?;
             let mut nodes = Vec::new();
             for node in children(net, "node") {
                 let reference = child_value(node, "ref", contents)
@@ -228,7 +228,9 @@ pub fn parse_netlist_sexpr(contents: &str) -> Result<Netlist, NetlistError> {
                 }
                 nodes.push(NetlistNode { reference, pin });
             }
-            netlist.nets.insert(name.clone(), NetlistNet { name, nodes });
+            netlist
+                .nets
+                .insert(name.clone(), NetlistNet { name, nodes });
         }
     }
     Ok(netlist)
