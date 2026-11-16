@@ -2217,11 +2217,13 @@ fn primitive_edges(primitive: &SchematicPrimitiveFact) -> Vec<Segment> {
         })
         .collect();
     if primitive.closed && points.len() > 2 {
-        edges.push(Segment {
-            start: *points.last().expect("closed path has a last point"),
-            end: points[0],
-            span: ByteSpan::new(0, 0),
-        });
+        if let Some(last_point) = points.last().copied() {
+            edges.push(Segment {
+                start: last_point,
+                end: points[0],
+                span: ByteSpan::new(0, 0),
+            });
+        }
     }
     edges
 }
