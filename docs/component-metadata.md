@@ -94,3 +94,30 @@ These contracts make the metadata extensible by component family and variant. Th
 - SCH022: decoupling metadata completeness, valid target-pin notation, distinct capacitor terminals, and consistent return net and cluster for capacitors assigned to the same IC pin.
 
 The first metadata implementation validates intent declarations. It does not yet prove physical connectivity, pin-to-net membership, proximity or shared copper. Those checks must use the KiCad-exported netlist plus physical wire graph and transformed symbol-pin geometry; matching labels or metadata strings alone are not evidence of a physical connection.
+
+## Functional group documentation
+
+Profiles can also declare functional groups. Each group identifies its component members, the members requiring documentation, the UUID of its rendered description text box, and evidence. For each documented component, the function and rationale phrases must appear in that text box.
+
+    {
+      "groups": {
+        "vbus-monitor": {
+          "members": ["R1", "R4"],
+          "documentation_members": ["R1", "R4"],
+          "description_uuid": "00000000-0000-0000-0000-000000000000",
+          "component_purposes": {
+            "R1": {
+              "function": "Series current limiter at VBUS_VS_DISCH",
+              "rationale": "Limits current through the controller during discharge"
+            }
+          },
+          "evidence": {
+            "document": "Controller datasheet revision 8",
+            "page": 26,
+            "figure": "Figure 10"
+          }
+        }
+      }
+    }
+
+A group is valid when it cites a document/page/figure or a reviewed screenshot asset, its members exist in the schematic, its description text box UUID resolves, and all component-purpose phrases are present. This ports the original SCH017/SCH020 group-documentation intent while keeping component intent reusable for other checks.
