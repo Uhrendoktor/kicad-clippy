@@ -792,6 +792,9 @@ fn validate_frame_clearance(
     }
     let mut diagnostics =
         validate_member_frame_clearance(group_id, group, facts, frame_uuid, bounds, clearance);
+    diagnostics.extend(validate_member_pin_frame_clearance(
+        group_id, group, facts, frame_uuid, bounds, clearance,
+    ));
     diagnostics.extend(validate_description_frame_clearance(
         group_id, group, facts, frame_uuid, bounds, clearance,
     ));
@@ -844,6 +847,40 @@ fn validate_member_frame_clearance(
                 Severity::Error,
                 format!(
                     "group {group_id} member {reference} origin is within {clearance:.2} mm of frame {frame_uuid} edge"
+                ),
+            ));
+        }
+    }
+    diagnostics
+}
+
+fn validate_member_pin_frame_clearance(
+    group_id: &str,
+    group: &GroupIntent,
+    facts: &SchematicFacts,
+    frame_uuid: &str,
+    bounds: (f64, f64, f64, f64),
+    clearance: f64,
+) -> Vec<Diagnostic> {
+    let (left, top, right, bottom) = bounds;
+    let mut diagnostics = Vec::new();
+    for pin in facts
+        .pins
+        .iter()
+        .filter(|pin| group.members.contains(&pin.reference))
+    {
+        let (x_mm, y_mm) = pin.position_mm;
+        let inside_clearance = x_mm >= left + clearance - 0.001
+            && x_mm <= right - clearance + 0.001
+            && y_mm >= top + clearance - 0.001
+            && y_mm <= bottom - clearance + 0.001;
+        if !inside_clearance {
+            diagnostics.push(Diagnostic::new(
+                "SCH012",
+                Severity::Error,
+                format!(
+                    "group {group_id} member pin {}.{} does not maintain {clearance:.2} mm clearance from frame {frame_uuid}",
+                    pin.reference, pin.number
                 ),
             ));
         }
@@ -2123,6 +2160,78 @@ mod tests {
                 .validate(&schematic)
                 .iter()
                 .any(|item| item.code == "SCH012" && item.message.contains("origin is within"))
+        );
+    }
+
+    #[test]
+    fn group_frame_clearance_checks_transformed_member_pin_coordinates() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "group-pin-frame-clearance-test.kicad_sch",
+            r#"(kicad_sch
+                (lib_symbols
+                  (symbol "Test:OnePin"
+                    (symbol "OnePin_1_1"
+                      (pin passive line (at -2.5 0 180) (length 1)
+                        (name "1") (number "1"))
+                    )
+                  )
+                )
+                (symbol (lib_id "Test:OnePin") (at 3 3 0) (unit 1)
+                  (property "Reference" "R1" (at 3 4 0) (effects (font (size 1 1))))
+                )
+                (rectangle (start 0 0) (end 10 10) (uuid "frame-1"))
+                (text_box "Power input group" (at 3 5) (size 3 1)
+                    (margins 0.5 0.5 0.5 0.5)
+                    (stroke (width 0.1)) (uuid "description-1"))
+            )"#,
+        )
+        .expect("fixture parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"groups":{"power-input":{"members":["R1"],"description_uuid":"description-1","frame_uuid":"frame-1","minimum_frame_clearance_mm":1.0,"evidence":{"document":"Power input design note","page":2,"figure":"Figure 1"}}}}"#,
+        )
+        .expect("profile parses");
+        assert!(
+            profile.validate(&schematic).iter().any(|item| {
+                item.code == "SCH012"
+                    && item
+                        .message
+                        .contains("member pin R1.1 does not maintain 1.00 mm clearance")
+            })
+        );
+    }
+
+    #[test]
+    fn group_frame_clearance_accepts_member_pins_inside_the_configured_inset() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "group-pin-frame-clearance-test.kicad_sch",
+            r#"(kicad_sch
+                (lib_symbols
+                  (symbol "Test:OnePin"
+                    (symbol "OnePin_1_1"
+                      (pin passive line (at 0 0 180) (length 1)
+                        (name "1") (number "1"))
+                    )
+                  )
+                )
+                (symbol (lib_id "Test:OnePin") (at 3 3 0) (unit 1)
+                  (property "Reference" "R1" (at 3 4 0) (effects (font (size 1 1))))
+                )
+                (rectangle (start 0 0) (end 10 10) (uuid "frame-1"))
+                (text_box "Power input group" (at 3 5) (size 3 1)
+                    (margins 0.5 0.5 0.5 0.5)
+                    (stroke (width 0.1)) (uuid "description-1"))
+            )"#,
+        )
+        .expect("fixture parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"groups":{"power-input":{"members":["R1"],"description_uuid":"description-1","frame_uuid":"frame-1","minimum_frame_clearance_mm":1.0,"evidence":{"document":"Power input design note","page":2,"figure":"Figure 1"}}}}"#,
+        )
+        .expect("profile parses");
+        assert!(
+            !profile
+                .validate(&schematic)
+                .iter()
+                .any(|item| item.code == "SCH012")
         );
     }
 
