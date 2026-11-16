@@ -147,53 +147,118 @@ fn check_wire_geometry(segments: &[Segment], junctions: &[Point]) -> Vec<Diagnos
 }
 
 fn check_label_topology(root: &Node, source: &str, segments: &[Segment]) -> Vec<Diagnostic> {
+    let labels = collect_labels(root, source);
+    let junctions = collect_points(root, source, "junction");
+    let mut points = Vec::new();
+    for segment in segments {
+        points.push(segment.start);
+        points.push(segment.end);
+    }
+    points.extend(junctions);
+    points.extend(labels.iter().map(|(_, _, point, _)| *point));
+    points.sort_by_key(|point| point_key(*point));
+    points.dedup_by_key(|point| point_key(*point));
+
+    let mut adjacency: BTreeMap<String, Vec<String>> = points
+        .iter()
+        .map(|point| (point_key(*point), Vec::new()))
+        .collect();
+    let mut endpoint_degree: BTreeMap<String, usize> = BTreeMap::new();
+    for segment in segments {
+        *endpoint_degree.entry(point_key(segment.start)).or_default() += 1;
+        *endpoint_degree.entry(point_key(segment.end)).or_default() += 1;
+        let horizontal = (segment.start.y - segment.end.y).abs() < 0.001;
+        let mut split: Vec<_> = points
+            .iter()
+            .copied()
+            .filter(|point| point_on_segment(*point, segment))
+            .collect();
+        split.sort_by(|first, second| {
+            if horizontal {
+                first.x.total_cmp(&second.x)
+            } else {
+                first.y.total_cmp(&second.y)
+            }
+        });
+        for pair in split.windows(2) {
+            let first = point_key(pair[0]);
+            let second = point_key(pair[1]);
+            adjacency.entry(first.clone()).or_default().push(second.clone());
+            adjacency.entry(second).or_default().push(first);
+        }
+    }
+
+    let mut component_ids = BTreeMap::new();
+    let mut next_component = 0_usize;
+    for start in adjacency.keys() {
+        if component_ids.contains_key(start) {
+            continue;
+        }
+        let mut pending = vec![start.clone()];
+        while let Some(point) = pending.pop() {
+            if component_ids.contains_key(&point) {
+                continue;
+            }
+            component_ids.insert(point.clone(), next_component);
+            if let Some(neighbors) = adjacency.get(&point) {
+                pending.extend(neighbors.iter().filter(|neighbor| !component_ids.contains_key(*neighbor)).cloned());
+            }
+        }
+        next_component += 1;
+    }
+
+    let mut totals: BTreeMap<String, usize> = BTreeMap::new();
+    let mut island_uses: BTreeMap<(String, usize), usize> = BTreeMap::new();
     let mut diagnostics = Vec::new();
-    let mut local_labels: BTreeMap<String, Vec<(Point, ByteSpan)>> = BTreeMap::new();
-    for (kind, label, point, span) in collect_labels(root, source) {
+    for (kind, label, point, span) in labels {
+        let key = point_key(point);
         if kind == "label" {
-            local_labels
-                .entry(label.clone())
-                .or_default()
-                .push((point, span));
-            if !segments
-                .iter()
-                .any(|segment| point_on_segment(point, segment))
-            {
+            *totals.entry(label.clone()).or_default() += 1;
+            let island = component_ids.get(&key).copied().unwrap_or_default();
+            *island_uses.entry((label.clone(), island)).or_default() += 1;
+            if !segments.iter().any(|segment| point_on_segment(point, segment)) {
                 diagnostics.push(at_point(
                     "SCH002",
-                    format!("local label {label:?} is not attached to a wire"),
+                    format!("local label {label:?} at ({:.3}, {:.3}) is not attached to a wire", point.x, point.y),
                     point,
                     span,
                 ));
             }
         } else if kind == "hierarchical_label" {
-            let endpoint_count = segments
-                .iter()
-                .filter(|segment| is_endpoint(point, **segment))
-                .count();
-            if endpoint_count != 1 {
+            let endpoint_count = endpoint_degree.get(&key).copied().unwrap_or_default();
+            if endpoint_count != 1 || !segments.iter().any(|segment| point_on_segment(point, segment)) {
                 diagnostics.push(at_point(
                     "SCH002",
-                    format!("hierarchical label {label:?} must terminate one wire twig"),
+                    format!("hierarchical label {label:?} at ({:.3}, {:.3}) must sit at the end of one wire twig", point.x, point.y),
                     point,
                     span,
                 ));
             }
         }
     }
-    for (label, placements) in local_labels {
-        if placements.len() < 2 {
-            if let Some((point, span)) = placements.first() {
-                diagnostics.push(at_point(
-                    "SCH002",
-                    format!("local label {label:?} occurs only once"),
-                    *point,
-                    *span,
-                ));
-            }
+    for ((label, _island), count) in island_uses {
+        if count > 1 {
+            diagnostics.push(Diagnostic::new(
+                "SCH002",
+                Severity::Error,
+                format!("local label {label:?} occurs {count} times on one physical wire network"),
+            ));
+        }
+    }
+    for (label, count) in totals {
+        if count < 2 {
+            diagnostics.push(Diagnostic::new(
+                "SCH002",
+                Severity::Error,
+                format!("local label {label:?} is used only {count} time(s)"),
+            ));
         }
     }
     diagnostics
+}
+
+fn point_key(point: Point) -> String {
+    format!("{:.3}:{:.3}", point.x, point.y)
 }
 
 fn check_label_kind_consistency(root: &Node, source: &str) -> Vec<Diagnostic> {
