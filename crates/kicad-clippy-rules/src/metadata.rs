@@ -1745,7 +1745,7 @@ mod tests {
         explicit_junction: bool,
     ) -> kicad_clippy_parser::SchematicDocument {
         let junction = if explicit_junction {
-            r#"(junction (at 14 10) (diameter 0) (color 0 0 0 0))"#
+            r"(junction (at 14 10) (diameter 0) (color 0 0 0 0))"
         } else {
             ""
         };
