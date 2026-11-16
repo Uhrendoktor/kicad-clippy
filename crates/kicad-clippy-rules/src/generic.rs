@@ -41,26 +41,46 @@ impl SchematicFacts {
         let Some(root) = document.cst().nodes.first() else {
             return facts;
         };
-        walk(root, &mut |node| {
-            if head(node) != Some("symbol") {
-                return;
-            }
-            let reference = children(node, "property").find_map(|property| {
-                let items = list_items(property)?;
-                if atom_value(items.get(1)?, document.source().text())? == "Reference" {
-                    atom_value(items.get(2)?, document.source().text())
-                } else {
-                    None
+        walk(root, &mut |node| match head(node) {
+            Some("symbol") => {
+                let reference = children(node, "property").find_map(|property| {
+                    let items = list_items(property)?;
+                    if atom_value(items.get(1)?, document.source().text())? == "Reference" {
+                        atom_value(items.get(2)?, document.source().text())
+                    } else {
+                        None
+                    }
+                });
+                if let Some(reference) = reference {
+                    if !reference.starts_with('#') && !reference.is_empty() {
+                        facts.components.push(ComponentFact { reference });
+                    }
                 }
-            });
-            if let Some(reference) = reference {
-                if !reference.starts_with('#') && !reference.is_empty() {
-                    facts.components.push(ComponentFact { reference });
-                }
             }
+            Some("text_box") => {
+                let Some(items) = list_items(node) else {
+                    return;
+                };
+                let Some(text) = items
+                    .get(1)
+                    .and_then(|item| atom_value(item, document.source().text()))
+                else {
+                    return;
+                };
+                let Some(uuid) = child_list(node, "uuid")
+                    .and_then(list_items)
+                    .and_then(|items| items.get(1))
+                    .and_then(|item| atom_value(item, document.source().text()))
+                else {
+                    return;
+                };
+                facts.text_boxes.push(TextBoxFact { uuid, text });
+            }
+            _ => {}
         });
         facts
     }
+}
 }
 
 /// Result of the built-in rule pass.
