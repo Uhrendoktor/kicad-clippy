@@ -42,13 +42,13 @@ Against the feature-branch state before this simplification pass (`90b19a296472e
 
 | File | Before | After | Net change |
 | --- | ---: | ---: | ---: |
-| `generic.rs` | 3,523 lines | 3,367 lines | -156 |
-| `source.rs` | 177 lines | 104 lines | -73 |
-| CLI `main.rs` | 331 lines | 375 lines | +44 |
-| Parser `schematic.rs` | 183 lines | 240 lines | +57 |
-| **Combined** | **4,214 lines** | **4,086 lines** | **-128** |
+| `generic.rs` | 3,523 lines / 115,651 bytes | 3,367 / 110,663 | -156 lines |
+| `source.rs` | 177 lines / 4,911 bytes | 104 / 2,829 | -73 lines |
+| CLI `main.rs` | 331 lines / 9,695 bytes | 375 / 11,380 | +44 lines |
+| Parser `schematic.rs` | 183 lines / 5,318 bytes | 240 / 7,428 | +57 lines |
+| **Combined** | **4,214 lines / 135,575 bytes** | **4,086 / 132,300** | **-128 lines / -3,275 bytes** |
 
-Across all four directly affected implementation files, the net reduction is 128 source lines (3.0%). The parser adapter and CLI grew because they now establish the correct quoted-string and terminal-diagnostic boundaries; this is outweighed by removing duplicated generic geometry, source indexing, source-to-rule plumbing and manual curve/transform algorithms. The comparison is a file line-count delta, not a claim about all repository code or runtime performance.
+Across all four directly affected implementation files, the net reduction is 128 source lines (3.0%) and 3,275 bytes (2.4%). The parser adapter and CLI grew because they now establish the correct quoted-string and terminal-diagnostic boundaries; this is outweighed by removing duplicated generic geometry, source indexing, source-to-rule plumbing and manual curve/transform algorithms. The comparison is a file-size delta for these four files, not a claim about all repository code or runtime performance.
 
 ## Target architecture
 
