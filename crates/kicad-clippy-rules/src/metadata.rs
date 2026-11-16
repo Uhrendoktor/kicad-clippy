@@ -764,8 +764,8 @@ fn validate_group_containment(
             format!("group {group_id} references missing schematic frame UUID {frame_uuid}"),
         )];
     };
-    let (left, top, right, bottom) = frame.bounds_mm;
-    if left >= right || top >= bottom {
+    let bounds = frame.bounds_mm;
+    if !valid_frame_bounds(bounds) {
         return vec![Diagnostic::for_builtin_rule(
             BuiltinRuleId::Sch009,
             Severity::Error,
@@ -782,9 +782,9 @@ fn validate_group_containment(
         else {
             continue;
         };
-        let Some((x_mm, y_mm)) = component.position_mm else {
+        let Some(position) = component.position_mm else {
             diagnostics.push(Diagnostic::for_builtin_rule(
-                    BuiltinRuleId::Sch009,
+                BuiltinRuleId::Sch009,
                 Severity::Error,
                 format!(
                     "group {group_id} member {reference} has no placed-symbol origin for frame containment validation"
@@ -792,21 +792,124 @@ fn validate_group_containment(
             ));
             continue;
         };
-        let inside = x_mm >= left - 0.001
-            && x_mm <= right + 0.001
-            && y_mm >= top - 0.001
-            && y_mm <= bottom + 0.001;
-        if !inside {
+        if !point_inside_frame(bounds, position) {
             diagnostics.push(Diagnostic::for_builtin_rule(
-                    BuiltinRuleId::Sch009,
+                BuiltinRuleId::Sch009,
                 Severity::Error,
                 format!(
-                    "group {group_id} member {reference} origin ({x_mm:.2}, {y_mm:.2}) mm is outside frame {frame_uuid}"
+                    "group {group_id} member {reference} origin ({:.2}, {:.2}) mm is outside frame {frame_uuid}",
+                    position.0, position.1
                 ),
             ));
         }
     }
+    diagnostics.extend(validate_group_pin_containment(
+        group_id, group, facts, frame_uuid, bounds,
+    ));
+    diagnostics.extend(validate_group_field_containment(
+        group_id, group, facts, frame_uuid, bounds,
+    ));
+    diagnostics.extend(validate_group_description_containment(
+        group_id, group, facts, frame_uuid, bounds,
+    ));
     diagnostics
+}
+
+fn validate_group_pin_containment(
+    group_id: &str,
+    group: &GroupIntent,
+    facts: &SchematicFacts,
+    frame_uuid: &str,
+    frame_bounds: (f64, f64, f64, f64),
+) -> Vec<Diagnostic> {
+    facts
+        .pins
+        .iter()
+        .filter(|pin| group.members.contains(&pin.reference))
+        .filter(|pin| !point_inside_frame(frame_bounds, pin.position_mm))
+        .map(|pin| {
+            Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch009,
+                Severity::Error,
+                format!(
+                    "group {group_id} member pin {}.{} at ({:.2}, {:.2}) mm is outside frame {frame_uuid}",
+                    pin.reference, pin.number, pin.position_mm.0, pin.position_mm.1
+                ),
+            )
+        })
+        .collect()
+}
+
+fn validate_group_field_containment(
+    group_id: &str,
+    group: &GroupIntent,
+    facts: &SchematicFacts,
+    frame_uuid: &str,
+    frame_bounds: (f64, f64, f64, f64),
+) -> Vec<Diagnostic> {
+    facts
+        .visible_fields
+        .iter()
+        .filter(|field| group.members.contains(&field.reference))
+        .filter(|field| !rectangle_inside_frame(field.bounds_mm, frame_bounds))
+        .map(|field| {
+            Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch009,
+                Severity::Error,
+                format!(
+                    "group {group_id} member field {} {} extends outside frame {frame_uuid}",
+                    field.reference, field.name
+                ),
+            )
+        })
+        .collect()
+}
+
+fn validate_group_description_containment(
+    group_id: &str,
+    group: &GroupIntent,
+    facts: &SchematicFacts,
+    frame_uuid: &str,
+    frame_bounds: (f64, f64, f64, f64),
+) -> Vec<Diagnostic> {
+    let Some(description) = facts
+        .text_boxes
+        .iter()
+        .find(|text_box| text_box.uuid == group.description_uuid)
+    else {
+        return Vec::new();
+    };
+    let Some(description_bounds) = description.bounds_mm else {
+        return Vec::new();
+    };
+    if rectangle_inside_frame(description_bounds, frame_bounds) {
+        return Vec::new();
+    }
+    vec![Diagnostic::for_builtin_rule(
+        BuiltinRuleId::Sch009,
+        Severity::Error,
+        format!(
+            "group {group_id} description text box {} extends outside frame {frame_uuid}",
+            group.description_uuid
+        ),
+    )]
+}
+
+fn point_inside_frame(
+    (left, top, right, bottom): (f64, f64, f64, f64),
+    (x, y): (f64, f64),
+) -> bool {
+    x >= left - 0.001 && x <= right + 0.001 && y >= top - 0.001 && y <= bottom + 0.001
+}
+
+fn rectangle_inside_frame(
+    (rect_left, rect_top, rect_right, rect_bottom): (f64, f64, f64, f64),
+    (left, top, right, bottom): (f64, f64, f64, f64),
+) -> bool {
+    rect_left >= left - 0.001
+        && rect_top >= top - 0.001
+        && rect_right <= right + 0.001
+        && rect_bottom <= bottom + 0.001
 }
 
 fn validate_frame_clearance(
@@ -2295,6 +2398,95 @@ mod tests {
                 .validate(&schematic)
                 .iter()
                 .any(|item| item.code == "SCH009" && item.message.contains("outside frame"))
+        );
+    }
+
+    #[test]
+    fn group_pin_outside_frame_is_reported_even_when_symbol_origin_is_inside() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "group-frame-pin-test.kicad_sch",
+            r#"(kicad_sch
+                (lib_symbols
+                  (symbol "Test:OnePin"
+                    (symbol "OnePin_1_1"
+                      (pin passive line (at 2.5 0 180) (length 1)
+                        (name "1") (number "1"))
+                    )
+                  )
+                )
+                (symbol (lib_id "Test:OnePin") (at 4 5 0) (unit 1)
+                  (property "Reference" "R1" (at 4 4 0) (effects (font (size 1 1))))
+                )
+                (rectangle (start 1 1) (end 6 9) (uuid "frame-1"))
+                (text_box "Power input group" (uuid "description-1"))
+            )"#,
+        )
+        .expect("fixture parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"groups":{"power-input":{"members":["R1"],"description_uuid":"description-1","frame_uuid":"frame-1","evidence":{"document":"Power input design note","page":2,"figure":"Figure 1"}}}}"#,
+        )
+        .expect("profile parses");
+        assert!(
+            profile.validate(&schematic).iter().any(|item| {
+                item.code == "SCH009" && item.message.contains("member pin R1.1")
+            })
+        );
+    }
+
+    #[test]
+    fn group_visible_field_bounds_must_be_inside_the_frame() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "group-frame-field-test.kicad_sch",
+            r#"(kicad_sch
+                (symbol (lib_id "Device:R") (at 4 5 0)
+                  (property "Reference" "R1" (at 4 4 0)
+                    (effects (font (size 1 1))))
+                  (property "Value" "10k" (at 9 5 0)
+                    (effects (font (size 1 1))))
+                )
+                (rectangle (start 1 1) (end 8 9) (uuid "frame-1"))
+                (text_box "Power input group" (uuid "description-1"))
+            )"#,
+        )
+        .expect("fixture parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"groups":{"power-input":{"members":["R1"],"description_uuid":"description-1","frame_uuid":"frame-1","evidence":{"document":"Power input design note","page":2,"figure":"Figure 1"}}}}"#,
+        )
+        .expect("profile parses");
+        assert!(
+            profile.validate(&schematic).iter().any(|item| {
+                item.code == "SCH009" && item.message.contains("member field R1 Value")
+            })
+        );
+    }
+
+    #[test]
+    fn group_description_text_box_must_be_inside_the_frame() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "group-frame-description-test.kicad_sch",
+            r#"(kicad_sch
+                (symbol (lib_id "Device:R") (at 4 5 0)
+                  (property "Reference" "R1" (at 4 4 0)
+                    (effects (font (size 1 1))))
+                )
+                (rectangle (start 1 1) (end 8 9) (uuid "frame-1"))
+                (text_box "Power input group" (at 7.5 5) (size 2 1)
+                  (margins 0.5 0.5 0.5 0.5)
+                  (stroke (width 0.1)) (uuid "description-1")
+                  (effects (font (size 1 1))))
+            )"#,
+        )
+        .expect("fixture parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"groups":{"power-input":{"members":["R1"],"description_uuid":"description-1","frame_uuid":"frame-1","evidence":{"document":"Power input design note","page":2,"figure":"Figure 1"}}}}"#,
+        )
+        .expect("profile parses");
+        assert!(
+            profile.validate(&schematic).iter().any(|item| {
+                item.code == "SCH009"
+                    && item.message.contains("description text box")
+                    && item.message.contains("extends outside frame")
+            })
         );
     }
 
