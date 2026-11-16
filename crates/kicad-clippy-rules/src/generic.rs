@@ -415,7 +415,7 @@ fn collect_primitives_from_unit(
     source: &str,
 ) -> Vec<SchematicPrimitiveFact> {
     let mut primitives = Vec::new();
-    for kind in ["rectangle", "polyline", "polygon", "circle", "arc"] {
+    for kind in ["rectangle", "polyline", "polygon", "circle", "arc", "bezier"] {
         for node in children(unit, kind) {
             if let Some(primitive) = parse_symbol_primitive(node, transform, source) {
                 primitives.push(primitive);
@@ -464,6 +464,7 @@ fn parse_symbol_primitive(
         "rectangle" => rectangle_primitive_points(node, source)?,
         "polyline" | "polygon" => polyline_primitive_points(node, source)?,
         "arc" => arc_primitive_points(node, source)?,
+        "bezier" => bezier_primitive_points(node, source)?,
         _ => return None,
     };
     let mut points_mm = transform_primitive_points(&local_points, transform)?;
@@ -531,6 +532,108 @@ fn arc_primitive_points(node: &Node, source: &str) -> Option<Vec<(f64, f64)>> {
         point("mid")?,
         point("end")?,
     ))
+}
+
+fn bezier_primitive_points(node: &Node, source: &str) -> Option<Vec<(f64, f64)>> {
+    let points_node = child_list(node, "pts")?;
+    let coordinates: Option<Vec<_>> = children(points_node, "xy")
+        .map(|point| {
+            let items = list_items(point)?;
+            Some((
+                number(items.get(1)?, source)?,
+                number(items.get(2)?, source)?,
+            ))
+        })
+        .collect();
+    let coordinates = coordinates?;
+    if coordinates.len() != 4 {
+        return None;
+    }
+    let start = *coordinates.first()?;
+    let control_one = *coordinates.get(1)?;
+    let control_two = *coordinates.get(2)?;
+    let end = *coordinates.get(3)?;
+    let mut samples = Vec::with_capacity(32);
+    samples.push(start);
+    append_cubic_bezier_samples(
+        start,
+        control_one,
+        control_two,
+        end,
+        0,
+        &mut samples,
+    );
+    Some(samples)
+}
+
+fn append_cubic_bezier_samples(
+    start: (f64, f64),
+    control_one: (f64, f64),
+    control_two: (f64, f64),
+    end: (f64, f64),
+    depth: u8,
+    samples: &mut Vec<(f64, f64)>,
+) {
+    const MAX_DEPTH: u8 = 12;
+    const MAX_FLATNESS_MM: f64 = 0.01;
+
+    if depth >= MAX_DEPTH
+        || cubic_bezier_flatness(start, control_one, control_two, end) <= MAX_FLATNESS_MM
+    {
+        samples.push(end);
+        return;
+    }
+
+    let start_to_control_one = midpoint_pair(start, control_one);
+    let control_one_to_control_two = midpoint_pair(control_one, control_two);
+    let control_two_to_end = midpoint_pair(control_two, end);
+    let left_inner = midpoint_pair(start_to_control_one, control_one_to_control_two);
+    let right_inner = midpoint_pair(control_one_to_control_two, control_two_to_end);
+    let split_point = midpoint_pair(left_inner, right_inner);
+
+    append_cubic_bezier_samples(
+        start,
+        start_to_control_one,
+        left_inner,
+        split_point,
+        depth + 1,
+        samples,
+    );
+    append_cubic_bezier_samples(
+        split_point,
+        right_inner,
+        control_two_to_end,
+        end,
+        depth + 1,
+        samples,
+    );
+}
+
+fn cubic_bezier_flatness(
+    start: (f64, f64),
+    control_one: (f64, f64),
+    control_two: (f64, f64),
+    end: (f64, f64),
+) -> f64 {
+    let start = Point {
+        x: start.0,
+        y: start.1,
+    };
+    let control_one = Point {
+        x: control_one.0,
+        y: control_one.1,
+    };
+    let control_two = Point {
+        x: control_two.0,
+        y: control_two.1,
+    };
+    let end = Point { x: end.0, y: end.1 };
+    point_segment_distance(control_one, start, end)
+        .max(point_segment_distance(control_two, start, end))
+}
+
+fn midpoint_pair(first: (f64, f64), second: (f64, f64)) -> (f64, f64) {
+    (f64::midpoint(first.0, second.0), f64::midpoint(first.1, second.1))
 }
 
 fn sample_arc_through_three_points(
@@ -2825,6 +2928,62 @@ mod tests {
               (property "Reference" "U1" (at 10 10 0) (effects (font (size 1 1))))
             )
             (wire (pts (xy 11.414 8.4) (xy 11.414 8.8)))
+            "#,
+        );
+        assert!(
+            !run_builtin_rules(&doc)
+                .diagnostics
+                .iter()
+                .any(|item| item.code == "SCH013" && item.message.contains("symbol body U1"))
+        );
+    }
+
+    #[test]
+    fn wire_obstacle_detects_actual_cubic_bezier_curve() {
+        let doc = document(
+            r#"
+            (lib_symbols
+              (symbol "Test:Bezier"
+                (symbol "Bezier_1_1"
+                  (bezier
+                    (pts (xy -2 0) (xy -1 2) (xy 1 2) (xy 2 0))
+                    (stroke (width 0.254))
+                    (fill (type none)))
+                )
+              )
+            )
+            (symbol (lib_id "Test:Bezier") (at 10 10 0)
+              (property "Reference" "U1" (at 10 10 0) (effects (font (size 1 1))))
+            )
+            (wire (pts (xy 11.094 8.75) (xy 11.094 9.0)))
+            "#,
+        );
+        assert!(
+            run_builtin_rules(&doc)
+                .diagnostics
+                .iter()
+                .any(|item| item.code == "SCH013" && item.message.contains("symbol body U1"))
+        );
+    }
+
+    #[test]
+    fn bezier_control_polygon_is_not_treated_as_the_curve() {
+        let doc = document(
+            r#"
+            (lib_symbols
+              (symbol "Test:Bezier"
+                (symbol "Bezier_1_1"
+                  (bezier
+                    (pts (xy -2 0) (xy -1 2) (xy 1 2) (xy 2 0))
+                    (stroke (width 0.254))
+                    (fill (type none)))
+                )
+              )
+            )
+            (symbol (lib_id "Test:Bezier") (at 10 10 0)
+              (property "Reference" "U1" (at 10 10 0) (effects (font (size 1 1))))
+            )
+            (wire (pts (xy 8.9 7.9) (xy 9.1 7.9)))
             "#,
         );
         assert!(
