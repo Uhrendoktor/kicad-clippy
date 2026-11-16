@@ -364,7 +364,10 @@ fn check_block_annotation_structure(root: &Node, source: &str) -> Vec<Diagnostic
         .filter_map(|node| {
             let items = list_items(node)?;
             let value = atom_value(items.get(1)?, source)?;
-            let multiline = value.contains('\n') || value.contains('\r');
+            let multiline = value.contains('\n')
+                || value.contains('\r')
+                || value.contains("\\n")
+                || value.contains("\\r");
             let stroke_width = child_list(node, "stroke")
                 .and_then(|stroke| child_list(stroke, "width"))
                 .and_then(|width| list_items(width))
@@ -383,13 +386,7 @@ fn check_block_annotation_structure(root: &Node, source: &str) -> Vec<Diagnostic
 }
 
 fn collect_nodes<'a>(root: &'a Node, name: &'a str) -> Vec<&'a Node> {
-    let mut nodes = Vec::new();
-    walk(root, &mut |node| {
-        if head(node) == Some(name) {
-            nodes.push(node);
-        }
-    });
-    nodes
+    children(root, name).collect()
 }
 
 fn collect_label_nodes<'a>(
@@ -491,7 +488,8 @@ fn char_advance(character: char) -> f64 {
 }
 
 fn required_text_box_size(value: &str, font_size: f64, padding: f64) -> (f64, f64) {
-    let lines: Vec<_> = value.lines().collect();
+    let normalized = value.replace("\\n", "\n").replace("\\r", "\r");
+    let lines: Vec<_> = normalized.lines().collect();
     let line_count = lines.len().max(1);
     let max_width = lines
         .iter()
