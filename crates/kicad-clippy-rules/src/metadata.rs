@@ -4,7 +4,7 @@ use std::{
     path::Path,
 };
 
-use kicad_clippy_core::{Diagnostic, Severity};
+use kicad_clippy_core::{BuiltinRuleId, Diagnostic, Severity};
 use kicad_clippy_erc::Netlist;
 use kicad_clippy_parser::SchematicDocument;
 use serde::{Deserialize, Serialize};
@@ -245,8 +245,8 @@ impl LintProfile {
             } else if self.mode == ProfileMode::Strict
                 && !self.ignore_components.contains(&component.reference)
             {
-                diagnostics.push(Diagnostic::new(
-                    "SCH021",
+                diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch021,
                     Severity::Error,
                     format!("{} has no component-intent metadata", component.reference),
                 ));
@@ -272,8 +272,8 @@ impl LintProfile {
             .keys()
             .filter(|reference| !references.contains(*reference))
             .map(|reference| {
-                Diagnostic::new(
-                    "SCH021",
+                Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch021,
                     Severity::Error,
                     format!("profile metadata references missing component {reference}"),
                 )
@@ -320,16 +320,16 @@ fn validate_direct_wire_pair(
     let (Some((first_reference, first_number)), Some((second_reference, second_number))) =
         (pair.first.rsplit_once('.'), pair.second.rsplit_once('.'))
     else {
-        diagnostics.push(Diagnostic::new(
-            "SCH004",
+        diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch004,
             Severity::Error,
             format!("direct-wire pair {pair_name} must use REF.PIN notation"),
         ));
         return (diagnostics, protected_components);
     };
     if !valid_pin_ref(&pair.first) || !valid_pin_ref(&pair.second) || pair.first == pair.second {
-        diagnostics.push(Diagnostic::new(
-            "SCH004",
+        diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch004,
             Severity::Error,
             format!("direct-wire pair {pair_name} must identify two distinct valid pins"),
         ));
@@ -345,8 +345,8 @@ fn validate_direct_wire_pair(
         .iter()
         .find(|pin| pin.reference == second_reference && pin.number == second_number);
     let (Some(first_pin), Some(second_pin)) = (first_pin, second_pin) else {
-        diagnostics.push(Diagnostic::new(
-            "SCH004",
+        diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch004,
             Severity::Error,
             format!(
                 "direct-wire pair {pair_name} references a missing or unsupported embedded pin"
@@ -360,8 +360,8 @@ fn validate_direct_wire_pair(
     let first_attached = point_is_on_wire(first_point, facts);
     let second_attached = point_is_on_wire(second_point, facts);
     if !first_attached {
-        diagnostics.push(Diagnostic::new(
-            "SCH004",
+        diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch004,
             Severity::Error,
             format!(
                 "pin {first_reference}.{first_number} is not attached to a physical wire segment"
@@ -369,8 +369,8 @@ fn validate_direct_wire_pair(
         ));
     }
     if !second_attached {
-        diagnostics.push(Diagnostic::new(
-            "SCH004",
+        diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch004,
             Severity::Error,
             format!(
                 "pin {second_reference}.{second_number} is not attached to a physical wire segment"
@@ -383,8 +383,8 @@ fn validate_direct_wire_pair(
         let first_component = component_ids.get(&first_key).copied();
         let second_component = component_ids.get(&second_key).copied();
         if first_component != second_component {
-            diagnostics.push(Diagnostic::new(
-                "SCH004",
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch004,
                 Severity::Error,
                 format!(
                     "{} and {} must share one physical wire-only network; labels do not establish this connection",
@@ -399,8 +399,8 @@ fn validate_direct_wire_pair(
     for (pin_ref, point) in [(&pair.first, first_point), (&pair.second, second_point)] {
         for label in &facts.labels {
             if label.kind != "global_label" && same_wire_point(label.position_mm, point) {
-                diagnostics.push(Diagnostic::new(
-                    "SCH004",
+                diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch004,
                     Severity::Error,
                     format!(
                         "direct-wire pin {pin_ref} shares its anchor with {} {:?}; use a continuous wire-only connection",
@@ -429,8 +429,8 @@ fn validate_forbidden_direct_wire_labels(
             .get(&key)
             .is_some_and(|component| protected_components.contains(component))
     }) {
-        diagnostics.push(Diagnostic::new(
-            "SCH004",
+        diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch004,
             Severity::Error,
             format!(
                 "local label {:?} is forbidden on a direct-wire-only network",
@@ -468,8 +468,8 @@ fn validate_common_pin_group(
     }
     let (roots, mut diagnostics) = resolve_common_pin_group_components(group, facts, component_ids);
     if group.wire_connected && roots.len() > 1 {
-        diagnostics.push(Diagnostic::new(
-            "SCH004",
+        diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch004,
             Severity::Error,
             format!(
                 "configured pins {:?} must share one physical {} wire network",
@@ -480,8 +480,8 @@ fn validate_common_pin_group(
     if group.single_label {
         let matching_labels = common_pin_group_label_count(group, &roots, facts, component_ids);
         if matching_labels != 1 {
-            diagnostics.push(Diagnostic::new(
-                "SCH004",
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch004,
                 Severity::Error,
                 format!(
                     "configured pins {:?} must share exactly one {} label; found {matching_labels}",
@@ -501,8 +501,8 @@ fn validate_common_pin_group_netlist(
         return Vec::new();
     }
     let Some(netlist) = netlist else {
-        return vec![Diagnostic::new(
-            "SCH004",
+        return vec![Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch004,
             Severity::Warning,
             format!(
                 "common pin group {:?} requests netlist_connected but no exported KiCad netlist was supplied",
@@ -524,8 +524,8 @@ fn validate_common_pin_group_netlist(
             Some(net_name) => {
                 nets.insert(net_name.to_owned());
             }
-            None => diagnostics.push(Diagnostic::new(
-                "SCH004",
+            None => diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch004,
                 Severity::Error,
                 format!(
                     "{pin_ref} in common pin group {:?} is absent from the exported KiCad netlist",
@@ -535,8 +535,8 @@ fn validate_common_pin_group_netlist(
         }
     }
     if nets.len() > 1 {
-        diagnostics.push(Diagnostic::new(
-            "SCH004",
+        diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch004,
             Severity::Error,
             format!(
                 "pins in common pin group {:?} resolve to different exported KiCad nets: {}",
@@ -560,7 +560,8 @@ fn common_pin_group_configuration_error(group: &CommonPinNetGroup) -> Option<Dia
     } else {
         None
     };
-    message.map(|message| Diagnostic::new("SCH004", Severity::Error, message))
+    message.map(|message| Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch004, Severity::Error, message))
 }
 
 fn resolve_common_pin_group_components(
@@ -584,8 +585,8 @@ fn resolve_common_pin_group_components(
             .iter()
             .find(|item| item.reference == reference && item.number == pin_number);
         let Some(pin) = pin else {
-            diagnostics.push(Diagnostic::new(
-                "SCH004",
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch004,
                 Severity::Error,
                 format!(
                     "common pin group {:?} references missing or unsupported pin {pin_ref}",
@@ -595,8 +596,8 @@ fn resolve_common_pin_group_components(
             continue;
         };
         if !point_is_on_wire(pin.position_mm, facts) {
-            diagnostics.push(Diagnostic::new(
-                "SCH004",
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch004,
                 Severity::Error,
                 format!(
                     "{pin_ref} in common pin group {:?} is not attached to a physical wire",
@@ -607,8 +608,8 @@ fn resolve_common_pin_group_components(
         }
         let key = format!("{:.3}:{:.3}", pin.position_mm.0, pin.position_mm.1);
         let Some(component) = component_ids.get(&key).copied() else {
-            diagnostics.push(Diagnostic::new(
-                "SCH004",
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch004,
                 Severity::Error,
                 format!(
                     "{pin_ref} in common pin group {:?} has no resolved physical wire component",
@@ -619,8 +620,8 @@ fn resolve_common_pin_group_components(
         };
         roots.insert(component);
         if !component_has_label(component, group.name.trim(), facts, component_ids) {
-            diagnostics.push(Diagnostic::new(
-                "SCH004",
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch004,
                 Severity::Error,
                 format!("{pin_ref} must belong to common net {}", group.name),
             ));
@@ -630,8 +631,8 @@ fn resolve_common_pin_group_components(
 }
 
 fn invalid_common_pin_reference(group_name: &str, pin_ref: &str) -> Diagnostic {
-    Diagnostic::new(
-        "SCH004",
+    Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch004,
         Severity::Error,
         format!("common pin group {group_name:?} contains invalid pin reference {pin_ref:?}"),
     )
@@ -729,8 +730,8 @@ fn validate_group(
         .find(|text_box| text_box.uuid == group.description_uuid)
         .map(|text_box| text_box.text.as_str());
     let Some(description) = description else {
-        diagnostics.push(Diagnostic::new(
-            "SCH017",
+        diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch017,
             Severity::Error,
             format!(
                 "group {group_id} description text box UUID {} is missing",
@@ -756,16 +757,16 @@ fn validate_group_containment(
         return Vec::new();
     };
     let Some(frame) = facts.frames.iter().find(|frame| frame.uuid == frame_uuid) else {
-        return vec![Diagnostic::new(
-            "SCH009",
+        return vec![Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch009,
             Severity::Error,
             format!("group {group_id} references missing schematic frame UUID {frame_uuid}"),
         )];
     };
     let (left, top, right, bottom) = frame.bounds_mm;
     if left >= right || top >= bottom {
-        return vec![Diagnostic::new(
-            "SCH009",
+        return vec![Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch009,
             Severity::Error,
             format!("group {group_id} frame {frame_uuid} has invalid or zero-area bounds"),
         )];
@@ -781,8 +782,8 @@ fn validate_group_containment(
             continue;
         };
         let Some((x_mm, y_mm)) = component.position_mm else {
-            diagnostics.push(Diagnostic::new(
-                "SCH009",
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch009,
                 Severity::Error,
                 format!(
                     "group {group_id} member {reference} has no placed-symbol origin for frame containment validation"
@@ -795,8 +796,8 @@ fn validate_group_containment(
             && y_mm >= top - 0.001
             && y_mm <= bottom + 0.001;
         if !inside {
-            diagnostics.push(Diagnostic::new(
-                "SCH009",
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch009,
                 Severity::Error,
                 format!(
                     "group {group_id} member {reference} origin ({x_mm:.2}, {y_mm:.2}) mm is outside frame {frame_uuid}"
@@ -816,38 +817,38 @@ fn validate_frame_clearance(
         return Vec::new();
     };
     if !clearance.is_finite() || clearance < 0.0 {
-        return vec![Diagnostic::new(
-            "SCH012",
+        return vec![Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch012,
             Severity::Error,
             format!("group {group_id} minimum_frame_clearance_mm must be finite and non-negative"),
         )];
     }
     let Some(frame_uuid) = group.frame_uuid.as_deref() else {
-        return vec![Diagnostic::new(
-            "SCH012",
+        return vec![Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch012,
             Severity::Error,
             format!("group {group_id} requests frame clearance but has no frame_uuid"),
         )];
     };
     let Some(frame) = facts.frames.iter().find(|frame| frame.uuid == frame_uuid) else {
-        return vec![Diagnostic::new(
-            "SCH012",
+        return vec![Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch012,
             Severity::Error,
             format!("group {group_id} references missing schematic frame UUID {frame_uuid}"),
         )];
     };
     let bounds = frame.bounds_mm;
     if !valid_frame_bounds(bounds) {
-        return vec![Diagnostic::new(
-            "SCH012",
+        return vec![Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch012,
             Severity::Error,
             format!("group {group_id} frame {frame_uuid} has invalid or zero-area bounds"),
         )];
     }
     let (left, top, right, bottom) = bounds;
     if right - left < 2.0 * clearance || bottom - top < 2.0 * clearance {
-        return vec![Diagnostic::new(
-            "SCH012",
+        return vec![Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch012,
             Severity::Error,
             format!(
                 "group {group_id} frame {frame_uuid} is too small to provide {clearance:.2} mm clearance on every side"
@@ -895,8 +896,8 @@ fn validate_member_frame_clearance(
             continue;
         };
         let Some((x_mm, y_mm)) = component.position_mm else {
-            diagnostics.push(Diagnostic::new(
-                "SCH012",
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch012,
                 Severity::Error,
                 format!(
                     "group {group_id} member {reference} has no symbol origin for frame-clearance validation"
@@ -909,8 +910,8 @@ fn validate_member_frame_clearance(
             && y_mm >= top + clearance - 0.001
             && y_mm <= bottom - clearance + 0.001;
         if !inside_clearance {
-            diagnostics.push(Diagnostic::new(
-                "SCH012",
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch012,
                 Severity::Error,
                 format!(
                     "group {group_id} member {reference} origin is within {clearance:.2} mm of frame {frame_uuid} edge"
@@ -942,8 +943,8 @@ fn validate_member_pin_frame_clearance(
             && y_mm >= top + clearance - 0.001
             && y_mm <= bottom - clearance + 0.001;
         if !inside_clearance {
-            diagnostics.push(Diagnostic::new(
-                "SCH012",
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch012,
                 Severity::Error,
                 format!(
                     "group {group_id} member pin {}.{} does not maintain {clearance:.2} mm clearance from frame {frame_uuid}",
@@ -976,8 +977,8 @@ fn validate_member_field_frame_clearance(
             && field_right <= right - clearance + 0.001
             && field_bottom <= bottom - clearance + 0.001;
         if !inside_clearance {
-            diagnostics.push(Diagnostic::new(
-                "SCH012",
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch012,
                 Severity::Error,
                 format!(
                     "group {group_id} member field {} {} does not maintain {clearance:.2} mm clearance from frame {frame_uuid}",
@@ -1010,8 +1011,8 @@ fn validate_description_frame_clearance(
                 && box_right <= right - clearance + 0.001
                 && box_bottom <= bottom - clearance + 0.001;
             if !text_inside_clearance {
-                diagnostics.push(Diagnostic::new(
-                    "SCH012",
+                diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch012,
                     Severity::Error,
                     format!(
                         "group {group_id} description text box {} does not maintain {clearance:.2} mm clearance from frame {frame_uuid}",
@@ -1020,8 +1021,8 @@ fn validate_description_frame_clearance(
                 ));
             }
         } else {
-            diagnostics.push(Diagnostic::new(
-                "SCH012",
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch012,
                 Severity::Error,
                 format!(
                     "group {group_id} description text box {} has no usable geometry for frame-clearance validation",
@@ -1042,22 +1043,22 @@ fn validate_wire_compactness(
         return Vec::new();
     };
     if !budget.is_finite() || budget <= 0.0 {
-        return vec![Diagnostic::new(
-            "SCH016",
+        return vec![Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch016,
             Severity::Error,
             format!("group {group_id} wire_length_budget_mm must be a finite positive distance"),
         )];
     }
     let Some(frame_uuid) = group.frame_uuid.as_deref() else {
-        return vec![Diagnostic::new(
-            "SCH016",
+        return vec![Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch016,
             Severity::Error,
             format!("group {group_id} must set frame_uuid to calculate its internal wire length"),
         )];
     };
     let Some(frame) = facts.frames.iter().find(|frame| frame.uuid == frame_uuid) else {
-        return vec![Diagnostic::new(
-            "SCH016",
+        return vec![Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch016,
             Severity::Error,
             format!(
                 "group {group_id} references missing schematic frame UUID {frame_uuid} for wire compactness"
@@ -1066,8 +1067,8 @@ fn validate_wire_compactness(
     };
     let (left, top, right, bottom) = frame.bounds_mm;
     if left >= right || top >= bottom {
-        return vec![Diagnostic::new(
-            "SCH016",
+        return vec![Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch016,
             Severity::Error,
             format!("group {group_id} frame {frame_uuid} has invalid or zero-area bounds"),
         )];
@@ -1087,8 +1088,8 @@ fn validate_wire_compactness(
         .sum();
     let score = total_wire_length_mm / budget;
     if score > 1.0 + 0.001 {
-        vec![Diagnostic::new(
-            "SCH016",
+        vec![Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch016,
             Severity::Warning,
             format!(
                 "group {group_id} wire compactness score is {score:.3} ({total_wire_length_mm:.2}/{budget:.2} mm); maximum score is 1.000"
@@ -1108,8 +1109,8 @@ fn validate_group_spacing(
         return Vec::new();
     };
     if !minimum_spacing.is_finite() || minimum_spacing <= 0.0 {
-        return vec![Diagnostic::new(
-            "SCH006",
+        return vec![Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch006,
             Severity::Error,
             format!(
                 "group {group_id} minimum_member_origin_spacing_mm must be a finite positive distance"
@@ -1128,8 +1129,8 @@ fn validate_group_spacing(
             continue;
         };
         let Some((x_mm, y_mm)) = component.position_mm else {
-            diagnostics.push(Diagnostic::new(
-                "SCH006",
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch006,
                 Severity::Error,
                 format!(
                     "group {group_id} member {reference} has no symbol-origin position for spacing validation"
@@ -1144,8 +1145,8 @@ fn validate_group_spacing(
         for second in positions.iter().skip(index + 1) {
             let actual_spacing = (first.1 - second.1).hypot(first.2 - second.2);
             if actual_spacing + 0.001 < minimum_spacing {
-                diagnostics.push(Diagnostic::new(
-                    "SCH006",
+                diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch006,
                     Severity::Error,
                     format!(
                         "group {group_id} members {} and {} have symbol-origin spacing {:.2} mm; minimum is {:.2} mm",
@@ -1167,8 +1168,8 @@ fn validate_kicad_group_membership(
         return Vec::new();
     };
     let Some(native_group) = facts.groups.iter().find(|item| item.uuid == expected_uuid) else {
-        return vec![Diagnostic::new(
-            "SCH007",
+        return vec![Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch007,
             Severity::Error,
             format!("profile group {group_id} references missing KiCad group UUID {expected_uuid}"),
         )];
@@ -1184,8 +1185,8 @@ fn validate_kicad_group_membership(
             continue;
         };
         let Some(uuid) = component.uuid.as_deref() else {
-            diagnostics.push(Diagnostic::new(
-                "SCH007",
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch007,
                 Severity::Error,
                 format!(
                     "group {group_id} member {reference} has no placed-symbol UUID for native group membership validation"
@@ -1194,8 +1195,8 @@ fn validate_kicad_group_membership(
             continue;
         };
         if !native_group.member_uuids.contains(uuid) {
-            diagnostics.push(Diagnostic::new(
-                "SCH007",
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch007,
                 Severity::Error,
                 format!(
                     "group {group_id} includes {reference} in its profile but native KiCad group {} does not contain symbol UUID {uuid}",
@@ -1211,8 +1212,8 @@ fn validate_kicad_group_membership(
         };
         if native_group.member_uuids.contains(uuid) && !group.members.contains(&component.reference)
         {
-            diagnostics.push(Diagnostic::new(
-                "SCH007",
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch007,
                 Severity::Error,
                 format!(
                     "native KiCad group {} contains component {} which is not listed in profile group {group_id}",
@@ -1242,8 +1243,8 @@ fn validate_group_evidence(group_id: &str, group: &GroupIntent) -> Vec<Diagnosti
     if has_document_evidence || has_reviewed_asset {
         Vec::new()
     } else {
-        vec![Diagnostic::new(
-            "SCH017",
+        vec![Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch017,
             Severity::Error,
             format!(
                 "group {group_id} must cite a document/page/figure or a reviewed screenshot asset"
@@ -1260,8 +1261,8 @@ fn validate_group_members(
     let mut diagnostics = Vec::new();
     for reference in &group.members {
         if !references.contains(reference.as_str()) {
-            diagnostics.push(Diagnostic::new(
-                "SCH017",
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch017,
                 Severity::Error,
                 format!("group {group_id} contains missing component {reference}"),
             ));
@@ -1269,8 +1270,8 @@ fn validate_group_members(
     }
     for reference in &group.documentation_members {
         if !group.members.contains(reference) {
-            diagnostics.push(Diagnostic::new(
-                "SCH020",
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch020,
                 Severity::Error,
                 format!(
                     "group {group_id} lists {reference} as a documentation member but not as a group member"
@@ -1289,15 +1290,15 @@ fn validate_group_component_purposes(
     let mut diagnostics = Vec::new();
     for (reference, purpose) in &group.component_purposes {
         if !group.members.contains(reference) {
-            diagnostics.push(Diagnostic::new(
-                "SCH020",
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch020,
                 Severity::Error,
                 format!("group {group_id} documents {reference}, which is not a group member"),
             ));
         }
         if !group.documentation_members.contains(reference) {
-            diagnostics.push(Diagnostic::new(
-                "SCH020",
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch020,
                 Severity::Error,
                 format!("group {group_id} must list {reference} as a documentation member"),
             ));
@@ -1331,16 +1332,16 @@ fn validate_group_phrase(
     description: &str,
 ) {
     let Some(phrase) = phrase.filter(|value| !value.trim().is_empty()) else {
-        diagnostics.push(Diagnostic::new(
-            "SCH020",
+        diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch020,
             Severity::Error,
             format!("group {group_id} must provide {reference} {field}"),
         ));
         return;
     };
     if !description.contains(phrase) {
-        diagnostics.push(Diagnostic::new(
-            "SCH020",
+        diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch020,
             Severity::Error,
             format!("group {group_id} description must include {reference} {field}"),
         ));
@@ -1356,8 +1357,8 @@ fn validate_component_intent(
     if intent.function.as_deref().is_none_or(str::is_empty)
         || intent.rationale.as_deref().is_none_or(str::is_empty)
     {
-        diagnostics.push(Diagnostic::new(
-            "SCH020",
+        diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch020,
             Severity::Error,
             format!("{reference} must document both its circuit function and design rationale"),
         ));
@@ -1384,8 +1385,8 @@ fn validate_component_intent(
                 | "safety"
         )
     {
-        diagnostics.push(Diagnostic::new(
-            "SCH021",
+        diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch021,
             Severity::Warning,
             format!(
                 "{reference} uses unknown capacitor role {:?}; document its meaning or use a standard role",
@@ -1409,8 +1410,8 @@ fn validate_pin_net_contract(
         };
         if let Some(previous) = mappings.insert(pin.to_owned(), expected_net.clone()) {
             if previous != *expected_net {
-                diagnostics.push(Diagnostic::new(
-                    "SCH014",
+                diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch014,
                     Severity::Error,
                     format!(
                         "{reference} pin {pin} has conflicting expected nets {previous:?} and {expected_net:?}"
@@ -1423,8 +1424,8 @@ fn validate_pin_net_contract(
         return diagnostics;
     }
     let Some(netlist) = netlist else {
-        diagnostics.push(Diagnostic::new(
-            "SCH014",
+        diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch014,
             Severity::Warning,
             format!(
                 "{reference} declares pin-to-net contracts but no KiCad netlist was supplied; the contracts were not checked"
@@ -1435,8 +1436,8 @@ fn validate_pin_net_contract(
 
     for (pin, expected_net) in mappings {
         if pin.trim().is_empty() || expected_net.trim().is_empty() {
-            diagnostics.push(Diagnostic::new(
-                "SCH014",
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch014,
                 Severity::Error,
                 format!("{reference} pin-to-net mapping must use non-empty pin and net names"),
             ));
@@ -1444,15 +1445,15 @@ fn validate_pin_net_contract(
         }
         match netlist.net_for_pin(reference, &pin) {
             Some(actual_net) if actual_net == expected_net => {}
-            Some(actual_net) => diagnostics.push(Diagnostic::new(
-                "SCH014",
+            Some(actual_net) => diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch014,
                 Severity::Error,
                 format!(
                     "{reference}.{pin} is connected to {actual_net}, but the profile expects {expected_net}"
                 ),
             )),
-            None => diagnostics.push(Diagnostic::new(
-                "SCH014",
+            None => diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch014,
                 Severity::Error,
                 format!(
                     "{reference}.{pin} is absent from the exported KiCad netlist but is assigned to {expected_net} in the profile"
@@ -1489,8 +1490,8 @@ fn validate_role_contract(reference: &str, intent: &ComponentIntent) -> Vec<Diag
                 .is_none_or(|value| value.trim().is_empty())
         })
         .map(|key| {
-            Diagnostic::new(
-                "SCH021",
+            Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch021,
                 Severity::Error,
                 format!(
                     "{reference} role {:?} is missing required connection {key:?}",
@@ -1506,15 +1507,15 @@ fn validate_role_contract(reference: &str, intent: &ComponentIntent) -> Vec<Diag
             .get("interface_standard")
             .is_none_or(|value| value.trim().is_empty())
         {
-            diagnostics.push(Diagnostic::new(
-                "SCH021",
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch021,
                 Severity::Error,
                 format!("{reference} connector metadata must declare interface_standard"),
             ));
         }
         if !intent.connections.keys().any(|key| key.starts_with("pin.")) {
-            diagnostics.push(Diagnostic::new(
-                "SCH021",
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch021,
                 Severity::Error,
                 format!("{reference} connector metadata must declare at least one pin.N mapping"),
             ));
@@ -1529,8 +1530,8 @@ fn validate_decoupling_intent(
     netlist: Option<&Netlist>,
 ) -> Vec<Diagnostic> {
     let Some(contract) = contract else {
-        return vec![Diagnostic::new(
-            "SCH022",
+        return vec![Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch022,
             Severity::Error,
             format!(
                 "{reference} is a decoupling capacitor but does not identify its target pin and terminal/net contract"
@@ -1539,8 +1540,8 @@ fn validate_decoupling_intent(
     };
     let mut diagnostics = Vec::new();
     if !valid_pin_ref(&contract.target_pin) {
-        diagnostics.push(Diagnostic::new(
-            "SCH022",
+        diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch022,
             Severity::Error,
             format!(
                 "{reference} has invalid decoupling target pin {:?}",
@@ -1553,8 +1554,8 @@ fn validate_decoupling_intent(
         || contract.return_net.is_empty()
         || contract.cluster.is_empty()
     {
-        diagnostics.push(Diagnostic::new(
-            "SCH022",
+        diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch022,
             Severity::Error,
             format!(
                 "{reference} decoupling metadata must define target/return terminals, return net, and cluster"
@@ -1562,8 +1563,8 @@ fn validate_decoupling_intent(
         ));
     }
     if contract.target_terminal == contract.return_terminal {
-        diagnostics.push(Diagnostic::new(
-            "SCH022",
+        diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch022,
             Severity::Error,
             format!("{reference} maps both decoupling terminals to the same capacitor terminal"),
         ));
@@ -1589,21 +1590,21 @@ fn validate_decoupling_nets(
 
     match (target_net, capacitor_target_net) {
         (Some(target), Some(capacitor)) if target == capacitor => {}
-        (Some(target), Some(capacitor)) => diagnostics.push(Diagnostic::new(
-            "SCH022",
+        (Some(target), Some(capacitor)) => diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch022,
             Severity::Error,
             format!(
                 "{reference} terminal {} is on {capacitor}, but {}.{} is on {target}",
                 contract.target_terminal, target_reference, target_pin
             ),
         )),
-        (None, _) => diagnostics.push(Diagnostic::new(
-            "SCH022",
+        (None, _) => diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch022,
             Severity::Error,
             format!("target pin {target_reference}.{target_pin} is absent from the exported KiCad netlist"),
         )),
-        (_, None) => diagnostics.push(Diagnostic::new(
-            "SCH022",
+        (_, None) => diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch022,
             Severity::Error,
             format!(
                 "{}.{} is absent from the exported KiCad netlist",
@@ -1614,16 +1615,16 @@ fn validate_decoupling_nets(
 
     match capacitor_return_net {
         Some(actual) if actual == contract.return_net => {}
-        Some(actual) => diagnostics.push(Diagnostic::new(
-            "SCH022",
+        Some(actual) => diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch022,
             Severity::Error,
             format!(
                 "{reference} return terminal {} is on {actual}, expected {}",
                 contract.return_terminal, contract.return_net
             ),
         )),
-        None => diagnostics.push(Diagnostic::new(
-            "SCH022",
+        None => diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch022,
             Severity::Error,
             format!(
                 "{}.{} is absent from the exported KiCad netlist",
@@ -1657,8 +1658,8 @@ fn validate_decoupler_groups(components: &BTreeMap<String, ComponentIntent>) -> 
             .map(|item| item.cluster.as_str())
             .collect();
         if returns.len() > 1 {
-            diagnostics.push(Diagnostic::new(
-                "SCH022",
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch022,
                 Severity::Error,
                 format!(
                     "decouplers for {target} disagree on their return net: {}",
@@ -1667,8 +1668,8 @@ fn validate_decoupler_groups(components: &BTreeMap<String, ComponentIntent>) -> 
             ));
         }
         if clusters.len() > 1 {
-            diagnostics.push(Diagnostic::new(
-                "SCH022",
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch022,
                 Severity::Warning,
                 format!(
                     "decouplers for {target} are split across cluster identifiers: {}",
