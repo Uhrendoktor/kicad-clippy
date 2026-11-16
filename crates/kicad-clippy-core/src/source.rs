@@ -70,6 +70,12 @@ impl SourceFile {
         &self.text
     }
 
+    /// Clones the shared source buffer without copying its contents.
+    #[must_use]
+    pub fn shared_text(&self) -> Arc<str> {
+        Arc::clone(&self.text)
+    }
+
     /// Returns the source slice covered by a valid byte span.
     #[must_use]
     pub fn slice(&self, span: ByteSpan) -> Option<&str> {
