@@ -7,7 +7,7 @@ The historical checker defines stable IDs SCH001–SCH020. The Rust migration pr
 | SCH001 | Wire geometry | Implemented: endpoint count, orthogonal segments, zero-length wires, collinear overlap, crossings and unmarked T-junctions |
 | SCH002 | Label topology | Implemented: physical wire-island graph, local-label reuse across distinct islands, duplicate-label detection on one island, and hierarchical twig termination |
 | SCH003 | Label/wire glyph overlap | Implemented: estimated visible glyph bounds and strict wire-interior intersection |
-| SCH004 | Physical net connectivity | Pending exported-netlist and physical wire-graph integration |
+| SCH004 | Physical net connectivity | Implemented partial: profile-declared pin pairs must be attached to and share one physical wire-only component; label joins do not count, and forbidden local-label names can be scoped to those networks |
 | SCH005 | Pin orientation | Implemented: checks connected wire axes against embedded pin geometry for selected unit/convert, right-angle rotation, and X/Y mirroring |
 | SCH006 | Component spacing | Implemented when group profiles declare `minimum_member_origin_spacing_mm`: enforces Euclidean spacing between placed symbol origins; not a body-clearance check |
 | SCH007 | Group metadata | Implemented when profiles provide `kicad_group_uuid`: resolves native KiCad group and verifies placed-symbol membership against declared component references |
@@ -28,6 +28,8 @@ The historical checker defines stable IDs SCH001–SCH020. The Rust migration pr
 ## Rule boundaries
 
 KiCad native ERC remains the electrical authority. Rust rules must not duplicate pin-type conflicts, undriven power pins, or native unconnected-pin analysis. Rules requiring exact pin-to-net facts must consume KiCad's exported netlist, not infer connectivity from equal label strings.
+
+SCH004 is an opt-in physical contract for profile-declared `direct_wire_pairs`. It verifies resolved pin anchors are attached to wire segments and belong to the same wire-only component; labels do not create graph edges. It currently validates pairs, not inferred physical connectivity for every net, and does not yet enforce general common-pin groups or single-label cardinality.
 
 SCH005 intentionally checks only connected-wire axis alignment; KiCad native ERC remains responsible for electrical pin compatibility and unconnected-pin findings. Pin layouts that cannot be resolved from the embedded symbol definition or use non-cardinal symbol rotation are skipped rather than guessed.
 
