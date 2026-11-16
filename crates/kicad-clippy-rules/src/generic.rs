@@ -1802,7 +1802,7 @@ fn text_visual_bounds(value: &str, node: &Node) -> Option<Bounds> {
         .and_then(|font| font.get(1))
         .and_then(number)
         .unwrap_or(1.0);
-    let width = (newstroke_text_advance_ratio(value) * font_size * 1.12).max(font_size);
+    let width = newstroke_text_advance_ratio(value) * font_size;
     let height = font_size * 1.55;
     let x = number(at.get(1)?)?;
     let y = number(at.get(2)?)?;
