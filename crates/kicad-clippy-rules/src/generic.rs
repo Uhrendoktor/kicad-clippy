@@ -84,7 +84,7 @@ pub fn run_builtin_rules(document: &SchematicDocument) -> RuleRun {
     let source = document.source().text();
     let segments = collect_segments(root, source);
     let junctions = collect_points(root, source, "junction");
-    let mut diagnostics = check_wire_geometry(root, source, &segments, &junctions);
+    let mut diagnostics = check_wire_geometry(root, &segments, &junctions);
     diagnostics.extend(check_label_topology(root, source, &segments));
     diagnostics.extend(check_label_wire_clearance(root, source, &segments));
     diagnostics.extend(check_text_box_layout(root, source, &segments));
@@ -100,11 +100,10 @@ pub fn run_builtin_rules(document: &SchematicDocument) -> RuleRun {
 
 fn check_wire_geometry(
     root: &Node,
-    source: &str,
     segments: &[Segment],
     junctions: &[Point],
 ) -> Vec<Diagnostic> {
-    let mut diagnostics = collect_invalid_wire_diagnostics(root, source);
+    let mut diagnostics = collect_invalid_wire_diagnostics(root);
     for (index, segment) in segments.iter().enumerate() {
         if distance(segment.start, segment.end) < 0.001 {
             diagnostics.push(at_segment("SCH001", "wire has zero length", *segment));
@@ -170,7 +169,7 @@ fn check_wire_geometry(
     diagnostics
 }
 
-fn collect_invalid_wire_diagnostics(root: &Node, source: &str) -> Vec<Diagnostic> {
+fn collect_invalid_wire_diagnostics(root: &Node) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     walk(root, &mut |node| {
         if head(node) != Some("wire") {
@@ -180,18 +179,13 @@ fn collect_invalid_wire_diagnostics(root: &Node, source: &str) -> Vec<Diagnostic
             .map(|points| children(points, "xy").count())
             .unwrap_or_default();
         if point_count != 2 {
-            diagnostics.push(at_segment(
+            diagnostics.push(at_span(
                 "SCH001",
                 "wire must have exactly two endpoints",
-                Segment {
-                    start: Point { x: 0.0, y: 0.0 },
-                    end: Point { x: 0.0, y: 0.0 },
-                    span: span_of(node),
-                },
+                span_of(node),
             ));
         }
     });
-    let _ = source;
     diagnostics
 }
 
@@ -967,6 +961,38 @@ mod tests {
                 .iter()
                 .any(|item| item.code == "SCH002")
         );
+    }
+
+    #[test]
+    fn wire_overlap_is_rejected() {
+        let doc = document(
+            r"(wire (pts (xy 0 0) (xy 4 0))) (wire (pts (xy 2 0) (xy 6 0)))",
+        );
+        assert!(run_builtin_rules(&doc).diagnostics.iter().any(|item| {
+            item.code == "SCH001" && item.message.contains("overlap")
+        }));
+    }
+
+    #[test]
+    fn wire_through_label_glyph_is_rejected() {
+        let doc = document(
+            r#"(label "ABC" (at 5 5 0) (effects (font (size 1 1)))) (wire (pts (xy 3 4.2) (xy 7 4.2)))"#,
+        );
+        assert!(run_builtin_rules(&doc).diagnostics.iter().any(|item| item.code == "SCH003"));
+    }
+
+    #[test]
+    fn free_standing_text_is_rejected() {
+        let doc = document(r#"(text "note" (at 1 1 0) (effects (font (size 1 1))))"#);
+        assert!(run_builtin_rules(&doc).diagnostics.iter().any(|item| item.code == "SCH008"));
+    }
+
+    #[test]
+    fn multiline_unbordered_text_box_is_rejected() {
+        let doc = document(
+            r#"(text_box "first line\nsecond line" (at 1 1 0) (size 40 8) (margins 1.27 1.27 1.27 1.27) (stroke (width -1)) (effects (font (size 1 1))))"#,
+        );
+        assert!(run_builtin_rules(&doc).diagnostics.iter().any(|item| item.code == "SCH011"));
     }
 
     #[test]
