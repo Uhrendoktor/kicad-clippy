@@ -8,7 +8,8 @@ use kicad_clippy_parser::SchematicDocument;
 use kiutils_sexpr::Node;
 
 use crate::{
-    AdjacencyContract, CommonNetContract, DesignGroup, DesignProfile, PinPair, RuleConfig,
+    AdjacencyContract, CommonNetContract, ComponentKind, ComponentMetadata, ComponentRole,
+    DesignGroup, DesignProfile, PinPair, RuleConfig,
     RuleConfigError,
     model::{
         Point, Rect, SchematicModel, Segment, TOL, atom_at, direct_nodes,
@@ -40,6 +41,8 @@ const RULES: &[(&str, &str, &str, &str, &str, RuleLevel)] = &[
     ("SCH021", "symbol-grid-alignment", "layout", "Warn when placed symbol origins do not align to the design profile grid.", "Grid-aligned component rows and shared rails create visual consistency. This check is separate from KiCad's native connection-grid ERC for pins and wire endpoints.", RuleLevel::Warn),
     ("SCH022", "unique-object-uuids", "integrity", "Require schematic object UUIDs to be unique within the document.", "KiCad uses UUIDs to identify schematic objects and hierarchy instances. Duplicate identifiers can make selection, references and synchronization ambiguous.", RuleLevel::Deny),
     ("SCH023", "title-block-completeness", "documentation", "Require a non-empty schematic title and any configured title-block fields.", "The native title block is the formal document identity. It should carry the drawing title and the project-specific revision/date/company data selected by the profile.", RuleLevel::Warn),
+    ("SCH024", "component-intent-metadata", "metadata", "Require typed metadata for selected component types and validate declared role/function/rationale.", "Typed design intent connects a component to the circuit role it serves. Strict projects can require capacitors to state whether they are bulk, decoupling, filtering, coupling or another role, with an explicit target pin for decouplers.", RuleLevel::Warn),
+    ("SCH025", "decoupling-network-contracts", "electrical-intent", "Validate decoupling-capacitor target pins, proximity, physical connection and shared return networks.", "A capacitor tagged as a decoupler must actually connect to the declared IC pin. Decouplers serving the same pin should form a compact group and share the intended return network; KiCad ERC alone cannot infer this design intent.", RuleLevel::Deny),
 ];
 
 /// Returns the built-in rule catalogue in stable identifier order.
@@ -76,13 +79,19 @@ pub fn run_rules(
     };
 
     sink.run_generic_rules();
-    if let Some(profile) = &config.profile {
-        sink.run_profile_rules(profile);
+    if config.preset != "generic" {
+        if let Some(profile) = &config.profile {
+            sink.run_profile_rules(profile);
+        }
     }
     sink.rule_symbol_field_clearance(config.profile.as_ref());
     sink.rule_multiline_annotations(config.profile.as_ref());
     sink.rule_symbol_grid(config.profile.as_ref().and_then(|profile| profile.grid_mm));
     sink.rule_title_block(config.profile.as_ref());
+    if config.preset != "generic" {
+        sink.rule_component_metadata(config.profile.as_ref());
+        sink.rule_decoupling_networks(config.profile.as_ref());
+    }
     Ok(sink.diagnostics)
 }
 
@@ -95,13 +104,17 @@ struct RuleSink<'a, 'm> {
 
 impl RuleSink<'_, '_> {
     fn effective_level(&self, id: &str) -> RuleLevel {
+        if let Some(explicit) = self.config.rules.get(id) {
+            return *explicit;
+        }
         let default = RULES.iter().find(|rule| rule.0 == id)
             .map_or(RuleLevel::Deny, |rule| rule.5);
-        let configured = self.config.level_for(id, default);
-        if self.config.preset == "strict" && configured == RuleLevel::Warn {
+        if self.config.preset == "strict"
+            && (default == RuleLevel::Warn || matches!(id, "SCH024"))
+        {
             RuleLevel::Deny
         } else {
-            configured
+            default
         }
     }
 
