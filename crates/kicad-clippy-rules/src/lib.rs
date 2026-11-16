@@ -181,7 +181,7 @@ mod tests {
         let document = SchematicDocument::from_text("fixture.kicad_sch", "(kicad_sch)")?;
         let mut engine = RuleEngine::new();
         engine.register_pass(ExternalExamplePass)?;
-        assert_eq!(engine.len(), 3);
+        assert_eq!(engine.len(), 1);
 
         let result = engine.run(&document);
         assert_eq!(result.diagnostics.len(), 1);
@@ -202,10 +202,10 @@ mod tests {
     }
 
     #[test]
-    fn built_in_engine_registers_and_runs_its_pass() -> Result<(), Box<dyn Error>> {
+    fn built_in_engine_registers_and_runs_its_passes() -> Result<(), Box<dyn Error>> {
         let document = SchematicDocument::from_text("fixture.kicad_sch", "(kicad_sch)")?;
         let engine = RuleEngine::with_builtins();
-        assert_eq!(engine.len(), 1);
+        assert_eq!(engine.len(), 3);
         assert!(!engine
             .run(&document)
             .diagnostics
