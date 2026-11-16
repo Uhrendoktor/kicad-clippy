@@ -527,7 +527,9 @@ fn validate_wire_compactness(
         return vec![Diagnostic::new(
             "SCH016",
             Severity::Error,
-            format!("group {group_id} references missing schematic frame UUID {frame_uuid} for wire compactness"),
+            format!(
+                "group {group_id} references missing schematic frame UUID {frame_uuid} for wire compactness"
+            ),
         )];
     };
     let (left, top, right, bottom) = frame.bounds_mm;
@@ -549,9 +551,7 @@ fn validate_wire_compactness(
         .wires
         .iter()
         .filter(|wire| inside(wire.start_mm) && inside(wire.end_mm))
-        .map(|wire| {
-            (wire.end_mm.0 - wire.start_mm.0).hypot(wire.end_mm.1 - wire.start_mm.1)
-        })
+        .map(|wire| (wire.end_mm.0 - wire.start_mm.0).hypot(wire.end_mm.1 - wire.start_mm.1))
         .sum();
     let score = total_wire_length_mm / budget;
     if score > 1.0 + 0.001 {
@@ -1441,9 +1441,23 @@ mod tests {
         )
         .expect("profile parses");
         let diagnostics = profile.validate(&schematic);
-        assert_eq!(diagnostics.iter().filter(|item| item.code == "SCH016").count(), 2);
-        assert!(diagnostics.iter().any(|item| item.message.contains("finite positive")));
-        assert!(diagnostics.iter().any(|item| item.message.contains("must set frame_uuid")));
+        assert_eq!(
+            diagnostics
+                .iter()
+                .filter(|item| item.code == "SCH016")
+                .count(),
+            2
+        );
+        assert!(
+            diagnostics
+                .iter()
+                .any(|item| item.message.contains("finite positive"))
+        );
+        assert!(
+            diagnostics
+                .iter()
+                .any(|item| item.message.contains("must set frame_uuid"))
+        );
     }
 
     #[test]
