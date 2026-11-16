@@ -403,7 +403,9 @@ fn validate_frame_clearance(
 fn valid_frame_bounds((left, top, right, bottom): (f64, f64, f64, f64)) -> bool {
     left < right
         && top < bottom
-        && [left, top, right, bottom].iter().all(|value| value.is_finite())
+        && [left, top, right, bottom]
+            .iter()
+            .all(|value| value.is_finite())
 }
 
 fn validate_member_frame_clearance(
