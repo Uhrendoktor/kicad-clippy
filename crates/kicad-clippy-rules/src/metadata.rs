@@ -265,6 +265,7 @@ fn validate_direct_wire_connectivity(
         return Vec::new();
     }
     let component_ids = physical_wire_component_ids(facts);
+    let mut protected_components = BTreeSet::new();
     let mut diagnostics = Vec::new();
 
     for pair in pairs {
@@ -332,13 +333,20 @@ fn validate_direct_wire_connectivity(
         if first_attached && second_attached {
             let first_key = format!("{:.3}:{:.3}", first_point.0, first_point.1);
             let second_key = format!("{:.3}:{:.3}", second_point.0, second_point.1);
-            if component_ids.get(&first_key) != component_ids.get(&second_key) {
+            let first_component = component_ids.get(&first_key).copied();
+            let second_component = component_ids.get(&second_key).copied();
+            if first_component != second_component {
                 diagnostics.push(Diagnostic::new(
                     "SCH004",
                     Severity::Error,
-                    format!("{} and {} must share one physical wire-only network; labels do not establish this connection", pair.first, pair.second),
+                    format!(
+                        "{} and {} must share one physical wire-only network; labels do not establish this connection",
+                        pair.first, pair.second
+                    ),
                 ));
             }
+            protected_components.extend(first_component);
+            protected_components.extend(second_component);
         }
 
         for (pin_ref, point) in [(&pair.first, first_point), (&pair.second, second_point)] {
@@ -358,11 +366,15 @@ fn validate_direct_wire_connectivity(
     }
 
     for forbidden in forbidden_labels {
-        for label in facts
-            .labels
-            .iter()
-            .filter(|label| label.kind == "label" && label.name == *forbidden)
-        {
+        for label in facts.labels.iter().filter(|label| {
+            if label.kind != "label" || label.name != *forbidden {
+                return false;
+            }
+            let key = format!("{:.3}:{:.3}", label.position_mm.0, label.position_mm.1);
+            component_ids
+                .get(&key)
+                .is_some_and(|component| protected_components.contains(component))
+        }) {
             diagnostics.push(Diagnostic::new(
                 "SCH004",
                 Severity::Error,
@@ -1432,6 +1444,27 @@ mod tests {
                     .message
                     .contains("forbidden on a direct-wire-only network")
         }));
+    }
+
+    #[test]
+    fn forbidden_direct_wire_label_is_ignored_on_unrelated_wire_islands() {
+        let schematic = direct_wire_schematic(
+            r#"
+            (wire (pts (xy 10 10) (xy 20 10)))
+            (wire (pts (xy 1 1) (xy 2 1)))
+            (label "FET_MID" (at 1 1 0) (effects (font (size 1 1))))
+            "#,
+        );
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"direct_wire_pairs":[{"first":"U1.1","second":"R1.1"}],"forbidden_direct_wire_labels":["FET_MID"]}"#,
+        )
+        .expect("profile parses");
+        assert!(
+            !profile
+                .validate(&schematic)
+                .iter()
+                .any(|item| item.code == "SCH004")
+        );
     }
 
     #[test]
