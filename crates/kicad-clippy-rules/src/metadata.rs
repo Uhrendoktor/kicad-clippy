@@ -114,7 +114,7 @@ pub struct GroupEvidence {
 }
 
 /// Profile-level description and membership contract for one functional group.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct GroupIntent {
     /// References belonging to the functional group.
     #[serde(default)]
