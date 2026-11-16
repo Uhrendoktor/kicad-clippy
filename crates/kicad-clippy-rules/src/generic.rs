@@ -5,9 +5,12 @@ use std::{
 
 use geo::algorithm::line_intersection::line_intersection;
 use geo::{
-    Contains, Coord, Distance, Euclidean, Intersects, Line, LineIntersection, LineString,
-    Point as GeoPoint, Polygon, Rect as GeoRect,
-    algorithm::sweep::{Cross, Intersections},
+    BooleanOps, Contains, Coord, Distance, Euclidean, Intersects, Line, LineIntersection,
+    LineString, MultiLineString, Point as GeoPoint, Polygon, Rect as GeoRect,
+    algorithm::{
+        line_measures::Length,
+        sweep::{Cross, Intersections},
+    },
 };
 use kicad_clippy_core::{
     BuiltinRuleId, ByteSpan, Diagnostic, RelatedLocation, SchematicLocation, Severity,
@@ -1925,60 +1928,54 @@ fn bounds_overlap(first: Bounds, second: Bounds) -> bool {
         && (first.y + first.height).min(second.y + second.height) - first.y.max(second.y) > 0.001
 }
 
-fn line_hits_bounds(segment: Segment, bounds: Bounds) -> bool {
-    let tolerance = 0.001;
-    let horizontal = (segment.start.y - segment.end.y).abs() < tolerance;
-    if horizontal {
-        bounds.y - tolerance <= segment.start.y
-            && segment.start.y <= bounds.y + bounds.height + tolerance
-            && segment
-                .start
-                .x
-                .max(segment.end.x)
-                .min(bounds.x + bounds.width)
-                - segment.start.x.min(segment.end.x).max(bounds.x)
-                > tolerance
-    } else if (segment.start.x - segment.end.x).abs() < tolerance {
-        bounds.x - tolerance <= segment.start.x
-            && segment.start.x <= bounds.x + bounds.width + tolerance
-            && segment
-                .start
-                .y
-                .max(segment.end.y)
-                .min(bounds.y + bounds.height)
-                - segment.start.y.min(segment.end.y).max(bounds.y)
-                > tolerance
-    } else {
-        false
+fn wire_overlaps_bounds(segment: Segment, bounds: Bounds, strict: bool) -> bool {
+    const TOLERANCE: f64 = 0.001;
+
+    let horizontal = (segment.start.y - segment.end.y).abs() < TOLERANCE;
+    let vertical = (segment.start.x - segment.end.x).abs() < TOLERANCE;
+    if !horizontal && !vertical {
+        return false;
     }
+
+    let inset = if strict { TOLERANCE } else { -TOLERANCE };
+    let clipped_bounds = if horizontal {
+        Bounds {
+            y: bounds.y + inset,
+            height: bounds.height - 2.0 * inset,
+            ..bounds
+        }
+    } else {
+        Bounds {
+            x: bounds.x + inset,
+            width: bounds.width - 2.0 * inset,
+            ..bounds
+        }
+    };
+    if clipped_bounds.width <= 0.0 || clipped_bounds.height <= 0.0 {
+        return false;
+    }
+
+    let wire = MultiLineString::new(vec![LineString::new(vec![
+        Coord {
+            x: segment.start.x,
+            y: segment.start.y,
+        },
+        Coord {
+            x: segment.end.x,
+            y: segment.end.y,
+        },
+    ])]);
+    let clipped = geo_rect(clipped_bounds).to_polygon().clip(&wire, false);
+
+    Euclidean.length(&clipped) > TOLERANCE
+}
+
+fn line_hits_bounds(segment: Segment, bounds: Bounds) -> bool {
+    wire_overlaps_bounds(segment, bounds, false)
 }
 
 fn strict_line_hits_bounds(segment: Segment, bounds: Bounds) -> bool {
-    let tolerance = 0.001;
-    let horizontal = (segment.start.y - segment.end.y).abs() < tolerance;
-    if horizontal {
-        bounds.y + tolerance < segment.start.y
-            && segment.start.y < bounds.y + bounds.height - tolerance
-            && segment
-                .start
-                .x
-                .max(segment.end.x)
-                .min(bounds.x + bounds.width)
-                - segment.start.x.min(segment.end.x).max(bounds.x)
-                > tolerance
-    } else if (segment.start.x - segment.end.x).abs() < tolerance {
-        bounds.x + tolerance < segment.start.x
-            && segment.start.x < bounds.x + bounds.width - tolerance
-            && segment
-                .start
-                .y
-                .max(segment.end.y)
-                .min(bounds.y + bounds.height)
-                - segment.start.y.min(segment.end.y).max(bounds.y)
-                > tolerance
-    } else {
-        false
-    }
+    wire_overlaps_bounds(segment, bounds, true)
 }
 
 fn at_span(code: BuiltinRuleId, message: impl Into<String>, span: ByteSpan) -> Diagnostic {
@@ -2659,6 +2656,44 @@ mod tests {
     fn document(body: &str) -> SchematicDocument {
         SchematicDocument::from_text("fixture.kicad_sch", format!("(kicad_sch {body})"))
             .expect("fixture parses")
+    }
+
+    #[test]
+    fn geo_rectangle_clipping_preserves_wire_overlap_tolerance() {
+        let bounds = super::Bounds {
+            x: 0.0,
+            y: 0.0,
+            width: 10.0,
+            height: 10.0,
+        };
+        let horizontal = |y| super::Segment {
+            start: super::Point { x: -1.0, y },
+            end: super::Point { x: 11.0, y },
+            span: kicad_clippy_core::ByteSpan::new(0, 0),
+        };
+        let vertical = |x| super::Segment {
+            start: super::Point { x, y: -1.0 },
+            end: super::Point { x, y: 11.0 },
+            span: kicad_clippy_core::ByteSpan::new(0, 0),
+        };
+
+        assert!(super::line_hits_bounds(horizontal(0.0), bounds));
+        assert!(!super::strict_line_hits_bounds(horizontal(0.0), bounds));
+        assert!(super::strict_line_hits_bounds(horizontal(5.0), bounds));
+        assert!(super::line_hits_bounds(horizontal(-0.0005), bounds));
+        assert!(!super::line_hits_bounds(horizontal(-0.002), bounds));
+
+        assert!(super::line_hits_bounds(vertical(10.0), bounds));
+        assert!(!super::strict_line_hits_bounds(vertical(10.0), bounds));
+        assert!(super::strict_line_hits_bounds(vertical(5.0), bounds));
+        assert!(!super::line_hits_bounds(
+            super::Segment {
+                start: super::Point { x: -1.0, y: -1.0 },
+                end: super::Point { x: 11.0, y: 11.0 },
+                span: kicad_clippy_core::ByteSpan::new(0, 0),
+            },
+            bounds,
+        ));
     }
 
     #[test]
