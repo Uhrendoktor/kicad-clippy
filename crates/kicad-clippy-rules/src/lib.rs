@@ -112,13 +112,17 @@ impl RuleEngine {
     /// Executes all registered passes in stable name order.
     #[must_use]
     pub fn run(&self, document: &SchematicDocument) -> RuleRun {
-        let facts = SchematicFacts::from_document(document);
         let Some(root) = document.cst().nodes.first() else {
             return RuleRun::default();
         };
         let source = document.source().text();
         let segments = generic::collect_segments(root, source);
         let junctions = generic::collect_points(root, source, "junction");
+        let facts = SchematicFacts::from_document_with_geometry(
+            document,
+            &segments,
+            &junctions,
+        );
         let context = RuleContext {
             document,
             facts: &facts,
