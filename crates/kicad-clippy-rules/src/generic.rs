@@ -760,8 +760,8 @@ fn wire_crosses_symbol_primitive(
     }
     if primitive.closed {
         let midpoint = Point {
-            x: (wire.start.x + wire.end.x) / 2.0,
-            y: (wire.start.y + wire.end.y) / 2.0,
+            x: f64::midpoint(wire.start.x, wire.end.x),
+            y: f64::midpoint(wire.start.y, wire.end.y),
         };
         if point_in_polygon(midpoint, &primitive.points_mm)
             || (!wire_endpoint_is_pin(wire.start, &primitive.reference, pins)
@@ -809,10 +809,10 @@ fn segment_intersection_points(
     let sy = second_end.y - second_start.y;
     let qpx = second_start.x - first.start.x;
     let qpy = second_start.y - first.start.y;
-    let denominator = rx * sy - ry * sx;
+    let denominator = ry.mul_add(-sx, rx * sy);
 
     if denominator.abs() <= 0.000_001 {
-        if (qpx * ry - qpy * rx).abs() > 0.001 {
+        if qpy.mul_add(-rx, qpx * ry).abs() > 0.001 {
             return Vec::new();
         }
         let candidates = [first.start, first.end, second_start, second_end];
@@ -830,12 +830,12 @@ fn segment_intersection_points(
         return intersections;
     }
 
-    let t = (qpx * sy - qpy * sx) / denominator;
-    let u = (qpx * ry - qpy * rx) / denominator;
+    let t = qpy.mul_add(-sx, qpx * sy) / denominator;
+    let u = qpy.mul_add(-rx, qpx * ry) / denominator;
     if (-0.001..=1.001).contains(&t) && (-0.001..=1.001).contains(&u) {
         vec![Point {
-            x: first.start.x + t * rx,
-            y: first.start.y + t * ry,
+            x: t.mul_add(rx, first.start.x),
+            y: t.mul_add(ry, first.start.y),
         }]
     } else {
         Vec::new()
@@ -849,29 +849,31 @@ fn point_on_segment_any(point: Point, start: Point, end: Point) -> bool {
     if length <= 0.001 {
         return distance(point, start) <= 0.001;
     }
-    let cross = (point.x - start.x) * dy - (point.y - start.y) * dx;
+    let cross = (point.x - start.x).mul_add(dy, -(point.y - start.y) * dx);
     if cross.abs() > 0.001 * length.max(1.0) {
         return false;
     }
-    let dot = (point.x - start.x) * dx + (point.y - start.y) * dy;
-    let length_squared = dx * dx + dy * dy;
+    let dot = (point.y - start.y).mul_add(dy, (point.x - start.x) * dx);
+    let length_squared = dy.mul_add(dy, dx * dx);
     dot >= -0.001 && dot <= length_squared + 0.001
 }
 
 fn point_segment_distance(point: Point, start: Point, end: Point) -> f64 {
     let dx = end.x - start.x;
     let dy = end.y - start.y;
-    let length_squared = dx * dx + dy * dy;
+    let length_squared = dy.mul_add(dy, dx * dx);
     if length_squared <= 0.000_001 {
         return distance(point, start);
     }
-    let projection =
-        (((point.x - start.x) * dx + (point.y - start.y) * dy) / length_squared).clamp(0.0, 1.0);
+    let projection = (point.y - start.y)
+        .mul_add(dy, (point.x - start.x) * dx)
+        / length_squared
+        .clamp(0.0, 1.0);
     distance(
         point,
         Point {
-            x: start.x + projection * dx,
-            y: start.y + projection * dy,
+            x: projection.mul_add(dx, start.x),
+            y: projection.mul_add(dy, start.y),
         },
     )
 }
@@ -894,8 +896,8 @@ fn point_in_polygon(point: Point, polygon: &[(f64, f64)]) -> bool {
             return true;
         }
         if (first.y > point.y) != (second.y > point.y) {
-            let crossing_x =
-                (second.x - first.x) * (point.y - first.y) / (second.y - first.y) + first.x;
+            let y_ratio = (point.y - first.y) / (second.y - first.y);
+            let crossing_x = (second.x - first.x).mul_add(y_ratio, first.x);
             if point.x < crossing_x {
                 inside = !inside;
             }
