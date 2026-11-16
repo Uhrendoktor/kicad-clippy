@@ -502,6 +502,8 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+ "vector-text-core",
+ "vector-text-newstroke",
 ]
 
 [[package]]
@@ -905,6 +907,21 @@ name = "utf_types"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a3b425286980a367278453f3b6d28cdcb134b574e5a35824a6ff5eebad50bb6"
+
+[[package]]
+name = "vector-text-core"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "31b49d3281c414d88b753748b268e171d3413d3a517641098f48bdb3d20260d8"
+
+[[package]]
+name = "vector-text-newstroke"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "db6382fee372c437740cdd390d78d51eccd0646ef99b0f41d244d8d613a9fd51"
+dependencies = [
+ "vector-text-core",
+]
 
 [[package]]
 name = "windows-link"
