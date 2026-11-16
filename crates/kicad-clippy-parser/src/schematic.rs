@@ -41,7 +41,7 @@ impl SchematicDocument {
     ) -> Result<Self, SchematicParseError> {
         let path = path.into();
         let text = text.into();
-        let cst = parse_one(&text).map_err(|source| SchematicParseError::Syntax {
+        let mut cst = parse_one(&text).map_err(|source| SchematicParseError::Syntax {
             path: path.clone(),
             source,
         })?;
