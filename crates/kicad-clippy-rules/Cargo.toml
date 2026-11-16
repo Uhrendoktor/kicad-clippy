@@ -1,0 +1,19 @@
+[package]
+name = "kicad-clippy-rules"
+description = "Built-in schematic geometry, annotation, and component-intent rules."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+kicad-clippy-core = { path = "../kicad-clippy-core" }
+kicad-clippy-parser = { path = "../kicad-clippy-parser" }
+kiutils_sexpr = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true
