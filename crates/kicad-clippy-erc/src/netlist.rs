@@ -9,16 +9,16 @@ use kiutils_sexpr::{Atom, Node, ParseError, parse_one};
 use tempfile::tempdir;
 use thiserror::Error;
 
-/// A reference/pin pair in a flattened KiCad netlist.
+/// A reference/pin pair in a flattened `KiCad` netlist.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct PinRef {
     /// Component reference.
     pub reference: String,
-    /// Pin number as written by KiCad.
+    /// Pin number as written by `KiCad`.
     pub pin: String,
 }
 
-/// A component exported by KiCad.
+/// A component exported by `KiCad`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NetlistComponent {
     /// Reference designator.
@@ -41,18 +41,18 @@ pub struct NetlistNode {
 /// One logical net and its attached component pins.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NetlistNet {
-    /// KiCad net name.
+    /// `KiCad` net name.
     pub name: String,
     /// Pins assigned to this net.
     pub nodes: Vec<NetlistNode>,
 }
 
-/// Flattened netlist exported by KiCad.
+/// Flattened netlist exported by `KiCad`.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Netlist {
     /// Components keyed by reference designator.
     pub components: BTreeMap<String, NetlistComponent>,
-    /// Nets keyed by KiCad net name.
+    /// Nets keyed by `KiCad` net name.
     pub nets: BTreeMap<String, NetlistNet>,
     /// Reverse lookup from component pin to net name.
     pub pin_nets: BTreeMap<PinRef, String>,
@@ -77,10 +77,10 @@ impl Netlist {
     }
 }
 
-/// Errors raised while exporting or parsing a KiCad netlist.
+/// Errors raised while exporting or parsing a `KiCad` netlist.
 #[derive(Debug, Error)]
 pub enum NetlistError {
-    /// The KiCad executable could not be started.
+    /// The `KiCad` executable could not be started.
     #[error("could not start KiCad CLI {program}: {source}")]
     Spawn {
         /// Executable path or command name.
@@ -89,7 +89,7 @@ pub enum NetlistError {
         #[source]
         source: io::Error,
     },
-    /// KiCad returned a failure without a usable netlist.
+    /// `KiCad` returned a failure without a usable netlist.
     #[error("KiCad netlist export failed with status {status}: {details}")]
     CliFailed {
         /// Exit status rendered as text.
@@ -124,11 +124,11 @@ pub enum NetlistError {
     },
 }
 
-/// Exports a flattened KiCad netlist using the CLI native S-expression format.
+/// Exports a flattened `KiCad` netlist using the CLI native S-expression format.
 ///
 /// # Errors
 ///
-/// Returns NetlistError when KiCad cannot be started, the command fails,
+/// Returns `NetlistError` when `KiCad` cannot be started, the command fails,
 /// or the generated netlist cannot be read or parsed.
 pub fn export_netlist(
     program: impl AsRef<Path>,
@@ -172,11 +172,11 @@ pub fn export_netlist(
     parse_netlist_sexpr(&contents)
 }
 
-/// Parses KiCad flattened netlist S-expression data.
+/// Parses `KiCad` flattened netlist S-expression data.
 ///
 /// # Errors
 ///
-/// Returns NetlistError for malformed S-expressions, wrong roots,
+/// Returns `NetlistError` for malformed S-expressions, wrong roots,
 /// missing required fields, or duplicate component-pin assignments.
 pub fn parse_netlist_sexpr(contents: &str) -> Result<Netlist, NetlistError> {
     let document = parse_one(contents)?;
