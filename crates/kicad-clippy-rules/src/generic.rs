@@ -18,12 +18,12 @@ struct Segment {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct ComponentFact {
+pub struct ComponentFact {
     pub reference: String,
 }
 
 #[derive(Clone, Debug, Default)]
-pub(crate) struct SchematicFacts {
+pub struct SchematicFacts {
     pub components: Vec<ComponentFact>,
 }
 
@@ -76,9 +76,19 @@ pub fn run_builtin_rules(document: &SchematicDocument) -> RuleRun {
     let source = document.source().text();
     let segments = collect_segments(root, source);
     let junctions = collect_points(root, source, "junction");
-    let mut diagnostics = Vec::new();
+    let mut diagnostics = check_wire_geometry(&segments, &junctions);
+    diagnostics.extend(check_label_topology(root, source, &segments));
+    diagnostics.extend(check_label_kind_consistency(root, source));
 
-    // SCH001 — orthogonal, non-zero-length, non-crossing wire geometry.
+    RuleRun {
+        diagnostics,
+        wires: segments.len(),
+        components: facts.components.len(),
+    }
+}
+
+fn check_wire_geometry(segments: &[Segment], junctions: &[Point]) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
     for (index, segment) in segments.iter().enumerate() {
         if distance(segment.start, segment.end) < 0.001 {
             diagnostics.push(at_segment("SCH001", "wire has zero length", *segment));
@@ -101,51 +111,39 @@ pub fn run_builtin_rules(document: &SchematicDocument) -> RuleRun {
                         "wire crossing is ambiguous; split the net or reroute",
                         *segment,
                     );
-                    diagnostic.schematic_location = Some(SchematicLocation {
-                        x_mm: point.x,
-                        y_mm: point.y,
-                    });
+                    diagnostic.schematic_location =
+                        Some(SchematicLocation { x_mm: point.x, y_mm: point.y });
                     diagnostic.related.push(RelatedLocation {
                         description: "intersecting wire".to_owned(),
                         uuid: None,
-                        location: Some(SchematicLocation {
-                            x_mm: point.x,
-                            y_mm: point.y,
-                        }),
+                        location: Some(SchematicLocation { x_mm: point.x, y_mm: point.y }),
                     });
                     diagnostics.push(diagnostic);
                 } else if first_end != second_end
-                    && !junctions
-                        .iter()
-                        .any(|junction| distance(*junction, point) < 0.001)
+                    && !junctions.iter().any(|junction| distance(*junction, point) < 0.001)
                 {
                     let mut diagnostic = at_segment(
                         "SCH001",
                         "T-junction requires an explicit junction marker",
                         *segment,
                     );
-                    diagnostic.schematic_location = Some(SchematicLocation {
-                        x_mm: point.x,
-                        y_mm: point.y,
-                    });
+                    diagnostic.schematic_location =
+                        Some(SchematicLocation { x_mm: point.x, y_mm: point.y });
                     diagnostics.push(diagnostic);
                 }
             }
         }
     }
+    diagnostics
+}
 
-    // SCH002 — local labels attach to wire and are reused; hierarchical labels end a twig.
+fn check_label_topology(root: &Node, source: &str, segments: &[Segment]) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
     let mut local_labels: BTreeMap<String, Vec<(Point, ByteSpan)>> = BTreeMap::new();
     for (kind, label, point, span) in collect_labels(root, source) {
         if kind == "label" {
-            local_labels
-                .entry(label.clone())
-                .or_default()
-                .push((point, span));
-            if !segments
-                .iter()
-                .any(|segment| point_on_segment(point, segment))
-            {
+            local_labels.entry(label.clone()).or_default().push((point, span));
+            if !segments.iter().any(|segment| point_on_segment(point, segment)) {
                 diagnostics.push(at_point(
                     "SCH002",
                     format!("local label {label:?} is not attached to a wire"),
@@ -180,30 +178,29 @@ pub fn run_builtin_rules(document: &SchematicDocument) -> RuleRun {
             }
         }
     }
+    diagnostics
+}
 
-    // SCH019 — a label name has one consistent scope/type throughout the sheet.
+fn check_label_kind_consistency(root: &Node, source: &str) -> Vec<Diagnostic> {
     let mut label_kinds: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for (kind, label, _point, _span) in collect_labels(root, source) {
         label_kinds.entry(label).or_default().insert(kind);
     }
-    for (label, kinds) in label_kinds {
-        if kinds.len() > 1 {
-            diagnostics.push(Diagnostic::new(
-                "SCH019",
-                Severity::Error,
-                format!(
-                    "label {label:?} mixes types: {}; use one scope consistently",
-                    kinds.into_iter().collect::<Vec<_>>().join(", ")
-                ),
-            ));
-        }
-    }
-
-    RuleRun {
-        diagnostics,
-        wires: segments.len(),
-        components: facts.components.len(),
-    }
+    label_kinds
+        .into_iter()
+        .filter_map(|(label, kinds)| {
+            (kinds.len() > 1).then(|| {
+                Diagnostic::new(
+                    "SCH019",
+                    Severity::Error,
+                    format!(
+                        "label {label:?} mixes types: {}; use one scope consistently",
+                        kinds.into_iter().collect::<Vec<_>>().join(", ")
+                    ),
+                )
+            })
+        })
+        .collect()
 }
 
 fn walk<'a>(node: &'a Node, visit: &mut impl FnMut(&'a Node)) {
@@ -270,7 +267,7 @@ fn point_from_at(node: &Node, source: &str) -> Option<Point> {
     })
 }
 
-fn span_of(node: &Node) -> ByteSpan {
+const fn span_of(node: &Node) -> ByteSpan {
     match node {
         Node::List { span, .. } | Node::Atom { span, .. } => ByteSpan::new(span.start, span.end),
     }
