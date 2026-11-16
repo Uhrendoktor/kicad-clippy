@@ -208,104 +208,144 @@ fn validate_groups(
     groups: &BTreeMap<String, GroupIntent>,
     facts: &SchematicFacts,
 ) -> Vec<Diagnostic> {
-    let mut diagnostics = Vec::new();
     let references: BTreeSet<_> = facts
         .components
         .iter()
         .map(|component| component.reference.as_str())
         .collect();
+    let mut diagnostics = Vec::new();
     for (group_id, group) in groups {
-        let evidence = group.evidence.as_ref();
-        let has_document_evidence = evidence.is_some_and(|item| {
-            item.document.as_deref().is_some_and(|value| !value.trim().is_empty())
-                && item.page.is_some()
-                && item.figure.as_deref().is_some_and(|value| !value.trim().is_empty())
-        });
-        let has_reviewed_asset = evidence
-            .and_then(|item| item.screenshot_asset.as_deref())
-            .is_some_and(|value| !value.trim().is_empty());
-        if !has_document_evidence && !has_reviewed_asset {
+        diagnostics.extend(validate_group(group_id, group, facts, &references));
+    }
+    diagnostics
+}
+
+fn validate_group(
+    group_id: &str,
+    group: &GroupIntent,
+    facts: &SchematicFacts,
+    references: &BTreeSet<&str>,
+) -> Vec<Diagnostic> {
+    let mut diagnostics = validate_group_evidence(group_id, group);
+    diagnostics.extend(validate_group_members(group_id, group, references));
+    let description = facts
+        .text_boxes
+        .iter()
+        .find(|text_box| text_box.uuid == group.description_uuid)
+        .map(|text_box| text_box.text.as_str());
+    let Some(description) = description else {
+        diagnostics.push(Diagnostic::new(
+            "SCH017",
+            Severity::Error,
+            format!(
+                "group {group_id} description text box UUID {} is missing",
+                group.description_uuid
+            ),
+        ));
+        return diagnostics;
+    };
+    diagnostics.extend(validate_group_component_purposes(
+        group_id, group, description,
+    ));
+    diagnostics
+}
+
+fn validate_group_evidence(group_id: &str, group: &GroupIntent) -> Vec<Diagnostic> {
+    let evidence = group.evidence.as_ref();
+    let has_document_evidence = evidence.is_some_and(|item| {
+        item.document
+            .as_deref()
+            .is_some_and(|value| !value.trim().is_empty())
+            && item.page.is_some()
+            && item
+                .figure
+                .as_deref()
+                .is_some_and(|value| !value.trim().is_empty())
+    });
+    let has_reviewed_asset = evidence
+        .and_then(|item| item.screenshot_asset.as_deref())
+        .is_some_and(|value| !value.trim().is_empty());
+    if has_document_evidence || has_reviewed_asset {
+        Vec::new()
+    } else {
+        vec![Diagnostic::new(
+            "SCH017",
+            Severity::Error,
+            format!(
+                "group {group_id} must cite a document/page/figure or a reviewed screenshot asset"
+            ),
+        )]
+    }
+}
+
+fn validate_group_members(
+    group_id: &str,
+    group: &GroupIntent,
+    references: &BTreeSet<&str>,
+) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+    for reference in &group.members {
+        if !references.contains(reference.as_str()) {
             diagnostics.push(Diagnostic::new(
                 "SCH017",
                 Severity::Error,
-                format!(
-                    "group {group_id} must cite a document/page/figure or a reviewed screenshot asset"
-                ),
+                format!("group {group_id} contains missing component {reference}"),
             ));
         }
-
-        for reference in &group.members {
-            if !references.contains(reference.as_str()) {
-                diagnostics.push(Diagnostic::new(
-                    "SCH017",
-                    Severity::Error,
-                    format!("group {group_id} contains missing component {reference}"),
-                ));
-            }
-        }
-        for reference in &group.documentation_members {
-            if !group.members.contains(reference) {
-                diagnostics.push(Diagnostic::new(
-                    "SCH020",
-                    Severity::Error,
-                    format!(
-                        "group {group_id} lists {reference} as a documentation member but not as a group member"
-                    ),
-                ));
-            }
-        }
-
-        let description = facts
-            .text_boxes
-            .iter()
-            .find(|text_box| text_box.uuid == group.description_uuid)
-            .map(|text_box| text_box.text.as_str());
-        let Some(description) = description else {
+    }
+    for reference in &group.documentation_members {
+        if !group.members.contains(reference) {
             diagnostics.push(Diagnostic::new(
-                "SCH017",
+                "SCH020",
                 Severity::Error,
                 format!(
-                    "group {group_id} description text box UUID {} is missing",
-                    group.description_uuid
+                    "group {group_id} lists {reference} as a documentation member but not as a group member"
                 ),
             ));
-            continue;
-        };
-
-        for (reference, purpose) in &group.component_purposes {
-            if !group.members.contains(reference) {
-                diagnostics.push(Diagnostic::new(
-                    "SCH020",
-                    Severity::Error,
-                    format!("group {group_id} documents {reference}, which is not a group member"),
-                ));
-            }
-            if !group.documentation_members.contains(reference) {
-                diagnostics.push(Diagnostic::new(
-                    "SCH020",
-                    Severity::Error,
-                    format!(
-                        "group {group_id} must list {reference} as a documentation member"
-                    ),
-                ));
-            }
-            validate_group_phrase(
-                &mut diagnostics,
-                group_id,
-                reference,
-                "function",
-                purpose.function.as_deref(),
-                description,
-            );
-            validate_group_phrase(
-                &mut diagnostics,
-                group_id,
-                reference,
-                "rationale",
-                purpose.rationale.as_deref(),
-                description,
-            );
         }
+    }
+    diagnostics
+}
+
+fn validate_group_component_purposes(
+    group_id: &str,
+    group: &GroupIntent,
+    description: &str,
+) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+    for (reference, purpose) in &group.component_purposes {
+        if !group.members.contains(reference) {
+            diagnostics.push(Diagnostic::new(
+                "SCH020",
+                Severity::Error,
+                format!("group {group_id} documents {reference}, which is not a group member"),
+            ));
+        }
+        if !group.documentation_members.contains(reference) {
+            diagnostics.push(Diagnostic::new(
+                "SCH020",
+                Severity::Error,
+                format!(
+                    "group {group_id} must list {reference} as a documentation member"
+                ),
+            ));
+        }
+        validate_group_phrase(
+            &mut diagnostics,
+            group_id,
+            reference,
+            "function",
+            purpose.function.as_deref(),
+            description,
+        );
+        validate_group_phrase(
+            &mut diagnostics,
+            group_id,
+            reference,
+            "rationale",
+            purpose.rationale.as_deref(),
+            description,
+        );
     }
     diagnostics
 }
