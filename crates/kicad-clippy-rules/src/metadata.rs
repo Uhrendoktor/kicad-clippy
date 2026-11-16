@@ -337,14 +337,18 @@ fn validate_direct_wire_pair(
         diagnostics.push(Diagnostic::new(
             "SCH004",
             Severity::Error,
-            format!("pin {first_reference}.{first_number} is not attached to a physical wire segment"),
+            format!(
+                "pin {first_reference}.{first_number} is not attached to a physical wire segment"
+            ),
         ));
     }
     if !second_attached {
         diagnostics.push(Diagnostic::new(
             "SCH004",
             Severity::Error,
-            format!("pin {second_reference}.{second_number} is not attached to a physical wire segment"),
+            format!(
+                "pin {second_reference}.{second_number} is not attached to a physical wire segment"
+            ),
         ));
     }
     if first_attached && second_attached {
