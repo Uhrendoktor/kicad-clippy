@@ -546,10 +546,7 @@ fn sample_arc_through_three_points(
     let determinant = 2.0
         * end.0.mul_add(
             start.1 - mid.1,
-            mid.0.mul_add(
-                end.1 - start.1,
-                start.0 * (mid.1 - end.1),
-            ),
+            mid.0.mul_add(end.1 - start.1, start.0 * (mid.1 - end.1)),
         );
     if determinant.abs() <= 1.0e-9 {
         return vec![start, mid, end];
@@ -560,17 +557,11 @@ fn sample_arc_through_three_points(
     let end_squared = end.0.mul_add(end.0, end.1 * end.1);
     let center_x = end_squared.mul_add(
         start.1 - mid.1,
-        mid_squared.mul_add(
-            end.1 - start.1,
-            start_squared * (mid.1 - end.1),
-        ),
+        mid_squared.mul_add(end.1 - start.1, start_squared * (mid.1 - end.1)),
     ) / determinant;
     let center_y = end_squared.mul_add(
         mid.0 - start.0,
-        mid_squared.mul_add(
-            start.0 - end.0,
-            start_squared * (end.0 - mid.0),
-        ),
+        mid_squared.mul_add(start.0 - end.0, start_squared * (end.0 - mid.0)),
     ) / determinant;
     let radius = (start.0 - center_x).hypot(start.1 - center_y);
     if !radius.is_finite() || radius <= 1.0e-9 {
