@@ -10,7 +10,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use kicad_clippy_core::{Diagnostic, Severity};
 use kicad_clippy_erc::{NetlistError, export_netlist, run_native_erc};
 use kicad_clippy_parser::SchematicDocument;
-use kicad_clippy_rules::{LintProfile, ProfileMode, run_builtin_rules};
+use kicad_clippy_rules::{LintProfile, ProfileMode, RuleEngine};
 use serde::Serialize;
 use thiserror::Error;
 
@@ -181,7 +181,7 @@ fn lint(
         Some(report) => (report.kicad_version, report.diagnostics),
         None => (None, Vec::new()),
     };
-    diagnostics.extend(run_builtin_rules(&schematic).diagnostics);
+    diagnostics.extend(RuleEngine::with_builtins().run(&schematic).diagnostics);
     if let Some(path) = profile_path {
         let mut profile = LintProfile::from_path(path)?;
         if strict {
