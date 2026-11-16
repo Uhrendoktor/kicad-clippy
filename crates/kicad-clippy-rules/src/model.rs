@@ -100,13 +100,11 @@ pub(crate) struct Field<'a> {
 pub(crate) struct Symbol<'a> {
     pub reference: String,
     pub value: String,
-    pub lib_id: String,
     pub point: Point,
     pub rotation: i32,
     pub dnp: bool,
     pub fields: Vec<Field<'a>>,
     pub node: &'a Node,
-    pub span: Option<ByteSpan>,
 }
 
 /// An embedded library pin resolved into drawing coordinates.
@@ -208,8 +206,8 @@ impl<'a> SchematicModel<'a> {
             let Some(reference) = property_value(instance, "Reference") else { continue; };
             let Some((point, rotation)) = at(instance) else { continue; };
             let value = property_value(instance, "Value").unwrap_or_default();
-            let lib_id = direct_atom(instance, "lib_id").unwrap_or_default().to_owned();
-            let dnp = direct_atom(instance, "dnp").is_some_and(|flag| flag == "yes");
+            let lib_id = child_atom(instance, "lib_id").unwrap_or_default().to_owned();
+            let dnp = child_atom(instance, "dnp").is_some_and(|flag| flag == "yes");
             let fields = direct_nodes(instance, "property")
                 .into_iter()
                 .filter_map(|field| {
@@ -228,13 +226,11 @@ impl<'a> SchematicModel<'a> {
             let symbol = Symbol {
                 reference: reference.to_owned(),
                 value,
-                lib_id: lib_id.clone(),
                 point,
                 rotation,
                 dnp,
                 fields,
                 node: instance,
-                span: span(instance),
             };
             if let Some(definition) = library.get(&lib_id) {
                 pins.extend(extract_pins(reference, *definition, point, rotation));
@@ -263,7 +259,6 @@ impl<'a> SchematicModel<'a> {
                     bounds: Rect::from_xywh(point.x, point.y, width, height),
                     outlined: stroke_width > 0.0,
                     node,
-                    span: span(node),
                 })
             })
             .collect();
@@ -340,12 +335,24 @@ impl<'a> SchematicModel<'a> {
 
     pub fn frame_for_group(&self, title: &str) -> Option<Rect> {
         let tab = self.text_boxes.iter().find(|item| item.text == title)?;
+        let center_x = (tab.bounds.min.x + tab.bounds.max.x) / 2.0;
         self.frames.iter()
             .map(|(rect, _)| *rect)
-            .filter(|rect| rect.contains(tab.bounds.min, 0.0))
-            .min_by(|left, right| {
-                (left.width() * left.height()).total_cmp(&(right.width() * right.height()))
+            .filter_map(|rect| {
+                if center_x < rect.min.x - TOL || center_x > rect.max.x + TOL {
+                    return None;
+                }
+                let vertical_gap = if tab.bounds.max.y < rect.min.y {
+                    rect.min.y - tab.bounds.max.y
+                } else if rect.max.y < tab.bounds.min.y {
+                    tab.bounds.min.y - rect.max.y
+                } else {
+                    0.0
+                };
+                (vertical_gap <= 5.08).then_some((rect, vertical_gap))
             })
+            .min_by(|left, right| left.1.total_cmp(&right.1))
+            .map(|(rect, _)| rect)
     }
 
     pub fn node_for_group_description(&self, phrases: &[String]) -> Option<&'a Node> {
