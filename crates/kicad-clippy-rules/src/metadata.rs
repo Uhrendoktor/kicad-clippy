@@ -10,7 +10,7 @@ use kicad_clippy_parser::SchematicDocument;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::generic::SchematicFacts;
+use crate::generic::{SchematicFacts, physical_wire_component_ids};
 
 /// Profile enforcement mode.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -59,6 +59,15 @@ pub struct DecouplingIntent {
     pub return_net: String,
     /// Stable cluster identifier for capacitors serving the same target.
     pub cluster: String,
+}
+
+/// A pair of placed pins that must share one physical wire-only network.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct DirectWirePair {
+    /// First pin reference in REF.PIN form.
+    pub first: String,
+    /// Second pin reference in REF.PIN form.
+    pub second: String,
 }
 
 /// Declared purpose and engineering constraints for one component.
@@ -163,6 +172,12 @@ pub struct LintProfile {
     /// Functional groups and their documentation/evidence contracts.
     #[serde(default)]
     pub groups: BTreeMap<String, GroupIntent>,
+    /// Pin pairs that must be joined by physical wires, not by labels.
+    #[serde(default)]
+    pub direct_wire_pairs: Vec<DirectWirePair>,
+    /// Local label names forbidden anywhere on direct-wire-only nets.
+    #[serde(default)]
+    pub forbidden_direct_wire_labels: BTreeSet<String>,
 }
 
 impl LintProfile {
@@ -218,6 +233,11 @@ impl LintProfile {
         }
         diagnostics.extend(validate_decoupler_groups(&self.components));
         diagnostics.extend(validate_groups(&self.groups, &facts));
+        diagnostics.extend(validate_direct_wire_connectivity(
+            &self.direct_wire_pairs,
+            &self.forbidden_direct_wire_labels,
+            &facts,
+        ));
         diagnostics
     }
 
@@ -234,6 +254,140 @@ impl LintProfile {
             })
             .collect()
     }
+}
+
+fn validate_direct_wire_connectivity(
+    pairs: &[DirectWirePair],
+    forbidden_labels: &BTreeSet<String>,
+    facts: &SchematicFacts,
+) -> Vec<Diagnostic> {
+    if pairs.is_empty() && forbidden_labels.is_empty() {
+        return Vec::new();
+    }
+    let component_ids = physical_wire_component_ids(facts);
+    let mut diagnostics = Vec::new();
+
+    for pair in pairs {
+        let pair_name = format!("{} / {}", pair.first, pair.second);
+        let (Some((first_reference, first_number)), Some((second_reference, second_number))) = (
+            pair.first.rsplit_once('.'),
+            pair.second.rsplit_once('.'),
+        ) else {
+            diagnostics.push(Diagnostic::new(
+                "SCH004",
+                Severity::Error,
+                format!("direct-wire pair {pair_name} must use REF.PIN notation"),
+            ));
+            continue;
+        };
+        if !valid_pin_ref(&pair.first)
+            || !valid_pin_ref(&pair.second)
+            || pair.first == pair.second
+        {
+            diagnostics.push(Diagnostic::new(
+                "SCH004",
+                Severity::Error,
+                format!("direct-wire pair {pair_name} must identify two distinct valid pins"),
+            ));
+            continue;
+        }
+        let first_pin = facts.pins.iter().find(|pin| {
+            pin.reference == first_reference && pin.number == first_number
+        });
+        let second_pin = facts.pins.iter().find(|pin| {
+            pin.reference == second_reference && pin.number == second_number
+        });
+        let (Some(first_pin), Some(second_pin)) = (first_pin, second_pin) else {
+            diagnostics.push(Diagnostic::new(
+                "SCH004",
+                Severity::Error,
+                format!("direct-wire pair {pair_name} references a missing or unsupported embedded pin"),
+            ));
+            continue;
+        };
+
+        let first_point = first_pin.position_mm;
+        let second_point = second_pin.position_mm;
+        let first_attached = point_is_on_wire(first_point, facts);
+        let second_attached = point_is_on_wire(second_point, facts);
+        if !first_attached {
+            diagnostics.push(Diagnostic::new(
+                "SCH004",
+                Severity::Error,
+                format!("pin {}.{} is not attached to a physical wire segment", pair.first.split_once('.').map_or("", |value| value.0), first_number),
+            ));
+        }
+        if !second_attached {
+            diagnostics.push(Diagnostic::new(
+                "SCH004",
+                Severity::Error,
+                format!("pin {}.{} is not attached to a physical wire segment", pair.second.split_once('.').map_or("", |value| value.0), second_number),
+            ));
+        }
+        if first_attached && second_attached {
+            let first_key = format!("{:.3}:{:.3}", first_point.0, first_point.1);
+            let second_key = format!("{:.3}:{:.3}", second_point.0, second_point.1);
+            if component_ids.get(&first_key) != component_ids.get(&second_key) {
+                diagnostics.push(Diagnostic::new(
+                    "SCH004",
+                    Severity::Error,
+                    format!("{} and {} must share one physical wire-only network; labels do not establish this connection", pair.first, pair.second),
+                ));
+            }
+        }
+
+        for (pin_ref, point) in [(&pair.first, first_point), (&pair.second, second_point)] {
+            for label in &facts.labels {
+                if label.kind != "global_label"
+                    && same_wire_point(label.position_mm, point)
+                {
+                    diagnostics.push(Diagnostic::new(
+                        "SCH004",
+                        Severity::Error,
+                        format!(
+                            "direct-wire pin {pin_ref} shares its anchor with {} {:?}; use a continuous wire-only connection",
+                            label.kind, label.name
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+
+    for forbidden in forbidden_labels {
+        for label in facts.labels.iter().filter(|label| {
+            label.kind == "label" && label.name == *forbidden
+        }) {
+            diagnostics.push(Diagnostic::new(
+                "SCH004",
+                Severity::Error,
+                format!(
+                    "local label {:?} is forbidden on a direct-wire-only network",
+                    label.name
+                ),
+            ));
+        }
+    }
+    diagnostics
+}
+
+fn point_is_on_wire(point: (f64, f64), facts: &SchematicFacts) -> bool {
+    facts.wires.iter().any(|wire| {
+        let horizontal = (wire.start_mm.1 - wire.end_mm.1).abs() <= 0.001;
+        if horizontal {
+            (point.1 - wire.start_mm.1).abs() <= 0.001
+                && point.0 >= wire.start_mm.0.min(wire.end_mm.0) - 0.001
+                && point.0 <= wire.start_mm.0.max(wire.end_mm.0) + 0.001
+        } else {
+            (point.0 - wire.start_mm.0).abs() <= 0.001
+                && point.1 >= wire.start_mm.1.min(wire.end_mm.1) - 0.001
+                && point.1 <= wire.start_mm.1.max(wire.end_mm.1) + 0.001
+        }
+    })
+}
+
+fn same_wire_point(first: (f64, f64), second: (f64, f64)) -> bool {
+    (first.0 - second.0).abs() <= 0.001 && (first.1 - second.1).abs() <= 0.001
 }
 
 fn validate_groups(
@@ -1182,6 +1336,113 @@ mod tests {
     use kicad_clippy_erc::{Netlist, PinRef};
 
     use super::{ComponentKind, ComponentRole, LintProfile, ProfileMode};
+
+    fn direct_wire_schematic(wire_and_label_items: &str) -> kicad_clippy_parser::SchematicDocument {
+        kicad_clippy_parser::SchematicDocument::from_text(
+            "direct-wire-test.kicad_sch",
+            &format!(
+                r#"(kicad_sch
+                    (lib_symbols
+                      (symbol "Test:OnePin"
+                        (symbol "OnePin_1_1"
+                          (pin passive line (at 0 0 0) (length 1.27)
+                            (name "1") (number "1"))
+                        )
+                      )
+                    )
+                    (symbol (lib_id "Test:OnePin") (at 10 10 0) (unit 1)
+                      (property "Reference" "U1" (at 10 10 0) (effects (font (size 1 1))))
+                    )
+                    (symbol (lib_id "Test:OnePin") (at 20 10 0) (unit 1)
+                      (property "Reference" "R1" (at 20 10 0) (effects (font (size 1 1))))
+                    )
+                    {wire_and_label_items}
+                )"#
+            ),
+        )
+        .expect("fixture parses")
+    }
+
+    #[test]
+    fn direct_wire_pair_passes_when_pins_share_a_continuous_wire() {
+        let schematic = direct_wire_schematic(
+            r#"(wire (pts (xy 10 10) (xy 20 10)))"#,
+        );
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"direct_wire_pairs":[{"first":"U1.1","second":"R1.1"}]}"#,
+        )
+        .expect("profile parses");
+        assert!(
+            !profile
+                .validate(&schematic)
+                .iter()
+                .any(|item| item.code == "SCH004")
+        );
+    }
+
+    #[test]
+    fn direct_wire_pair_rejects_label_joined_islands() {
+        let schematic = direct_wire_schematic(
+            r#"
+            (wire (pts (xy 10 10) (xy 12 10)))
+            (wire (pts (xy 20 10) (xy 18 10)))
+            (label "SENSE" (at 10 10 0) (effects (font (size 1 1))))
+            (label "SENSE" (at 20 10 0) (effects (font (size 1 1))))
+            "#,
+        );
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"direct_wire_pairs":[{"first":"U1.1","second":"R1.1"}]}"#,
+        )
+        .expect("profile parses");
+        assert!(
+            profile
+                .validate(&schematic)
+                .iter()
+                .any(|item| item.code == "SCH004"
+                    && item.message.contains("must share one physical wire-only network"))
+        );
+    }
+
+    #[test]
+    fn direct_wire_pair_rejects_label_anchors_and_forbidden_local_labels() {
+        let schematic = direct_wire_schematic(
+            r#"
+            (wire (pts (xy 10 10) (xy 20 10)))
+            (label "FET_MID" (at 10 10 0) (effects (font (size 1 1))))
+            (label "FET_MID" (at 15 10 0) (effects (font (size 1 1))))
+            "#,
+        );
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"direct_wire_pairs":[{"first":"U1.1","second":"R1.1"}],"forbidden_direct_wire_labels":["FET_MID"]}"#,
+        )
+        .expect("profile parses");
+        let diagnostics = profile.validate(&schematic);
+        assert!(
+            diagnostics.iter().any(|item| item.code == "SCH004"
+                && item.message.contains("shares its anchor with"))
+        );
+        assert!(
+            diagnostics.iter().any(|item| item.code == "SCH004"
+                && item.message.contains("forbidden on a direct-wire-only network"))
+        );
+    }
+
+    #[test]
+    fn direct_wire_pair_requires_both_pin_anchors_to_touch_wire_segments() {
+        let schematic = direct_wire_schematic("");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"direct_wire_pairs":[{"first":"U1.1","second":"R1.1"}]}"#,
+        )
+        .expect("profile parses");
+        let diagnostics = profile.validate(&schematic);
+        assert_eq!(diagnostics.iter().filter(|item| item.code == "SCH004").count(), 2);
+        assert!(
+            diagnostics.iter().any(|item| item.message.contains("U1.1 is not attached"))
+        );
+        assert!(
+            diagnostics.iter().any(|item| item.message.contains("R1.1 is not attached"))
+        );
+    }
 
     #[test]
     fn resistor_roles_require_their_named_connection_contract() {
