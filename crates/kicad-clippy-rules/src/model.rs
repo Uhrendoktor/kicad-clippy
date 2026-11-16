@@ -131,7 +131,6 @@ pub(crate) enum Primitive {
 
 /// Geometry and source index built once from the lossless schematic CST.
 pub(crate) struct SchematicModel<'a> {
-    pub document: &'a SchematicDocument,
     pub wires: Vec<Segment>,
     pub labels: Vec<Label<'a>>,
     pub symbols: Vec<Symbol<'a>>,
@@ -299,7 +298,6 @@ impl<'a> SchematicModel<'a> {
             });
 
         Self {
-            document,
             wires,
             labels,
             symbols,
