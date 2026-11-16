@@ -865,9 +865,8 @@ fn point_segment_distance(point: Point, start: Point, end: Point) -> f64 {
     if length_squared <= 0.000_001 {
         return distance(point, start);
     }
-    let projection = (point.y - start.y)
-        .mul_add(dy, (point.x - start.x) * dx)
-        / length_squared
+    let projection = ((point.y - start.y).mul_add(dy, (point.x - start.x) * dx)
+        / length_squared)
         .clamp(0.0, 1.0);
     distance(
         point,
