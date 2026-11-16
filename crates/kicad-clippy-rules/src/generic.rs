@@ -89,6 +89,7 @@ pub fn run_builtin_rules(document: &SchematicDocument) -> RuleRun {
     diagnostics.extend(check_label_wire_clearance(root, source, &segments));
     diagnostics.extend(check_text_box_layout(root, source, &segments));
     diagnostics.extend(check_block_annotation_structure(root, source));
+    diagnostics.extend(check_label_text_collisions(root, source));
     diagnostics.extend(check_label_kind_consistency(root, source));
 
     RuleRun {
@@ -830,6 +831,76 @@ fn wire_components(
 
 fn point_key(point: Point) -> String {
     format!("{:.3}:{:.3}", point.x, point.y)
+}
+
+fn check_label_text_collisions(root: &Node, source: &str) -> Vec<Diagnostic> {
+    let mut labels = Vec::new();
+    for (kind, label, _point, span, node) in collect_label_nodes(root, source) {
+        if let Some(bounds) = text_visual_bounds(&label, node, source) {
+            labels.push((format!("{kind} {label:?}"), bounds, span));
+        }
+    }
+
+    let mut diagnostics = Vec::new();
+    for (index, (first_name, first_bounds, first_span)) in labels.iter().enumerate() {
+        for (second_name, second_bounds, _second_span) in labels.iter().skip(index + 1) {
+            if bounds_overlap(*first_bounds, *second_bounds) {
+                diagnostics.push(at_span(
+                    "SCH018",
+                    format!("label text overlaps: {first_name} and {second_name}"),
+                    *first_span,
+                ));
+            }
+        }
+        for property in children(root, "symbol").flat_map(|symbol| children(symbol, "property")) {
+            if property_is_hidden(property) {
+                continue;
+            }
+            let Some(items) = list_items(property) else {
+                continue;
+            };
+            let Some(value) = items.get(2).and_then(|item| atom_value(item, source)) else {
+                continue;
+            };
+            if text_visual_bounds(&value, property, source)
+                .is_some_and(|field_bounds| bounds_overlap(*first_bounds, field_bounds))
+            {
+                diagnostics.push(at_span(
+                    "SCH018",
+                    format!("{first_name} overlaps a visible symbol field"),
+                    *first_span,
+                ));
+            }
+        }
+        for text_box in collect_nodes(root, "text_box") {
+            if text_box_bounds(text_box, source)
+                .is_some_and(|box_bounds| bounds_overlap(*first_bounds, box_bounds))
+            {
+                diagnostics.push(at_span(
+                    "SCH018",
+                    format!("{first_name} overlaps an annotation text box"),
+                    *first_span,
+                ));
+            }
+        }
+    }
+    diagnostics
+}
+
+fn property_is_hidden(property: &Node) -> bool {
+    child_list(property, "effects")
+        .is_some_and(|effects| child_list(effects, "hide").is_some())
+}
+
+fn text_box_bounds(node: &Node, source: &str) -> Option<Bounds> {
+    let at = child_list(node, "at").and_then(list_items)?;
+    let size = child_list(node, "size").and_then(list_items)?;
+    Some(Bounds {
+        x: number(at.get(1)?, source)?,
+        y: number(at.get(2)?, source)?,
+        width: number(size.get(1)?, source)?,
+        height: number(size.get(2)?, source)?,
+    })
 }
 
 fn check_label_kind_consistency(root: &Node, source: &str) -> Vec<Diagnostic> {
