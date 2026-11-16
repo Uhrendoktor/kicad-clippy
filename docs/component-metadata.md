@@ -36,7 +36,8 @@ Strict mode requires metadata for every placed component except references expli
 
 Besides the decoupling block, every component intent can carry two extensible maps:
 
-- connections: named electrical terminals/nodes mapped to a net name or a reference/pin such as U1.21.
+- connections: named electrical terminals/nodes mapped to a net name or a reference/pin such as U1.21. Connector keys named `pin.N` also declare the expected net for connector pin N.
+- pin_nets: explicit component pin number to expected KiCad net name mappings for any component family.
 - attributes: role-specific facts such as interface_standard, orientation, expected_state, or a protected interface.
 
 The first required contracts are:
@@ -73,7 +74,7 @@ Example resistor metadata:
       }
     }
 
-These contracts make the metadata extensible by component family and variant. They validate declared intent completeness; proving the actual pin-to-net mapping still requires the exported KiCad netlist.
+These contracts make metadata extensible by component family and variant. SCH021 validates role-specific declaration completeness. SCH014 verifies each `pin_nets` and connector `pin.N` mapping against the exported KiCad netlist, reporting mismatched nets and pins absent from the export. A profile supplied to the CLI triggers netlist export; calling the profile API without a netlist produces a warning when pin-to-net contracts are present.
 
 ## Component role vocabulary
 
@@ -91,6 +92,7 @@ These contracts make the metadata extensible by component family and variant. Th
 
 - SCH020: every metadata-declared component needs a function and rationale.
 - SCH021: strict-mode completeness, unknown component references and capacitor role sanity.
+- SCH014: explicit component pin-to-net contracts against exported KiCad netlist membership, including connector `pin.N` maps.
 - SCH022: decoupling metadata completeness, valid target-pin notation, distinct capacitor terminals, and consistent return net and cluster for capacitors assigned to the same IC pin.
 
 The netlist adapter now verifies actual target-pin and return-terminal net membership for decoupling capacitors. Direct wire-only connectivity, physical proximity, and shared-copper geometry still require the physical wire graph and transformed symbol-pin geometry; matching labels or metadata strings alone are not evidence of a direct physical connection.

@@ -79,6 +79,9 @@ pub struct ComponentIntent {
     /// Named electrical connections, expressed as nets or reference/pin pairs.
     #[serde(default)]
     pub connections: BTreeMap<String, String>,
+    /// Component pin number mapped to its expected KiCad net name.
+    #[serde(default)]
+    pub pin_nets: BTreeMap<String, String>,
     /// Extensible role-specific attributes such as interface standard or orientation.
     #[serde(default)]
     pub attributes: BTreeMap<String, String>,
@@ -411,6 +414,7 @@ fn validate_component_intent(
             netlist,
         ));
     }
+    diagnostics.extend(validate_pin_net_contract(reference, intent, netlist));
     diagnostics.extend(validate_role_contract(reference, intent));
     if intent.kind == ComponentKind::Capacitor
         && !matches!(
@@ -433,6 +437,73 @@ fn validate_component_intent(
                 intent.role.0
             ),
         ));
+    }
+    diagnostics
+}
+
+fn validate_pin_net_contract(
+    reference: &str,
+    intent: &ComponentIntent,
+    netlist: Option<&Netlist>,
+) -> Vec<Diagnostic> {
+    let mut mappings = intent.pin_nets.clone();
+    let mut diagnostics = Vec::new();
+    for (key, expected_net) in &intent.connections {
+        let Some(pin) = key.strip_prefix("pin.") else {
+            continue;
+        };
+        if let Some(previous) = mappings.insert(pin.to_owned(), expected_net.clone()) {
+            if previous != *expected_net {
+                diagnostics.push(Diagnostic::new(
+                    "SCH014",
+                    Severity::Error,
+                    format!(
+                        "{reference} pin {pin} has conflicting expected nets {previous:?} and {expected_net:?}"
+                    ),
+                ));
+            }
+        }
+    }
+    if mappings.is_empty() {
+        return diagnostics;
+    }
+    let Some(netlist) = netlist else {
+        diagnostics.push(Diagnostic::new(
+            "SCH014",
+            Severity::Warning,
+            format!(
+                "{reference} declares pin-to-net contracts but no KiCad netlist was supplied; the contracts were not checked"
+            ),
+        ));
+        return diagnostics;
+    };
+
+    for (pin, expected_net) in mappings {
+        if pin.trim().is_empty() || expected_net.trim().is_empty() {
+            diagnostics.push(Diagnostic::new(
+                "SCH014",
+                Severity::Error,
+                format!("{reference} pin-to-net mapping must use non-empty pin and net names"),
+            ));
+            continue;
+        }
+        match netlist.net_for_pin(reference, &pin) {
+            Some(actual_net) if actual_net == expected_net => {}
+            Some(actual_net) => diagnostics.push(Diagnostic::new(
+                "SCH014",
+                Severity::Error,
+                format!(
+                    "{reference}.{pin} is connected to {actual_net}, but the profile expects {expected_net}"
+                ),
+            )),
+            None => diagnostics.push(Diagnostic::new(
+                "SCH014",
+                Severity::Error,
+                format!(
+                    "{reference}.{pin} is absent from the exported KiCad netlist but is assigned to {expected_net} in the profile"
+                ),
+            )),
+        }
     }
     diagnostics
 }
@@ -788,6 +859,110 @@ mod tests {
             ]),
             ..Netlist::default()
         }
+    }
+
+    fn pin_contract_netlist(pin_one_net: &str, pin_two_net: Option<&str>) -> Netlist {
+        let mut pin_nets = BTreeMap::from([(
+            PinRef {
+                reference: "R1".to_owned(),
+                pin: "1".to_owned(),
+            },
+            pin_one_net.to_owned(),
+        )]);
+        if let Some(pin_two_net) = pin_two_net {
+            pin_nets.insert(
+                PinRef {
+                    reference: "R1".to_owned(),
+                    pin: "2".to_owned(),
+                },
+                pin_two_net.to_owned(),
+            );
+        }
+        Netlist {
+            pin_nets,
+            ..Netlist::default()
+        }
+    }
+
+    #[test]
+    fn declared_component_pin_nets_are_verified_against_the_exported_netlist() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "pin-contract-test.kicad_sch",
+            r#"(kicad_sch (symbol (lib_id "Device:R") (property "Reference" "R1" (at 1 1 0))))"#,
+        )
+        .expect("fixture parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"components":{"R1":{"kind":"other","role":"test","function":"Signal path","rationale":"Preserve input-to-output continuity","pin_nets":{"1":"VIN","2":"VOUT"}}}}"#,
+        )
+        .expect("profile parses");
+        assert!(
+            !profile
+                .validate_with_netlist(
+                    &schematic,
+                    Some(&pin_contract_netlist("VIN", Some("VOUT")))
+                )
+                .iter()
+                .any(|item| item.code == "SCH014")
+        );
+    }
+
+    #[test]
+    fn incorrect_or_missing_component_pin_nets_are_reported() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "pin-contract-test.kicad_sch",
+            r#"(kicad_sch (symbol (lib_id "Device:R") (property "Reference" "R1" (at 1 1 0))))"#,
+        )
+        .expect("fixture parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"components":{"R1":{"kind":"other","role":"test","function":"Signal path","rationale":"Preserve input-to-output continuity","pin_nets":{"1":"VIN","2":"VOUT"}}}}"#,
+        )
+        .expect("profile parses");
+        let diagnostics = profile.validate_with_netlist(
+            &schematic,
+            Some(&pin_contract_netlist("GND", None)),
+        );
+        assert_eq!(
+            diagnostics
+                .iter()
+                .filter(|item| item.code == "SCH014")
+                .count(),
+            2
+        );
+        assert!(
+            diagnostics.iter().any(|item| item.message.contains("connected to GND"))
+        );
+        assert!(
+            diagnostics.iter().any(|item| item.message.contains("absent from the exported KiCad netlist"))
+        );
+    }
+
+    #[test]
+    fn connector_pin_nets_are_verified_from_pin_numbered_connections() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "connector-contract-test.kicad_sch",
+            r#"(kicad_sch (symbol (lib_id "Connector_Generic:Conn_01x02") (property "Reference" "J1" (at 1 1 0))))"#,
+        )
+        .expect("fixture parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"components":{"J1":{"kind":"connector","role":"power_input","function":"Input power","rationale":"External supply interface","connections":{"pin.1":"VBUS"},"attributes":{"interface_standard":"barrel-jack"}}}}"#,
+        )
+        .expect("profile parses");
+        let netlist = Netlist {
+            pin_nets: BTreeMap::from([(
+                PinRef {
+                    reference: "J1".to_owned(),
+                    pin: "1".to_owned(),
+                },
+                "GND".to_owned(),
+            )]),
+            ..Netlist::default()
+        };
+        assert!(
+            profile
+                .validate_with_netlist(&schematic, Some(&netlist))
+                .iter()
+                .any(|item| item.code == "SCH014" && item.message.contains("expected VBUS"))
+        );
     }
 
     #[test]
