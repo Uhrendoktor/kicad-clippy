@@ -98,6 +98,7 @@ pub(crate) struct Field<'a> {
 pub(crate) struct Symbol<'a> {
     pub reference: String,
     pub value: String,
+    pub lib_id: String,
     pub point: Point,
     pub dnp: bool,
     pub fields: Vec<Field<'a>>,
@@ -220,6 +221,7 @@ impl<'a> SchematicModel<'a> {
             let symbol = Symbol {
                 reference: reference.to_owned(),
                 value,
+                lib_id,
                 point,
                 dnp,
                 fields,
@@ -323,6 +325,10 @@ impl<'a> SchematicModel<'a> {
     pub fn local_label_exists(&self, point: Point, name: &str) -> bool {
         self.labels.iter().any(|label| label.name == name
             && label.kind == "label" && label.point == point)
+    }
+
+    pub fn is_wire_attached(&self, point: Point) -> bool {
+        self.wires.iter().any(|wire| point_on_segment(point, wire.start, wire.end))
     }
 
     pub fn frame_for_group(&self, title: &str) -> Option<Rect> {
