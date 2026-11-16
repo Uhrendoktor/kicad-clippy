@@ -199,8 +199,8 @@ fn collect_component_facts(root: &Node, source: &str) -> Vec<ComponentFact> {
         .filter_map(|node| {
             let reference = children(node, "property").find_map(|property| {
                 let items = list_items(property)?;
-                if atom_value(items.get(1)?)? == "Reference" {
-                    atom_value(items.get(2)?)
+                if atom_value(items.get(1)?, source)? == "Reference" {
+                    atom_value(items.get(2)?, source)
                 } else {
                     None
                 }
@@ -211,7 +211,7 @@ fn collect_component_facts(root: &Node, source: &str) -> Vec<ComponentFact> {
             let uuid = child_list(node, "uuid")
                 .and_then(list_items)
                 .and_then(|items| items.get(1))
-                .and_then(|item| atom_value(item));
+                .and_then(|item| atom_value(item, source));
             let position_mm = child_list(node, "at")
                 .and_then(list_items)
                 .and_then(|at| Some((number(at.get(1)?)?, number(at.get(2)?)?)));
@@ -228,11 +228,11 @@ fn collect_text_box_facts(root: &Node, source: &str) -> Vec<TextBoxFact> {
     children(root, "text_box")
         .filter_map(|node| {
             let items = list_items(node)?;
-            let text = atom_value(items.get(1)?)?;
+            let text = atom_value(items.get(1)?, source)?;
             let uuid = child_list(node, "uuid")
                 .and_then(list_items)
                 .and_then(|items| items.get(1))
-                .and_then(|item| atom_value(item))?;
+                .and_then(|item| atom_value(item, source))?;
             let bounds_mm = text_box_bounds(node, source).map(|bounds| {
                 (
                     bounds.x,
@@ -254,17 +254,17 @@ fn collect_group_facts(root: &Node, source: &str) -> Vec<SchematicGroupFact> {
     children(root, "group")
         .filter_map(|node| {
             let items = list_items(node)?;
-            let name = atom_value(items.get(1)?)?;
+            let name = atom_value(items.get(1)?, source)?;
             let uuid = child_list(node, "id")
                 .and_then(list_items)
                 .and_then(|items| items.get(1))
-                .and_then(|item| atom_value(item))?;
+                .and_then(|item| atom_value(item, source))?;
             let member_uuids = child_list(node, "members")
                 .and_then(list_items)
                 .into_iter()
                 .flatten()
                 .skip(1)
-                .filter_map(|item| atom_value(item))
+                .filter_map(|item| atom_value(item, source))
                 .collect();
             Some(SchematicGroupFact {
                 name,
@@ -281,7 +281,7 @@ fn collect_frame_facts(root: &Node, source: &str) -> Vec<SchematicFrameFact> {
             let uuid = child_list(node, "uuid")
                 .and_then(list_items)
                 .and_then(|items| items.get(1))
-                .and_then(|item| atom_value(item))?;
+                .and_then(|item| atom_value(item, source))?;
             let start = child_list(node, "start")
                 .and_then(list_items)
                 .and_then(|items| Some((number(items.get(1)?)?, number(items.get(2)?)?)))?;
@@ -321,7 +321,7 @@ fn collect_pin_facts(root: &Node, source: &str) -> Vec<SchematicPinFact> {
         let Some(lib_id) = child_list(instance, "lib_id")
             .and_then(list_items)
             .and_then(|items| items.get(1))
-            .and_then(|item| atom_value(item))
+            .and_then(|item| atom_value(item, source))
         else {
             continue;
         };
@@ -331,7 +331,7 @@ fn collect_pin_facts(root: &Node, source: &str) -> Vec<SchematicPinFact> {
         let Some(library_symbol) = children(library_symbols, "symbol").find(|definition| {
             list_items(definition)
                 .and_then(|items| items.get(1))
-                .and_then(|item| atom_value(item))
+                .and_then(|item| atom_value(item, source))
                 .is_some_and(|name| name == lib_id)
         }) else {
             continue;
@@ -340,7 +340,7 @@ fn collect_pin_facts(root: &Node, source: &str) -> Vec<SchematicPinFact> {
             let Some(pin_number) = child_list(pin, "number")
                 .and_then(list_items)
                 .and_then(|items| items.get(1))
-                .and_then(|item| atom_value(item))
+                .and_then(|item| atom_value(item, source))
             else {
                 continue;
             };
@@ -376,8 +376,8 @@ fn collect_symbol_field_facts(root: &Node, source: &str) -> Vec<SchematicFieldFa
     for symbol in children(root, "symbol") {
         let reference = children(symbol, "property").find_map(|property| {
             let items = list_items(property)?;
-            if atom_value(items.get(1)?)? == "Reference" {
-                atom_value(items.get(2)?)
+            if atom_value(items.get(1)?, source)? == "Reference" {
+                atom_value(items.get(2)?, source)
             } else {
                 None
             }
@@ -392,10 +392,10 @@ fn collect_symbol_field_facts(root: &Node, source: &str) -> Vec<SchematicFieldFa
             let Some(items) = list_items(property) else {
                 continue;
             };
-            let Some(name) = items.get(1).and_then(|item| atom_value(item)) else {
+            let Some(name) = items.get(1).and_then(|item| atom_value(item, source)) else {
                 continue;
             };
-            let Some(value) = items.get(2).and_then(|item| atom_value(item)) else {
+            let Some(value) = items.get(2).and_then(|item| atom_value(item, source)) else {
                 continue;
             };
             if value.trim().is_empty() {
@@ -440,14 +440,14 @@ fn collect_instance_primitives(
     let Some(lib_id) = child_list(instance, "lib_id")
         .and_then(list_items)
         .and_then(|items| items.get(1))
-        .and_then(|item| atom_value(item))
+        .and_then(|item| atom_value(item, source))
     else {
         return Vec::new();
     };
     let Some(definition) = definitions.iter().copied().find(|definition| {
         list_items(definition)
             .and_then(|items| items.get(1))
-            .and_then(|item| atom_value(item))
+            .and_then(|item| atom_value(item, source))
             .is_some_and(|name| name == lib_id)
     }) else {
         return Vec::new();
@@ -473,7 +473,7 @@ fn selected_symbol_units<'a>(
         .filter(|sub_symbol| {
             list_items(sub_symbol)
                 .and_then(|items| items.get(1))
-                .and_then(|item| atom_value(item))
+                .and_then(|item| atom_value(item, source))
                 .and_then(|name| sub_symbol_unit_convert(&name))
                 .is_some_and(|(sub_unit, sub_convert)| {
                     (sub_unit == 0 || sub_unit == unit) && sub_convert == convert
@@ -930,8 +930,8 @@ fn collect_visible_field_bounds(root: &Node, source: &str) -> Vec<(String, Bound
     for symbol in children(root, "symbol") {
         let reference = children(symbol, "property").find_map(|property| {
             let items = list_items(property)?;
-            if atom_value(items.get(1)?)? == "Reference" {
-                atom_value(items.get(2)?)
+            if atom_value(items.get(1)?, source)? == "Reference" {
+                atom_value(items.get(2)?, source)
             } else {
                 None
             }
@@ -946,13 +946,13 @@ fn collect_visible_field_bounds(root: &Node, source: &str) -> Vec<(String, Bound
             let Some(items) = list_items(property) else {
                 continue;
             };
-            let Some(name) = items.get(1).and_then(|item| atom_value(item)) else {
+            let Some(name) = items.get(1).and_then(|item| atom_value(item, source)) else {
                 continue;
             };
             if !matches!(name.as_str(), "Reference" | "Value") {
                 continue;
             }
-            let Some(value) = items.get(2).and_then(|item| atom_value(item)) else {
+            let Some(value) = items.get(2).and_then(|item| atom_value(item, source)) else {
                 continue;
             };
             if let Some(bounds) = text_visual_bounds(&value, property, source) {
@@ -1142,14 +1142,14 @@ fn check_instance_pin_orientation(
     let Some(lib_id) = child_list(instance, "lib_id")
         .and_then(list_items)
         .and_then(|items| items.get(1))
-        .and_then(|item| atom_value(item))
+        .and_then(|item| atom_value(item, source))
     else {
         return Vec::new();
     };
     let Some(library_symbol) = children(library_symbols, "symbol").find(|definition| {
         list_items(definition)
             .and_then(|items| items.get(1))
-            .and_then(|item| atom_value(item))
+            .and_then(|item| atom_value(item, source))
             .is_some_and(|name| name == lib_id)
     }) else {
         return Vec::new();
@@ -1199,7 +1199,7 @@ fn collect_placed_pin_positions(root: &Node, source: &str) -> Option<Vec<Point>>
         let Some(lib_id) = child_list(instance, "lib_id")
             .and_then(list_items)
             .and_then(|items| items.get(1))
-            .and_then(|item| atom_value(item))
+            .and_then(|item| atom_value(item, source))
         else {
             continue;
         };
@@ -1207,7 +1207,7 @@ fn collect_placed_pin_positions(root: &Node, source: &str) -> Option<Vec<Point>>
         let library_symbol = children(library_symbols, "symbol").find(|definition| {
             list_items(definition)
                 .and_then(|items| items.get(1))
-                .and_then(|item| atom_value(item))
+                .and_then(|item| atom_value(item, source))
                 .is_some_and(|name| name == lib_id)
         })?;
         let pins = embedded_symbol_pins(library_symbol, transform.unit, transform.convert, source);
@@ -1236,8 +1236,8 @@ fn collect_placed_pin_positions(root: &Node, source: &str) -> Option<Vec<Point>>
 fn read_symbol_transform(instance: &Node, source: &str) -> Option<SymbolTransform> {
     let reference = children(instance, "property").find_map(|property| {
         let items = list_items(property)?;
-        if atom_value(items.get(1)?)? == "Reference" {
-            atom_value(items.get(2)?)
+        if atom_value(items.get(1)?, source)? == "Reference" {
+            atom_value(items.get(2)?, source)
         } else {
             None
         }
@@ -1253,7 +1253,7 @@ fn read_symbol_transform(instance: &Node, source: &str) -> Option<SymbolTransfor
     let mirror = child_list(instance, "mirror")
         .and_then(list_items)
         .and_then(|items| items.get(1))
-        .and_then(|item| atom_value(item));
+        .and_then(|item| atom_value(item, source));
     if mirror
         .as_ref()
         .is_some_and(|value| value != "x" && value != "y")
@@ -1274,7 +1274,7 @@ fn instance_integer(instance: &Node, name: &str, source: &str) -> Option<u32> {
     child_list(instance, name)
         .and_then(list_items)
         .and_then(|items| items.get(1))
-        .and_then(|item| atom_value(item))
+        .and_then(|item| atom_value(item, source))
         .and_then(|value| value.parse().ok())
 }
 
@@ -1288,7 +1288,7 @@ fn embedded_symbol_pins<'a>(
     for sub_symbol in children(library_symbol, "symbol") {
         let Some(name) = list_items(sub_symbol)
             .and_then(|items| items.get(1))
-            .and_then(|item| atom_value(item))
+            .and_then(|item| atom_value(item, source))
         else {
             continue;
         };
@@ -1347,7 +1347,7 @@ fn pin_orientation_diagnostic(
     let pin_number = child_list(pin, "number")
         .and_then(list_items)
         .and_then(|items| items.get(1))
-        .and_then(|item| atom_value(item))
+        .and_then(|item| atom_value(item, source))
         .unwrap_or_else(|| "?".to_owned());
     Some(at_point(
         BuiltinRuleId::Sch005,
@@ -1664,7 +1664,7 @@ fn read_text_box_metrics(
     };
     let label = items
         .get(1)
-        .and_then(|item| atom_value(item))
+        .and_then(|item| atom_value(item, source))
         .unwrap_or_default();
     let at = child_list(node, "at").and_then(list_items);
     let size = child_list(node, "size").and_then(list_items);
@@ -1778,7 +1778,7 @@ fn check_block_annotation_structure(root: &Node, source: &str) -> Vec<Diagnostic
         .into_iter()
         .filter_map(|node| {
             let items = list_items(node)?;
-            let value = atom_value(items.get(1)?)?;
+            let value = atom_value(items.get(1)?, source)?;
             let multiline = value.contains('\n') || value.contains('\r');
             let stroke_width = child_list(node, "stroke")
                 .and_then(|stroke| child_list(stroke, "width"))
@@ -1813,7 +1813,7 @@ fn collect_label_nodes<'a>(
         let Some(items) = list_items(node) else {
             continue;
         };
-        let Some(label) = items.get(1).and_then(|item| atom_value(item)) else {
+        let Some(label) = items.get(1).and_then(|item| atom_value(item, source)) else {
             continue;
         };
         let Some(point) = point_from_at(node, source) else {
@@ -1846,7 +1846,7 @@ fn text_visual_bounds(value: &str, node: &Node, source: &str) -> Option<Bounds> 
     let justify_items = justify.and_then(list_items);
     let justify_name = justify_items
         .and_then(|items| items.get(1))
-        .and_then(|item| atom_value(item))
+        .and_then(|item| atom_value(item, source))
         .unwrap_or_else(|| "center".to_owned());
     let left = match justify_name.as_str() {
         "left" => x,
@@ -1885,7 +1885,7 @@ fn text_visual_bounds(value: &str, node: &Node, source: &str) -> Option<Bounds> 
     }
     if justify_items
         .and_then(|items| items.get(2))
-        .and_then(|item| atom_value(item))
+        .and_then(|item| atom_value(item, source))
         .is_some_and(|value| value == "top")
     {
         return Some(Bounds {
@@ -2226,7 +2226,7 @@ fn check_label_text_collisions(root: &Node, source: &str) -> Vec<Diagnostic> {
             let Some(items) = list_items(property) else {
                 continue;
             };
-            let Some(value) = items.get(2).and_then(|item| atom_value(item)) else {
+            let Some(value) = items.get(2).and_then(|item| atom_value(item, source)) else {
                 continue;
             };
             if text_visual_bounds(&value, property, source)
@@ -2558,7 +2558,7 @@ fn atom_value(node: &Node, source: &str) -> Option<String> {
     }
 }
 
-fn number(node: &Node, source: &str) -> Option<f64> {
+fn number(node: &Node) -> Option<f64> {
     atom_value(node, source)?.parse().ok()
 }
 
@@ -2636,7 +2636,7 @@ fn collect_labels(root: &Node, source: &str) -> Vec<(String, String, Point, Byte
         let Some(items) = list_items(node) else {
             return;
         };
-        let Some(label) = items.get(1).and_then(|item| atom_value(item)) else {
+        let Some(label) = items.get(1).and_then(|item| atom_value(item, source)) else {
             return;
         };
         if let Some(point) = point_from_at(node, source) {
