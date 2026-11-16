@@ -6,7 +6,7 @@ use kicad_clippy_core::{
 use kicad_clippy_parser::SchematicDocument;
 use geo::{
     Coord, Covers, Distance, Euclidean, Line, LineIntersection, LineString, Point as GeoPoint,
-    Polygon, line_intersection,
+    Polygon, algorithm::sweep::{Cross, Intersections}, line_intersection,
 };
 use kiutils_sexpr::{Atom, Node};
 
@@ -1499,9 +1499,23 @@ fn transform_symbol_vector(angle: f64, rotation: i32, mirror: Option<&str>) -> O
     })
 }
 
+#[derive(Clone, Copy)]
+struct IndexedSegment {
+    index: usize,
+    segment: Segment,
+}
+
+impl Cross for IndexedSegment {
+    type Scalar = f64;
+
+    fn line(&self) -> Line<f64> {
+        geo_line(self.segment.start, self.segment.end)
+    }
+}
+
 fn check_wire_geometry(root: &Node, segments: &[Segment], junctions: &[Point]) -> Vec<Diagnostic> {
     let mut diagnostics = collect_invalid_wire_diagnostics(root);
-    for (index, segment) in segments.iter().enumerate() {
+    for segment in segments {
         if distance(segment.start, segment.end) < 0.001 {
             diagnostics.push(at_segment(
                 BuiltinRuleId::Sch001,
@@ -1517,23 +1531,51 @@ fn check_wire_geometry(root: &Node, segments: &[Segment], junctions: &[Point]) -
                 *segment,
             ));
         }
-        for other in segments.iter().skip(index + 1) {
-            if collinear_overlap(*segment, *other) {
-                diagnostics.push(at_segment(
-                    BuiltinRuleId::Sch001,
-                    "collinear wire segments overlap",
-                    *segment,
-                ));
-                continue;
+    }
+
+    // Bentley–Ottmann sweep: the geometry library finds candidate wire pairs
+    // without the handwritten all-pairs scan. We retain KiCad-specific rules
+    // for zero-length/diagonal wires, explicit junction markers and diagnostics.
+    let indexed = segments
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(index, segment)| IndexedSegment { index, segment });
+    for (first, second, intersection) in Intersections::from_iter(indexed) {
+        if first.index == second.index {
+            continue;
+        }
+        let segment = first.segment;
+        match intersection {
+            LineIntersection::Collinear { intersection } => {
+                let overlap = Point {
+                    x: intersection.start.x,
+                    y: intersection.start.y,
+                };
+                let overlap_end = Point {
+                    x: intersection.end.x,
+                    y: intersection.end.y,
+                };
+                if distance(overlap, overlap_end) > 0.001 {
+                    diagnostics.push(at_segment(
+                        BuiltinRuleId::Sch001,
+                        "collinear wire segments overlap",
+                        segment,
+                    ));
+                }
             }
-            if let Some(point) = intersection(*segment, *other) {
-                let first_end = is_endpoint(point, *segment);
-                let second_end = is_endpoint(point, *other);
+            LineIntersection::SinglePoint { intersection, .. } => {
+                let point = Point {
+                    x: intersection.x,
+                    y: intersection.y,
+                };
+                let first_end = is_endpoint(point, first.segment);
+                let second_end = is_endpoint(point, second.segment);
                 if !first_end && !second_end {
                     let mut diagnostic = at_segment(
                         BuiltinRuleId::Sch001,
                         "wire crossing is ambiguous; split the net or reroute",
-                        *segment,
+                        segment,
                     );
                     diagnostic.schematic_location = Some(SchematicLocation {
                         x_mm: point.x,
@@ -1556,7 +1598,7 @@ fn check_wire_geometry(root: &Node, segments: &[Segment], junctions: &[Point]) -
                     let mut diagnostic = at_segment(
                         BuiltinRuleId::Sch001,
                         "T-junction requires an explicit junction marker",
-                        *segment,
+                        segment,
                     );
                     diagnostic.schematic_location = Some(SchematicLocation {
                         x_mm: point.x,
@@ -1567,6 +1609,7 @@ fn check_wire_geometry(root: &Node, segments: &[Segment], junctions: &[Point]) -
             }
         }
     }
+
     diagnostics
 }
 
@@ -1590,41 +1633,6 @@ fn collect_invalid_wire_diagnostics(root: &Node) -> Vec<Diagnostic> {
     diagnostics
 }
 
-fn collinear_overlap(first: Segment, second: Segment) -> bool {
-    let first_horizontal = (first.start.y - first.end.y).abs() < 0.001;
-    let second_horizontal = (second.start.y - second.end.y).abs() < 0.001;
-    let first_vertical = (first.start.x - first.end.x).abs() < 0.001;
-    let second_vertical = (second.start.x - second.end.x).abs() < 0.001;
-    let overlap = if first_horizontal
-        && second_horizontal
-        && (first.start.y - second.start.y).abs() < 0.001
-    {
-        first
-            .start
-            .x
-            .max(first.end.x)
-            .min(second.start.x.max(second.end.x))
-            - first
-                .start
-                .x
-                .min(first.end.x)
-                .max(second.start.x.min(second.end.x))
-    } else if first_vertical && second_vertical && (first.start.x - second.start.x).abs() < 0.001 {
-        first
-            .start
-            .y
-            .max(first.end.y)
-            .min(second.start.y.max(second.end.y))
-            - first
-                .start
-                .y
-                .min(first.end.y)
-                .max(second.start.y.min(second.end.y))
-    } else {
-        0.0
-    };
-    overlap > 0.001
-}
 
 fn check_label_wire_clearance(root: &Node, source: &str, segments: &[Segment]) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
@@ -2783,23 +2791,6 @@ fn distance(first: Point, second: Point) -> f64 {
     (first.x - second.x).hypot(first.y - second.y)
 }
 
-fn intersection(first: Segment, second: Segment) -> Option<Point> {
-    let first_horizontal = (first.start.y - first.end.y).abs() < 0.001;
-    let second_horizontal = (second.start.y - second.end.y).abs() < 0.001;
-    if first_horizontal == second_horizontal {
-        return None;
-    }
-    let (horizontal, vertical) = if first_horizontal {
-        (first, second)
-    } else {
-        (second, first)
-    };
-    let point = Point {
-        x: vertical.start.x,
-        y: horizontal.start.y,
-    };
-    (point_on_segment(point, &horizontal) && point_on_segment(point, &vertical)).then_some(point)
-}
 
 fn at_segment(code: BuiltinRuleId, message: &str, segment: Segment) -> Diagnostic {
     let mut diagnostic = Diagnostic::new(code, Severity::Error, message);
