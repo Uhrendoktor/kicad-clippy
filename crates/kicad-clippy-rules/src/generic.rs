@@ -18,7 +18,7 @@ pub struct Point {
 pub struct Segment {
     pub start: Point,
     pub end: Point,
-    pub(crate) span: ByteSpan,
+    pub span: ByteSpan,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -865,6 +865,7 @@ pub fn run_builtin_rules(document: &SchematicDocument) -> RuleRun {
     crate::RuleEngine::with_builtins().run(document)
 }
 
+#[must_use]
 pub fn run_geometry_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
     let Some(root) = context.document().cst().nodes.first() else {
         return Vec::new();
@@ -882,6 +883,7 @@ pub fn run_geometry_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
     diagnostics
 }
 
+#[must_use]
 pub fn run_label_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
     let Some(root) = context.document().cst().nodes.first() else {
         return Vec::new();
@@ -894,6 +896,7 @@ pub fn run_label_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
     diagnostics
 }
 
+#[must_use]
 pub fn run_annotation_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
     let Some(root) = context.document().cst().nodes.first() else {
         return Vec::new();
@@ -2724,6 +2727,7 @@ const fn span_of(node: &Node) -> ByteSpan {
     }
 }
 
+#[must_use]
 pub fn collect_segments(root: &Node, source: &str) -> Vec<Segment> {
     let mut segments = Vec::new();
     walk(root, &mut |node| {
@@ -2753,6 +2757,7 @@ pub fn collect_segments(root: &Node, source: &str) -> Vec<Segment> {
     segments
 }
 
+#[must_use]
 pub fn collect_points(root: &Node, source: &str, name: &str) -> Vec<Point> {
     let mut points = Vec::new();
     walk(root, &mut |node| {
