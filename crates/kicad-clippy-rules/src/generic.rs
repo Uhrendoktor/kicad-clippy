@@ -249,7 +249,10 @@ fn wire_components(
         for pair in split.windows(2) {
             let first = point_key(pair[0]);
             let second = point_key(pair[1]);
-            adjacency.entry(first.clone()).or_default().push(second.clone());
+            adjacency
+                .entry(first.clone())
+                .or_default()
+                .push(second.clone());
             adjacency.entry(second).or_default().push(first);
         }
     }
