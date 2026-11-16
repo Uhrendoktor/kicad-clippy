@@ -40,7 +40,7 @@ pub enum ComponentKind {
     Other,
 }
 
-/// Extensible component role, such as decoupling, bulk, pull_up, clamp, or load_switch.
+/// Extensible component role, such as `decoupling`, `bulk`, `pull_up`, `clamp`, or `load_switch`.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct ComponentRole(pub String);
@@ -115,134 +115,160 @@ impl LintProfile {
     #[must_use]
     pub fn validate(&self, document: &SchematicDocument) -> Vec<Diagnostic> {
         let facts = SchematicFacts::from_document(document);
-        let mut diagnostics = Vec::new();
         let references: BTreeSet<_> = facts
             .components
             .iter()
             .map(|item| item.reference.clone())
             .collect();
-
-        for reference in self.components.keys() {
-            if !references.contains(reference) {
+        let mut diagnostics = self.validate_profile_references(&references);
+        for component in &facts.components {
+            if let Some(intent) = self.components.get(&component.reference) {
+                diagnostics.extend(validate_component_intent(&component.reference, intent));
+            } else if self.mode == ProfileMode::Strict
+                && !self.ignore_components.contains(&component.reference)
+            {
                 diagnostics.push(Diagnostic::new(
                     "SCH021",
                     Severity::Error,
-                    format!("profile metadata references missing component {reference}"),
+                    format!("{} has no component-intent metadata", component.reference),
                 ));
             }
         }
-
-        for component in &facts.components {
-            let Some(intent) = self.components.get(&component.reference) else {
-                if self.mode == ProfileMode::Strict
-                    && !self.ignore_components.contains(&component.reference)
-                {
-                    diagnostics.push(Diagnostic::new(
-                        "SCH021",
-                        Severity::Error,
-                        format!("{} has no component-intent metadata", component.reference),
-                    ));
-                }
-                continue;
-            };
-
-            if intent.function.as_deref().is_none_or(str::is_empty)
-                || intent.rationale.as_deref().is_none_or(str::is_empty)
-            {
-                diagnostics.push(Diagnostic::new(
-                    "SCH020",
-                    Severity::Error,
-                    format!(
-                        "{} must document both its circuit function and design rationale",
-                        component.reference
-                    ),
-                ));
-            }
-
-            if intent.kind == ComponentKind::Capacitor && intent.role.0 == "decoupling" {
-                match &intent.decoupling {
-                    Some(contract) => {
-                        if !valid_pin_ref(&contract.target_pin) {
-                            diagnostics.push(Diagnostic::new("SCH022", Severity::Error,
-                                format!("{} has invalid decoupling target pin {:?}", component.reference, contract.target_pin)));
-                        }
-                        if contract.target_terminal.is_empty() || contract.return_terminal.is_empty()
-                            || contract.return_net.is_empty() || contract.cluster.is_empty()
-                        {
-                            diagnostics.push(Diagnostic::new("SCH022", Severity::Error,
-                                format!("{} decoupling metadata must define target/return terminals, return net, and cluster", component.reference)));
-                        }
-                        if contract.target_terminal == contract.return_terminal {
-                            diagnostics.push(Diagnostic::new("SCH022", Severity::Error,
-                                format!("{} maps both decoupling terminals to the same capacitor terminal", component.reference)));
-                        }
-                    }
-                    None => diagnostics.push(Diagnostic::new("SCH022", Severity::Error,
-                        format!("{} is a decoupling capacitor but does not identify its target pin and terminal/net contract", component.reference))),
-                }
-            }
-
-            if intent.kind == ComponentKind::Capacitor
-                && !matches!(
-                    intent.role.0.as_str(),
-                    "decoupling"
-                        | "bulk"
-                        | "filter"
-                        | "timing"
-                        | "coupling"
-                        | "snubber"
-                        | "reservoir"
-                        | "safety"
-                )
-            {
-                diagnostics.push(Diagnostic::new("SCH021", Severity::Warning,
-                    format!("{} uses unknown capacitor role {:?}; document its meaning or use a standard role", component.reference, intent.role.0)));
-            }
-        }
-
-        let mut by_target: BTreeMap<&str, Vec<(&str, &DecouplingIntent)>> = BTreeMap::new();
-        for (reference, intent) in &self.components {
-            if intent.kind == ComponentKind::Capacitor && intent.role.0 == "decoupling" {
-                if let Some(contract) = &intent.decoupling {
-                    by_target
-                        .entry(&contract.target_pin)
-                        .or_default()
-                        .push((reference, contract));
-                }
-            }
-        }
-        for (target, capacitors) in by_target {
-            let returns: BTreeSet<_> = capacitors
-                .iter()
-                .map(|(_, item)| item.return_net.as_str())
-                .collect();
-            let clusters: BTreeSet<_> = capacitors
-                .iter()
-                .map(|(_, item)| item.cluster.as_str())
-                .collect();
-            if returns.len() > 1 {
-                diagnostics.push(Diagnostic::new(
-                    "SCH022",
-                    Severity::Error,
-                    format!(
-                        "decouplers for {target} disagree on their return net: {}",
-                        returns.into_iter().collect::<Vec<_>>().join(", ")
-                    ),
-                ));
-            }
-            if clusters.len() > 1 {
-                diagnostics.push(Diagnostic::new(
-                    "SCH022",
-                    Severity::Warning,
-                    format!(
-                        "decouplers for {target} are split across cluster identifiers: {}",
-                        clusters.into_iter().collect::<Vec<_>>().join(", ")
-                    ),
-                ));
-            }
-        }
+        diagnostics.extend(validate_decoupler_groups(&self.components));
         diagnostics
     }
+
+    fn validate_profile_references(&self, references: &BTreeSet<String>) -> Vec<Diagnostic> {
+        self.components
+            .keys()
+            .filter(|reference| !references.contains(*reference))
+            .map(|reference| {
+                Diagnostic::new(
+                    "SCH021",
+                    Severity::Error,
+                    format!("profile metadata references missing component {reference}"),
+                )
+            })
+            .collect()
+    }
+}
+
+fn validate_component_intent(reference: &str, intent: &ComponentIntent) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+    if intent.function.as_deref().is_none_or(str::is_empty)
+        || intent.rationale.as_deref().is_none_or(str::is_empty)
+    {
+        diagnostics.push(Diagnostic::new(
+            "SCH020",
+            Severity::Error,
+            format!("{reference} must document both its circuit function and design rationale"),
+        ));
+    }
+    if intent.kind == ComponentKind::Capacitor && intent.role.0 == "decoupling" {
+        diagnostics.extend(validate_decoupling_intent(reference, intent.decoupling.as_ref()));
+    }
+    if intent.kind == ComponentKind::Capacitor
+        && !matches!(
+            intent.role.0.as_str(),
+            "decoupling" | "bulk" | "filter" | "timing" | "coupling" | "snubber" | "reservoir" | "safety"
+        )
+    {
+        diagnostics.push(Diagnostic::new(
+            "SCH021",
+            Severity::Warning,
+            format!(
+                "{reference} uses unknown capacitor role {:?}; document its meaning or use a standard role",
+                intent.role.0
+            ),
+        ));
+    }
+    diagnostics
+}
+
+fn validate_decoupling_intent(
+    reference: &str,
+    contract: Option<&DecouplingIntent>,
+) -> Vec<Diagnostic> {
+    let Some(contract) = contract else {
+        return vec![Diagnostic::new(
+            "SCH022",
+            Severity::Error,
+            format!(
+                "{reference} is a decoupling capacitor but does not identify its target pin and terminal/net contract"
+            ),
+        )];
+    };
+    let mut diagnostics = Vec::new();
+    if !valid_pin_ref(&contract.target_pin) {
+        diagnostics.push(Diagnostic::new(
+            "SCH022",
+            Severity::Error,
+            format!(
+                "{reference} has invalid decoupling target pin {:?}",
+                contract.target_pin
+            ),
+        ));
+    }
+    if contract.target_terminal.is_empty()
+        || contract.return_terminal.is_empty()
+        || contract.return_net.is_empty()
+        || contract.cluster.is_empty()
+    {
+        diagnostics.push(Diagnostic::new(
+            "SCH022",
+            Severity::Error,
+            format!(
+                "{reference} decoupling metadata must define target/return terminals, return net, and cluster"
+            ),
+        ));
+    }
+    if contract.target_terminal == contract.return_terminal {
+        diagnostics.push(Diagnostic::new(
+            "SCH022",
+            Severity::Error,
+            format!("{reference} maps both decoupling terminals to the same capacitor terminal"),
+        ));
+    }
+    diagnostics
+}
+
+fn validate_decoupler_groups(
+    components: &BTreeMap<String, ComponentIntent>,
+) -> Vec<Diagnostic> {
+    let mut by_target: BTreeMap<&str, Vec<&DecouplingIntent>> = BTreeMap::new();
+    for intent in components.values() {
+        if intent.kind == ComponentKind::Capacitor && intent.role.0 == "decoupling" {
+            if let Some(contract) = &intent.decoupling {
+                by_target.entry(&contract.target_pin).or_default().push(contract);
+            }
+        }
+    }
+    let mut diagnostics = Vec::new();
+    for (target, capacitors) in by_target {
+        let returns: BTreeSet<_> = capacitors.iter().map(|item| item.return_net.as_str()).collect();
+        let clusters: BTreeSet<_> = capacitors.iter().map(|item| item.cluster.as_str()).collect();
+        if returns.len() > 1 {
+            diagnostics.push(Diagnostic::new(
+                "SCH022",
+                Severity::Error,
+                format!(
+                    "decouplers for {target} disagree on their return net: {}",
+                    returns.into_iter().collect::<Vec<_>>().join(", ")
+                ),
+            ));
+        }
+        if clusters.len() > 1 {
+            diagnostics.push(Diagnostic::new(
+                "SCH022",
+                Severity::Warning,
+                format!(
+                    "decouplers for {target} are split across cluster identifiers: {}",
+                    clusters.into_iter().collect::<Vec<_>>().join(", ")
+                ),
+            ));
+        }
+    }
+    diagnostics
 }
 
 fn valid_pin_ref(value: &str) -> bool {
