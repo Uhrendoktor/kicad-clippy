@@ -27,7 +27,7 @@ use vector_text_newstroke::NewstrokeRenderer;
 
 use crate::{RuleContext, RulePass};
 
-type Point = Coord<f64>;
+pub(crate) type Point = Coord<f64>;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Segment {
