@@ -32,13 +32,17 @@ pub struct ComponentFact {
 
 #[derive(Clone, Debug)]
 pub struct TextBoxFact {
+    /// UUID of the schematic text box.
     pub uuid: String,
+    /// Rendered text content.
     pub text: String,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct SchematicFacts {
+    /// Placed symbol instances.
     pub components: Vec<ComponentFact>,
+    /// Text boxes used for group documentation.
     pub text_boxes: Vec<TextBoxFact>,
 }
 
