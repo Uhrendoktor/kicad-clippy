@@ -4,17 +4,17 @@
 
 A Rust-based linter for KiCad schematic files. `kicad-clippy` combines repository-specific schematic quality rules with KiCad's native Electrical Rules Checker (ERC). Native ERC remains the authority for electrical-rule findings; custom rules add layout, annotation, documentation, and project-profile checks.
 
-> **Project status: early development.** The current implementation is the Rust foundation: lossless S-expression parsing, shared source/diagnostic contracts, a rule metadata registry, a native ERC adapter, and a CLI. The historical SCH001–SCH020 rule set and project-profile engine have not yet been ported into this repository. See [scope and roadmap](docs/roadmap.md).
+> **Project status: early development.** The Rust implementation now runs the first migrated schematic rules (SCH001, SCH002, SCH019) and supports project component-intent profiles (SCH020–SCH022). The remaining historical rules are tracked explicitly in the rule status table. See [scope and roadmap](docs/roadmap.md).
 
 ## What it does today
 
 - Parses a `.kicad_sch` file as a lossless S-expression document and checks its root type.
 - Runs native ERC using `kicad-cli sch erc --format json --severity-all`.
 - Normalizes ERC violations from the per-sheet JSON report, preserving severity, exclusion state, sheet paths, affected item UUIDs, and physical coordinates.
-- Exposes shared UTF-8 byte spans, line/column mapping, diagnostic types, rule descriptors, levels, and a deterministic rule registry.
+- Runs built-in geometry and label rules with source spans and schematic coordinates.\n- Loads versioned JSON project profiles and validates strict component metadata, including pin-specific decoupling intent.\n- Exposes shared UTF-8 byte spans, line/column mapping, diagnostic types, rule descriptors, levels, and a deterministic rule registry.
 - Emits human-readable or JSON diagnostics with an exit code based on active ERC errors.
 
-It does **not** yet run custom schematic rules, load a TOML profile, emit SARIF, or apply fixes.
+The full SCH001–SCH020 catalogue is not yet ported. Rules that need transformed symbol geometry, hierarchical netlists, or group frames remain pending. SARIF and verified fixes are also pending.
 
 ## Requirements
 
@@ -62,7 +62,7 @@ Emit structured JSON:
 kicad-clippy lint path/to/design.kicad_sch --format json
 ```
 
-Check S-expression syntax without invoking ERC:
+Run the generic schematic checks without invoking ERC:\n\n```sh\nkicad-clippy lint path/to/design.kicad_sch --skip-erc\n```\n\nLoad project component-intent metadata, and require complete metadata with strict mode:\n\n```sh\nkicad-clippy lint path/to/design.kicad_sch --profile kicad-clippy.json --strict\n```\n\nSee [component metadata](docs/component-metadata.md), [rule status](docs/rules.md), and the [historical design guidance](docs/historical-design-guidance.md).\n\nCheck S-expression syntax without invoking ERC:
 
 ```sh
 kicad-clippy lint path/to/design.kicad_sch --skip-erc
@@ -82,7 +82,7 @@ cargo run -p kicad-clippy -- lint path/to/design.kicad_sch
 | --- | --- |
 | `kicad-clippy-core` | Source spans, diagnostics, severities, rule descriptors, and registry. |
 | `kicad-clippy-parser` | Lossless KiCad schematic S-expression parsing. |
-| `kicad-clippy-erc` | KiCad CLI ERC execution and JSON report normalization. |
+| `kicad-clippy-erc` | KiCad CLI ERC execution and JSON report normalization. |\n| `kicad-clippy-rules` | Built-in schematic geometry/label rules and project component-intent validation. |
 | `kicad-clippy` | Command-line interface and output formatting. |
 
 See [architecture](docs/architecture.md) for the data flow and design boundaries.
