@@ -537,9 +537,20 @@ fn sample_arc_through_three_points(
     start: (f64, f64),
     mid: (f64, f64),
     end: (f64, f64),
-) -> Option<Vec<(f64, f64)>> {
-    let determinant =
-        2.0 * (start.0 * (mid.1 - end.1) + mid.0 * (end.1 - start.1) + end.0 * (start.1 - mid.1));
+) -> Vec<(f64, f64)> {
+    const MAX_STEP_RADIANS: f64 = std::f64::consts::PI / 36.0;
+    const MAX_SAGITTA_MM: f64 = 0.01;
+    const MAX_SEGMENT_COUNT: usize = 4096;
+    const MAX_SEGMENT_COUNT_F64: f64 = 4096.0;
+
+    let determinant = 2.0
+        * end.0.mul_add(
+            start.1 - mid.1,
+            mid.0.mul_add(
+                end.1 - start.1,
+                start.0 * (mid.1 - end.1),
+            ),
+        );
     if determinant.abs() <= 1.0e-9 {
         return vec![start, mid, end];
     }
@@ -579,6 +590,7 @@ fn sample_arc_through_three_points(
     if sweep.abs() <= 1.0e-9 {
         return vec![start, mid, end];
     }
+
     let sagitta_step = if radius > MAX_SAGITTA_MM {
         2.0 * (1.0 - MAX_SAGITTA_MM / radius).clamp(-1.0, 1.0).acos()
     } else {
