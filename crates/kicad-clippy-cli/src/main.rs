@@ -7,10 +7,11 @@ use std::{
 };
 
 use clap::{Parser, Subcommand, ValueEnum};
-use kicad_clippy_core::{Diagnostic, Severity};
+use kicad_clippy_core::{Diagnostic, Severity, SourceFile};
 use kicad_clippy_erc::{NetlistError, export_netlist, run_native_erc};
 use kicad_clippy_parser::SchematicDocument;
 use kicad_clippy_rules::{LintProfile, ProfileMode, RuleEngine};
+use miette::{LabeledSpan, MietteDiagnostic, NamedSource, Report, Severity as RenderSeverity};
 use serde::Serialize;
 use thiserror::Error;
 
@@ -202,7 +203,7 @@ fn lint(
     };
 
     match format {
-        OutputFormat::Text => render_text(&output)?,
+        OutputFormat::Text => render_text(&output, schematic.source())?,
         OutputFormat::Json => {
             let json = serde_json::to_string_pretty(&output)?;
             writeln!(io::stdout().lock(), "{json}")?;
@@ -216,7 +217,7 @@ fn lint(
     }
 }
 
-fn render_text(output: &LintOutput) -> Result<(), io::Error> {
+fn render_text(output: &LintOutput, source: &SourceFile) -> Result<(), io::Error> {
     let mut stdout = io::stdout().lock();
     writeln!(stdout, "kicad-clippy {}", output.tool_version)?;
     writeln!(stdout, "S-expression syntax: valid ({})", output.schematic)?;
@@ -234,7 +235,7 @@ fn render_text(output: &LintOutput) -> Result<(), io::Error> {
     }
 
     for diagnostic in &output.diagnostics {
-        render_diagnostic(&mut stdout, diagnostic)?;
+        render_diagnostic(&mut stdout, diagnostic, source)?;
     }
 
     writeln!(
@@ -249,40 +250,77 @@ fn render_text(output: &LintOutput) -> Result<(), io::Error> {
     Ok(())
 }
 
-fn render_diagnostic(stdout: &mut impl Write, diagnostic: &Diagnostic) -> Result<(), io::Error> {
-    write!(
-        stdout,
-        "{}[{}]: {}",
-        diagnostic.severity.as_str(),
-        diagnostic.code,
-        diagnostic.message
-    )?;
-
+fn render_diagnostic(
+    stdout: &mut impl Write,
+    diagnostic: &Diagnostic,
+    source: &SourceFile,
+) -> Result<(), io::Error> {
+    let mut message = diagnostic.message.clone();
     if let Some(location) = diagnostic.schematic_location {
-        write!(
-            stdout,
+        message.push_str(&format!(
             " at ({:.3} mm, {:.3} mm)",
             location.x_mm, location.y_mm
-        )?;
+        ));
     }
     if let Some(sheet_path) = &diagnostic.sheet_path {
-        write!(stdout, " on sheet {sheet_path}")?;
+        message.push_str(&format!(" on sheet {sheet_path}"));
     }
     if diagnostic.excluded {
-        write!(stdout, " [excluded]")?;
-    }
-    writeln!(stdout)?;
-
-    for related in &diagnostic.related {
-        if related.uuid.is_some() || !related.description.is_empty() {
-            write!(stdout, "  item: {}", related.description)?;
-            if let Some(uuid) = &related.uuid {
-                write!(stdout, " [{uuid}]")?;
-            }
-            writeln!(stdout)?;
-        }
+        message.push_str(" [excluded]");
     }
 
+    let mut rendered = MietteDiagnostic::new(message)
+        .with_code(diagnostic.code.clone())
+        .with_severity(match diagnostic.severity {
+            Severity::Error => RenderSeverity::Error,
+            Severity::Warning => RenderSeverity::Warning,
+            Severity::Note => RenderSeverity::Advice,
+        });
+
+    if let Some(span) = diagnostic.span.filter(|span| span.is_valid_for(source.text())) {
+        rendered = rendered.with_label(LabeledSpan::new_primary_with_span(
+            Some("here".to_owned()),
+            span.start..span.end,
+        ));
+    }
+
+    let mut guidance = Vec::new();
+    if let Some(explanation) = &diagnostic.explanation {
+        guidance.push(explanation.clone());
+    }
+    if let Some(help) = &diagnostic.help {
+        guidance.push(format!("Help: {help}"));
+    }
+    if !diagnostic.related.is_empty() {
+        let related = diagnostic
+            .related
+            .iter()
+            .map(|item| {
+                let mut description = item.description.clone();
+                if let Some(uuid) = &item.uuid {
+                    description.push_str(&format!(" [{uuid}]"));
+                }
+                if let Some(location) = item.location {
+                    description.push_str(&format!(
+                        " at ({:.3} mm, {:.3} mm)",
+                        location.x_mm, location.y_mm
+                    ));
+                }
+                description
+            })
+            .collect::<Vec<_>>()
+            .join("; ");
+        guidance.push(format!("Related items: {related}"));
+    }
+    if !guidance.is_empty() {
+        rendered = rendered.with_help(guidance.join("\n"));
+    }
+
+    let report = Report::new(rendered).with_source_code(NamedSource::new(
+        source.path().display().to_string(),
+        source.text().to_owned(),
+    ));
+    writeln!(stdout, "{report:?}")?;
     Ok(())
 }
 
