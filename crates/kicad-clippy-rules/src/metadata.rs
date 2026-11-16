@@ -897,10 +897,7 @@ mod tests {
         .expect("profile parses");
         assert!(
             !profile
-                .validate_with_netlist(
-                    &schematic,
-                    Some(&pin_contract_netlist("VIN", Some("VOUT")))
-                )
+                .validate_with_netlist(&schematic, Some(&pin_contract_netlist("VIN", Some("VOUT"))))
                 .iter()
                 .any(|item| item.code == "SCH014")
         );
@@ -917,10 +914,8 @@ mod tests {
             r#"{"schema_version":1,"components":{"R1":{"kind":"other","role":"test","function":"Signal path","rationale":"Preserve input-to-output continuity","pin_nets":{"1":"VIN","2":"VOUT"}}}}"#,
         )
         .expect("profile parses");
-        let diagnostics = profile.validate_with_netlist(
-            &schematic,
-            Some(&pin_contract_netlist("GND", None)),
-        );
+        let diagnostics =
+            profile.validate_with_netlist(&schematic, Some(&pin_contract_netlist("GND", None)));
         assert_eq!(
             diagnostics
                 .iter()
@@ -929,11 +924,14 @@ mod tests {
             2
         );
         assert!(
-            diagnostics.iter().any(|item| item.message.contains("connected to GND"))
+            diagnostics
+                .iter()
+                .any(|item| item.message.contains("connected to GND"))
         );
-        assert!(
-            diagnostics.iter().any(|item| item.message.contains("absent from the exported KiCad netlist"))
-        );
+        assert!(diagnostics.iter().any(|item| {
+            item.message
+                .contains("absent from the exported KiCad netlist")
+        }));
     }
 
     #[test]
