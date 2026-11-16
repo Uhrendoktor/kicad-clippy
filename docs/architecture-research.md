@@ -28,6 +28,7 @@ The following table distinguishes adopted libraries from alternatives that remai
 | Terminal diagnostics and source excerpts | [`miette`](https://docs.rs/miette/7.6.0/miette/) | Adopted | Renders named source files, labeled byte spans, severity, diagnostic codes, help and source excerpts. The CLI adapts the project's existing `Diagnostic` to miette; JSON remains the stable interchange schema. |
 | General planar geometry | [`geo`](https://docs.rs/geo/0.31.0/geo/) | Adopted | Replaces handwritten segment-intersection classification, point-to-segment distance, point-in-polygon, and rectangle/polygon predicates. Its Bentley–Ottmann sweep replaces the nested all-pairs wire-intersection scan. |
 | Curves and affine transforms | [`kurbo`](https://docs.rs/kurbo/0.13.1/kurbo/) | Adopted | Replaces hand-written recursive cubic Bézier subdivision, manual arc sampling, and duplicated point/vector rotation and mirror arithmetic with adaptive path flattening and affine transforms. |
+| KiCad stroke-font text metrics | [`vector-text-newstroke 0.1.1`](https://docs.rs/vector-text-newstroke/0.1.1/vector_text_newstroke/) | Adopted | Uses the NewStroke font designed for KiCad rather than guessed per-character width buckets. The upstream API renders points rather than exposing text measurement; a small adapter obtains total advance from a trailing known glyph and cap height from that glyph's rendered bounds. The adapter guards the upstream fixed Unicode-table limit and has regression tests for actual glyph advances. The rule's text-box safety margin remains application policy. |
 | Physical wire connected components | [`petgraph::UnionFind`](https://docs.rs/petgraph/0.8.3/petgraph/unionfind/struct.UnionFind.html) | Adopted | Replaces the string-keyed adjacency graph and handwritten depth-first connected-component traversal with indexed disjoint sets. Segment splitting remains KiCad-specific; graph equivalence classes are delegated. |
 | Spatial indexing | [`rstar`](https://docs.rs/rstar/0.12.2/rstar/) | Not used directly | Geo's sweep-line algorithm already addresses the current all-wire intersection scan. Do not add a second index until profiling shows a remaining broad-phase bottleneck in a different workload. |
 | Robust geometric predicates | [`robust`](https://docs.rs/robust/1.2.0/robust/) | Not used directly | Geo already supplies the predicates used by the current rules. Reconsider only if fixtures expose specific numerical-degeneracy cases that require a separate robust-predicate layer. |
@@ -50,13 +51,13 @@ Against the feature-branch state before this simplification pass (`90b19a296472e
 
 | File | Before | After | Net change |
 | --- | ---: | ---: | ---: |
-| `generic.rs` | 3,523 lines / 115,651 bytes | 3,360 / 110,410 | -163 lines |
+| `generic.rs` | 3,523 lines / 115,651 bytes | 3,428 / 113,066 | -95 lines |
 | `source.rs` | 177 lines / 4,911 bytes | 104 / 2,829 | -73 lines |
 | CLI `main.rs` | 331 lines / 9,695 bytes | 375 / 11,380 | +44 lines |
 | Parser `schematic.rs` | 183 lines / 5,318 bytes | 240 / 7,432 | +57 lines |
-| **Combined** | **4,214 lines / 135,575 bytes** | **4,079 / 132,051** | **-135 lines / -3,524 bytes** |
+| **Combined** | **4,214 lines / 135,575 bytes** | **4,147 / 134,707** | **-67 lines / -868 bytes** |
 
-Across all four directly affected implementation files, the net reduction is 135 source lines (3.2%) and 3,524 bytes (2.6%). The parser adapter and CLI grew because they now establish the correct quoted-string and terminal-diagnostic boundaries; this is outweighed by removing duplicated generic geometry, source indexing, source-to-rule plumbing and manual curve/transform algorithms. The comparison is a file-size delta for these four files, not a claim about all repository code or runtime performance.
+Across all four directly affected implementation files, the net reduction is 67 source lines (1.6%) and 868 bytes (0.6%). The parser adapter and CLI grew because they now establish the correct quoted-string and terminal-diagnostic boundaries; this is outweighed by removing duplicated generic geometry, source indexing, source-to-rule plumbing, manual curve/transform algorithms and the hand-authored character-width table. The comparison is a file-size delta for these four files, not a claim about all repository code or runtime performance.
 
 ## Target architecture
 
