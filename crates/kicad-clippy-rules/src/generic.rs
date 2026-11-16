@@ -415,7 +415,14 @@ fn collect_primitives_from_unit(
     source: &str,
 ) -> Vec<SchematicPrimitiveFact> {
     let mut primitives = Vec::new();
-    for kind in ["rectangle", "polyline", "polygon", "circle", "arc", "bezier"] {
+    for kind in [
+        "rectangle",
+        "polyline",
+        "polygon",
+        "circle",
+        "arc",
+        "bezier",
+    ] {
         for node in children(unit, kind) {
             if let Some(primitive) = parse_symbol_primitive(node, transform, source) {
                 primitives.push(primitive);
@@ -555,14 +562,7 @@ fn bezier_primitive_points(node: &Node, source: &str) -> Option<Vec<(f64, f64)>>
     let end = *coordinates.get(3)?;
     let mut samples = Vec::with_capacity(32);
     samples.push(start);
-    append_cubic_bezier_samples(
-        start,
-        control_one,
-        control_two,
-        end,
-        0,
-        &mut samples,
-    );
+    append_cubic_bezier_samples(start, control_one, control_two, end, 0, &mut samples);
     Some(samples)
 }
 
@@ -628,12 +628,18 @@ fn cubic_bezier_flatness(
         y: control_two.1,
     };
     let end = Point { x: end.0, y: end.1 };
-    point_segment_distance(control_one, start, end)
-        .max(point_segment_distance(control_two, start, end))
+    point_segment_distance(control_one, start, end).max(point_segment_distance(
+        control_two,
+        start,
+        end,
+    ))
 }
 
 fn midpoint_pair(first: (f64, f64), second: (f64, f64)) -> (f64, f64) {
-    (f64::midpoint(first.0, second.0), f64::midpoint(first.1, second.1))
+    (
+        f64::midpoint(first.0, second.0),
+        f64::midpoint(first.1, second.1),
+    )
 }
 
 fn sample_arc_through_three_points(
