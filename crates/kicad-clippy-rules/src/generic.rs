@@ -58,6 +58,8 @@ pub struct TextBoxFact {
     pub uuid: String,
     /// Rendered text content.
     pub text: String,
+    /// Approximate text-box rectangle as (left, top, right, bottom), in millimetres.
+    pub bounds_mm: Option<(f64, f64, f64, f64)>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -126,7 +128,19 @@ fn collect_text_box_facts(root: &Node, source: &str) -> Vec<TextBoxFact> {
                 .and_then(list_items)
                 .and_then(|items| items.get(1))
                 .and_then(|item| atom_value(item, source))?;
-            Some(TextBoxFact { uuid, text })
+            let bounds_mm = text_box_bounds(node, source).map(|bounds| {
+                (
+                    bounds.x,
+                    bounds.y,
+                    bounds.x + bounds.width,
+                    bounds.y + bounds.height,
+                )
+            });
+            Some(TextBoxFact {
+                uuid,
+                text,
+                bounds_mm,
+            })
         })
         .collect()
 }
