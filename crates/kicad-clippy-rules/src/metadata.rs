@@ -404,6 +404,7 @@ fn validate_component_intent(
         diagnostics.extend(validate_decoupling_intent(
             reference,
             intent.decoupling.as_ref(),
+            netlist,
         ));
     }
     diagnostics.extend(validate_role_contract(reference, intent));
