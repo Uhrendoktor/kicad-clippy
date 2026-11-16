@@ -1,16 +1,14 @@
 # Getting started
 
-This guide builds and runs the current `kicad-clippy` CLI against a KiCad schematic.
-
 ## Prerequisites
 
 Install:
 
-- Rust stable with Cargo, rustfmt, and Clippy. The project uses Rust 2024 edition and declares Rust 1.85 as its minimum supported version.
-- A KiCad development build whose `kicad-cli` provides `sch erc` with JSON output. The standalone CI smoke test currently uses the KiCad development nightly; older distribution-packaged CLI builds may only provide schematic export.
-- Git to clone the repository.
+- Rust stable with Cargo, rustfmt and Clippy. The project uses Rust 2024 edition and requires Rust 1.85 or later.
+- KiCad CLI with schematic ERC and JSON report support when native ERC is required. The custom rule engine itself can run without KiCad.
+- Git.
 
-Confirm the tools are available:
+Confirm the tools:
 
 ```sh
 rustc --version
@@ -18,76 +16,77 @@ cargo --version
 kicad-cli version
 ```
 
-On installations where the KiCad executable is named `kicad-cli-nightly`, use that command instead.
-
-## Build the executable
+## Build
 
 ```sh
 git clone https://github.com/Uhrendoktor/kicad-clippy.git
 cd kicad-clippy
 cargo build --workspace --locked
-```
-
-The binary is created at `target/debug/kicad-clippy` (or `target/release/kicad-clippy` for a release build).
-
-For a local installation:
-
-```sh
 cargo install --path crates/kicad-clippy-cli --locked
 ```
 
-## Run a schematic check
+## Lint a schematic
+
+Run generic layout rules and native ERC:
 
 ```sh
 kicad-clippy lint path/to/design.kicad_sch
 ```
 
-Native ERC runs by default. The CLI first checks that the input is a valid KiCad schematic S-expression document, then invokes the KiCad CLI and normalizes its JSON report.
-
-To select the KiCad executable explicitly:
-
-```sh
-kicad-clippy lint path/to/design.kicad_sch --kicad-cli /path/to/kicad-cli
-```
-
-Or set `KICAD_CLI` in the environment:
-
-```sh
-KICAD_CLI=/path/to/kicad-cli kicad-clippy lint path/to/design.kicad_sch
-```
-
-## Choose an output format
-
-Human-readable text is the default:
-
-```sh
-kicad-clippy lint path/to/design.kicad_sch
-```
-
-For automation, select JSON:
-
-```sh
-kicad-clippy lint path/to/design.kicad_sch --format json
-```
-
-The JSON response includes a schema version, tool version, schematic path, parser status, KiCad version, normalized diagnostics, and a severity summary.
-
-## Parser-only mode
-
-To validate the S-expression and source handling without launching KiCad:
+Run the custom rules without starting KiCad:
 
 ```sh
 kicad-clippy lint path/to/design.kicad_sch --skip-erc
 ```
 
-This mode is useful while developing parser code or on machines without KiCad. It does not run electrical checks and must not be used as an electrical sign-off.
+This is useful for rule development, but it is not an electrical validation substitute.
 
-## Exit status
+## Add a project profile
 
-The command returns a successful exit status when parsing succeeds and no active ERC errors are present. It returns a failure status for active ERC errors or when it cannot parse the schematic, start KiCad, or read/normalize the report.
+A profile declares project-specific contracts without hard-coding the project into the rule implementation. It can define functional groups, pin-to-pin physical-wire requirements, common nets, no-connects, component spacing, title-block fields, documentation evidence, and component-intent metadata.
 
-Excluded ERC findings remain in the output for visibility but are not counted as active errors. Warnings and notes are also retained in the output.
+```sh
+kicad-clippy lint path/to/design.kicad_sch --config project/kicad-clippy.json
+```
 
-## Current scope
+The repository includes an example profile at `examples/stusb4500/kicad-clippy.json`. It uses strict mode, retains the migrated STUSB4500 group and net contracts, and declares component roles. Every capacitor is classified (decoupling, filter, bypass or bulk); each decoupling capacitor additionally declares the IC pin it serves, the capacitor terminal connected to that pin, and its return terminal/net.
 
-This release is the parser and native ERC foundation. It does not yet execute custom SCH001–SCH020 checks, read project profiles, emit SARIF, propose edits, or integrate with the KiCad GUI. See [roadmap](roadmap.md) before interpreting a clean result as a complete schematic-style audit.
+Strict mode requires metadata for each detected capacitor. It then checks decoupling records against the schematic's embedded symbol pins and physical wire networks. It does not infer electrical topology from reference designators alone.
+
+## Rules and presets
+
+List the catalogue:
+
+```sh
+kicad-clippy rules
+kicad-clippy rules --format json
+```
+
+Choose a preset in the JSON profile:
+
+- `generic`: reusable geometry and presentation rules only.
+- `recommended`: rule defaults; profile contracts run when a profile is supplied.
+- `strict`: warning rules are errors and component metadata is required for capacitors.
+
+Override a rule level with `allow`, `warn`, or `deny`:
+
+```json
+{
+  "schema_version": 1,
+  "preset": "recommended",
+  "rules": {
+    "SCH006": "deny",
+    "SCH016": "allow"
+  }
+}
+```
+
+## Output
+
+Text is the default. Use `--format json` for structured output. Diagnostics carry the stable rule code, effective severity, reason, help, source path, optional byte span, and physical location in millimetres.
+
+The command exits unsuccessfully when active errors are reported or when parsing, KiCad invocation, or report processing fails.
+
+## Limitations
+
+The first Rust rule milestone does not yet include machine-applicable fixes, SARIF, full project-wide hierarchy traversal, or GUI markers. Schematic-distance metrics are based on 2D drawing coordinates and should not be treated as PCB placement, copper-loop inductance, or electrical performance validation.
