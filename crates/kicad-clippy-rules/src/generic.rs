@@ -4,6 +4,10 @@ use kicad_clippy_core::{
     BuiltinRuleId, ByteSpan, Diagnostic, RelatedLocation, SchematicLocation, Severity,
 };
 use kicad_clippy_parser::SchematicDocument;
+use geo::{
+    Coord, Covers, Distance, Euclidean, Line, LineIntersection, LineString, Point as GeoPoint,
+    Polygon, line_intersection,
+};
 use kiutils_sexpr::{Atom, Node};
 
 use crate::{RuleContext, RulePass};
@@ -1121,81 +1125,54 @@ fn wire_endpoint_is_pin(endpoint: Point, reference: &str, pins: &[SchematicPinFa
     })
 }
 
+fn geo_line(start: Point, end: Point) -> Line<f64> {
+    Line::new(
+        Coord { x: start.x, y: start.y },
+        Coord { x: end.x, y: end.y },
+    )
+}
+
+/// Returns all point endpoints of a segment intersection, including both ends
+/// of a collinear overlap. GeoRust owns the intersection classification and
+/// construction; this adapter only converts to the schematic point type.
 fn segment_intersection_points(
     first: Segment,
     second_start: Point,
     second_end: Point,
 ) -> Vec<Point> {
-    let rx = first.end.x - first.start.x;
-    let ry = first.end.y - first.start.y;
-    let sx = second_end.x - second_start.x;
-    let sy = second_end.y - second_start.y;
-    let qpx = second_start.x - first.start.x;
-    let qpy = second_start.y - first.start.y;
-    let denominator = ry.mul_add(-sx, rx * sy);
+    let first_line = geo_line(first.start, first.end);
+    let second_line = geo_line(second_start, second_end);
 
-    if denominator.abs() <= 0.000_001 {
-        if qpy.mul_add(-rx, qpx * ry).abs() > 0.001 {
-            return Vec::new();
+    match line_intersection(&first_line, &second_line) {
+        Some(LineIntersection::SinglePoint { intersection, .. }) => {
+            vec![Point { x: intersection.x, y: intersection.y }]
         }
-        let candidates = [first.start, first.end, second_start, second_end];
-        let mut intersections = Vec::new();
-        for candidate in candidates {
-            if point_on_segment_any(candidate, first.start, first.end)
-                && point_on_segment_any(candidate, second_start, second_end)
-                && intersections
-                    .iter()
-                    .all(|prior: &Point| distance(*prior, candidate) > 0.001)
-            {
-                intersections.push(candidate);
+        Some(LineIntersection::Collinear { intersection }) => {
+            let points = [
+                Point { x: intersection.start.x, y: intersection.start.y },
+                Point { x: intersection.end.x, y: intersection.end.y },
+            ];
+            if distance(points[0], points[1]) <= 0.001 {
+                vec![points[0]]
+            } else {
+                points.into_iter().collect()
             }
         }
-        return intersections;
-    }
-
-    let t = qpy.mul_add(-sx, qpx * sy) / denominator;
-    let u = qpy.mul_add(-rx, qpx * ry) / denominator;
-    if (-0.001..=1.001).contains(&t) && (-0.001..=1.001).contains(&u) {
-        vec![Point {
-            x: t.mul_add(rx, first.start.x),
-            y: t.mul_add(ry, first.start.y),
-        }]
-    } else {
-        Vec::new()
+        None => Vec::new(),
     }
 }
 
 fn point_on_segment_any(point: Point, start: Point, end: Point) -> bool {
-    let dx = end.x - start.x;
-    let dy = end.y - start.y;
-    let length = dx.hypot(dy);
-    if length <= 0.001 {
-        return distance(point, start) <= 0.001;
-    }
-    let cross = (point.x - start.x).mul_add(dy, -(point.y - start.y) * dx);
-    if cross.abs() > 0.001 * length.max(1.0) {
-        return false;
-    }
-    let dot = (point.y - start.y).mul_add(dy, (point.x - start.x) * dx);
-    let length_squared = dy.mul_add(dy, dx * dx);
-    dot >= -0.001 && dot <= length_squared + 0.001
+    Euclidean.distance(
+        &GeoPoint::new(point.x, point.y),
+        &geo_line(start, end),
+    ) <= 0.001
 }
 
 fn point_segment_distance(point: Point, start: Point, end: Point) -> f64 {
-    let dx = end.x - start.x;
-    let dy = end.y - start.y;
-    let length_squared = dy.mul_add(dy, dx * dx);
-    if length_squared <= 0.000_001 {
-        return distance(point, start);
-    }
-    let projection = ((point.y - start.y).mul_add(dy, (point.x - start.x) * dx) / length_squared)
-        .clamp(0.0, 1.0);
-    distance(
-        point,
-        Point {
-            x: projection.mul_add(dx, start.x),
-            y: projection.mul_add(dy, start.y),
-        },
+    Euclidean.distance(
+        &GeoPoint::new(point.x, point.y),
+        &geo_line(start, end),
     )
 }
 
@@ -1203,28 +1180,19 @@ fn point_in_polygon(point: Point, polygon: &[(f64, f64)]) -> bool {
     if polygon.len() < 3 {
         return false;
     }
-    let mut inside = false;
-    for index in 0..polygon.len() {
-        let first = Point {
-            x: polygon[index].0,
-            y: polygon[index].1,
-        };
-        let second = Point {
-            x: polygon[(index + 1) % polygon.len()].0,
-            y: polygon[(index + 1) % polygon.len()].1,
-        };
-        if point_on_segment_any(point, first, second) {
-            return true;
-        }
-        if (first.y > point.y) != (second.y > point.y) {
-            let y_ratio = (point.y - first.y) / (second.y - first.y);
-            let crossing_x = (second.x - first.x).mul_add(y_ratio, first.x);
-            if point.x < crossing_x {
-                inside = !inside;
-            }
+
+    let mut ring: Vec<_> = polygon
+        .iter()
+        .map(|(x, y)| Coord { x: *x, y: *y })
+        .collect();
+    if ring.first() != ring.last() {
+        if let Some(first) = ring.first().copied() {
+            ring.push(first);
         }
     }
-    inside
+
+    Polygon::new(LineString::new(ring), Vec::new())
+        .covers(&GeoPoint::new(point.x, point.y))
 }
 
 fn check_pin_orientation(root: &Node, source: &str, segments: &[Segment]) -> Vec<Diagnostic> {
