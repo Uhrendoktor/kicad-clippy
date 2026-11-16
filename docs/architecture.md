@@ -76,6 +76,7 @@ The implementation delegates generic algorithms rather than maintaining parallel
 - `kurbo` supplies adaptive curve flattening for cubic Bézier and circular-arc paths plus affine matrix operations for placed-symbol rotation and mirroring. The rules layer retains KiCad's local-to-sheet coordinate convention and applies the symbol origin.
 - `miette` supplies terminal diagnostic labels and source excerpts. `Diagnostic` remains the JSON-compatible project schema, and its adapter is confined to the CLI.
 - `unescaper` decodes quoted S-expression text once at the parser boundary from original byte-span slices; the raw CST buffer and source spans are preserved.
+- `petgraph::UnionFind` supplies the generic disjoint-set structure for physical wire components; the rules layer alone decides which schematic points are joined by KiCad wire/junction semantics.
 
 Do not add a second source renderer or geometry kernel. Introduce spatial indexing only after profiling demonstrates a remaining candidate-scan bottleneck.
 
@@ -108,7 +109,7 @@ schematic + rule policy + optional project profile
        text / JSON / SARIF renderers
 ```
 
-Derived geometry, connectivity, hierarchy and symbol indexes should be built once and shared by related rules. Spatial indexes should be introduced where profiling demonstrates an all-pairs bottleneck. A spatial index is a broad-phase candidate filter, not a replacement for exact KiCad-specific predicates.
+Derived geometry, connectivity, hierarchy and symbol indexes should be built once and shared by related rules. Physical wire connectivity uses `petgraph::UnionFind` after KiCad-specific segment splitting has determined the actual edges. Spatial indexes should be introduced where profiling demonstrates an all-pairs bottleneck. A spatial index is a broad-phase candidate filter, not a replacement for exact KiCad-specific predicates.
 
 ## Design constraints
 
