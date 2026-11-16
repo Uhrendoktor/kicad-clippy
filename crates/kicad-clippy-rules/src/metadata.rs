@@ -136,6 +136,9 @@ pub struct GroupIntent {
     /// Optional minimum Euclidean spacing between member symbol origins, in millimetres.
     #[serde(default)]
     pub minimum_member_origin_spacing_mm: Option<f64>,
+    /// Optional maximum total internal wire length for the group frame, in millimetres.
+    #[serde(default)]
+    pub wire_length_budget_mm: Option<f64>,
     /// Component-specific function and rationale phrases.
     #[serde(default)]
     pub component_purposes: BTreeMap<String, ComponentPurpose>,
@@ -261,6 +264,7 @@ fn validate_group(
     diagnostics.extend(validate_group_containment(group_id, group, facts));
     diagnostics.extend(validate_frame_clearance(group_id, group, facts));
     diagnostics.extend(validate_group_spacing(group_id, group, facts));
+    diagnostics.extend(validate_wire_compactness(group_id, group, facts));
     let description = facts
         .text_boxes
         .iter()
@@ -495,6 +499,72 @@ fn validate_description_frame_clearance(
         }
     }
     diagnostics
+}
+
+fn validate_wire_compactness(
+    group_id: &str,
+    group: &GroupIntent,
+    facts: &SchematicFacts,
+) -> Vec<Diagnostic> {
+    let Some(budget) = group.wire_length_budget_mm else {
+        return Vec::new();
+    };
+    if !budget.is_finite() || budget <= 0.0 {
+        return vec![Diagnostic::new(
+            "SCH016",
+            Severity::Error,
+            format!("group {group_id} wire_length_budget_mm must be a finite positive distance"),
+        )];
+    }
+    let Some(frame_uuid) = group.frame_uuid.as_deref() else {
+        return vec![Diagnostic::new(
+            "SCH016",
+            Severity::Error,
+            format!("group {group_id} must set frame_uuid to calculate its internal wire length"),
+        )];
+    };
+    let Some(frame) = facts.frames.iter().find(|frame| frame.uuid == frame_uuid) else {
+        return vec![Diagnostic::new(
+            "SCH016",
+            Severity::Error,
+            format!("group {group_id} references missing schematic frame UUID {frame_uuid} for wire compactness"),
+        )];
+    };
+    let (left, top, right, bottom) = frame.bounds_mm;
+    if left >= right || top >= bottom {
+        return vec![Diagnostic::new(
+            "SCH016",
+            Severity::Error,
+            format!("group {group_id} frame {frame_uuid} has invalid or zero-area bounds"),
+        )];
+    }
+
+    let inside = |point: (f64, f64)| {
+        point.0 >= left - 0.001
+            && point.0 <= right + 0.001
+            && point.1 >= top - 0.001
+            && point.1 <= bottom + 0.001
+    };
+    let total_wire_length_mm: f64 = facts
+        .wires
+        .iter()
+        .filter(|wire| inside(wire.start_mm) && inside(wire.end_mm))
+        .map(|wire| {
+            (wire.end_mm.0 - wire.start_mm.0).hypot(wire.end_mm.1 - wire.start_mm.1)
+        })
+        .sum();
+    let score = total_wire_length_mm / budget;
+    if score > 1.0 + 0.001 {
+        vec![Diagnostic::new(
+            "SCH016",
+            Severity::Warning,
+            format!(
+                "group {group_id} wire compactness score is {score:.3} ({total_wire_length_mm:.2}/{budget:.2} mm); maximum score is 1.000"
+            ),
+        )]
+    } else {
+        Vec::new()
+    }
 }
 
 fn validate_group_spacing(
@@ -1298,6 +1368,82 @@ mod tests {
                 .iter()
                 .any(|item| item.code == "SCH012" && item.message.contains("description text box"))
         );
+    }
+
+    #[test]
+    fn group_wire_compactness_uses_only_segments_wholly_inside_its_frame() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "wire-compactness-test.kicad_sch",
+            r#"(kicad_sch
+                (symbol (lib_id "Device:R") (uuid "r1-uuid") (at 4 5 0)
+                    (property "Reference" "R1" (at 4 6 0)))
+                (rectangle (start 0 0) (end 10 10) (uuid "frame-1"))
+                (wire (pts (xy 1 1) (xy 4 1)))
+                (wire (pts (xy 4 1) (xy 4 5)))
+                (wire (pts (xy -5 2) (xy 15 2)))
+                (text_box "Power input group" (uuid "description-1"))
+            )"#,
+        )
+        .expect("fixture parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"groups":{"power-input":{"members":["R1"],"description_uuid":"description-1","frame_uuid":"frame-1","wire_length_budget_mm":10.0,"evidence":{"document":"Power input design note","page":2,"figure":"Figure 1"}}}}"#,
+        )
+        .expect("profile parses");
+        let diagnostics = profile.validate(&schematic);
+        assert!(
+            !diagnostics.iter().any(|item| item.code == "SCH016"),
+            "the wire with endpoints outside the frame must not contribute: {diagnostics:#?}"
+        );
+    }
+
+    #[test]
+    fn group_wire_compactness_warns_when_normalized_budget_is_exceeded() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "wire-compactness-test.kicad_sch",
+            r#"(kicad_sch
+                (symbol (lib_id "Device:R") (uuid "r1-uuid") (at 4 5 0)
+                    (property "Reference" "R1" (at 4 6 0)))
+                (rectangle (start 0 0) (end 10 10) (uuid "frame-1"))
+                (wire (pts (xy 1 1) (xy 4 1)))
+                (wire (pts (xy 4 1) (xy 4 5)))
+                (wire (pts (xy 1 6) (xy 6 6)))
+                (text_box "Power input group" (uuid "description-1"))
+            )"#,
+        )
+        .expect("fixture parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"groups":{"power-input":{"members":["R1"],"description_uuid":"description-1","frame_uuid":"frame-1","wire_length_budget_mm":10.0,"evidence":{"document":"Power input design note","page":2,"figure":"Figure 1"}}}}"#,
+        )
+        .expect("profile parses");
+        let diagnostics = profile.validate(&schematic);
+        let compactness = diagnostics
+            .iter()
+            .find(|item| item.code == "SCH016")
+            .expect("over-budget compactness warning");
+        assert_eq!(compactness.severity, Severity::Warning);
+        assert!(compactness.message.contains("score is 1.200"));
+        assert!(compactness.message.contains("12.00/10.00 mm"));
+    }
+
+    #[test]
+    fn group_wire_compactness_requires_a_frame_and_positive_budget() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "wire-compactness-test.kicad_sch",
+            r#"(kicad_sch
+                (symbol (lib_id "Device:R") (uuid "r1-uuid") (at 4 5 0)
+                    (property "Reference" "R1" (at 4 6 0)))
+                (text_box "Power input group" (uuid "description-1"))
+            )"#,
+        )
+        .expect("fixture parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"groups":{"missing-frame":{"members":["R1"],"description_uuid":"description-1","wire_length_budget_mm":10.0,"evidence":{"document":"Power input design note","page":2,"figure":"Figure 1"}},"invalid-budget":{"members":["R1"],"description_uuid":"description-1","frame_uuid":"not-present","wire_length_budget_mm":0.0,"evidence":{"document":"Power input design note","page":2,"figure":"Figure 1"}}}}"#,
+        )
+        .expect("profile parses");
+        let diagnostics = profile.validate(&schematic);
+        assert_eq!(diagnostics.iter().filter(|item| item.code == "SCH016").count(), 2);
+        assert!(diagnostics.iter().any(|item| item.message.contains("finite positive")));
+        assert!(diagnostics.iter().any(|item| item.message.contains("must set frame_uuid")));
     }
 
     #[test]
