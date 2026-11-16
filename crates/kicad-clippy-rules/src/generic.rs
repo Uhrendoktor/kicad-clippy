@@ -4,6 +4,8 @@ use kicad_clippy_core::{BuiltinRuleId, ByteSpan, Diagnostic, RelatedLocation, Sc
 use kicad_clippy_parser::SchematicDocument;
 use kiutils_sexpr::{Atom, Node};
 
+use crate::{RuleContext, RulePass};
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Point {
     x: f64,
@@ -806,6 +808,19 @@ pub struct RuleRun {
     pub wires: usize,
     /// Number of placed components inspected.
     pub components: usize,
+}
+
+/// Built-in pass for syntax-, geometry-, and label-oriented schematic checks.
+pub(crate) struct BuiltinSchematicPass;
+
+impl RulePass for BuiltinSchematicPass {
+    fn name(&self) -> &'static str {
+        "kicad-clippy.builtin-schematic"
+    }
+
+    fn run(&self, context: &RuleContext<'_>) -> Vec<Diagnostic> {
+        run_builtin_rules_with_facts(context.document(), context.facts()).diagnostics
+    }
 }
 
 /// Run reusable rules that do not require a project profile.
