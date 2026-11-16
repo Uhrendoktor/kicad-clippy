@@ -92,6 +92,21 @@ SCH014 checks logical net membership in KiCad's exported netlist. Some design re
 
 SCH004 resolves each `REF.PIN` against the embedded symbol definition and its placed transform, verifies that both pin anchors lie on wire segments, then checks that both pins belong to the same physical wire component. Wire segments are split at endpoints, pin coordinates, junctions and label anchors; only wire segments create connectivity edges. Matching local or hierarchical label names do not join separate islands. Labels anchored directly on a declared direct-wire pin are reported, and configured forbidden names are checked only on the physical wire components covered by those contracts.
 
+Common-pin groups can express the complementary case where several pins must carry one named net:
+
+    {
+      "common_pin_groups": [
+        {
+          "name": "VBUS",
+          "pins": ["J1.1", "U1.4", "R8.1"],
+          "wire_connected": true,
+          "single_label": true
+        }
+      ]
+    }
+
+For each pin, SCH004 requires a resolved embedded pin coordinate attached to a physical wire and a matching label on that pin's physical wire component. `wire_connected` additionally requires all listed pins to share one wire-only component. `single_label` requires exactly one matching label across the resolved components. Label names never create graph edges, so separately wired islands with matching labels do not satisfy a wire-connected group.
+
 This is an opt-in, pairwise contract. It does not automatically infer which pins should be directly connected, replace KiCad ERC, or yet provide the more general common-net/single-label group contract from the historical checker. Unsupported embedded pin transforms and pins that cannot be resolved are reported as unresolved instead of being guessed.
 
 ## Component role vocabulary
