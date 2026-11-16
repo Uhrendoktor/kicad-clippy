@@ -273,14 +273,15 @@ fn head(node: &Node) -> Option<&str> {
     Some(value)
 }
 
-fn children<'a>(node: &'a Node, name: &'a str) -> impl Iterator<Item = &'a Node> + 'a {
+fn children<'a>(node: &'a Node, name: &str) -> impl Iterator<Item = &'a Node> + 'a {
+    let name = name.to_owned();
     list_items(node)
         .into_iter()
         .flatten()
-        .filter(move |child| head(child) == Some(name))
+        .filter(move |child| head(child) == Some(name.as_str()))
 }
 
-fn child_list<'a>(node: &'a Node, name: &'a str) -> Option<&'a Node> {
+fn child_list<'a>(node: &'a Node, name: &str) -> Option<&'a Node> {
     children(node, name).next()
 }
 
