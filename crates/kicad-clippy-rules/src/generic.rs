@@ -888,8 +888,7 @@ fn check_label_text_collisions(root: &Node, source: &str) -> Vec<Diagnostic> {
 }
 
 fn property_is_hidden(property: &Node) -> bool {
-    child_list(property, "effects")
-        .is_some_and(|effects| child_list(effects, "hide").is_some())
+    child_list(property, "effects").is_some_and(|effects| child_list(effects, "hide").is_some())
 }
 
 fn text_box_bounds(node: &Node, source: &str) -> Option<Bounds> {
@@ -1237,7 +1236,12 @@ mod tests {
         let doc = document(
             r#"(label "FIRST" (at 5 5 0) (effects (font (size 1 1)))) (global_label "SECOND" (shape input) (at 5 5 0) (effects (font (size 1 1))))"#,
         );
-        assert!(run_builtin_rules(&doc).diagnostics.iter().any(|item| item.code == "SCH018"));
+        assert!(
+            run_builtin_rules(&doc)
+                .diagnostics
+                .iter()
+                .any(|item| item.code == "SCH018")
+        );
     }
 
     #[test]
@@ -1245,9 +1249,12 @@ mod tests {
         let doc = document(
             r#"(symbol (lib_id "Device:R") (at 1 1 0) (property "Reference" "R1" (at 5 5 0) (effects (font (size 1 1))))) (label "NET" (at 5 5 0) (effects (font (size 1 1))))"#,
         );
-        assert!(run_builtin_rules(&doc).diagnostics.iter().any(|item| {
-            item.code == "SCH018" && item.message.contains("symbol field")
-        }));
+        assert!(
+            run_builtin_rules(&doc)
+                .diagnostics
+                .iter()
+                .any(|item| { item.code == "SCH018" && item.message.contains("symbol field") })
+        );
     }
 
     #[test]
@@ -1255,9 +1262,11 @@ mod tests {
         let doc = document(
             r#"(text_box "Note" (at 4 4 0) (size 4 3) (margins 1.27 1.27 1.27 1.27) (stroke (width 0.1)) (effects (font (size 1 1)))) (label "NET" (at 5 5 0) (effects (font (size 1 1))))"#,
         );
-        assert!(run_builtin_rules(&doc).diagnostics.iter().any(|item| {
-            item.code == "SCH018" && item.message.contains("annotation text box")
-        }));
+        assert!(
+            run_builtin_rules(&doc).diagnostics.iter().any(|item| {
+                item.code == "SCH018" && item.message.contains("annotation text box")
+            })
+        );
     }
 
     #[test]
