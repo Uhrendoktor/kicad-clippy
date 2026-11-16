@@ -579,7 +579,9 @@ pub fn run_builtin_rules(document: &SchematicDocument) -> RuleRun {
     diagnostics.extend(check_text_box_layout(root, source, &segments));
     diagnostics.extend(check_block_annotation_structure(root, source));
     diagnostics.extend(check_label_text_collisions(root, source));
-    diagnostics.extend(check_symbol_field_clearance(root, source, &segments, &facts));
+    diagnostics.extend(check_symbol_field_clearance(
+        root, source, &segments, &facts,
+    ));
     diagnostics.extend(check_label_kind_consistency(root, source));
 
     RuleRun {
@@ -2051,8 +2053,7 @@ fn check_symbol_field_clearance(
     let label_bounds: Vec<_> = collect_label_nodes(root, source)
         .into_iter()
         .filter_map(|(kind, name, _point, _span, node)| {
-            text_visual_bounds(&name, node, source)
-                .map(|bounds| (kind, name, bounds))
+            text_visual_bounds(&name, node, source).map(|bounds| (kind, name, bounds))
         })
         .collect();
     let text_boxes: Vec<_> = children(root, "text_box")
@@ -2081,7 +2082,10 @@ fn check_symbol_field_clearance(
             };
             diagnostics.push(at_span(
                 "SCH010",
-                format!("{field_label} overlaps {description} {}", primitive.reference),
+                format!(
+                    "{field_label} overlaps {description} {}",
+                    primitive.reference
+                ),
                 *span,
             ));
         }
@@ -2103,7 +2107,10 @@ fn check_symbol_field_clearance(
             if point_in_bounds(point, *bounds) {
                 diagnostics.push(at_span(
                     "SCH010",
-                    format!("{field_label} overlaps pin {}.{}", pin.reference, pin.number),
+                    format!(
+                        "{field_label} overlaps pin {}.{}",
+                        pin.reference, pin.number
+                    ),
                     *span,
                 ));
             }
@@ -2168,8 +2175,12 @@ fn point_in_bounds(point: Point, bounds: Bounds) -> bool {
 }
 
 fn point_bounds_distance(point: Point, bounds: Bounds) -> f64 {
-    let dx = (bounds.x - point.x).max(0.0).max(point.x - (bounds.x + bounds.width));
-    let dy = (bounds.y - point.y).max(0.0).max(point.y - (bounds.y + bounds.height));
+    let dx = (bounds.x - point.x)
+        .max(0.0)
+        .max(point.x - (bounds.x + bounds.width));
+    let dy = (bounds.y - point.y)
+        .max(0.0)
+        .max(point.y - (bounds.y + bounds.height));
     dx.hypot(dy)
 }
 
@@ -2215,10 +2226,7 @@ fn primitive_edges(primitive: &SchematicPrimitiveFact) -> Vec<Segment> {
     edges
 }
 
-fn symbol_primitive_intersects_bounds(
-    bounds: Bounds,
-    primitive: &SchematicPrimitiveFact,
-) -> bool {
+fn symbol_primitive_intersects_bounds(bounds: Bounds, primitive: &SchematicPrimitiveFact) -> bool {
     if let Some((center_x, center_y, radius)) = primitive.circle_mm {
         let center = Point {
             x: center_x,
@@ -2248,10 +2256,7 @@ fn symbol_primitive_intersects_bounds(
         .any(|edge| segment_intersects_bounds(edge, bounds))
 }
 
-fn symbol_primitive_contains_bounds(
-    bounds: Bounds,
-    primitive: &SchematicPrimitiveFact,
-) -> bool {
+fn symbol_primitive_contains_bounds(bounds: Bounds, primitive: &SchematicPrimitiveFact) -> bool {
     if let Some((center_x, center_y, radius)) = primitive.circle_mm {
         let inner_radius = radius - primitive.stroke_width_mm / 2.0;
         if inner_radius <= 0.0 {
@@ -2980,7 +2985,8 @@ mod tests {
         assert!(
             diagnostics
                 .iter()
-                .any(|item| item.code == "SCH010" && item.message.contains("overlaps a wire segment"))
+                .any(|item| item.code == "SCH010"
+                    && item.message.contains("overlaps a wire segment"))
         );
         assert!(
             diagnostics
