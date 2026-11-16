@@ -457,8 +457,7 @@ fn validate_common_pin_group(
     if let Some(invalid) = common_pin_group_configuration_error(group) {
         return vec![invalid];
     }
-    let (roots, mut diagnostics) =
-        resolve_common_pin_group_components(group, facts, component_ids);
+    let (roots, mut diagnostics) = resolve_common_pin_group_components(group, facts, component_ids);
     if group.wire_connected && roots.len() > 1 {
         diagnostics.push(Diagnostic::new(
             "SCH004",
@@ -485,9 +484,7 @@ fn validate_common_pin_group(
     diagnostics
 }
 
-fn common_pin_group_configuration_error(
-    group: &CommonPinNetGroup,
-) -> Option<Diagnostic> {
+fn common_pin_group_configuration_error(group: &CommonPinNetGroup) -> Option<Diagnostic> {
     let group_name = group.name.trim();
     let unique_pins: BTreeSet<_> = group.pins.iter().collect();
     let message = if group_name.is_empty() {
@@ -596,7 +593,6 @@ fn common_pin_group_label_count(
         })
         .count()
 }
-
 
 fn component_has_label(
     component: usize,
@@ -1645,7 +1641,8 @@ mod tests {
             profile
                 .validate(&schematic)
                 .iter()
-                .any(|item| item.code == "SCH004" && item.message.contains("must share one physical"))
+                .any(|item| item.code == "SCH004"
+                    && item.message.contains("must share one physical"))
         );
     }
 
@@ -1672,17 +1669,27 @@ mod tests {
 
     #[test]
     fn common_pin_group_requires_a_label_on_each_physical_pin_network() {
-        let schematic = direct_wire_schematic(
-            r#"(wire (pts (xy 10 10) (xy 20 10)))"#,
-        );
+        let schematic = direct_wire_schematic(r#"(wire (pts (xy 10 10) (xy 20 10)))"#);
         let profile: LintProfile = serde_json::from_str(
             r#"{"schema_version":1,"common_pin_groups":[{"name":"SENSE","pins":["U1.1","R1.1"]}]}"#,
         )
         .expect("profile parses");
         let diagnostics = profile.validate(&schematic);
-        assert_eq!(diagnostics.iter().filter(|item| item.code == "SCH004").count(), 2);
-        assert!(diagnostics.iter().any(|item| item.message.contains("U1.1 must belong to common net SENSE")));
-        assert!(diagnostics.iter().any(|item| item.message.contains("R1.1 must belong to common net SENSE")));
+        assert_eq!(
+            diagnostics
+                .iter()
+                .filter(|item| item.code == "SCH004")
+                .count(),
+            2
+        );
+        assert!(diagnostics.iter().any(|item| {
+            item.message
+                .contains("U1.1 must belong to common net SENSE")
+        }));
+        assert!(diagnostics.iter().any(|item| {
+            item.message
+                .contains("R1.1 must belong to common net SENSE")
+        }));
     }
 
     #[test]
