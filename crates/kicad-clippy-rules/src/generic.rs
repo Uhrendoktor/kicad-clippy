@@ -83,14 +83,12 @@ impl SchematicFacts {
                         .and_then(list_items)
                         .and_then(|items| items.get(1))
                         .and_then(|item| atom_value(item, document.source().text()));
-                    let position_mm = child_list(node, "at")
-                        .and_then(list_items)
-                        .and_then(|at| {
-                            Some((
-                                number(at.get(1)?, document.source().text())?,
-                                number(at.get(2)?, document.source().text())?,
-                            ))
-                        });
+                    let position_mm = child_list(node, "at").and_then(list_items).and_then(|at| {
+                        Some((
+                            number(at.get(1)?, document.source().text())?,
+                            number(at.get(2)?, document.source().text())?,
+                        ))
+                    });
                     facts.components.push(ComponentFact {
                         reference,
                         uuid,
