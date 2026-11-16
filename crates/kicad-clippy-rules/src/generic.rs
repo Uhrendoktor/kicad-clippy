@@ -673,11 +673,7 @@ fn sample_arc_through_three_points(
     let center_x = circle.center.x;
     let center_y = circle.center.y;
     let radius = circle.radius.abs();
-    if !center_x.is_finite()
-        || !center_y.is_finite()
-        || !radius.is_finite()
-        || radius <= 1.0e-9
-    {
+    if !center_x.is_finite() || !center_y.is_finite() || !radius.is_finite() || radius <= 1.0e-9 {
         return vec![start, mid, end];
     }
 
@@ -2706,8 +2702,7 @@ mod tests {
         assert_eq!(lower.last(), Some(&(2.0, 0.0)));
         assert!(lower.iter().any(|point| point.1 < -1.9));
 
-        let collinear =
-            super::sample_arc_through_three_points((0.0, 0.0), (1.0, 0.0), (2.0, 0.0));
+        let collinear = super::sample_arc_through_three_points((0.0, 0.0), (1.0, 0.0), (2.0, 0.0));
         assert_eq!(collinear, [(0.0, 0.0), (1.0, 0.0), (2.0, 0.0)]);
     }
 
