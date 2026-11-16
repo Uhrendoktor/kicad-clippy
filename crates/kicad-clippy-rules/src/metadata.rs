@@ -2290,12 +2290,12 @@ mod tests {
             r#"{"schema_version":1,"groups":{"power-input":{"members":["R1"],"description_uuid":"description-1","frame_uuid":"frame-1","minimum_frame_clearance_mm":1.0,"evidence":{"document":"Power input design note","page":2,"figure":"Figure 1"}}}}"#,
         )
         .expect("profile parses");
-        assert!(
-            profile.validate(&schematic).iter().any(|item| {
-                item.code == "SCH012"
-                    && item.message.contains("member field R1 Value does not maintain")
-            })
-        );
+        assert!(profile.validate(&schematic).iter().any(|item| {
+            item.code == "SCH012"
+                && item
+                    .message
+                    .contains("member field R1 Value does not maintain")
+        }));
     }
 
     #[test]
