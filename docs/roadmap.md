@@ -5,9 +5,9 @@ This page separates implemented functionality from the remaining migration work.
 ## Implemented foundation
 
 - Four-crate Rust workspace with a strict inherited lint policy and locked dependencies.
-- Lossless KiCad S-expression parser integration, UTF-8 byte spans, and line/column mapping.
+- Lossless KiCad S-expression parser integration, UTF-8 byte spans, and terminal line/column rendering delegated to `miette`.
 - Shared diagnostic model with severity, source spans, and schematic coordinates.
-- Rule descriptor metadata, levels, deterministic registry, and a built-in rule runner.
+- Typed built-in rule IDs, rule descriptor metadata, deterministic registry, and a deterministic `RulePass` engine with shared immutable analysis facts.
 - KiCad CLI native ERC adapter, per-sheet JSON normalization, and flattened netlist export with component-pin-to-net lookup.
 - Text and JSON CLI output.
 - CI for formatting, strict Clippy, workspace tests, documentation tests, release build, and a native KiCad ERC/netlist smoke test.
@@ -19,7 +19,7 @@ The exact status and limitations for every rule are maintained in [rules.md](rul
 - Generic schematic rules: SCH001–SCH003, SCH005, SCH008, SCH010 (partial), SCH011, SCH015, SCH018, and SCH019.
 - Project-profile rules: SCH006, SCH007, SCH009, SCH012 (partial), SCH014, SCH016, SCH017, SCH020, SCH021, and SCH022.
 - SCH004 has partial profile-driven support for direct-wire pin pairs and common-pin groups with optional wire-only connectivity and single-label cardinality; automatic inference of all intended physical nets remains pending.
-- SCH013 has partial wire-obstacle coverage for embedded rectangles, polylines/polygons, circles, three-point circular arcs sampled to a target sagitta of 0.01 mm, and cubic Bézier curves adaptively subdivided to a target flatness of 0.01 mm (each curve capped at 4096 segments), plus visible Reference/Value fields, intermediate pins and annotation text boxes. All primitive intersections remain polyline/bounds approximations.
+- SCH013 has partial wire-obstacle coverage for embedded rectangles, polylines/polygons, circles, three-point circular arcs and cubic Bézier curves adaptively flattened through `kurbo` at a target tolerance of 0.01 mm, plus visible Reference/Value fields, intermediate pins and annotation text boxes. All primitive intersections remain polyline/bounds approximations.
 
 Some migrated rules intentionally implement only a subset of their historical requirements. In particular, current SCH009 checks member symbol origins, resolved pin coordinates, estimated visible field rectangles and the group description text-box bounds against a referenced rectangle; SCH010 checks visible-field overlap against embedded symbol outlines, wires, pins, labels and annotation boxes using estimated text bounds; SCH012 checks a configured inset for member origins, resolved pins, estimated property glyph bounds and the description text box; and SCH015 checks the placement of explicit no-connect markers. Symbol-body, label, wire and other annotation containment/clearance remain incomplete.
 
@@ -32,6 +32,13 @@ Version-1 JSON profiles currently support:
 - Minimum member-origin spacing, minimum frame inset, and a per-group wire-length budget measured as the sum of segments wholly within the referenced frame.
 
 The profile format is deliberately explicit; project-specific expectations are not imported from a schematic generator. A broader JSON Schema and a separate general rule-policy configuration are still planned.
+
+## Next: reduce remaining domain-specific extraction
+
+- Continue replacing complete generic algorithms with mature libraries only when the adoption removes more implementation/maintenance surface than the adapter adds.
+- Re-evaluate typed KiCad model crates only when they support in-memory parsing, source-span provenance, and the missing text-box/group/embedded-pin fact families. Avoid adding a second partial parser.
+- Profile remaining collision scans before introducing an R-tree; do not add spatial indexing without a measured hot path.
+- Keep the raw line/byte count honest: current substitutions have simplified algorithm ownership, but parser/CLI adapters and tests mean the measured four-file total has not yet decreased.
 
 ## Next: physical connectivity and symbol geometry
 
