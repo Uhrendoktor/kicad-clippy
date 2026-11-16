@@ -31,7 +31,7 @@ enum Commands {
         /// Output format.
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
-        /// Skip ERC (profile checks may still invoke KiCad to export a netlist).
+        /// Skip ERC (profile checks may still invoke `KiCad` to export a netlist).
         #[arg(long)]
         skip_erc: bool,
         /// Explicit path or command name for kicad-cli.
