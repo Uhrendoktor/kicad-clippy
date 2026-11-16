@@ -635,7 +635,7 @@ fn cubic_bezier_flatness(
     ))
 }
 
-fn midpoint_pair(first: (f64, f64), second: (f64, f64)) -> (f64, f64) {
+const fn midpoint_pair(first: (f64, f64), second: (f64, f64)) -> (f64, f64) {
     (
         f64::midpoint(first.0, second.0),
         f64::midpoint(first.1, second.1),
