@@ -71,7 +71,7 @@ Built-in IDs are represented in Rust by `BuiltinRuleId` (SCH001–SCH022). Conve
 The implementation delegates generic algorithms rather than maintaining parallel versions:
 
 - `geo` supplies planar intersection predicates, sweep-line wire intersection enumeration, point/segment distance, polygon containment and rectangle intersection. The rule layer still applies KiCad-specific tolerances, explicit-junction handling and pin exceptions.
-- `kurbo` supplies adaptive curve flattening for Bezier/arc paths and affine transforms for placed-symbol geometry. The parser and rules layer translate KiCad's local coordinate conventions into library types.
+- `kurbo` supplies adaptive curve flattening for cubic Bézier and circular-arc paths. The rules layer still interprets KiCad symbol transforms and converts local coordinates where those conventions are domain-specific.
 - `miette` supplies terminal diagnostic labels and source excerpts. `Diagnostic` remains the JSON-compatible project schema, and its adapter is confined to the CLI.
 
 Do not add a second source renderer or geometry kernel. Introduce spatial indexing only after profiling demonstrates a remaining candidate-scan bottleneck.
