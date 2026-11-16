@@ -24,16 +24,24 @@ Clippy's in-process compiler integration is not a suitable plugin ABI for this s
 
 ## Existing Rust libraries
 
-| Concern | Candidate | Fit and recommendation |
+| Concern | Library | Adopted use / decision |
 | --- | --- | --- |
-| Lossless S-expression parsing and source spans | Existing `kiutils_sexpr` | Already supplies a lossless CST with byte spans and round-trip validation. Keep it; replacing it with a generic CST would add grammar work without removing the current parser boundary. |
-| Diagnostic protocol and source snippets | [miette](https://docs.rs/miette/latest/miette/) | Strong candidate for terminal rendering, labeled source spans, help text and diagnostic codes. Keep the project's JSON `Diagnostic` as the stable interchange contract; adapt it to miette at the CLI boundary rather than making a rendering crate own the schema. |
-| File/span diagnostics | [codespan-reporting](https://docs.rs/codespan-reporting/latest/codespan_reporting/) | Good alternative when explicit multi-file source maps and byte-span labels are the central abstraction. Evaluate against miette before adding either; do not build two competing source registries. |
-| Planar geometry algorithms | [geo](https://docs.rs/geo/latest/geo/) | Provides reusable line, polygon, containment, distance and intersection algorithms. Evaluate for generic primitives and broad-phase geometry operations. It does not encode KiCad's junction-marker, wire-island, pin-anchor or schematic-unit semantics. |
-| Spatial candidate indexing | [rstar](https://docs.rs/rstar/latest/rstar/) | R*-tree with rectangle queries, nearest-neighbour and bulk loading. Strong candidate for avoiding repeated all-pairs scans in field/wire/primitive clearance checks. Use it only as a broad phase; retain exact rule-specific predicates after candidate retrieval. |
-| Robust predicates | [robust](https://docs.rs/robust/latest/robust/) | Candidate for orientation and segment predicates where floating-point degeneracies matter. Integrate only with explicit tolerance policy and regression fixtures. |
+| Lossless S-expression parsing and source spans | [`kiutils_sexpr`](https://docs.rs/kiutils_sexpr/0.1.1/) | Already supplies a lossless CST with byte spans and round-trip validation. Keep it; replacing it with a generic CST would add grammar work without removing the parser boundary. |
+| Diagnostic source snippets and terminal rendering | [`miette`](https://docs.rs/miette/7.6.0/miette/) | Adopted in the CLI for diagnostic codes, severity, source labels, source excerpts and help text. The JSON `Diagnostic` remains the stable interchange contract; the adapter stays at the CLI boundary. |
+| Alternative file/span diagnostics | [`codespan-reporting`](https://docs.rs/codespan-reporting/latest/codespan_reporting/) | Not added. `miette` already supplies the needed terminal rendering; maintaining two source-map/rendering systems would duplicate responsibilities. Reconsider only if multi-file editor/source-map requirements exceed miette's model. |
+| Planar geometry algorithms | [`geo`](https://docs.rs/geo/0.31.0/geo/) | Adopted for line intersections, Bentley–Ottmann sweep enumeration, point-to-segment distance, point-in-polygon, and rectangle/primitive predicates. Application code retains KiCad's millimetre tolerance policy, pin exemptions, explicit junction semantics and diagnostic wording. |
+| Curves and affine transforms | [`kurbo`](https://docs.rs/kurbo/0.13.1/kurbo/) | Adopted for adaptive Bézier/arc flattening and symbol-local affine transforms. KiCad's three-point arc interpretation remains an adapter that constructs a curve; curve subdivision and matrix math are delegated. |
+| Spatial candidate indexing | [`rstar`](https://docs.rs/rstar/0.12.2/rstar/) | Not directly adopted. Profile the remaining clearance scans first; add an R*-tree only where it measurably replaces repeated all-pairs candidate enumeration. It must remain a broad phase followed by exact rule-specific predicates. |
+| Robust predicates | [`robust`](https://docs.rs/robust/1.2.0/robust/) | Not added directly. The adopted geometry stack already has robust-predicate support in its dependency graph; a second numerical-geometry implementation would need an identified uncovered case. |
 
 The library choices above are candidates, not blanket replacements. In particular, geospatial defaults and epsilon rules must not silently change the project's millimetre coordinate model or KiCad's explicit-junction connectivity contract.
+
+
+## Substitution results and code-reduction rule
+
+The library substitutions are deliberately limited to generic algorithms. In the reviewed PR baseline, `generic.rs` was 3,523 lines / 115,651 bytes. After the `geo` and `kurbo` substitutions, the same module was 3,434 lines / 113,959 bytes: a net reduction of 89 lines and 1,692 bytes, including added regression coverage. `SourceFile` also dropped from roughly 4.9 KB to 2.8 KB by removing its duplicate line-start index; `miette` now computes display locations from the retained byte spans and shared source buffer.
+
+This is an initial measurable reduction, not a claim that the remaining rules are fully library-backed. Keep application-specific code when it encodes KiCad semantics; prefer a library when the code is a general-purpose algorithm (curve flattening, affine transforms, polygon predicates, source rendering). Do not add dependencies solely to hide a short, stable KiCad-specific predicate.
 
 ## Target architecture
 
