@@ -31,6 +31,8 @@ KiCad native ERC remains the electrical authority. Rust rules must not duplicate
 
 SCH004 is an opt-in physical contract for profile-declared `direct_wire_pairs` and `common_pin_groups`. It verifies resolved pin anchors are attached to wire segments; direct pairs and groups with `wire_connected` must belong to the same wire-only component. Common-pin groups also require the expected label on each pin component and can require exactly one matching label; labels do not create graph edges. It does not infer all physical-net intent automatically or replace native ERC.
 
+SCH004’s physical graph follows SCH001’s explicit-junction contract: an endpoint touching the interior of another segment is not joined to that segment unless a junction marker is present. End-to-end wire segments remain connected without an additional junction marker.
+
 SCH005 intentionally checks only connected-wire axis alignment; KiCad native ERC remains responsible for electrical pin compatibility and unconnected-pin findings. Pin layouts that cannot be resolved from the embedded symbol definition or use non-cardinal symbol rotation are skipped rather than guessed.
 
 SCH015 checks only no-connect marker placement against embedded pin coordinates; it skips the rule if any placed symbol pin model is incomplete or unsupported. KiCad native ERC remains responsible for electrical unconnected-pin analysis.

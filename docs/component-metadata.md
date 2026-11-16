@@ -90,7 +90,7 @@ SCH014 checks logical net membership in KiCad's exported netlist. Some design re
       "forbidden_direct_wire_labels": ["FET_MID"]
     }
 
-SCH004 resolves each `REF.PIN` against the embedded symbol definition and its placed transform, verifies that both pin anchors lie on wire segments, then checks that both pins belong to the same physical wire component. Wire segments are split at endpoints, pin coordinates, junctions and label anchors; only wire segments create connectivity edges. Matching local or hierarchical label names do not join separate islands. Labels anchored directly on a declared direct-wire pin are reported, and configured forbidden names are checked only on the physical wire components covered by those contracts.
+SCH004 resolves each `REF.PIN` against the embedded symbol definition and its placed transform, verifies that both pin anchors lie on wire segments, then checks that both pins belong to the same physical wire component. Wire segments are split at endpoints, pin coordinates, explicit junctions and label anchors; only wire segments create connectivity edges. An endpoint that touches the interior of another wire does not join that wire unless an explicit junction marker is present, consistent with SCH001. Matching local or hierarchical label names do not join separate islands. Labels anchored directly on a declared direct-wire pin are reported, and configured forbidden names are checked only on the physical wire components covered by those contracts.
 
 Common-pin groups can express the complementary case where several pins must carry one named net:
 
