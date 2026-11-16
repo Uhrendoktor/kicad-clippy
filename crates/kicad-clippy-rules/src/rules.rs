@@ -148,7 +148,6 @@ impl RuleSink<'_, '_> {
         self.rule_label_kinds();
         self.rule_duplicate_uuids();
         self.rule_symbol_grid(None);
-        self.rule_title_block(None);
     }
 
     fn run_profile_rules(&mut self, profile: &DesignProfile) {
@@ -867,6 +866,7 @@ impl RuleSink<'_, '_> {
                 let symbol = self.model.symbol(&item.reference)?;
                 let return_number = item.return_pin.as_deref()?;
                 let return_pin = self.model.pin(&item.reference, return_number)?;
+                if !self.model.is_wire_attached(return_pin.point) { return None; }
                 let return_root = network.root_for(return_pin.point)?;
                 return_nets.insert(item.return_net.clone().unwrap_or_default());
                 returns.push((item, return_pin.point, return_root));
@@ -928,6 +928,38 @@ impl RuleSink<'_, '_> {
                 self.emit("SCH023", Some(block), None, format!("title block field {field:?} is empty or missing"));
             }
         }
+    }
+}
+
+fn symbol_matches_kind(symbol: &crate::model::Symbol<'_>, kind: ComponentKind) -> bool {
+    let reference = symbol.reference.to_ascii_uppercase();
+    let library = symbol.lib_id.to_ascii_lowercase();
+    match kind {
+        ComponentKind::Capacitor => reference.starts_with('C') || library.contains(":c") || library.contains("capacitor"),
+        ComponentKind::Resistor => reference.starts_with('R') || library.contains(":r") || library.contains("resistor"),
+        ComponentKind::Diode => reference.starts_with('D') || library.contains("diode") || library.contains(":d"),
+        ComponentKind::Inductor => reference.starts_with('L') || library.contains("inductor") || library.contains("ferrite"),
+        ComponentKind::Transistor => reference.starts_with('Q') || reference.starts_with('T') || library.contains("transistor") || library.contains("mosfet"),
+        ComponentKind::IntegratedCircuit => reference.starts_with('U') || library.contains("interface:") || library.contains("driver:"),
+        ComponentKind::Connector => reference.starts_with('J') || library.contains("connector:") || library.contains("terminalblock:"),
+        ComponentKind::TestPoint => reference.starts_with("TP") || library.contains("testpoint"),
+        ComponentKind::Other => true,
+    }
+}
+
+fn role_matches_kind(kind: ComponentKind, role: ComponentRole) -> bool {
+    use ComponentKind as Kind;
+    use ComponentRole as Role;
+    match kind {
+        Kind::Capacitor => matches!(role, Role::Bulk | Role::Decoupling | Role::Bypass | Role::Filter | Role::Coupling | Role::Snubber | Role::Reservoir | Role::Other),
+        Kind::Resistor => matches!(role, Role::PullUp | Role::PullDown | Role::SeriesCurrentLimit | Role::Discharge | Role::GateBias | Role::Bleeder | Role::CurrentSense | Role::Snubber | Role::Other),
+        Kind::Diode => matches!(role, Role::Clamp | Role::EsdProtection | Role::Flyback | Role::Rectifier | Role::ReversePolarity | Role::Other),
+        Kind::Inductor => matches!(role, Role::Filter | Role::Snubber | Role::Other),
+        Kind::Transistor => matches!(role, Role::HighSideSwitch | Role::LowSideSwitch | Role::BackToBackSwitch | Role::GateBias | Role::Other),
+        Kind::IntegratedCircuit => matches!(role, Role::Interface | Role::Other),
+        Kind::Connector => matches!(role, Role::Interface | Role::TestAccess | Role::Other),
+        Kind::TestPoint => matches!(role, Role::TestAccess | Role::Other),
+        Kind::Other => true,
     }
 }
 
@@ -995,6 +1027,13 @@ impl WireNetwork {
 
     fn root_for(&self, point: Point) -> Option<usize> {
         self.roots.get(&point_key(point)).copied()
+    }
+
+    fn physically_connected(&self, model: &SchematicModel<'_>, first: Point, second: Point) -> bool {
+        model.is_wire_attached(first)
+            && model.is_wire_attached(second)
+            && self.root_for(first).is_some()
+            && self.root_for(first) == self.root_for(second)
     }
 }
 
