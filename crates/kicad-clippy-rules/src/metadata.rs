@@ -1707,13 +1707,12 @@ mod tests {
             r#"{"schema_version":1,"direct_wire_pairs":[{"first":"U1.1","second":"R1.1"}]}"#,
         )
         .expect("profile parses");
-        assert!(
-            profile
-                .validate(&schematic)
-                .iter()
-                .any(|item| item.code == "SCH004"
-                    && item.message.contains("must share one physical wire-only network"))
-        );
+        assert!(profile.validate(&schematic).iter().any(|item| {
+            item.code == "SCH004"
+                && item
+                    .message
+                    .contains("must share one physical wire-only network")
+        }));
     }
 
     #[test]
