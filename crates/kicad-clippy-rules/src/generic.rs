@@ -2086,7 +2086,7 @@ fn wire_components(
             .filter(|point| point_on_segment(*point, segment))
             .filter(|point| {
                 is_endpoint(*point, *segment)
-                    || !has_unmarked_wire_endpoint(*point, *segment, segments, junctions)
+                    || !has_unmarked_wire_endpoint(*point, segments, junctions)
             })
             .collect();
         split.sort_by(|first, second| {
@@ -2139,13 +2139,10 @@ fn point_key(point: Point) -> String {
 
 fn has_unmarked_wire_endpoint(
     point: Point,
-    segment: Segment,
     segments: &[Segment],
     junctions: &[Point],
 ) -> bool {
-    let terminates_another_wire = segments
-        .iter()
-        .any(|other| !is_endpoint(point, *segment) && is_endpoint(point, *other));
+    let terminates_another_wire = segments.iter().any(|other| is_endpoint(point, *other));
     terminates_another_wire
         && !junctions
             .iter()
