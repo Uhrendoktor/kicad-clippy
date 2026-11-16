@@ -454,7 +454,7 @@ fn collect_instance_primitives(
         .collect()
 }
 
-fn selected_symbol_units<'a>(definition: &'a Node, unit: u32, convert: u32) -> Vec<&'a Node> {
+fn selected_symbol_units(definition: &Node, unit: u32, convert: u32) -> Vec<&Node> {
     let sub_symbols: Vec<_> = children(definition, "symbol").collect();
     if sub_symbols.is_empty() {
         return vec![definition];
@@ -1254,7 +1254,7 @@ fn instance_integer(instance: &Node, name: &str) -> Option<u32> {
         .and_then(|value| value.parse().ok())
 }
 
-fn embedded_symbol_pins<'a>(library_symbol: &'a Node, unit: u32, convert: u32) -> Vec<&'a Node> {
+fn embedded_symbol_pins(library_symbol: &Node, unit: u32, convert: u32) -> Vec<&Node> {
     let mut pin_nodes = Vec::new();
     for sub_symbol in children(library_symbol, "symbol") {
         let Some(name) = list_items(sub_symbol)
@@ -1762,7 +1762,7 @@ fn collect_nodes<'a>(root: &'a Node, name: &'a str) -> Vec<&'a Node> {
     children(root, name).collect()
 }
 
-fn collect_label_nodes<'a>(root: &'a Node) -> Vec<(String, String, Point, ByteSpan, &'a Node)> {
+fn collect_label_nodes(root: &Node) -> Vec<(String, String, Point, ByteSpan, &Node)> {
     let mut labels = Vec::new();
     for node in collect_nodes(root, "label")
         .into_iter()
@@ -2226,7 +2226,7 @@ fn check_symbol_field_clearance(
         })
         .collect();
     let text_boxes: Vec<_> = children(root, "text_box")
-        .filter_map(|node| text_box_bounds(node))
+        .filter_map(text_box_bounds)
         .collect();
     let mut diagnostics = Vec::new();
 
