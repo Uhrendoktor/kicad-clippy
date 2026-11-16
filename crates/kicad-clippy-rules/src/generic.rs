@@ -144,7 +144,7 @@ pub fn run_builtin_rules(document: &SchematicDocument) -> RuleRun {
                 .push((point, span));
             if !segments
                 .iter()
-                .any(|segment| point_on_segment(point, *segment))
+                .any(|segment| point_on_segment(point, segment))
             {
                 diagnostics.push(at_point(
                     "SCH002",
@@ -257,7 +257,7 @@ fn number(node: &Node, source: &str) -> Option<f64> {
     atom_value(node, source)?.parse().ok()
 }
 
-fn child_list<'a>(node: &'a Node, name: &str) -> Option<&'a Node> {
+fn child_list<'a>(node: &'a Node, name: &'a str) -> Option<&'a Node> {
     children(node, name).next()
 }
 
@@ -409,7 +409,7 @@ mod tests {
 
     #[test]
     fn diagonal_wires_are_reported() {
-        let doc = document(r#"(wire (pts (xy 0 0) (xy 2 2)))"#);
+        let doc = document(r"(wire (pts (xy 0 0) (xy 2 2)))");
         assert!(
             run_builtin_rules(&doc)
                 .diagnostics
