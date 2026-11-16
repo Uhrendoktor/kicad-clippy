@@ -80,7 +80,7 @@ source + CLI rule policy + optional project profile
 
 Built-in rules are a closed, compile-time set and should be referenced through `BuiltinRuleId`, not repeated string literals. Their string forms remain stable external codes for JSON, documentation and integrations. Native ERC codes and future third-party rule namespaces are open-ended external identifiers and should remain a separate representation.
 
-A built-in rule ID is not a plugin entry point. The first extensibility boundary should be an in-process, versioned rule interface over immutable shared facts and typed options. Third-party dynamic libraries or WASM rule packs should wait until the context API, configuration schema, diagnostic compatibility policy and resource limits are stable.
+A built-in rule ID is not a plugin entry point. An initial in-process RulePass API over immutable shared facts is now implemented; external Rust crates can register passes programmatically. Before treating it as a stable third-party contract, version the trait/context, formalize typed options and analysis dependencies, and define diagnostic compatibility policy. Third-party dynamic libraries or WASM rule packs should wait until those contracts and resource limits are stable.
 
 Configuration should use structured rule keys and typed per-rule option structs, with a small set of named presets. Unknown rule IDs, invalid option values, duplicate declarations and conflicting overrides should fail with actionable configuration errors rather than being silently ignored.
 
