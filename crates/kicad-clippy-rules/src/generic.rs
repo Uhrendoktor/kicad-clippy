@@ -658,28 +658,26 @@ fn sample_arc_through_three_points(
     mid: (f64, f64),
     end: (f64, f64),
 ) -> Vec<(f64, f64)> {
-    let determinant = 2.0
-        * end.0.mul_add(
-            start.1 - mid.1,
-            mid.0.mul_add(end.1 - start.1, start.0 * (mid.1 - end.1)),
-        );
-    if determinant.abs() <= 1.0e-9 {
+    let triangle = Triangle::new(
+        CurvePoint::new(start.0, start.1),
+        CurvePoint::new(mid.0, mid.1),
+        CurvePoint::new(end.0, end.1),
+    );
+    // Preserve the previous near-collinear fallback before asking Kurbo for
+    // the circumcircle; its circumcircle method assumes non-zero triangle area.
+    if triangle.area().abs() <= 2.5e-10 {
         return vec![start, mid, end];
     }
 
-    let start_squared = start.0.mul_add(start.0, start.1 * start.1);
-    let mid_squared = mid.0.mul_add(mid.0, mid.1 * mid.1);
-    let end_squared = end.0.mul_add(end.0, end.1 * end.1);
-    let center_x = end_squared.mul_add(
-        start.1 - mid.1,
-        mid_squared.mul_add(end.1 - start.1, start_squared * (mid.1 - end.1)),
-    ) / determinant;
-    let center_y = end_squared.mul_add(
-        mid.0 - start.0,
-        mid_squared.mul_add(start.0 - end.0, start_squared * (end.0 - mid.0)),
-    ) / determinant;
-    let radius = (start.0 - center_x).hypot(start.1 - center_y);
-    if !radius.is_finite() || radius <= 1.0e-9 {
+    let circle = triangle.circumscribed_circle();
+    let center_x = circle.center.x;
+    let center_y = circle.center.y;
+    let radius = circle.radius.abs();
+    if !center_x.is_finite()
+        || !center_y.is_finite()
+        || !radius.is_finite()
+        || radius <= 1.0e-9
+    {
         return vec![start, mid, end];
     }
 
@@ -2694,6 +2692,23 @@ mod tests {
             },
             bounds,
         ));
+    }
+
+    #[test]
+    fn kurbo_circumcircle_preserves_arc_direction_and_collinear_fallback() {
+        let upper = super::sample_arc_through_three_points((-2.0, 0.0), (0.0, 2.0), (2.0, 0.0));
+        assert_eq!(upper.first(), Some(&(-2.0, 0.0)));
+        assert_eq!(upper.last(), Some(&(2.0, 0.0)));
+        assert!(upper.iter().any(|point| point.1 > 1.9));
+
+        let lower = super::sample_arc_through_three_points((-2.0, 0.0), (0.0, -2.0), (2.0, 0.0));
+        assert_eq!(lower.first(), Some(&(-2.0, 0.0)));
+        assert_eq!(lower.last(), Some(&(2.0, 0.0)));
+        assert!(lower.iter().any(|point| point.1 < -1.9));
+
+        let collinear =
+            super::sample_arc_through_three_points((0.0, 0.0), (1.0, 0.0), (2.0, 0.0));
+        assert_eq!(collinear, [(0.0, 0.0), (1.0, 0.0), (2.0, 0.0)]);
     }
 
     #[test]
