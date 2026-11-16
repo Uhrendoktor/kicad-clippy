@@ -28,6 +28,8 @@ serde_json = "1.0"
 tempfile = "3.23"
 thiserror = "2.0"
 unescaper = "0.2.0"
+vector-text-core = "0.1.0"
+vector-text-newstroke = "0.1.1"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
