@@ -28,6 +28,18 @@ struct Bounds {
 #[derive(Clone, Debug)]
 pub struct ComponentFact {
     pub reference: String,
+    /// UUID of the placed schematic symbol instance.
+    pub uuid: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct SchematicGroupFact {
+    /// Name shown by the native KiCad group.
+    pub name: String,
+    /// Stable UUID from the group's id field.
+    pub uuid: String,
+    /// UUIDs of schematic objects that belong to the group.
+    pub member_uuids: BTreeSet<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -44,6 +56,8 @@ pub struct SchematicFacts {
     pub components: Vec<ComponentFact>,
     /// Text boxes used for group documentation.
     pub text_boxes: Vec<TextBoxFact>,
+    /// Native KiCad schematic groups.
+    pub groups: Vec<SchematicGroupFact>,
 }
 
 impl SchematicFacts {
@@ -63,9 +77,43 @@ impl SchematicFacts {
             });
             if let Some(reference) = reference {
                 if !reference.starts_with('#') && !reference.is_empty() {
-                    facts.components.push(ComponentFact { reference });
+                    let uuid = child_list(node, "uuid")
+                        .and_then(list_items)
+                        .and_then(|items| items.get(1))
+                        .and_then(|item| atom_value(item, document.source().text()));
+                    facts.components.push(ComponentFact { reference, uuid });
                 }
             }
+        }
+        for node in children(root, "group") {
+            let Some(items) = list_items(node) else {
+                continue;
+            };
+            let Some(name) = items
+                .get(1)
+                .and_then(|item| atom_value(item, document.source().text()))
+            else {
+                continue;
+            };
+            let Some(uuid) = child_list(node, "id")
+                .and_then(list_items)
+                .and_then(|items| items.get(1))
+                .and_then(|item| atom_value(item, document.source().text()))
+            else {
+                continue;
+            };
+            let member_uuids = child_list(node, "members")
+                .and_then(list_items)
+                .into_iter()
+                .flatten()
+                .skip(1)
+                .filter_map(|item| atom_value(item, document.source().text()))
+                .collect();
+            facts.groups.push(SchematicGroupFact {
+                name,
+                uuid,
+                member_uuids,
+            });
         }
         for node in children(root, "text_box") {
             let Some(items) = list_items(node) else {

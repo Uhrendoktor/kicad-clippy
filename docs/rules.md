@@ -10,7 +10,7 @@ The historical checker defines stable IDs SCH001–SCH020. The Rust migration pr
 | SCH004 | Physical net connectivity | Pending exported-netlist and physical wire-graph integration |
 | SCH005 | Pin orientation | Implemented: checks connected wire axes against embedded pin geometry for selected unit/convert, right-angle rotation, and X/Y mirroring |
 | SCH006 | Component spacing | Pending profile-driven spacing limits |
-| SCH007 | Group metadata | Pending profile-driven group extraction |
+| SCH007 | Group metadata | Implemented when profiles provide `kicad_group_uuid`: resolves native KiCad group and verifies placed-symbol membership against declared component references |
 | SCH008 | Annotation text-box geometry | Implemented: required geometry/font/margins, sizing, overlap and wire penetration |
 | SCH009 | Group containment | Pending symbol/pin/field/frame geometry |
 | SCH010 | Symbol field clearance | Pending actual embedded symbol primitives and text glyph geometry |

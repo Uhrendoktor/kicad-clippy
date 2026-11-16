@@ -124,6 +124,9 @@ pub struct GroupIntent {
     pub documentation_members: Vec<String>,
     /// UUID of the text box containing the rendered group description.
     pub description_uuid: String,
+    /// Optional UUID of the native KiCad group whose component membership is enforced.
+    #[serde(default)]
+    pub kicad_group_uuid: Option<String>,
     /// Component-specific function and rationale phrases.
     #[serde(default)]
     pub component_purposes: BTreeMap<String, ComponentPurpose>,
@@ -245,6 +248,7 @@ fn validate_group(
 ) -> Vec<Diagnostic> {
     let mut diagnostics = validate_group_evidence(group_id, group);
     diagnostics.extend(validate_group_members(group_id, group, references));
+    diagnostics.extend(validate_kicad_group_membership(group_id, group, facts));
     let description = facts
         .text_boxes
         .iter()
@@ -266,6 +270,75 @@ fn validate_group(
         group,
         description,
     ));
+    diagnostics
+}
+
+fn validate_kicad_group_membership(
+    group_id: &str,
+    group: &GroupIntent,
+    facts: &SchematicFacts,
+) -> Vec<Diagnostic> {
+    let Some(expected_uuid) = group.kicad_group_uuid.as_deref() else {
+        return Vec::new();
+    };
+    let Some(native_group) = facts.groups.iter().find(|item| item.uuid == expected_uuid) else {
+        return vec![Diagnostic::new(
+            "SCH007",
+            Severity::Error,
+            format!(
+                "profile group {group_id} references missing KiCad group UUID {expected_uuid}"
+            ),
+        )];
+    };
+
+    let mut diagnostics = Vec::new();
+    for reference in &group.members {
+        let Some(component) = facts
+            .components
+            .iter()
+            .find(|component| component.reference == *reference)
+        else {
+            continue;
+        };
+        let Some(uuid) = component.uuid.as_deref() else {
+            diagnostics.push(Diagnostic::new(
+                "SCH007",
+                Severity::Error,
+                format!(
+                    "group {group_id} member {reference} has no placed-symbol UUID for native group membership validation"
+                ),
+            ));
+            continue;
+        };
+        if !native_group.member_uuids.contains(uuid) {
+            diagnostics.push(Diagnostic::new(
+                "SCH007",
+                Severity::Error,
+                format!(
+                    "group {group_id} includes {reference} in its profile but native KiCad group {} does not contain symbol UUID {uuid}",
+                    native_group.name
+                ),
+            ));
+        }
+    }
+
+    for component in &facts.components {
+        let Some(uuid) = component.uuid.as_deref() else {
+            continue;
+        };
+        if native_group.member_uuids.contains(uuid)
+            && !group.members.contains(&component.reference)
+        {
+            diagnostics.push(Diagnostic::new(
+                "SCH007",
+                Severity::Error,
+                format!(
+                    "native KiCad group {} contains component {} which is not listed in profile group {group_id}",
+                    native_group.name, component.reference
+                ),
+            ));
+        }
+    }
     diagnostics
 }
 
@@ -794,6 +867,77 @@ mod tests {
                 .validate(&schematic)
                 .iter()
                 .any(|item| item.code == "SCH021" && item.message.contains("signal"))
+        );
+    }
+
+    #[test]
+    fn profile_group_can_be_bound_to_native_kicad_group_membership() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "native-group-test.kicad_sch",
+            r#"(kicad_sch
+                (symbol (lib_id "Device:R") (uuid "r1-uuid")
+                    (property "Reference" "R1" (at 1 1 0)))
+                (group "power-input" (id "group-uuid") (members "r1-uuid"))
+                (text_box "R1 input resistor" (uuid "description-1"))
+            )"#,
+        )
+        .expect("fixture parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"groups":{"power-input":{"members":["R1"],"documentation_members":["R1"],"description_uuid":"description-1","kicad_group_uuid":"group-uuid","component_purposes":{"R1":{"function":"Input resistor","rationale":"Limit connector surge current"}},"evidence":{"document":"Power input design note","page":2,"figure":"Figure 1"}}}}"#,
+        )
+        .expect("profile parses");
+        assert!(
+            !profile
+                .validate(&schematic)
+                .iter()
+                .any(|item| item.code == "SCH007")
+        );
+    }
+
+    #[test]
+    fn native_kicad_group_must_include_profile_component_members() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "native-group-test.kicad_sch",
+            r#"(kicad_sch
+                (symbol (lib_id "Device:R") (uuid "r1-uuid")
+                    (property "Reference" "R1" (at 1 1 0)))
+                (group "power-input" (id "group-uuid") (members "other-uuid"))
+                (text_box "R1 input resistor" (uuid "description-1"))
+            )"#,
+        )
+        .expect("fixture parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"groups":{"power-input":{"members":["R1"],"documentation_members":["R1"],"description_uuid":"description-1","kicad_group_uuid":"group-uuid","component_purposes":{"R1":{"function":"Input resistor","rationale":"Limit connector surge current"}},"evidence":{"document":"Power input design note","page":2,"figure":"Figure 1"}}}}"#,
+        )
+        .expect("profile parses");
+        assert!(
+            profile
+                .validate(&schematic)
+                .iter()
+                .any(|item| item.code == "SCH007" && item.message.contains("does not contain symbol UUID"))
+        );
+    }
+
+    #[test]
+    fn missing_native_kicad_group_uuid_is_reported() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "native-group-test.kicad_sch",
+            r#"(kicad_sch
+                (symbol (lib_id "Device:R") (uuid "r1-uuid")
+                    (property "Reference" "R1" (at 1 1 0)))
+                (text_box "R1 input resistor" (uuid "description-1"))
+            )"#,
+        )
+        .expect("fixture parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"groups":{"power-input":{"members":["R1"],"documentation_members":["R1"],"description_uuid":"description-1","kicad_group_uuid":"missing-group","component_purposes":{"R1":{"function":"Input resistor","rationale":"Limit connector surge current"}},"evidence":{"document":"Power input design note","page":2,"figure":"Figure 1"}}}}"#,
+        )
+        .expect("profile parses");
+        assert!(
+            profile
+                .validate(&schematic)
+                .iter()
+                .any(|item| item.code == "SCH007" && item.message.contains("missing KiCad group UUID"))
         );
     }
 
