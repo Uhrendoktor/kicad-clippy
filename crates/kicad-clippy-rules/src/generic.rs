@@ -111,24 +111,33 @@ fn check_wire_geometry(segments: &[Segment], junctions: &[Point]) -> Vec<Diagnos
                         "wire crossing is ambiguous; split the net or reroute",
                         *segment,
                     );
-                    diagnostic.schematic_location =
-                        Some(SchematicLocation { x_mm: point.x, y_mm: point.y });
+                    diagnostic.schematic_location = Some(SchematicLocation {
+                        x_mm: point.x,
+                        y_mm: point.y,
+                    });
                     diagnostic.related.push(RelatedLocation {
                         description: "intersecting wire".to_owned(),
                         uuid: None,
-                        location: Some(SchematicLocation { x_mm: point.x, y_mm: point.y }),
+                        location: Some(SchematicLocation {
+                            x_mm: point.x,
+                            y_mm: point.y,
+                        }),
                     });
                     diagnostics.push(diagnostic);
                 } else if first_end != second_end
-                    && !junctions.iter().any(|junction| distance(*junction, point) < 0.001)
+                    && !junctions
+                        .iter()
+                        .any(|junction| distance(*junction, point) < 0.001)
                 {
                     let mut diagnostic = at_segment(
                         "SCH001",
                         "T-junction requires an explicit junction marker",
                         *segment,
                     );
-                    diagnostic.schematic_location =
-                        Some(SchematicLocation { x_mm: point.x, y_mm: point.y });
+                    diagnostic.schematic_location = Some(SchematicLocation {
+                        x_mm: point.x,
+                        y_mm: point.y,
+                    });
                     diagnostics.push(diagnostic);
                 }
             }
@@ -142,8 +151,14 @@ fn check_label_topology(root: &Node, source: &str, segments: &[Segment]) -> Vec<
     let mut local_labels: BTreeMap<String, Vec<(Point, ByteSpan)>> = BTreeMap::new();
     for (kind, label, point, span) in collect_labels(root, source) {
         if kind == "label" {
-            local_labels.entry(label.clone()).or_default().push((point, span));
-            if !segments.iter().any(|segment| point_on_segment(point, segment)) {
+            local_labels
+                .entry(label.clone())
+                .or_default()
+                .push((point, span));
+            if !segments
+                .iter()
+                .any(|segment| point_on_segment(point, segment))
+            {
                 diagnostics.push(at_point(
                     "SCH002",
                     format!("local label {label:?} is not attached to a wire"),
