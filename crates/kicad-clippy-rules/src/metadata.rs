@@ -183,7 +183,11 @@ impl LintProfile {
         let mut diagnostics = self.validate_profile_references(&references);
         for component in &facts.components {
             if let Some(intent) = self.components.get(&component.reference) {
-                diagnostics.extend(validate_component_intent(&component.reference, intent, netlist));
+                diagnostics.extend(validate_component_intent(
+                    &component.reference,
+                    intent,
+                    netlist,
+                ));
             } else if self.mode == ProfileMode::Strict
                 && !self.ignore_components.contains(&component.reference)
             {
@@ -800,14 +804,18 @@ mod tests {
             r#"{"schema_version":1,"components":{"C1":{"kind":"capacitor","role":"decoupling","function":"Local bypass","rationale":"Minimize loop area","decoupling":{"target_pin":"U1.21","target_terminal":"1","return_terminal":"2","return_net":"GND","cluster":"U1.VREG_1V2"}}}}"#,
         )
         .expect("profile parses");
-        assert!(!profile
-            .validate_with_netlist(&schematic, Some(&decoupling_netlist("VREG_1V2")))
-            .iter()
-            .any(|item| item.code == "SCH022"));
-        assert!(profile
-            .validate_with_netlist(&schematic, Some(&decoupling_netlist("VBUS")))
-            .iter()
-            .any(|item| item.code == "SCH022"));
+        assert!(
+            !profile
+                .validate_with_netlist(&schematic, Some(&decoupling_netlist("VREG_1V2")))
+                .iter()
+                .any(|item| item.code == "SCH022")
+        );
+        assert!(
+            profile
+                .validate_with_netlist(&schematic, Some(&decoupling_netlist("VBUS")))
+                .iter()
+                .any(|item| item.code == "SCH022")
+        );
     }
 
     #[test]
