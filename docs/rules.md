@@ -13,7 +13,7 @@ The historical checker defines stable IDs SCH001–SCH020. The Rust migration pr
 | SCH007 | Group metadata | Implemented when profiles provide `kicad_group_uuid`: resolves native KiCad group and verifies placed-symbol membership against declared component references |
 | SCH008 | Annotation text-box geometry | Implemented: required geometry/font/margins, sizing, overlap and wire penetration |
 | SCH009 | Group containment | Implemented opt-in: checks that each profile group member's placed-symbol origin lies inside its referenced top-level KiCad rectangle; symbol/body/pin/field extents remain pending |
-| SCH010 | Symbol field clearance | Pending actual embedded symbol primitives and text glyph geometry |
+| SCH010 | Symbol field clearance | Implemented partial: detects overlaps between visible symbol fields and between fields and annotation boxes using estimated text bounds; symbol-body/primitive clearance remains pending |
 | SCH011 | Block annotation structure | Implemented: multiline text boxes require a visible border |
 | SCH012 | Frame content clearance | Pending |
 | SCH013 | Wire obstacle clearance | Pending embedded symbol primitive geometry |
@@ -32,5 +32,7 @@ KiCad native ERC remains the electrical authority. Rust rules must not duplicate
 SCH005 intentionally checks only connected-wire axis alignment; KiCad native ERC remains responsible for electrical pin compatibility and unconnected-pin findings. Pin layouts that cannot be resolved from the embedded symbol definition or use non-cardinal symbol rotation are skipped rather than guessed.
 
 SCH015 checks only no-connect marker placement against embedded pin coordinates; it skips the rule if any placed symbol pin model is incomplete or unsupported. KiCad native ERC remains responsible for electrical unconnected-pin analysis.
+
+SCH010 estimates visible symbol-field text bounds from the stored field position, font size, angle and justification. It detects field-to-field and field-to-annotation-box overlap; it does not yet check symbol-body primitives or guarantee exact font-renderer geometry.
 
 A rule ID is not considered ported merely because it appears in the catalogue. A rule becomes implemented only when it has positive and negative tests and a documented analysis model.
