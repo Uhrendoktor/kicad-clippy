@@ -1068,7 +1068,7 @@ fn geo_line(start: Point, end: Point) -> Line<f64> {
 }
 
 /// Returns all point endpoints of a segment intersection, including both ends
-/// of a collinear overlap. GeoRust owns the intersection classification and
+/// of a collinear overlap. `GeoRust` owns the intersection classification and
 /// construction; this adapter only converts to the schematic point type.
 fn segment_intersection_points(
     first: Segment,
@@ -2426,10 +2426,6 @@ fn point_in_bounds(point: Point, bounds: Bounds) -> bool {
 
 fn point_bounds_distance(point: Point, bounds: Bounds) -> f64 {
     Euclidean.distance(&GeoPoint::new(point.x, point.y), &geo_rect(bounds))
-}
-
-fn segment_intersects_bounds(segment: Segment, bounds: Bounds) -> bool {
-    geo_line(segment.start, segment.end).intersects(&geo_rect(bounds))
 }
 
 fn schematic_polygon(primitive: &SchematicPrimitiveFact) -> Option<Polygon<f64>> {
