@@ -20,7 +20,7 @@ The historical checker defines stable IDs SCH001–SCH020. The Rust migration pr
 | SCH014 | Shared pin/net contracts | Pending KiCad-exported netlist mapping |
 | SCH015 | Required no-connect markers | Pending transformed pin geometry |
 | SCH016 | Wire compactness | Pending profile group/frame geometry |
-| SCH017 | Circuit documentation | Group evidence pending; component rationale is enforced by SCH020 |
+| SCH017 | Circuit documentation | Implemented: group membership, description text-box UUID and document/page/figure or reviewed screenshot evidence |
 | SCH018 | Label text collision | Implemented: estimated glyph bounds against other labels, visible symbol fields and annotation boxes |
 | SCH019 | Label-kind consistency | Implemented |
 | SCH020 | Component function/rationale documentation | Implemented for metadata-declared components |
