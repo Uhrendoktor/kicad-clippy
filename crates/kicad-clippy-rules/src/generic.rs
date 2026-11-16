@@ -192,13 +192,16 @@ fn collect_invalid_wire_diagnostics(root: &Node) -> Vec<Diagnostic> {
 fn collinear_overlap(first: Segment, second: Segment) -> bool {
     let first_horizontal = (first.start.y - first.end.y).abs() < 0.001;
     let second_horizontal = (second.start.y - second.end.y).abs() < 0.001;
-    if first_horizontal != second_horizontal {
-        return false;
-    }
-    let overlap = if first_horizontal && (first.start.y - second.start.y).abs() < 0.001 {
+    let first_vertical = (first.start.x - first.end.x).abs() < 0.001;
+    let second_vertical = (second.start.x - second.end.x).abs() < 0.001;
+    let overlap = if first_horizontal && second_horizontal
+        && (first.start.y - second.start.y).abs() < 0.001
+    {
         first.start.x.max(first.end.x).min(second.start.x.max(second.end.x))
             - first.start.x.min(first.end.x).max(second.start.x.min(second.end.x))
-    } else if !first_horizontal && (first.start.x - second.start.x).abs() < 0.001 {
+    } else if first_vertical && second_vertical
+        && (first.start.x - second.start.x).abs() < 0.001
+    {
         first.start.y.max(first.end.y).min(second.start.y.max(second.end.y))
             - first.start.y.min(first.end.y).max(second.start.y.min(second.end.y))
     } else {
@@ -977,6 +980,14 @@ mod tests {
             r#"(label "ABC" (at 5 5 0) (effects (font (size 1 1)))) (wire (pts (xy 3 4.2) (xy 7 4.2)))"#,
         );
         assert!(run_builtin_rules(&doc).diagnostics.iter().any(|item| item.code == "SCH003"));
+    }
+
+    #[test]
+    fn undersized_text_box_is_rejected() {
+        let doc = document(
+            r#"(text_box "note" (at 1 1 0) (size 5 5) (margins 1.27 1.27 1.27 1.27) (stroke (width -1)) (effects (font (size 1 1))))"#,
+        );
+        assert!(run_builtin_rules(&doc).diagnostics.iter().any(|item| item.code == "SCH008"));
     }
 
     #[test]
