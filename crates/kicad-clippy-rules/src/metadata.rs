@@ -124,7 +124,7 @@ pub struct GroupIntent {
     pub documentation_members: Vec<String>,
     /// UUID of the text box containing the rendered group description.
     pub description_uuid: String,
-    /// Optional UUID of the native KiCad group whose component membership is enforced.
+    /// Optional UUID of the native `KiCad` group whose component membership is enforced.
     #[serde(default)]
     pub kicad_group_uuid: Option<String>,
     /// Component-specific function and rationale phrases.
