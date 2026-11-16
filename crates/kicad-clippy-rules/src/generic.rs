@@ -2810,12 +2810,19 @@ mod tests {
     }
 
     #[test]
-    fn quoted_atoms_use_parser_decoded_escape_sequences() {
-        let doc = document(r#"(label "first\nsecond" (at 1 1 0))"#);
+    fn quoted_atoms_unescape_kicad_sequences_and_preserve_literal_backslashes() {
+        let doc = document(
+            r#"
+            (label "first\nsecond" (at 1 1 0))
+            (label "literal\\nsequence" (at 2 1 0))
+            (label "quote: \"ok\"" (at 3 1 0))
+            "#,
+        );
         let root = doc.cst().nodes.first().expect("schematic root");
         let labels = super::collect_labels(root, doc.source().text());
-        assert_eq!(labels.len(), 1);
-        assert_eq!(labels[0].1, "first\nsecond");
+        let values: Vec<_> = labels.into_iter().map(|label| label.1).collect();
+
+        assert_eq!(values, ["first\nsecond", "literal\\nsequence", "quote: \"ok\""]);
     }
 
     #[test]
