@@ -63,7 +63,7 @@ A `Diagnostic` includes a stable code and severity, message, optional explanatio
 
 Built-in IDs are represented in Rust by `BuiltinRuleId` (SCH001–SCH022). Conversion to strings occurs at the diagnostic/serialization boundary, preserving the existing external JSON code. Open-ended native ERC identifiers remain strings because KiCad controls that namespace.
 
-`RuleDescriptor` is metadata, `RuleRegistry` rejects duplicate IDs, and neither is the implementation of a rule. The current built-in checks are executed by the rules crate. The next engine increment is to centralize the executable rule catalogue, typed options and phase dependencies rather than coupling a rule to a stringly-typed dispatcher.
+`RuleDescriptor` is metadata, `RuleRegistry` rejects duplicate IDs, and neither is the implementation of a rule. The rules crate now exposes a deterministic RuleEngine, an immutable RuleContext, and a RulePass extension trait. The engine collects SchematicFacts once, shares them with every registered pass, rejects duplicate pass names, and executes passes in stable name order. A pass can emit diagnostics for several rule IDs; a rule may be emitted by more than one pass. External Rust crates can implement RulePass and register it in-process. The CLI currently registers the built-in schematic pass; dynamic library and WASM loading are intentionally not part of this initial extension contract. The built-in checks are still grouped into one pass and should be split into syntax, geometry, connectivity and project-contract phases as those shared analysis boundaries stabilize.
 
 ## Analysis pipeline
 
