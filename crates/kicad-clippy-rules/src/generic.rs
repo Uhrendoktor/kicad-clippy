@@ -1397,9 +1397,9 @@ fn cardinal_rotation(angle: f64) -> Option<i32> {
         .find_map(|(degrees, rotation)| ((normalized - degrees).abs() <= 0.001).then_some(rotation))
 }
 
-/// Builds the common KiCad symbol-local to schematic-space linear transform.
+/// Builds the common `KiCad` symbol-local to schematic-space linear transform.
 ///
-/// KiCad's symbol coordinates use a Y-up library frame while schematic sheet
+/// `KiCad`'s symbol coordinates use a Y-up library frame while schematic sheet
 /// coordinates are Y-down. The mirrors and cardinal rotations are delegated
 /// to Kurbo's affine implementation instead of duplicated point/vector math.
 fn symbol_transform_affine(rotation: i32, mirror: Option<&str>) -> Option<Affine> {
