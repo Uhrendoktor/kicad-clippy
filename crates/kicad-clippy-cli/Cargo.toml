@@ -13,6 +13,7 @@ name = "kicad-clippy"
 path = "src/main.rs"
 
 [dependencies]
+miette.workspace = true
 clap = { workspace = true }
 kicad-clippy-core = { path = "../kicad-clippy-core" }
 kicad-clippy-erc = { path = "../kicad-clippy-erc" }
