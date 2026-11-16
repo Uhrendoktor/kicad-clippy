@@ -1,4 +1,7 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::OnceLock,
+};
 
 use geo::algorithm::line_intersection::line_intersection;
 use geo::{
@@ -16,6 +19,8 @@ use kurbo::{
     flatten as flatten_curve_path,
 };
 use petgraph::unionfind::UnionFind;
+use vector_text_core::{Point as VectorPoint, Renderer};
+use vector_text_newstroke::NewstrokeRenderer;
 
 use crate::{RuleContext, RulePass};
 
@@ -1797,7 +1802,7 @@ fn text_visual_bounds(value: &str, node: &Node) -> Option<Bounds> {
         .and_then(|font| font.get(1))
         .and_then(number)
         .unwrap_or(1.0);
-    let width = (value.chars().map(char_advance).sum::<f64>() * font_size * 1.12).max(font_size);
+    let width = (newstroke_text_advance_ratio(value) * font_size * 1.12).max(font_size);
     let height = font_size * 1.55;
     let x = number(at.get(1)?)?;
     let y = number(at.get(2)?)?;
@@ -1863,18 +1868,53 @@ fn text_visual_bounds(value: &str, node: &Node) -> Option<Bounds> {
     })
 }
 
-fn char_advance(character: char) -> f64 {
-    if "ilI.,:;!|'".contains(character) {
-        0.30
-    } else if "MW@%&".contains(character) {
-        0.90
-    } else if character.is_whitespace() {
-        0.34
-    } else if character.is_uppercase() || character.is_ascii_digit() {
-        0.64
-    } else {
-        0.55
+const NEWSTROKE_GLYPH_LIMIT: u32 = 0x27ff;
+const NEWSTROKE_MEASURE_GLYPH: &str = "H";
+
+fn newstroke_sentinel() -> &'static (Vec<VectorPoint>, f64) {
+    static SENTINEL: OnceLock<(Vec<VectorPoint>, f64)> = OnceLock::new();
+    SENTINEL.get_or_init(|| {
+        let points = NewstrokeRenderer::render_text(NEWSTROKE_MEASURE_GLYPH, ());
+        let min_y = points.iter().map(|point| point.y).min().unwrap_or(0);
+        let max_y = points.iter().map(|point| point.y).max().unwrap_or(0);
+        (points, f64::from(max_y - min_y))
+    })
+}
+
+/// Returns NewStroke's total glyph advance normalized by its measured cap height.
+///
+/// The upstream renderer exposes points rather than a text-measurement method.
+/// Appending a known glyph makes its translated start position equal to the
+/// preceding text's full advance, including spaces and trailing blank glyphs.
+fn newstroke_text_advance_ratio(value: &str) -> f64 {
+    let (sentinel, cap_height) = newstroke_sentinel();
+    let Some(sentinel_first) = sentinel.first() else {
+        return 0.0;
+    };
+    if *cap_height <= 0.0 {
+        return 0.0;
     }
+
+    // The upstream renderer indexes a fixed Unicode table. Filter out-of-range
+    // scalars before calling it; unsupported in-range characters are skipped by
+    // the renderer itself.
+    let mut measured = String::with_capacity(value.len() + NEWSTROKE_MEASURE_GLYPH.len());
+    measured.extend(
+        value
+            .chars()
+            .filter(|character| u32::from(*character) < NEWSTROKE_GLYPH_LIMIT),
+    );
+    measured.push_str(NEWSTROKE_MEASURE_GLYPH);
+
+    let rendered = NewstrokeRenderer::render_text(&measured, ());
+    let Some(sentinel_start) = rendered.len().checked_sub(sentinel.len()) else {
+        return 0.0;
+    };
+    let Some(rendered_sentinel_first) = rendered.get(sentinel_start) else {
+        return 0.0;
+    };
+    let advance_units = i32::from(rendered_sentinel_first.x) - i32::from(sentinel_first.x);
+    f64::from(advance_units) / cap_height
 }
 
 fn required_text_box_size(value: &str, font_size: f64, padding: f64) -> (f64, f64) {
@@ -1882,10 +1922,10 @@ fn required_text_box_size(value: &str, font_size: f64, padding: f64) -> (f64, f6
     let line_count = u32::try_from(lines.len().max(1)).unwrap_or(u32::MAX);
     let max_width = lines
         .iter()
-        .map(|line| line.chars().map(char_advance).sum::<f64>())
+        .map(|line| newstroke_text_advance_ratio(line) * font_size)
         .fold(0.0_f64, f64::max);
     (
-        2.0_f64.mul_add(padding, (max_width * font_size * 1.30).max(font_size)),
+        2.0_f64.mul_add(padding, (max_width * 1.30).max(font_size)),
         (f64::from(line_count) * font_size).mul_add(1.55, 2.0 * padding),
     )
 }
@@ -2762,6 +2802,34 @@ mod tests {
         let labels = super::collect_labels(root);
         assert_eq!(labels.len(), 1);
         assert_eq!(labels[0].1, "first\nsecond");
+    }
+
+    #[test]
+    fn text_widths_use_kicad_newstroke_glyph_advances() {
+        let cap_height = 21.0;
+        let cases = [
+            ("A", 18.0),
+            ("H", 22.0),
+            ("M", 24.0),
+            ("I", 10.0),
+            (" ", 16.0),
+            ("A H", 56.0),
+        ];
+
+        for (text, expected_units) in cases {
+            let actual = super::newstroke_text_advance_ratio(text) * cap_height;
+            assert!(
+                (actual - expected_units).abs() < 0.001,
+                "unexpected NewStroke advance for {text:?}: {actual}"
+            );
+        }
+    }
+
+    #[test]
+    fn unsupported_unicode_does_not_panic_or_shift_newstroke_metrics() {
+        let supported = super::newstroke_text_advance_ratio("AH");
+        let with_unsupported = super::newstroke_text_advance_ratio("A\u{10ffff}H");
+        assert!((supported - with_unsupported).abs() < 0.001);
     }
 
     #[test]
