@@ -1887,7 +1887,8 @@ mod tests {
             run_builtin_rules(&doc)
                 .diagnostics
                 .iter()
-                .any(|item| item.code == "SCH010" && item.message.contains("visible symbol fields overlap"))
+                .any(|item| item.code == "SCH010"
+                    && item.message.contains("visible symbol fields overlap"))
         );
     }
 
