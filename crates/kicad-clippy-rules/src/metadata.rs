@@ -1061,7 +1061,8 @@ mod tests {
             profile
                 .validate(&schematic)
                 .iter()
-                .any(|item| item.code == "SCH009" && item.message.contains("missing schematic frame UUID"))
+                .any(|item| item.code == "SCH009"
+                    && item.message.contains("missing schematic frame UUID"))
         );
     }
 
