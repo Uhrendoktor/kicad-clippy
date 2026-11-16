@@ -24,7 +24,7 @@ The following table distinguishes adopted libraries from alternatives that remai
 | Lossless KiCad S-expression parsing | [`kiutils_sexpr`](https://crates.io/crates/kiutils_sexpr) | Adopted | Provides the CST and original byte spans. Replacing it with another parser would duplicate grammar and source-preservation work. |
 | Terminal diagnostics and source excerpts | [`miette`](https://docs.rs/miette/7.6.0/miette/) | Adopted | Renders named source files, labeled byte spans, severity, diagnostic codes, help and source excerpts. The CLI adapts the project's existing `Diagnostic` to miette; JSON remains the stable interchange schema. |
 | General planar geometry | [`geo`](https://docs.rs/geo/0.31.0/geo/) | Adopted | Replaces handwritten segment-intersection classification, point-to-segment distance, point-in-polygon, and rectangle/polygon predicates. Its Bentley–Ottmann sweep replaces the nested all-pairs wire-intersection scan. |
-| Curve flattening | [`kurbo`](https://docs.rs/kurbo/0.13.1/kurbo/) | Adopted | Replaces hand-written recursive cubic Bézier subdivision and manual arc sampling with adaptive path flattening at a schematic-space tolerance. |
+| Curves and affine transforms | [`kurbo`](https://docs.rs/kurbo/0.13.1/kurbo/) | Adopted | Replaces hand-written recursive cubic Bézier subdivision, manual arc sampling, and duplicated point/vector rotation and mirror arithmetic with adaptive path flattening and affine transforms. |
 | Spatial indexing | [`rstar`](https://docs.rs/rstar/0.12.2/rstar/) | Not used directly | Geo's sweep-line algorithm already addresses the current all-wire intersection scan. Do not add a second index until profiling shows a remaining broad-phase bottleneck in a different workload. |
 | Robust geometric predicates | [`robust`](https://docs.rs/robust/1.2.0/robust/) | Not used directly | Geo already supplies the predicates used by the current rules. Reconsider only if fixtures expose specific numerical-degeneracy cases that require a separate robust-predicate layer. |
 | Alternative source diagnostic renderer | [`codespan-reporting`](https://docs.rs/codespan-reporting/latest/codespan_reporting/) | Not used | It overlaps with miette's source-map and span-rendering responsibilities. Keeping both would create competing source/diagnostic abstractions. |
@@ -41,12 +41,12 @@ Against the feature-branch state before this simplification pass (`90b19a296472e
 
 | File | Before | After | Net change |
 | --- | ---: | ---: | ---: |
-| `generic.rs` | 3,523 lines | 3,419 lines | -104 |
+| `generic.rs` | 3,523 lines | 3,434 lines | -89 |
 | `source.rs` | 177 lines | 104 lines | -73 |
 | CLI `main.rs` | 331 lines | 375 lines | +44 |
-| **Combined** | **4,031 lines** | **3,898 lines** | **-133** |
+| **Combined** | **4,031 lines** | **3,913 lines** | **-118** |
 
-This is a net reduction of 133 source lines across the geometry kernel, source mapping, and terminal renderer. The CLI adapter grew because it now passes structured diagnostics to miette, but that is outweighed by deleting the duplicate source line-index and line/column implementation and by moving generic geometry and curve algorithms into their libraries. The comparison is a file line-count delta, not a claim about all repository code or runtime performance.
+This is a net reduction of 118 source lines across the geometry kernel, source mapping, and terminal renderer. The CLI adapter grew because it now passes structured diagnostics to miette, but that is outweighed by deleting the duplicate source line-index and line/column implementation and by moving generic geometry and curve algorithms into their libraries. The comparison is a file line-count delta, not a claim about all repository code or runtime performance.
 
 ## Target architecture
 
@@ -79,7 +79,7 @@ stable Diagnostic contract
 - **Parser:** preserve original source and the lossless CST; rely on CST-provided spans.
 - **Source file:** retain the path and shared original text. Do not maintain a second line-start index solely for terminal presentation.
 - **Geometry adapter:** convert KiCad primitives to library types and apply KiCad-specific tolerances and exemptions. Do not reimplement general intersections, distances or containment.
-- **Curves:** retain only the KiCad start/mid/end interpretation needed to construct an arc; delegate path flattening to kurbo.
+- **Curves and transforms:** retain only the KiCad start/mid/end interpretation needed to construct an arc and the coordinate-frame convention; delegate path flattening and affine matrix operations to kurbo.
 - **Connectivity:** keep explicit junctions, pin anchors, label scope and physical wire islands as application logic.
 - **Rule engine:** keep typed IDs, metadata, registration, pass dependencies and deterministic execution.
 - **Diagnostics:** preserve the project's stable JSON contract; adapt it to miette only at the CLI rendering boundary.
