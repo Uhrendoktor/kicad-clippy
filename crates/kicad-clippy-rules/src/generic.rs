@@ -221,6 +221,7 @@ pub fn run_builtin_rules(document: &SchematicDocument) -> RuleRun {
     diagnostics.extend(check_text_box_layout(root, source, &segments));
     diagnostics.extend(check_block_annotation_structure(root, source));
     diagnostics.extend(check_label_text_collisions(root, source));
+    diagnostics.extend(check_symbol_field_clearance(root, source));
     diagnostics.extend(check_label_kind_consistency(root, source));
 
     RuleRun {
@@ -1348,6 +1349,72 @@ fn check_label_text_collisions(root: &Node, source: &str) -> Vec<Diagnostic> {
     diagnostics
 }
 
+fn check_symbol_field_clearance(root: &Node, source: &str) -> Vec<Diagnostic> {
+    let mut fields = Vec::new();
+    for symbol in children(root, "symbol") {
+        let reference = children(symbol, "property").find_map(|property| {
+            let items = list_items(property)?;
+            if atom_value(items.get(1)?, source)? == "Reference" {
+                atom_value(items.get(2)?, source)
+            } else {
+                None
+            }
+        });
+        let Some(reference) = reference else {
+            continue;
+        };
+        for property in children(symbol, "property") {
+            if property_is_hidden(property) {
+                continue;
+            }
+            let Some(items) = list_items(property) else {
+                continue;
+            };
+            let Some(field_name) = items.get(1).and_then(|item| atom_value(item, source)) else {
+                continue;
+            };
+            let Some(value) = items.get(2).and_then(|item| atom_value(item, source)) else {
+                continue;
+            };
+            if value.trim().is_empty() {
+                continue;
+            }
+            if let Some(bounds) = text_visual_bounds(&value, property, source) {
+                fields.push((
+                    format!("{reference} {field_name} {value:?}"),
+                    bounds,
+                    span_of(property),
+                ));
+            }
+        }
+    }
+
+    let mut diagnostics = Vec::new();
+    for (index, (first_name, first_bounds, first_span)) in fields.iter().enumerate() {
+        for (second_name, second_bounds, _second_span) in fields.iter().skip(index + 1) {
+            if bounds_overlap(*first_bounds, *second_bounds) {
+                diagnostics.push(at_span(
+                    "SCH010",
+                    format!("visible symbol fields overlap: {first_name} and {second_name}"),
+                    *first_span,
+                ));
+            }
+        }
+        for text_box in collect_nodes(root, "text_box") {
+            if text_box_bounds(text_box, source)
+                .is_some_and(|box_bounds| bounds_overlap(*first_bounds, box_bounds))
+            {
+                diagnostics.push(at_span(
+                    "SCH010",
+                    format!("{first_name} overlaps an annotation text box"),
+                    *first_span,
+                ));
+            }
+        }
+    }
+    diagnostics
+}
+
 fn property_is_hidden(property: &Node) -> bool {
     child_list(property, "effects").is_some_and(|effects| child_list(effects, "hide").is_some())
 }
@@ -1803,6 +1870,62 @@ mod tests {
                 .diagnostics
                 .iter()
                 .any(|item| item.code == "SCH018")
+        );
+    }
+
+    #[test]
+    fn visible_symbol_fields_may_not_overlap_each_other() {
+        let doc = document(
+            r#"
+            (symbol (lib_id "Device:R") (at 1 1 0)
+              (property "Reference" "R1" (at 5 5 0) (effects (font (size 1 1))))
+              (property "Value" "10k" (at 5 5 0) (effects (font (size 1 1))))
+            )
+            "#,
+        );
+        assert!(
+            run_builtin_rules(&doc)
+                .diagnostics
+                .iter()
+                .any(|item| item.code == "SCH010" && item.message.contains("visible symbol fields overlap"))
+        );
+    }
+
+    #[test]
+    fn visible_symbol_fields_may_not_overlap_annotation_boxes() {
+        let doc = document(
+            r#"
+            (symbol (lib_id "Device:R") (at 1 1 0)
+              (property "Reference" "R1" (at 5 5 0) (effects (font (size 1 1))))
+            )
+            (text_box "Circuit note" (at 4 4) (size 4 3)
+              (margins 0.5 0.5 0.5 0.5) (stroke (width 0.1))
+              (effects (font (size 1 1))))
+            "#,
+        );
+        assert!(
+            run_builtin_rules(&doc)
+                .diagnostics
+                .iter()
+                .any(|item| item.code == "SCH010" && item.message.contains("annotation text box"))
+        );
+    }
+
+    #[test]
+    fn separated_visible_symbol_fields_are_accepted() {
+        let doc = document(
+            r#"
+            (symbol (lib_id "Device:R") (at 1 1 0)
+              (property "Reference" "R1" (at 2 2 0) (effects (font (size 1 1))))
+              (property "Value" "10k" (at 10 10 0) (effects (font (size 1 1))))
+            )
+            "#,
+        );
+        assert!(
+            !run_builtin_rules(&doc)
+                .diagnostics
+                .iter()
+                .any(|item| item.code == "SCH010")
         );
     }
 
