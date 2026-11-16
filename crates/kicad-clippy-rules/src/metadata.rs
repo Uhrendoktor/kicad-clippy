@@ -75,6 +75,12 @@ pub struct ComponentIntent {
     pub evidence: Option<String>,
     /// Decoupling-specific pin and terminal contract.
     pub decoupling: Option<DecouplingIntent>,
+    /// Named electrical connections, expressed as nets or reference/pin pairs.
+    #[serde(default)]
+    pub connections: BTreeMap<String, String>,
+    /// Extensible role-specific attributes such as interface standard or orientation.
+    #[serde(default)]
+    pub attributes: BTreeMap<String, String>,
     /// Optional minimum voltage rating in volts.
     pub voltage_rating_min_v: Option<f64>,
     /// Optional minimum power rating in watts.
@@ -191,6 +197,66 @@ fn validate_component_intent(reference: &str, intent: &ComponentIntent) -> Vec<D
                 intent.role.0
             ),
         ));
+    }
+    diagnostics
+}
+
+fn validate_role_contract(reference: &str, intent: &ComponentIntent) -> Vec<Diagnostic> {
+    let required_connections: &[&str] = match (intent.kind, intent.role.0.as_str()) {
+        (ComponentKind::Capacitor, "bulk") => &["rail", "return"],
+        (ComponentKind::Resistor, "pull_up" | "pull_down") => &["signal", "rail"],
+        (ComponentKind::Resistor, "divider") => &["high", "tap", "low"],
+        (ComponentKind::Resistor, "series" | "current_limit" | "current_sense") => {
+            &["input", "output"]
+        }
+        (ComponentKind::Resistor, "gate_bias") => &["gate", "bias", "return"],
+        (ComponentKind::Resistor, "discharge" | "bleeder") => &["storage", "return"],
+        (ComponentKind::Diode, "esd" | "clamp") => &["protected", "return"],
+        (ComponentKind::Diode, "flyback") => &["anode", "cathode", "switched_node", "return"],
+        (ComponentKind::Diode, "reverse_polarity") => &["input", "protected_output"],
+        (ComponentKind::Inductor | ComponentKind::FerriteBead, _) => &["input", "output"],
+        (ComponentKind::Transistor, _) => &["control", "switched_high", "switched_low"],
+        _ => &[],
+    };
+    let mut diagnostics: Vec<_> = required_connections
+        .iter()
+        .filter(|key| {
+            intent
+                .connections
+                .get(**key)
+                .is_none_or(|value| value.trim().is_empty())
+        })
+        .map(|key| {
+            Diagnostic::new(
+                "SCH021",
+                Severity::Error,
+                format!(
+                    "{reference} role {:?} is missing required connection {key:?}",
+                    intent.role.0
+                ),
+            )
+        })
+        .collect();
+
+    if intent.kind == ComponentKind::Connector {
+        if intent
+            .attributes
+            .get("interface_standard")
+            .is_none_or(|value| value.trim().is_empty())
+        {
+            diagnostics.push(Diagnostic::new(
+                "SCH021",
+                Severity::Error,
+                format!("{reference} connector metadata must declare interface_standard"),
+            ));
+        }
+        if !intent.connections.keys().any(|key| key.starts_with("pin.")) {
+            diagnostics.push(Diagnostic::new(
+                "SCH021",
+                Severity::Error,
+                format!("{reference} connector metadata must declare at least one pin.N mapping"),
+            ));
+        }
     }
     diagnostics
 }
