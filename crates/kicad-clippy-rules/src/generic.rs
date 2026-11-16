@@ -27,7 +27,7 @@ use vector_text_newstroke::NewstrokeRenderer;
 
 use crate::{RuleContext, RulePass};
 
-pub(crate) type Point = Coord<f64>;
+pub type Point = Coord<f64>;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Segment {
@@ -1018,13 +1018,7 @@ fn wire_endpoint_is_pin(endpoint: Point, reference: &str, pins: &[SchematicPinFa
 }
 
 fn geo_line(start: Point, end: Point) -> Line<f64> {
-    Line::new(
-        Coord {
-            x: start.x,
-            y: start.y,
-        },
-        Coord { x: end.x, y: end.y },
-    )
+    Line::new(start, end)
 }
 
 /// Returns all point endpoints of a segment intersection, including both ends
@@ -1040,22 +1034,10 @@ fn segment_intersection_points(
 
     match line_intersection(first_line, second_line) {
         Some(LineIntersection::SinglePoint { intersection, .. }) => {
-            vec![Point {
-                x: intersection.x,
-                y: intersection.y,
-            }]
+            vec![intersection]
         }
         Some(LineIntersection::Collinear { intersection }) => {
-            let points = [
-                Point {
-                    x: intersection.start.x,
-                    y: intersection.start.y,
-                },
-                Point {
-                    x: intersection.end.x,
-                    y: intersection.end.y,
-                },
-            ];
+            let points = [intersection.start, intersection.end];
             if distance(points[0], points[1]) <= 0.001 {
                 vec![points[0]]
             } else {
@@ -1442,10 +1424,7 @@ fn check_wire_geometry(root: &Node, segments: &[Segment], junctions: &[Point]) -
                 }
             }
             LineIntersection::SinglePoint { intersection, .. } => {
-                let point = Point {
-                    x: intersection.x,
-                    y: intersection.y,
-                };
+                let point = intersection;
                 let first_end = is_endpoint(point, first.segment);
                 let second_end = is_endpoint(point, second.segment);
                 if !first_end && !second_end {
