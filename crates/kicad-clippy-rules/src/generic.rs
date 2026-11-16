@@ -183,7 +183,10 @@ fn check_label_topology(root: &Node, source: &str, segments: &[Segment]) -> Vec<
         for pair in split.windows(2) {
             let first = point_key(pair[0]);
             let second = point_key(pair[1]);
-            adjacency.entry(first.clone()).or_default().push(second.clone());
+            adjacency
+                .entry(first.clone())
+                .or_default()
+                .push(second.clone());
             adjacency.entry(second).or_default().push(first);
         }
     }
@@ -201,7 +204,12 @@ fn check_label_topology(root: &Node, source: &str, segments: &[Segment]) -> Vec<
             }
             component_ids.insert(point.clone(), next_component);
             if let Some(neighbors) = adjacency.get(&point) {
-                pending.extend(neighbors.iter().filter(|neighbor| !component_ids.contains_key(*neighbor)).cloned());
+                pending.extend(
+                    neighbors
+                        .iter()
+                        .filter(|neighbor| !component_ids.contains_key(*neighbor))
+                        .cloned(),
+                );
             }
         }
         next_component += 1;
@@ -216,17 +224,27 @@ fn check_label_topology(root: &Node, source: &str, segments: &[Segment]) -> Vec<
             *totals.entry(label.clone()).or_default() += 1;
             let island = component_ids.get(&key).copied().unwrap_or_default();
             *island_uses.entry((label.clone(), island)).or_default() += 1;
-            if !segments.iter().any(|segment| point_on_segment(point, segment)) {
+            if !segments
+                .iter()
+                .any(|segment| point_on_segment(point, segment))
+            {
                 diagnostics.push(at_point(
                     "SCH002",
-                    format!("local label {label:?} at ({:.3}, {:.3}) is not attached to a wire", point.x, point.y),
+                    format!(
+                        "local label {label:?} at ({:.3}, {:.3}) is not attached to a wire",
+                        point.x, point.y
+                    ),
                     point,
                     span,
                 ));
             }
         } else if kind == "hierarchical_label" {
             let endpoint_count = endpoint_degree.get(&key).copied().unwrap_or_default();
-            if endpoint_count != 1 || !segments.iter().any(|segment| point_on_segment(point, segment)) {
+            if endpoint_count != 1
+                || !segments
+                    .iter()
+                    .any(|segment| point_on_segment(point, segment))
+            {
                 diagnostics.push(at_point(
                     "SCH002",
                     format!("hierarchical label {label:?} at ({:.3}, {:.3}) must sit at the end of one wire twig", point.x, point.y),
@@ -521,7 +539,12 @@ mod tests {
         let doc = document(
             r#"(wire (pts (xy 0 0) (xy 1 0))) (wire (pts (xy 3 0) (xy 4 0))) (label "NET" (at 0.5 0 0)) (label "NET" (at 3.5 0 0))"#,
         );
-        assert!(!run_builtin_rules(&doc).diagnostics.iter().any(|item| item.code == "SCH002"));
+        assert!(
+            !run_builtin_rules(&doc)
+                .diagnostics
+                .iter()
+                .any(|item| item.code == "SCH002")
+        );
     }
 
     #[test]
