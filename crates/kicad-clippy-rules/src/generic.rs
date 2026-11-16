@@ -248,12 +248,7 @@ fn collect_placed_pin_positions(root: &Node, source: &str) -> Option<Vec<Point>>
                 .and_then(|item| atom_value(item, source))
                 .is_some_and(|name| name == lib_id)
         })?;
-        let pins = embedded_symbol_pins(
-            library_symbol,
-            transform.unit,
-            transform.convert,
-            source,
-        );
+        let pins = embedded_symbol_pins(library_symbol, transform.unit, transform.convert, source);
         if pins.is_empty() {
             return None;
         }
