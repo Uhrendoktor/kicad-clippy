@@ -345,10 +345,9 @@ fn collect_pin_facts(root: &Node) -> Vec<SchematicPinFact> {
             let Some(at) = child_list(pin, "at").and_then(list_items) else {
                 continue;
             };
-            let (Some(pin_x), Some(pin_y)) = (
-                at.get(1).and_then(number),
-                at.get(2).and_then(number),
-            ) else {
+            let (Some(pin_x), Some(pin_y)) =
+                (at.get(1).and_then(number), at.get(2).and_then(number))
+            else {
                 continue;
             };
             let Some((x_offset, y_offset)) = transform_symbol_point(
@@ -455,11 +454,7 @@ fn collect_instance_primitives(
         .collect()
 }
 
-fn selected_symbol_units<'a>(
-    definition: &'a Node,
-    unit: u32,
-    convert: u32,
-) -> Vec<&'a Node> {
+fn selected_symbol_units<'a>(definition: &'a Node, unit: u32, convert: u32) -> Vec<&'a Node> {
     let sub_symbols: Vec<_> = children(definition, "symbol").collect();
     if sub_symbols.is_empty() {
         return vec![definition];
@@ -716,7 +711,6 @@ fn transform_primitive_points(
         })
         .collect()
 }
-
 
 /// Result of the built-in rule pass.
 #[derive(Clone, Debug, Default)]
@@ -1106,9 +1100,7 @@ fn check_pin_orientation(root: &Node, segments: &[Segment]) -> Vec<Diagnostic> {
         return Vec::new();
     };
     children(root, "symbol")
-        .flat_map(|instance| {
-            check_instance_pin_orientation(instance, library_symbols, segments)
-        })
+        .flat_map(|instance| check_instance_pin_orientation(instance, library_symbols, segments))
         .collect()
 }
 
@@ -1262,11 +1254,7 @@ fn instance_integer(instance: &Node, name: &str) -> Option<u32> {
         .and_then(|value| value.parse().ok())
 }
 
-fn embedded_symbol_pins<'a>(
-    library_symbol: &'a Node,
-    unit: u32,
-    convert: u32,
-) -> Vec<&'a Node> {
+fn embedded_symbol_pins<'a>(library_symbol: &'a Node, unit: u32, convert: u32) -> Vec<&'a Node> {
     let mut pin_nodes = Vec::new();
     for sub_symbol in children(library_symbol, "symbol") {
         let Some(name) = list_items(sub_symbol)
@@ -1576,10 +1564,7 @@ struct TextBoxRecord {
     span: ByteSpan,
 }
 
-fn inspect_text_box(
-    node: &Node,
-    index: usize,
-) -> (Option<TextBoxRecord>, Vec<Diagnostic>) {
+fn inspect_text_box(node: &Node, index: usize) -> (Option<TextBoxRecord>, Vec<Diagnostic>) {
     let (metrics, error) = read_text_box_metrics(node, index);
     let Some(metrics) = metrics else {
         return (None, error.into_iter().collect());
@@ -1642,10 +1627,7 @@ fn read_text_box_metrics(
             )),
         );
     };
-    let label = items
-        .get(1)
-        .and_then(atom_value)
-        .unwrap_or_default();
+    let label = items.get(1).and_then(atom_value).unwrap_or_default();
     let at = child_list(node, "at").and_then(list_items);
     let size = child_list(node, "size").and_then(list_items);
     let margins = child_list(node, "margins").and_then(list_items);
@@ -1780,9 +1762,7 @@ fn collect_nodes<'a>(root: &'a Node, name: &'a str) -> Vec<&'a Node> {
     children(root, name).collect()
 }
 
-fn collect_label_nodes<'a>(
-    root: &'a Node,
-) -> Vec<(String, String, Point, ByteSpan, &'a Node)> {
+fn collect_label_nodes<'a>(root: &'a Node) -> Vec<(String, String, Point, ByteSpan, &'a Node)> {
     let mut labels = Vec::new();
     for node in collect_nodes(root, "label")
         .into_iter()
