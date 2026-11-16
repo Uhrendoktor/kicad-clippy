@@ -955,13 +955,11 @@ mod tests {
             )]),
             ..Netlist::default()
         };
-        let diagnostics = profile.validate_with_netlist(&schematic, Some(&netlist));
         assert!(
-            diagnostics
+            profile
+                .validate_with_netlist(&schematic, Some(&netlist))
                 .iter()
-                .any(|item| item.code == "SCH014" && item.message.contains("expected VBUS")),
-            "diagnostics: {diagnostics:#?}; connections: {:?}",
-            profile.components["J1"].connections
+                .any(|item| item.code == "SCH014" && item.message.contains("expects VBUS"))
         );
     }
 
