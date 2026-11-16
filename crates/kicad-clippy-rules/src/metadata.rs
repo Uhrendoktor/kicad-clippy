@@ -374,14 +374,15 @@ fn validate_frame_clearance(
             format!("group {group_id} references missing schematic frame UUID {frame_uuid}"),
         )];
     };
-    let (left, top, right, bottom) = frame.bounds_mm;
-    if left >= right || top >= bottom || ![left, top, right, bottom].iter().all(|v| v.is_finite()) {
+    let bounds = frame.bounds_mm;
+    if !valid_frame_bounds(bounds) {
         return vec![Diagnostic::new(
             "SCH012",
             Severity::Error,
             format!("group {group_id} frame {frame_uuid} has invalid or zero-area bounds"),
         )];
     }
+    let (left, top, right, bottom) = bounds;
     if right - left < 2.0 * clearance || bottom - top < 2.0 * clearance {
         return vec![Diagnostic::new(
             "SCH012",
@@ -391,7 +392,29 @@ fn validate_frame_clearance(
             ),
         )];
     }
+    let mut diagnostics =
+        validate_member_frame_clearance(group_id, group, facts, frame_uuid, bounds, clearance);
+    diagnostics.extend(validate_description_frame_clearance(
+        group_id, group, facts, frame_uuid, bounds, clearance,
+    ));
+    diagnostics
+}
 
+fn valid_frame_bounds((left, top, right, bottom): (f64, f64, f64, f64)) -> bool {
+    left < right
+        && top < bottom
+        && [left, top, right, bottom].iter().all(|value| value.is_finite())
+}
+
+fn validate_member_frame_clearance(
+    group_id: &str,
+    group: &GroupIntent,
+    facts: &SchematicFacts,
+    frame_uuid: &str,
+    bounds: (f64, f64, f64, f64),
+    clearance: f64,
+) -> Vec<Diagnostic> {
+    let (left, top, right, bottom) = bounds;
     let mut diagnostics = Vec::new();
     for reference in &group.members {
         let Some(component) = facts
@@ -425,39 +448,49 @@ fn validate_frame_clearance(
             ));
         }
     }
+    diagnostics
+}
 
-    match facts
+fn validate_description_frame_clearance(
+    group_id: &str,
+    group: &GroupIntent,
+    facts: &SchematicFacts,
+    frame_uuid: &str,
+    bounds: (f64, f64, f64, f64),
+    clearance: f64,
+) -> Vec<Diagnostic> {
+    let (left, top, right, bottom) = bounds;
+    let mut diagnostics = Vec::new();
+    if let Some(text_box) = facts
         .text_boxes
         .iter()
         .find(|text_box| text_box.uuid == group.description_uuid)
     {
-        Some(text_box) => match text_box.bounds_mm {
-            Some((box_left, box_top, box_right, box_bottom)) => {
-                let text_inside_clearance = box_left >= left + clearance - 0.001
-                    && box_top >= top + clearance - 0.001
-                    && box_right <= right - clearance + 0.001
-                    && box_bottom <= bottom - clearance + 0.001;
-                if !text_inside_clearance {
-                    diagnostics.push(Diagnostic::new(
-                        "SCH012",
-                        Severity::Error,
-                        format!(
-                            "group {group_id} description text box {} does not maintain {clearance:.2} mm clearance from frame {frame_uuid}",
-                            text_box.uuid
-                        ),
-                    ));
-                }
+        if let Some((box_left, box_top, box_right, box_bottom)) = text_box.bounds_mm {
+            let text_inside_clearance = box_left >= left + clearance - 0.001
+                && box_top >= top + clearance - 0.001
+                && box_right <= right - clearance + 0.001
+                && box_bottom <= bottom - clearance + 0.001;
+            if !text_inside_clearance {
+                diagnostics.push(Diagnostic::new(
+                    "SCH012",
+                    Severity::Error,
+                    format!(
+                        "group {group_id} description text box {} does not maintain {clearance:.2} mm clearance from frame {frame_uuid}",
+                        text_box.uuid
+                    ),
+                ));
             }
-            None => diagnostics.push(Diagnostic::new(
+        } else {
+            diagnostics.push(Diagnostic::new(
                 "SCH012",
                 Severity::Error,
                 format!(
                     "group {group_id} description text box {} has no usable geometry for frame-clearance validation",
                     text_box.uuid
                 ),
-            )),
-        },
-        None => {}
+            ));
+        }
     }
     diagnostics
 }
