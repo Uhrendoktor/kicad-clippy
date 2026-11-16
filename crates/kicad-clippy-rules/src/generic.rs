@@ -74,100 +74,102 @@ pub struct SchematicFacts {
 
 impl SchematicFacts {
     pub fn from_document(document: &SchematicDocument) -> Self {
-        let mut facts = Self::default();
         let Some(root) = document.cst().nodes.first() else {
-            return facts;
+            return Self::default();
         };
-        for node in children(root, "symbol") {
+        let source = document.source().text();
+        Self {
+            components: collect_component_facts(root, source),
+            text_boxes: collect_text_box_facts(root, source),
+            groups: collect_group_facts(root, source),
+            frames: collect_frame_facts(root, source),
+        }
+    }
+}
+
+fn collect_component_facts(root: &Node, source: &str) -> Vec<ComponentFact> {
+    children(root, "symbol")
+        .filter_map(|node| {
             let reference = children(node, "property").find_map(|property| {
                 let items = list_items(property)?;
-                if atom_value(items.get(1)?, document.source().text())? == "Reference" {
-                    atom_value(items.get(2)?, document.source().text())
+                if atom_value(items.get(1)?, source)? == "Reference" {
+                    atom_value(items.get(2)?, source)
                 } else {
                     None
                 }
-            });
-            if let Some(reference) = reference {
-                if !reference.starts_with('#') && !reference.is_empty() {
-                    let uuid = child_list(node, "uuid")
-                        .and_then(list_items)
-                        .and_then(|items| items.get(1))
-                        .and_then(|item| atom_value(item, document.source().text()));
-                    let position_mm = child_list(node, "at").and_then(list_items).and_then(|at| {
-                        Some((
-                            number(at.get(1)?, document.source().text())?,
-                            number(at.get(2)?, document.source().text())?,
-                        ))
-                    });
-                    facts.components.push(ComponentFact {
-                        reference,
-                        uuid,
-                        position_mm,
-                    });
-                }
+            })?;
+            if reference.starts_with('#') || reference.is_empty() {
+                return None;
             }
-        }
-        for node in children(root, "group") {
-            let Some(items) = list_items(node) else {
-                continue;
-            };
-            let Some(name) = items
-                .get(1)
-                .and_then(|item| atom_value(item, document.source().text()))
-            else {
-                continue;
-            };
-            let Some(uuid) = child_list(node, "id")
+            let uuid = child_list(node, "uuid")
                 .and_then(list_items)
                 .and_then(|items| items.get(1))
-                .and_then(|item| atom_value(item, document.source().text()))
-            else {
-                continue;
-            };
+                .and_then(|item| atom_value(item, source));
+            let position_mm = child_list(node, "at")
+                .and_then(list_items)
+                .and_then(|at| Some((number(at.get(1)?, source)?, number(at.get(2)?, source)?)));
+            Some(ComponentFact {
+                reference,
+                uuid,
+                position_mm,
+            })
+        })
+        .collect()
+}
+
+fn collect_text_box_facts(root: &Node, source: &str) -> Vec<TextBoxFact> {
+    children(root, "text_box")
+        .filter_map(|node| {
+            let items = list_items(node)?;
+            let text = atom_value(items.get(1)?, source)?;
+            let uuid = child_list(node, "uuid")
+                .and_then(list_items)
+                .and_then(|items| items.get(1))
+                .and_then(|item| atom_value(item, source))?;
+            Some(TextBoxFact { uuid, text })
+        })
+        .collect()
+}
+
+fn collect_group_facts(root: &Node, source: &str) -> Vec<SchematicGroupFact> {
+    children(root, "group")
+        .filter_map(|node| {
+            let items = list_items(node)?;
+            let name = atom_value(items.get(1)?, source)?;
+            let uuid = child_list(node, "id")
+                .and_then(list_items)
+                .and_then(|items| items.get(1))
+                .and_then(|item| atom_value(item, source))?;
             let member_uuids = child_list(node, "members")
                 .and_then(list_items)
                 .into_iter()
                 .flatten()
                 .skip(1)
-                .filter_map(|item| atom_value(item, document.source().text()))
+                .filter_map(|item| atom_value(item, source))
                 .collect();
-            facts.groups.push(SchematicGroupFact {
+            Some(SchematicGroupFact {
                 name,
                 uuid,
                 member_uuids,
-            });
-        }
-        for node in children(root, "rectangle") {
-            let Some(uuid) = child_list(node, "uuid")
+            })
+        })
+        .collect()
+}
+
+fn collect_frame_facts(root: &Node, source: &str) -> Vec<SchematicFrameFact> {
+    children(root, "rectangle")
+        .filter_map(|node| {
+            let uuid = child_list(node, "uuid")
                 .and_then(list_items)
                 .and_then(|items| items.get(1))
-                .and_then(|item| atom_value(item, document.source().text()))
-            else {
-                continue;
-            };
-            let Some(start) = child_list(node, "start")
+                .and_then(|item| atom_value(item, source))?;
+            let start = child_list(node, "start")
                 .and_then(list_items)
-                .and_then(|items| {
-                    Some((
-                        number(items.get(1)?, document.source().text())?,
-                        number(items.get(2)?, document.source().text())?,
-                    ))
-                })
-            else {
-                continue;
-            };
-            let Some(end) = child_list(node, "end")
+                .and_then(|items| Some((number(items.get(1)?, source)?, number(items.get(2)?, source)?)))?;
+            let end = child_list(node, "end")
                 .and_then(list_items)
-                .and_then(|items| {
-                    Some((
-                        number(items.get(1)?, document.source().text())?,
-                        number(items.get(2)?, document.source().text())?,
-                    ))
-                })
-            else {
-                continue;
-            };
-            facts.frames.push(SchematicFrameFact {
+                .and_then(|items| Some((number(items.get(1)?, source)?, number(items.get(2)?, source)?)))?;
+            Some(SchematicFrameFact {
                 uuid,
                 bounds_mm: (
                     start.0.min(end.0),
@@ -175,29 +177,9 @@ impl SchematicFacts {
                     start.0.max(end.0),
                     start.1.max(end.1),
                 ),
-            });
-        }
-        for node in children(root, "text_box") {
-            let Some(items) = list_items(node) else {
-                continue;
-            };
-            let Some(text) = items
-                .get(1)
-                .and_then(|item| atom_value(item, document.source().text()))
-            else {
-                continue;
-            };
-            let Some(uuid) = child_list(node, "uuid")
-                .and_then(list_items)
-                .and_then(|items| items.get(1))
-                .and_then(|item| atom_value(item, document.source().text()))
-            else {
-                continue;
-            };
-            facts.text_boxes.push(TextBoxFact { uuid, text });
-        }
-        facts
-    }
+            })
+        })
+        .collect()
 }
 
 /// Result of the built-in rule pass.
