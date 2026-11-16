@@ -11,6 +11,7 @@ use kicad_clippy_core::{
 };
 use kicad_clippy_parser::SchematicDocument;
 use kiutils_sexpr::{Atom, Node};
+use petgraph::unionfind::UnionFind;
 use kurbo::{
     Affine, Arc as CurveArc, PathEl, Point as CurvePoint, Shape, Vec2,
     flatten as flatten_curve_path,
@@ -2035,14 +2036,21 @@ fn wire_components(
     points: &[Point],
     junctions: &[Point],
 ) -> (BTreeMap<String, usize>, BTreeMap<String, usize>) {
-    let mut adjacency: BTreeMap<String, Vec<String>> = points
+    // Callers provide points sorted and deduplicated by the same tolerance-aware
+    // key used by the output map. Assign compact indices once, then let the
+    // established disjoint-set implementation handle connectivity.
+    let point_indices: BTreeMap<_, _> = points
         .iter()
-        .map(|point| (point_key(*point), Vec::new()))
+        .enumerate()
+        .map(|(index, point)| (point_key(*point), index))
         .collect();
+    let mut components = UnionFind::<usize>::new(points.len());
     let mut endpoint_degree: BTreeMap<String, usize> = BTreeMap::new();
+
     for segment in segments {
         *endpoint_degree.entry(point_key(segment.start)).or_default() += 1;
         *endpoint_degree.entry(point_key(segment.end)).or_default() += 1;
+
         let horizontal = (segment.start.y - segment.end.y).abs() < 0.001;
         let mut split: Vec<_> = points
             .iter()
@@ -2060,40 +2068,35 @@ fn wire_components(
                 first.y.total_cmp(&second.y)
             }
         });
+
         for pair in split.windows(2) {
-            let first = point_key(pair[0]);
-            let second = point_key(pair[1]);
-            adjacency
-                .entry(first.clone())
-                .or_default()
-                .push(second.clone());
-            adjacency.entry(second).or_default().push(first);
+            let first_key = point_key(pair[0]);
+            let second_key = point_key(pair[1]);
+            if let (Some(&first), Some(&second)) = (
+                point_indices.get(&first_key),
+                point_indices.get(&second_key),
+            ) {
+                components.union(first, second);
+            }
         }
     }
 
+    // Preserve deterministic, zero-based component labels by assigning IDs in
+    // the caller's sorted point order rather than exposing UnionFind roots.
+    let mut component_by_root = BTreeMap::new();
     let mut component_ids = BTreeMap::new();
-    let mut next_component = 0_usize;
-    for start in adjacency.keys() {
-        if component_ids.contains_key(start) {
-            continue;
-        }
-        let mut pending = vec![start.clone()];
-        while let Some(point) = pending.pop() {
-            if component_ids.contains_key(&point) {
-                continue;
-            }
-            component_ids.insert(point.clone(), next_component);
-            if let Some(neighbors) = adjacency.get(&point) {
-                pending.extend(
-                    neighbors
-                        .iter()
-                        .filter(|neighbor| !component_ids.contains_key(*neighbor))
-                        .cloned(),
-                );
-            }
-        }
-        next_component += 1;
+    for (index, point) in points.iter().enumerate() {
+        let root = components.find(index);
+        let component_id = if let Some(&id) = component_by_root.get(&root) {
+            id
+        } else {
+            let id = component_by_root.len();
+            component_by_root.insert(root, id);
+            id
+        };
+        component_ids.insert(point_key(*point), component_id);
     }
+
     (component_ids, endpoint_degree)
 }
 
