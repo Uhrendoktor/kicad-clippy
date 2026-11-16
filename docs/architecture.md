@@ -77,6 +77,7 @@ The implementation delegates generic algorithms rather than maintaining parallel
 - `miette` supplies terminal diagnostic labels and source excerpts. `Diagnostic` remains the JSON-compatible project schema, and its adapter is confined to the CLI.
 - `unescaper` decodes quoted S-expression text once at the parser boundary from original byte-span slices; the raw CST buffer and source spans are preserved.
 - `petgraph::UnionFind` supplies the generic disjoint-set structure for physical wire components; the rules layer alone decides which schematic points are joined by KiCad wire/junction semantics.
+- `vector-text-newstroke` supplies KiCad's actual stroke-font glyph geometry and advance metrics; the rules layer applies its existing font-size and text-box policy margins. A narrow adapter extracts total advance from renderer output because the crate does not publish a separate measurement API.
 
 Do not add a second source renderer or geometry kernel. Introduce spatial indexing only after profiling demonstrates a remaining candidate-scan bottleneck.
 
