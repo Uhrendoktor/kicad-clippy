@@ -10,8 +10,11 @@ A Rust-based linter for KiCad schematic files. `kicad-clippy` combines repositor
 
 - Parses a `.kicad_sch` file as a lossless S-expression document and checks its root type.
 - Runs native ERC using `kicad-cli sch erc --format json --severity-all`.
+- Exports KiCad's flattened netlist for profile-based pin-to-net checks.
 - Normalizes ERC violations from the per-sheet JSON report, preserving severity, exclusion state, sheet paths, affected item UUIDs, and physical coordinates.
-- Runs built-in geometry and label rules with source spans and schematic coordinates.\n- Loads versioned JSON project profiles and validates strict component metadata, including pin-specific decoupling intent and role-specific connection contracts for passive, protection, switching and connector parts.\n- Exposes shared UTF-8 byte spans, line/column mapping, diagnostic types, rule descriptors, levels, and a deterministic rule registry.
+- Runs built-in geometry and label rules with source spans and schematic coordinates.
+- Loads versioned JSON project profiles and validates strict component metadata, including pin-specific decoupling intent and role-specific connection contracts for passive, protection, switching and connector parts.
+- Exposes shared UTF-8 byte spans, line/column mapping, diagnostic types, rule descriptors, levels, and a deterministic rule registry.
 - Emits human-readable or JSON diagnostics with an exit code based on active ERC errors.
 
 The full SCH001–SCH020 catalogue is not yet ported. Rules that need transformed symbol geometry, hierarchical netlists, or group frames remain pending. SARIF and verified fixes are also pending.
@@ -22,7 +25,7 @@ The full SCH001–SCH020 catalogue is not yet ported. Rules that need transforme
 - A KiCad CLI build with `sch erc` and JSON report support. The native-ERC CI test uses KiCad development nightly; older system packages may not include the schematic ERC subcommand.
 - A KiCad schematic file ending in `.kicad_sch`.
 
-The parser-only mode can be used without KiCad installed.
+The generic parser and geometry checks can be used without KiCad. Project profiles invoke KiCad to export the netlist.
 
 ## Build
 
@@ -62,11 +65,19 @@ Emit structured JSON:
 kicad-clippy lint path/to/design.kicad_sch --format json
 ```
 
-Run the generic schematic checks without invoking ERC:\n\n```sh\nkicad-clippy lint path/to/design.kicad_sch --skip-erc\n```\n\nLoad project component-intent metadata, and require complete metadata with strict mode:\n\n```sh\nkicad-clippy lint path/to/design.kicad_sch --profile kicad-clippy.json --strict\n```\n\nSee [component metadata](docs/component-metadata.md), [rule status](docs/rules.md), and the [historical design guidance](docs/historical-design-guidance.md).\n\nCheck S-expression syntax without invoking ERC:
+Run the generic schematic checks without invoking ERC:
 
 ```sh
 kicad-clippy lint path/to/design.kicad_sch --skip-erc
 ```
+
+Load project component-intent metadata, and require complete metadata with strict mode:
+
+```sh
+kicad-clippy lint path/to/design.kicad_sch --profile kicad-clippy.json --strict
+```
+
+See [component metadata](docs/component-metadata.md), [rule status](docs/rules.md), and the [historical design guidance](docs/historical-design-guidance.md).
 
 `--skip-erc` is intended for parser development and environments without KiCad. It is not an electrical validation substitute. The command exits non-zero when active ERC errors are present or when parsing/CLI/report processing fails. Excluded ERC findings remain in output but do not count as active errors.
 
@@ -82,7 +93,8 @@ cargo run -p kicad-clippy -- lint path/to/design.kicad_sch
 | --- | --- |
 | `kicad-clippy-core` | Source spans, diagnostics, severities, rule descriptors, and registry. |
 | `kicad-clippy-parser` | Lossless KiCad schematic S-expression parsing. |
-| `kicad-clippy-erc` | KiCad CLI ERC execution and JSON report normalization. |\n| `kicad-clippy-rules` | Built-in schematic geometry/label rules and project component-intent validation. |
+| `kicad-clippy-erc` | KiCad CLI ERC execution and JSON report normalization. |
+| `kicad-clippy-rules` | Built-in schematic geometry/label rules and project component-intent validation. |
 | `kicad-clippy` | Command-line interface and output formatting. |
 
 See [architecture](docs/architecture.md) for the data flow and design boundaries.
