@@ -10,6 +10,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use kicad_clippy_core::{Diagnostic, Severity};
 use kicad_clippy_erc::run_native_erc;
 use kicad_clippy_parser::SchematicDocument;
+use kicad_clippy_rules::{RuleConfig, RuleConfigError, available_rules, run_rules};
 use serde::Serialize;
 use thiserror::Error;
 
@@ -23,19 +24,28 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    /// Parse a schematic and run `KiCad`'s native Electrical Rules Checker.
+    /// Run custom schematic rules and optionally native KiCad ERC.
     Lint {
         /// Schematic source file to inspect.
         schematic: PathBuf,
         /// Output format.
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
-        /// Parse the file without launching `KiCad` ERC.
+        /// Skip native KiCad ERC; custom schematic rules still run.
         #[arg(long)]
         skip_erc: bool,
         /// Explicit path or command name for kicad-cli.
         #[arg(long, value_name = "PATH")]
         kicad_cli: Option<PathBuf>,
+        /// JSON configuration with rule levels and an optional project profile.
+        #[arg(long, value_name = "PATH")]
+        config: Option<PathBuf>,
+    },
+    /// List the built-in custom schematic rule catalogue.
+    Rules {
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
     },
 }
 
@@ -53,7 +63,9 @@ enum CliError {
     Schematic(#[from] kicad_clippy_parser::SchematicParseError),
     #[error(transparent)]
     Erc(#[from] kicad_clippy_erc::ErcError),
-    #[error("KiCad CLI was not found; install KiCad or pass --kicad-cli PATH")]
+    #[error(transparent)]
+    Rules(#[from] RuleConfigError),
+    #[error("KiCad CLI was not found; install a KiCad build with schematic ERC or pass --kicad-cli PATH")]
     KiCadCliNotFound,
     #[error("failed to serialize JSON output: {0}")]
     Json(#[from] serde_json::Error),
@@ -68,6 +80,8 @@ struct LintOutput {
     schematic: String,
     syntax_valid: bool,
     erc_skipped: bool,
+    rule_preset: String,
+    custom_rule_count: usize,
     kicad_version: Option<String>,
     diagnostics: Vec<Diagnostic>,
     summary: Summary,
@@ -123,7 +137,9 @@ fn execute(cli: Cli) -> Result<ExitCode, CliError> {
             format,
             skip_erc,
             kicad_cli,
-        } => lint(&schematic, format, skip_erc, kicad_cli),
+            config,
+        } => lint(&schematic, format, skip_erc, kicad_cli, config),
+        Commands::Rules { format } => list_rules(format),
     }
 }
 
@@ -132,8 +148,16 @@ fn lint(
     format: OutputFormat,
     skip_erc: bool,
     explicit_cli: Option<PathBuf>,
+    config_path: Option<PathBuf>,
 ) -> Result<ExitCode, CliError> {
     let schematic = SchematicDocument::from_path(schematic_path)?;
+    let config = match config_path {
+        Some(path) => RuleConfig::from_path(path)?,
+        None => RuleConfig::default(),
+    };
+    let custom_diagnostics = run_rules(&schematic, &config)?;
+    let registry = available_rules()?;
+
     let erc_report = if skip_erc {
         None
     } else {
@@ -141,10 +165,11 @@ fn lint(
         Some(run_native_erc(cli_path, schematic_path)?)
     };
 
-    let (kicad_version, diagnostics) = match erc_report {
+    let (kicad_version, mut diagnostics) = match erc_report {
         Some(report) => (report.kicad_version, report.diagnostics),
         None => (None, Vec::new()),
     };
+    diagnostics.extend(custom_diagnostics);
     let summary = Summary::from_diagnostics(&diagnostics);
     let output = LintOutput {
         schema_version: "1",
@@ -152,6 +177,8 @@ fn lint(
         schematic: schematic.source().path().display().to_string(),
         syntax_valid: true,
         erc_skipped: skip_erc,
+        rule_preset: config.preset,
+        custom_rule_count: registry.len(),
         kicad_version,
         diagnostics,
         summary,
@@ -172,10 +199,38 @@ fn lint(
     }
 }
 
+fn list_rules(format: OutputFormat) -> Result<ExitCode, CliError> {
+    let registry = available_rules()?;
+    match format {
+        OutputFormat::Text => {
+            let mut stdout = io::stdout().lock();
+            for rule in registry.iter() {
+                writeln!(
+                    stdout,
+                    "{} [{:?}] [{}] {}",
+                    rule.id, rule.default_level, rule.category, rule.summary
+                )?;
+            }
+        }
+        OutputFormat::Json => {
+            let json = serde_json::to_string_pretty(
+                &registry.iter().collect::<Vec<_>>(),
+            )?;
+            writeln!(io::stdout().lock(), "{json}")?;
+        }
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
 fn render_text(output: &LintOutput) -> Result<(), io::Error> {
     let mut stdout = io::stdout().lock();
     writeln!(stdout, "kicad-clippy {}", output.tool_version)?;
     writeln!(stdout, "S-expression syntax: valid ({})", output.schematic)?;
+    writeln!(
+        stdout,
+        "Custom rules: {} available ({} preset)",
+        output.custom_rule_count, output.rule_preset
+    )?;
 
     if output.erc_skipped {
         writeln!(stdout, "Native KiCad ERC: skipped")?;
@@ -185,8 +240,8 @@ fn render_text(output: &LintOutput) -> Result<(), io::Error> {
         writeln!(stdout, "Native KiCad ERC: completed")?;
     }
 
-    if output.diagnostics.is_empty() && !output.erc_skipped {
-        writeln!(stdout, "No native ERC violations reported.")?;
+    if output.diagnostics.is_empty() {
+        writeln!(stdout, "No diagnostics reported.")?;
     }
 
     for diagnostic in &output.diagnostics {
@@ -200,10 +255,6 @@ fn render_text(output: &LintOutput) -> Result<(), io::Error> {
         output.summary.warnings,
         output.summary.notes,
         output.summary.excluded
-    )?;
-    writeln!(
-        stdout,
-        "Custom SCH rules are not migrated yet; this build runs the native ERC engine only."
     )?;
     Ok(())
 }
@@ -227,11 +278,22 @@ fn render_diagnostic(stdout: &mut impl Write, diagnostic: &Diagnostic) -> Result
     if let Some(sheet_path) = &diagnostic.sheet_path {
         write!(stdout, " on sheet {sheet_path}")?;
     }
+    if let Some(source) = &diagnostic.source {
+        if let Some(span) = diagnostic.span {
+            write!(stdout, " ({} bytes {}..{})", source.display(), span.start, span.end)?;
+        }
+    }
     if diagnostic.excluded {
         write!(stdout, " [excluded]")?;
     }
     writeln!(stdout)?;
 
+    if let Some(explanation) = &diagnostic.explanation {
+        writeln!(stdout, "  why: {explanation}")?;
+    }
+    if let Some(help) = &diagnostic.help {
+        writeln!(stdout, "  help: {help}")?;
+    }
     for related in &diagnostic.related {
         if related.uuid.is_some() || !related.description.is_empty() {
             write!(stdout, "  item: {}", related.description)?;
