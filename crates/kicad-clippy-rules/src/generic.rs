@@ -159,9 +159,11 @@ fn check_pin_orientation(root: &Node, source: &str, segments: &[Segment]) -> Vec
         };
         let Some(reference) = children(instance, "property").find_map(|property| {
             let items = list_items(property)?;
-            (atom_value(items.get(1)?, source)? == "Reference")
-                .then(|| atom_value(items.get(2)?, source))
-                .flatten()
+            if atom_value(items.get(1)?, source)? == "Reference" {
+                atom_value(items.get(2)?, source)
+            } else {
+                None
+            }
         }) else {
             continue;
         };
@@ -246,7 +248,7 @@ fn check_pin_orientation(root: &Node, source: &str, segments: &[Segment]) -> Vec
                 continue;
             };
             let Some((x_offset, y_offset)) = transform_symbol_point(
-                pin_x, pin_y, rotation, mirror,
+                pin_x, pin_y, rotation, mirror.as_deref(),
             ) else {
                 continue;
             };
@@ -255,7 +257,7 @@ fn check_pin_orientation(root: &Node, source: &str, segments: &[Segment]) -> Vec
                 y: origin_y + y_offset,
             };
             let Some((axis_x, axis_y)) =
-                transform_symbol_vector(pin_angle, rotation, mirror)
+                transform_symbol_vector(pin_angle, rotation, mirror.as_deref())
             else {
                 continue;
             };
@@ -307,18 +309,20 @@ fn sub_symbol_unit_convert(name: &str) -> Option<(u32, u32)> {
 
 fn cardinal_rotation(angle: f64) -> Option<i32> {
     let normalized = angle.rem_euclid(360.0);
-    let nearest = (normalized / 90.0).round() * 90.0;
-    ((normalized - nearest).abs() <= 0.001)
-        .then_some((nearest as i32).rem_euclid(360))
+    [(0.0, 0), (90.0, 90), (180.0, 180), (270.0, 270)]
+        .into_iter()
+        .find_map(|(degrees, rotation)| {
+            ((normalized - degrees).abs() <= 0.001).then_some(rotation)
+        })
 }
 
 fn transform_symbol_point(
     mut x: f64,
     mut y: f64,
     rotation: i32,
-    mirror: Option<String>,
+    mirror: Option<&str>,
 ) -> Option<(f64, f64)> {
-    match mirror.as_deref() {
+    match mirror {
         Some("x") => y = -y,
         Some("y") => x = -x,
         None => {}
@@ -336,11 +340,11 @@ fn transform_symbol_point(
 fn transform_symbol_vector(
     angle: f64,
     rotation: i32,
-    mirror: Option<String>,
+    mirror: Option<&str>,
 ) -> Option<(f64, f64)> {
     let radians = angle.to_radians();
     let (mut x, mut y) = (radians.cos(), radians.sin());
-    match mirror.as_deref() {
+    match mirror {
         Some("x") => y = -y,
         Some("y") => x = -x,
         None => {}
