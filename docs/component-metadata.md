@@ -99,7 +99,7 @@ The netlist adapter now verifies actual target-pin and return-terminal net membe
 
 ## Functional group documentation
 
-Profiles can also declare functional groups. Each group identifies its component members, the members requiring documentation, the UUID of its rendered description text box, and evidence. It can also set `kicad_group_uuid` to bind the profile contract to a native KiCad group object. For each documented component, the function and rationale phrases must appear in that text box.
+Profiles can also declare functional groups. Each group identifies its component members, the members requiring documentation, the UUID of its rendered description text box, and evidence. It can also set `kicad_group_uuid` to bind the profile contract to a native KiCad group object and `minimum_member_origin_spacing_mm` to declare a minimum Euclidean distance between member symbol origins. For each documented component, the function and rationale phrases must appear in that text box.
 
     {
       "groups": {

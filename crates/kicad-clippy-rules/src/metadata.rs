@@ -127,6 +127,9 @@ pub struct GroupIntent {
     /// Optional UUID of the native `KiCad` group whose component membership is enforced.
     #[serde(default)]
     pub kicad_group_uuid: Option<String>,
+    /// Optional minimum Euclidean spacing between member symbol origins, in millimetres.
+    #[serde(default)]
+    pub minimum_member_origin_spacing_mm: Option<f64>,
     /// Component-specific function and rationale phrases.
     #[serde(default)]
     pub component_purposes: BTreeMap<String, ComponentPurpose>,
@@ -249,6 +252,7 @@ fn validate_group(
     let mut diagnostics = validate_group_evidence(group_id, group);
     diagnostics.extend(validate_group_members(group_id, group, references));
     diagnostics.extend(validate_kicad_group_membership(group_id, group, facts));
+    diagnostics.extend(validate_group_spacing(group_id, group, facts));
     let description = facts
         .text_boxes
         .iter()
@@ -270,6 +274,65 @@ fn validate_group(
         group,
         description,
     ));
+    diagnostics
+}
+
+fn validate_group_spacing(
+    group_id: &str,
+    group: &GroupIntent,
+    facts: &SchematicFacts,
+) -> Vec<Diagnostic> {
+    let Some(minimum_spacing) = group.minimum_member_origin_spacing_mm else {
+        return Vec::new();
+    };
+    if !minimum_spacing.is_finite() || minimum_spacing <= 0.0 {
+        return vec![Diagnostic::new(
+            "SCH006",
+            Severity::Error,
+            format!(
+                "group {group_id} minimum_member_origin_spacing_mm must be a finite positive distance"
+            ),
+        )];
+    }
+
+    let mut positions = Vec::new();
+    let mut diagnostics = Vec::new();
+    for reference in &group.members {
+        let Some(component) = facts
+            .components
+            .iter()
+            .find(|component| component.reference == *reference)
+        else {
+            continue;
+        };
+        let Some((x_mm, y_mm)) = component.position_mm else {
+            diagnostics.push(Diagnostic::new(
+                "SCH006",
+                Severity::Error,
+                format!(
+                    "group {group_id} member {reference} has no symbol-origin position for spacing validation"
+                ),
+            ));
+            continue;
+        };
+        positions.push((reference.as_str(), x_mm, y_mm));
+    }
+
+    for (index, first) in positions.iter().enumerate() {
+        for second in positions.iter().skip(index + 1) {
+            let actual_spacing = (first.1 - second.1).hypot(first.2 - second.2);
+            if actual_spacing + 0.001 < minimum_spacing {
+                diagnostics.push(Diagnostic::new(
+                    "SCH006",
+                    Severity::Error,
+                    format!(
+                        "group {group_id} members {} and {} have symbol-origin spacing {:.2} mm; minimum is {:.2} mm",
+                        first.0, second.0, actual_spacing, minimum_spacing
+                    ),
+                ));
+            }
+        }
+    }
     diagnostics
 }
 
@@ -864,6 +927,79 @@ mod tests {
                 .validate(&schematic)
                 .iter()
                 .any(|item| item.code == "SCH021" && item.message.contains("signal"))
+        );
+    }
+
+    #[test]
+    fn group_minimum_member_origin_spacing_is_enforced() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "group-spacing-test.kicad_sch",
+            r#"(kicad_sch
+                (symbol (lib_id "Device:R") (uuid "r1-uuid") (at 0 0 0)
+                    (property "Reference" "R1" (at 0 1 0)))
+                (symbol (lib_id "Device:C") (uuid "c1-uuid") (at 2 0 0)
+                    (property "Reference" "C1" (at 2 1 0)))
+                (text_box "Power input group" (uuid "description-1"))
+            )"#,
+        )
+        .expect("fixture parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"groups":{"power-input":{"members":["R1","C1"],"description_uuid":"description-1","minimum_member_origin_spacing_mm":4.0,"evidence":{"document":"Power input design note","page":2,"figure":"Figure 1"}}}}"#,
+        )
+        .expect("profile parses");
+        let diagnostics = profile.validate(&schematic);
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "SCH006"
+                && item.message.contains("R1 and C1")
+                && item.message.contains("2.00 mm")
+        }));
+    }
+
+    #[test]
+    fn group_member_origin_spacing_at_or_above_minimum_is_accepted() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "group-spacing-test.kicad_sch",
+            r#"(kicad_sch
+                (symbol (lib_id "Device:R") (uuid "r1-uuid") (at 0 0 0)
+                    (property "Reference" "R1" (at 0 1 0)))
+                (symbol (lib_id "Device:C") (uuid "c1-uuid") (at 2 0 0)
+                    (property "Reference" "C1" (at 2 1 0)))
+                (text_box "Power input group" (uuid "description-1"))
+            )"#,
+        )
+        .expect("fixture parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"groups":{"power-input":{"members":["R1","C1"],"description_uuid":"description-1","minimum_member_origin_spacing_mm":2.0,"evidence":{"document":"Power input design note","page":2,"figure":"Figure 1"}}}}"#,
+        )
+        .expect("profile parses");
+        assert!(
+            !profile
+                .validate(&schematic)
+                .iter()
+                .any(|item| item.code == "SCH006")
+        );
+    }
+
+    #[test]
+    fn group_minimum_member_origin_spacing_must_be_positive_and_finite() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "group-spacing-test.kicad_sch",
+            r#"(kicad_sch
+                (symbol (lib_id "Device:R") (uuid "r1-uuid") (at 0 0 0)
+                    (property "Reference" "R1" (at 0 1 0)))
+                (text_box "Power input group" (uuid "description-1"))
+            )"#,
+        )
+        .expect("fixture parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"groups":{"power-input":{"members":["R1"],"description_uuid":"description-1","minimum_member_origin_spacing_mm":0.0,"evidence":{"document":"Power input design note","page":2,"figure":"Figure 1"}}}}"#,
+        )
+        .expect("profile parses");
+        assert!(
+            profile
+                .validate(&schematic)
+                .iter()
+                .any(|item| item.code == "SCH006" && item.message.contains("finite positive"))
         );
     }
 

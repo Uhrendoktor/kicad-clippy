@@ -30,6 +30,8 @@ pub struct ComponentFact {
     pub reference: String,
     /// UUID of the placed schematic symbol instance.
     pub uuid: Option<String>,
+    /// Schematic symbol anchor position in millimetres.
+    pub position_mm: Option<(f64, f64)>,
 }
 
 #[derive(Clone, Debug)]
@@ -81,7 +83,19 @@ impl SchematicFacts {
                         .and_then(list_items)
                         .and_then(|items| items.get(1))
                         .and_then(|item| atom_value(item, document.source().text()));
-                    facts.components.push(ComponentFact { reference, uuid });
+                    let position_mm = child_list(node, "at")
+                        .and_then(list_items)
+                        .and_then(|at| {
+                            Some((
+                                number(at.get(1)?, document.source().text())?,
+                                number(at.get(2)?, document.source().text())?,
+                            ))
+                        });
+                    facts.components.push(ComponentFact {
+                        reference,
+                        uuid,
+                        position_mm,
+                    });
                 }
             }
         }
