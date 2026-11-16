@@ -9,6 +9,7 @@ rust-version.workspace = true
 
 [dependencies]
 kurbo.workspace = true
+petgraph.workspace = true
 geo.workspace = true
 kicad-clippy-core = { path = "../kicad-clippy-core" }
 kicad-clippy-erc = { path = "../kicad-clippy-erc" }
