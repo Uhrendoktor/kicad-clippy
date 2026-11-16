@@ -109,6 +109,14 @@ pub struct DesignProfile {
     pub required_title_fields: Vec<String>,
     /// Shared evidence used by group documentation checks.
     pub evidence: DocumentEvidence,
+    /// Type-aware component roles and electrical intent declarations.
+    pub component_metadata: Vec<ComponentMetadata>,
+    /// Component types for which metadata is mandatory. Strict mode always requires capacitors.
+    pub require_component_metadata_for: Vec<ComponentKind>,
+    /// Maximum schematic distance from a capacitor decoupling terminal to its target IC pin.
+    pub decoupling_max_pin_distance_mm: Option<f64>,
+    /// Maximum symbol-origin spacing between decouplers serving the same target pin.
+    pub decoupling_max_cluster_spacing_mm: Option<f64>,
 }
 
 /// A functional schematic region and the components assigned to it.
@@ -184,6 +192,117 @@ pub struct ComponentPurpose {
     pub function: String,
     /// Why this component/value is required in the circuit.
     pub rationale: String,
+}
+
+/// Component categories used by the design-intent metadata system.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ComponentKind {
+    /// Fixed or variable capacitor.
+    Capacitor,
+    /// Fixed or variable resistor.
+    Resistor,
+    /// Diode, TVS or ESD protection device.
+    Diode,
+    /// Inductor, bead or choke.
+    Inductor,
+    /// MOSFET, BJT or other transistor.
+    Transistor,
+    /// Integrated circuit.
+    IntegratedCircuit,
+    /// Connector, socket or terminal.
+    Connector,
+    /// Test point.
+    TestPoint,
+    /// Other or project-specific component.
+    Other,
+}
+
+/// Typed design role independent of the component's library symbol name.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ComponentRole {
+    /// Bulk energy storage on a supply rail.
+    Bulk,
+    /// High-frequency supply bypass/decoupling.
+    Decoupling,
+    /// Local bypass capacitor.
+    Bypass,
+    /// Signal or supply filter.
+    Filter,
+    /// AC/DC coupling.
+    Coupling,
+    /// Snubber or damping network component.
+    Snubber,
+    /// Reservoir or hold-up energy storage.
+    Reservoir,
+    /// Pull-up bias.
+    PullUp,
+    /// Pull-down bias.
+    PullDown,
+    /// Series current limiting.
+    SeriesCurrentLimit,
+    /// Discharge path.
+    Discharge,
+    /// Gate bias or gate pull.
+    GateBias,
+    /// Bleeder resistor.
+    Bleeder,
+    /// Current-sense resistor.
+    CurrentSense,
+    /// Transient clamp or suppression.
+    Clamp,
+    /// ESD protection.
+    EsdProtection,
+    /// Flyback/freewheel diode.
+    Flyback,
+    /// Rectification.
+    Rectifier,
+    /// Reverse-polarity protection.
+    ReversePolarity,
+    /// High-side electronic switch.
+    HighSideSwitch,
+    /// Low-side electronic switch.
+    LowSideSwitch,
+    /// Back-to-back MOSFET switch.
+    BackToBackSwitch,
+    /// Signal or power interface.
+    Interface,
+    /// Test access.
+    TestAccess,
+    /// Other explicitly described design role.
+    Other,
+}
+
+/// Typed component intent used by profile-driven checks.
+///
+/// Pin references use `REFERENCE.NUMBER`; component terminal numbers are the
+/// pin numbers in the embedded KiCad library symbol, not physical package pads.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ComponentMetadata {
+    /// Placed component reference.
+    pub reference: String,
+    /// Electrical/mechanical component category.
+    pub kind: ComponentKind,
+    /// Intended circuit role.
+    pub role: ComponentRole,
+    /// What this part electrically does.
+    pub function: String,
+    /// Why this part/value is used in this circuit.
+    pub rationale: String,
+    /// Pin the part serves, for example `U1.23` for a decoupling capacitor.
+    pub associated_pin: Option<String>,
+    /// This component's terminal that connects to `associated_pin`.
+    pub connection_pin: Option<String>,
+    /// Return terminal on this component, commonly its GND terminal.
+    pub return_pin: Option<String>,
+    /// Expected name of the common return net, for example `GND`.
+    pub return_net: Option<String>,
+    /// Shared cluster key, usually the same as `associated_pin`.
+    pub cluster: Option<String>,
+    /// Maximum connection-terminal to target-pin distance in millimetres.
+    pub max_distance_mm: Option<f64>,
 }
 
 /// Datasheet or reviewed-image provenance for a schematic profile.
