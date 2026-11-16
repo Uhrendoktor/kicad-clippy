@@ -1741,7 +1741,9 @@ mod tests {
         );
     }
 
-    fn direct_wire_t_junction_schematic(explicit_junction: bool) -> kicad_clippy_parser::SchematicDocument {
+    fn direct_wire_t_junction_schematic(
+        explicit_junction: bool,
+    ) -> kicad_clippy_parser::SchematicDocument {
         let junction = if explicit_junction {
             r#"(junction (at 14 10) (diameter 0) (color 0 0 0 0))"#
         } else {
@@ -1781,14 +1783,12 @@ mod tests {
             r#"{"schema_version":1,"direct_wire_pairs":[{"first":"U1.1","second":"R1.1"}]}"#,
         )
         .expect("profile parses");
-        assert!(
-            profile.validate(&schematic).iter().any(|item| {
-                item.code == "SCH004"
-                    && item
-                        .message
-                        .contains("must share one physical wire-only network")
-            })
-        );
+        assert!(profile.validate(&schematic).iter().any(|item| {
+            item.code == "SCH004"
+                && item
+                    .message
+                    .contains("must share one physical wire-only network")
+        }));
     }
 
     #[test]
