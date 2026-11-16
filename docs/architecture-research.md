@@ -22,6 +22,7 @@ The following table distinguishes adopted libraries from alternatives that remai
 | Concern | Library | Status | What it replaces / why it fits |
 | --- | --- | --- | --- |
 | Lossless KiCad S-expression parsing | [`kiutils_sexpr`](https://crates.io/crates/kiutils_sexpr) | Adopted | Provides the CST and original byte spans. Replacing it with another parser would duplicate grammar and source-preservation work. |
+| KiCad quoted-string escapes | [`unescaper`](https://docs.rs/unescaper/0.2.0/unescaper/) | Adopted | Decodes KiCad quoted-string escapes (control characters, quotes, backslashes and numeric forms) from the original token slice. The parser adapter preserves `CstDocument::raw` and byte spans; rule passes consume decoded `Atom::Quoted` values without carrying source text through helper calls. |
 | Terminal diagnostics and source excerpts | [`miette`](https://docs.rs/miette/7.6.0/miette/) | Adopted | Renders named source files, labeled byte spans, severity, diagnostic codes, help and source excerpts. The CLI adapts the project's existing `Diagnostic` to miette; JSON remains the stable interchange schema. |
 | General planar geometry | [`geo`](https://docs.rs/geo/0.31.0/geo/) | Adopted | Replaces handwritten segment-intersection classification, point-to-segment distance, point-in-polygon, and rectangle/polygon predicates. Its Bentley–Ottmann sweep replaces the nested all-pairs wire-intersection scan. |
 | Curves and affine transforms | [`kurbo`](https://docs.rs/kurbo/0.13.1/kurbo/) | Adopted | Replaces hand-written recursive cubic Bézier subdivision, manual arc sampling, and duplicated point/vector rotation and mirror arithmetic with adaptive path flattening and affine transforms. |
@@ -41,12 +42,13 @@ Against the feature-branch state before this simplification pass (`90b19a296472e
 
 | File | Before | After | Net change |
 | --- | ---: | ---: | ---: |
-| `generic.rs` | 3,523 lines | 3,434 lines | -89 |
+| `generic.rs` | 3,523 lines | 3,367 lines | -156 |
 | `source.rs` | 177 lines | 104 lines | -73 |
 | CLI `main.rs` | 331 lines | 375 lines | +44 |
-| **Combined** | **4,031 lines** | **3,913 lines** | **-118** |
+| Parser `schematic.rs` | 183 lines | 240 lines | +57 |
+| **Combined** | **4,214 lines** | **4,086 lines** | **-128** |
 
-This is a net reduction of 118 source lines across the geometry kernel, source mapping, and terminal renderer. The CLI adapter grew because it now passes structured diagnostics to miette, but that is outweighed by deleting the duplicate source line-index and line/column implementation and by moving generic geometry and curve algorithms into their libraries. The comparison is a file line-count delta, not a claim about all repository code or runtime performance.
+Across all four directly affected implementation files, the net reduction is 128 source lines (3.0%). The parser adapter and CLI grew because they now establish the correct quoted-string and terminal-diagnostic boundaries; this is outweighed by removing duplicated generic geometry, source indexing, source-to-rule plumbing and manual curve/transform algorithms. The comparison is a file line-count delta, not a claim about all repository code or runtime performance.
 
 ## Target architecture
 
@@ -55,6 +57,7 @@ KiCad source
     |
     v
 kiutils_sexpr lossless CST + byte spans
+    |  unescaper: semantic quoted-string decoding
     |
     v
 typed schematic facts and KiCad-specific context
@@ -76,7 +79,7 @@ stable Diagnostic contract
 
 ### Ownership rules
 
-- **Parser:** preserve original source and the lossless CST; rely on CST-provided spans.
+- **Parser:** preserve original source and CST spans. Decode quoted atom payloads once from their original source slices through `unescaper`; do not carry source text through every rule helper.
 - **Source file:** retain the path and shared original text. Do not maintain a second line-start index solely for terminal presentation.
 - **Geometry adapter:** convert KiCad primitives to library types and apply KiCad-specific tolerances and exemptions. Do not reimplement general intersections, distances or containment.
 - **Curves and transforms:** retain only the KiCad start/mid/end interpretation needed to construct an arc and the coordinate-frame convention; delegate path flattening and affine matrix operations to kurbo.
