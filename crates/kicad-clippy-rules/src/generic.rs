@@ -1961,9 +1961,7 @@ fn wire_overlaps_bounds(segment: Segment, bounds: Bounds, strict: bool) -> bool 
     } else {
         (clipped_bounds.x, clipped_bounds.x + clipped_bounds.width)
     };
-    if (strict && (axis <= lower || axis >= upper))
-        || (!strict && (axis < lower || axis > upper))
-    {
+    if (strict && (axis <= lower || axis >= upper)) || (!strict && (axis < lower || axis > upper)) {
         return false;
     }
 
