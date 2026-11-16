@@ -123,3 +123,38 @@ jobs:
 
       - name: Run native ERC smoke test
         run: bash scripts/validate-native-erc.sh
+
+  # Temporary formatter repair for this PR after geometry-library substitutions.
+  format-repair:
+    name: Apply rustfmt to PR branch
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.ref }}
+          token: ${{ github.token }}
+
+      - name: Install stable Rust formatter
+        run: rustup toolchain install stable --profile minimal --component rustfmt
+
+      - name: Format and push Rust sources
+        env:
+          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          if git diff --quiet; then
+            echo "Rust sources are already formatted."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -u
+          git commit -m "style: apply rustfmt"
+          git push origin "HEAD:${PR_BRANCH}"
+
