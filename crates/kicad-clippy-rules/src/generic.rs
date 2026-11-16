@@ -467,8 +467,10 @@ fn parse_symbol_primitive(
         _ => return None,
     };
     let mut points_mm = transform_primitive_points(&local_points, transform)?;
-    let repeated_endpoint =
-        points_mm.len() > 2 && same_wire_point(points_mm[0], *points_mm.last()?);
+    let last_point = *points_mm.last()?;
+    let repeated_endpoint = points_mm.len() > 2
+        && (points_mm[0].0 - last_point.0).abs() <= 0.001
+        && (points_mm[0].1 - last_point.1).abs() <= 0.001;
     let closed = kind == "rectangle" || kind == "polygon" || repeated_endpoint;
     if closed && repeated_endpoint {
         points_mm.pop();
@@ -735,17 +737,18 @@ fn wire_crosses_symbol_primitive(
             && point_segment_distance(center, wire.start, wire.end) < inner_radius - 0.001;
     }
 
+    let to_point = |(x, y): (f64, f64)| Point { x, y };
     let mut edges: Vec<_> = primitive
         .points_mm
         .windows(2)
-        .map(|pair| (pair[0], pair[1]))
+        .map(|pair| (to_point(pair[0]), to_point(pair[1])))
         .collect();
     if primitive.closed && primitive.points_mm.len() > 2 {
         if let (Some(last), Some(first)) = (
             primitive.points_mm.last().copied(),
             primitive.points_mm.first().copied(),
         ) {
-            edges.push((last, first));
+            edges.push((to_point(last), to_point(first)));
         }
     }
     for (edge_start, edge_end) in edges {
