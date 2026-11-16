@@ -1411,7 +1411,7 @@ mod tests {
 
     #[test]
     fn direct_wire_pair_passes_when_pins_share_a_continuous_wire() {
-        let schematic = direct_wire_schematic(r#"(wire (pts (xy 10 10) (xy 20 10)))"#);
+        let schematic = direct_wire_schematic(r"(wire (pts (xy 10 10) (xy 20 10)))");
         let profile: LintProfile = serde_json::from_str(
             r#"{"schema_version":1,"direct_wire_pairs":[{"first":"U1.1","second":"R1.1"}]}"#,
         )
