@@ -1,64 +1,69 @@
 # Scope and roadmap
 
-This page describes what is implemented and what remains planned. A successful current lint run is not a complete schematic-style audit.
+This page separates implemented functionality from the remaining migration work. A successful lint run is not a complete schematic-style or electrical validation pass.
 
 ## Implemented foundation
 
-- Rust workspace and strict inherited lint policy.
-- Lossless KiCad S-expression parser integration.
-- UTF-8 byte spans, line/column mapping, and shared source model.
-- Diagnostic data model with optional source spans and schematic coordinates.
-- Rule descriptor metadata, levels, and deterministic registry.
-- KiCad CLI native ERC adapter and per-sheet JSON normalization.
+- Four-crate Rust workspace with a strict inherited lint policy and locked dependencies.
+- Lossless KiCad S-expression parser integration, UTF-8 byte spans, and line/column mapping.
+- Shared diagnostic model with severity, source spans, and schematic coordinates.
+- Rule descriptor metadata, levels, deterministic registry, and a built-in rule runner.
+- KiCad CLI native ERC adapter, per-sheet JSON normalization, and flattened netlist export with component-pin-to-net lookup.
 - Text and JSON CLI output.
-- Tests for source mapping, parser validation, rule registry, and ERC report normalization.
-- CI for formatting, strict Clippy, unit tests, and documentation tests.
+- CI for formatting, strict Clippy, workspace tests, documentation tests, release build, and a native KiCad ERC/netlist smoke test.
 
-## Next: executable custom-rule engine
+## Current rule coverage
 
-- Define the public rule trait and immutable rule-analysis context.
-- Add `kicad-clippy.toml` parsing and validation.
-- Implement presets and per-rule `allow` / `warn` / `deny` configuration.
-- Add a diagnostic reporter and rule runner.
-- Add generic, project-independent geometry, label, annotation, and documentation rules.
+The exact status and limitations for every rule are maintained in [rules.md](rules.md). Current coverage includes:
 
-## Port the legacy rule catalogue
+- Generic schematic rules: SCH001–SCH003, SCH005, SCH008, SCH010 (partial), SCH011, SCH015, SCH018, and SCH019.
+- Project-profile rules: SCH006, SCH007, SCH009, SCH012 (partial), SCH014, SCH016, SCH017, SCH020, SCH021, and SCH022.
+- SCH004 physical direct-wire connectivity and SCH013 symbol-primitive wire-obstacle checks remain pending.
 
-The KiCad Blocks schematic checker historically contains rules SCH001–SCH019, with SCH020 introduced separately in a review branch. The plan is to classify and migrate those checks into:
+Some migrated rules intentionally implement only a subset of their historical requirements. In particular, current SCH009 checks member symbol origins against a referenced rectangle, SCH010 checks text-field overlap using estimated text bounds, SCH012 checks configured inset for member origins and the description text box, and SCH015 checks the placement of explicit no-connect markers. These do not yet prove full symbol, pin, field, label, wire, or note containment/clearance.
 
-- Generic design-quality rules that work on any schematic.
-- Declarative profile rules that describe project-specific expectations.
-- Checks that should remain delegated to native KiCad ERC.
+## Project profiles
 
-The migration must remove dependencies on the KiCad Blocks Python generator and its example-specific globals. Project design metadata should be loaded from an explicit profile, not imported from an example generator.
+Version-1 JSON profiles currently support:
 
-## Profiles and analysis model
+- Component intent, role-specific connection contracts, explicit pin-to-net expectations, and decoupling terminal-to-target-pin verification through the KiCad-exported netlist.
+- Functional-group members, documentation text-box UUIDs, evidence references, optional native KiCad group UUID binding, and optional schematic rectangle UUID binding.
+- Minimum member-origin spacing, minimum frame inset, and a per-group wire-length budget measured as the sum of segments wholly within the referenced frame.
 
-- Build a typed schematic model with embedded library-symbol geometry, pins, wires, labels, junctions, text boxes, fields, and sheet hierarchy.
-- Preserve KiCad UUIDs and the sheet instance path.
-- Add shared geometry, connectivity, and spatial indexes.
-- Define schema-validated project profiles for net contracts, component roles, circuit groups, documentation, and layout expectations.
+The profile format is deliberately explicit; project-specific expectations are not imported from a schematic generator. A broader JSON Schema and a separate general rule-policy configuration are still planned.
+
+## Next: physical connectivity and symbol geometry
+
+1. Build a reusable physical-wire graph that splits segments at wire endpoints, junctions, and resolved placed-symbol pin coordinates. Labels must never create physical connectivity edges.
+2. Add profile-declared direct pin-to-pin wire contracts and common physical pin groups for SCH004. Validate that pairs/groups share a physical wire network and that declared direct-wire connections are not being substituted by labels.
+3. Use embedded symbol primitive geometry to implement SCH013 wire-obstacle checks, including lines, rectangles, circles, arcs, and polygons.
+4. Extend frame and field rules beyond symbol origins and estimated text boxes: check actual pin positions, visible field extents, labels, wire segments, and annotation bounds against frames and obstacles.
+5. Improve multi-unit, alternate-convert, mirrored, and non-cardinal symbol transform coverage, with conservative skips for geometry that cannot be resolved.
+
+## Rule configuration and extensibility
+
+- Add a project rule-policy file such as `kicad-clippy.toml` with explicit `allow`, `warn`, and `deny` levels and named presets.
+- Define a stable public rule trait and immutable rule-analysis context around the existing descriptor/registry model.
+- Add rule explain/list commands and schema validation for configuration.
+- Consider sandboxed WASM rule packs only after the in-process API and semantic model are stable.
 
 ## Diagnostics and output
 
-- Add SARIF 2.1.0.
-- Add source-linked spans for custom semantic findings.
-- Add stable JSON schema versioning and snapshot tests.
-- Add explain/list commands for rule discovery.
+- Add SARIF 2.1.0 output.
+- Version and publish the JSON diagnostic schema, including stable rule identifiers and source-linked spans.
+- Add snapshot and compatibility tests for serialized diagnostics and native ERC normalization.
 
 ## Fixes and layout proposals
 
 - Introduce structured edits with applicability classifications.
-- Add a non-overlapping edit planner and source-hash/object-UUID preconditions.
-- Verify proposed fixes by reparsing, rerunning native ERC, rerunning relevant rules, and checking net connectivity.
-- Add layout proposal support for group anchors, relative offsets, pin-relative placement, frames, spacing, and obstacle clearances.
+- Add a non-overlapping edit planner with source-hash and object-UUID preconditions.
+- Verify proposed fixes by reparsing, rerunning native ERC and relevant rules, and checking that logical and physical connectivity has not changed.
+- Add reviewable layout proposals for group anchors, relative offsets, pin-relative placement, frames, spacing, and obstacle clearance.
 
-Safe automatic application must be restricted to machine-applicable fixes. Layout changes that can affect connectivity require an explicit reviewable diff and verification pass.
+Safe automatic application must be restricted to machine-applicable edits. Layout changes that could affect connectivity require an explicit reviewable diff and a verification pass.
 
-## Third-party rules and editor integration
+## Editor integration
 
-- Start with a stable in-process Rust rule API.
-- Consider sandboxed WASM rule packs only after the semantic model and versioned API are stable.
 - Treat KiCad editor integration as a later UI adapter over the shared diagnostic model.
 - Use KiCad IPC only when the required Eeschema API surface is available and validated against a supported KiCad release.
 
@@ -67,4 +72,4 @@ Safe automatic application must be restricted to machine-applicable fixes. Layou
 - Replacing KiCad's electrical ERC engine.
 - Forking KiCad or modifying its native ERC catalogue.
 - Mutating schematics during rule execution.
-- Shipping an editor plugin before the CLI and diagnostic contracts stabilize.
+- Shipping an editor plugin before the CLI, physical geometry model, and diagnostic contracts are stable.
