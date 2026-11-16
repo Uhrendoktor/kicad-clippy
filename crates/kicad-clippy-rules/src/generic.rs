@@ -1806,10 +1806,7 @@ fn check_block_annotation_structure(root: &Node, source: &str) -> Vec<Diagnostic
         .filter_map(|node| {
             let items = list_items(node)?;
             let value = atom_value(items.get(1)?)?;
-            let multiline = value.contains('\n')
-                || value.contains('\r')
-                || value.contains("\\n")
-                || value.contains("\\r");
+            let multiline = value.contains('\n') || value.contains('\r');
             let stroke_width = child_list(node, "stroke")
                 .and_then(|stroke| child_list(stroke, "width"))
                 .and_then(|width| list_items(width))
@@ -1951,8 +1948,7 @@ fn char_advance(character: char) -> f64 {
 }
 
 fn required_text_box_size(value: &str, font_size: f64, padding: f64) -> (f64, f64) {
-    let normalized = value.replace("\\n", "\n").replace("\\r", "\r");
-    let lines: Vec<_> = normalized.lines().collect();
+    let lines: Vec<_> = value.lines().collect();
     let line_count = u32::try_from(lines.len().max(1)).unwrap_or(u32::MAX);
     let max_width = lines
         .iter()
