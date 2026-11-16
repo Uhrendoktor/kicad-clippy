@@ -579,7 +579,7 @@ pub fn run_builtin_rules(document: &SchematicDocument) -> RuleRun {
     diagnostics.extend(check_text_box_layout(root, source, &segments));
     diagnostics.extend(check_block_annotation_structure(root, source));
     diagnostics.extend(check_label_text_collisions(root, source));
-    diagnostics.extend(check_symbol_field_clearance(root, source));
+    diagnostics.extend(check_symbol_field_clearance(root, source, &segments, &facts));
     diagnostics.extend(check_label_kind_consistency(root, source));
 
     RuleRun {
@@ -2041,70 +2041,237 @@ fn check_label_text_collisions(root: &Node, source: &str) -> Vec<Diagnostic> {
     diagnostics
 }
 
-fn check_symbol_field_clearance(root: &Node, source: &str) -> Vec<Diagnostic> {
-    let mut fields = Vec::new();
-    for symbol in children(root, "symbol") {
-        let reference = children(symbol, "property").find_map(|property| {
-            let items = list_items(property)?;
-            if atom_value(items.get(1)?, source)? == "Reference" {
-                atom_value(items.get(2)?, source)
-            } else {
-                None
-            }
-        });
-        let Some(reference) = reference else {
-            continue;
-        };
-        for property in children(symbol, "property") {
-            if property_is_hidden(property) {
-                continue;
-            }
-            let Some(items) = list_items(property) else {
-                continue;
-            };
-            let Some(field_name) = items.get(1).and_then(|item| atom_value(item, source)) else {
-                continue;
-            };
-            let Some(value) = items.get(2).and_then(|item| atom_value(item, source)) else {
-                continue;
-            };
-            if value.trim().is_empty() {
-                continue;
-            }
-            if let Some(bounds) = text_visual_bounds(&value, property, source) {
-                fields.push((
-                    format!("{reference} {field_name} {value:?}"),
-                    bounds,
-                    span_of(property),
-                ));
-            }
-        }
-    }
-
+fn check_symbol_field_clearance(
+    root: &Node,
+    source: &str,
+    segments: &[Segment],
+    facts: &SchematicFacts,
+) -> Vec<Diagnostic> {
+    let fields = collect_visible_field_bounds(root, source);
+    let label_bounds: Vec<_> = collect_label_nodes(root, source)
+        .into_iter()
+        .filter_map(|(kind, name, _point, _span, node)| {
+            text_visual_bounds(&name, node, source)
+                .map(|bounds| (kind, name, bounds))
+        })
+        .collect();
+    let text_boxes: Vec<_> = children(root, "text_box")
+        .filter_map(|node| text_box_bounds(node, source))
+        .collect();
     let mut diagnostics = Vec::new();
-    for (index, (first_name, first_bounds, first_span)) in fields.iter().enumerate() {
-        for (second_name, second_bounds, _second_span) in fields.iter().skip(index + 1) {
-            if bounds_overlap(*first_bounds, *second_bounds) {
+
+    for (index, (field_label, bounds, span)) in fields.iter().enumerate() {
+        let (reference, name) = field_label
+            .split_once(' ')
+            .unwrap_or((field_label.as_str(), ""));
+        for primitive in &facts.symbol_primitives {
+            if !symbol_primitive_intersects_bounds(*bounds, primitive) {
+                continue;
+            }
+            let contained_value = primitive.reference == reference
+                && name == "Value"
+                && symbol_primitive_contains_bounds(*bounds, primitive);
+            if contained_value {
+                continue;
+            }
+            let description = if primitive.reference == reference {
+                "its own symbol body"
+            } else {
+                "another symbol body"
+            };
+            diagnostics.push(at_span(
+                "SCH010",
+                format!("{field_label} overlaps {description} {}", primitive.reference),
+                *span,
+            ));
+        }
+
+        for segment in segments {
+            if strict_line_hits_bounds(*segment, *bounds) {
                 diagnostics.push(at_span(
                     "SCH010",
-                    format!("visible symbol fields overlap: {first_name} and {second_name}"),
-                    *first_span,
+                    format!("{field_label} overlaps a wire segment"),
+                    *span,
                 ));
             }
         }
-        for text_box in collect_nodes(root, "text_box") {
-            if text_box_bounds(text_box, source)
-                .is_some_and(|box_bounds| bounds_overlap(*first_bounds, box_bounds))
-            {
+        for pin in &facts.pins {
+            let point = Point {
+                x: pin.position_mm.0,
+                y: pin.position_mm.1,
+            };
+            if point_in_bounds(point, *bounds) {
                 diagnostics.push(at_span(
                     "SCH010",
-                    format!("{first_name} overlaps an annotation text box"),
-                    *first_span,
+                    format!("{field_label} overlaps pin {}.{}", pin.reference, pin.number),
+                    *span,
+                ));
+            }
+        }
+        for (kind, label, label_bounds) in &label_bounds {
+            if bounds_overlap(*bounds, *label_bounds) {
+                diagnostics.push(at_span(
+                    "SCH010",
+                    format!("{field_label} overlaps {kind} {label:?}"),
+                    *span,
+                ));
+            }
+        }
+        for box_bounds in &text_boxes {
+            if bounds_overlap(*bounds, *box_bounds) {
+                diagnostics.push(at_span(
+                    "SCH010",
+                    format!("{field_label} overlaps an annotation text box"),
+                    *span,
+                ));
+            }
+        }
+        for (other_label, other_bounds, _other_span) in fields.iter().skip(index + 1) {
+            if bounds_overlap(*bounds, *other_bounds) {
+                diagnostics.push(at_span(
+                    "SCH010",
+                    format!("visible symbol fields overlap: {field_label} and {other_label}"),
+                    *span,
                 ));
             }
         }
     }
     diagnostics
+}
+
+fn bounds_corners(bounds: Bounds) -> [Point; 4] {
+    [
+        Point {
+            x: bounds.x,
+            y: bounds.y,
+        },
+        Point {
+            x: bounds.x + bounds.width,
+            y: bounds.y,
+        },
+        Point {
+            x: bounds.x + bounds.width,
+            y: bounds.y + bounds.height,
+        },
+        Point {
+            x: bounds.x,
+            y: bounds.y + bounds.height,
+        },
+    ]
+}
+
+fn point_in_bounds(point: Point, bounds: Bounds) -> bool {
+    point.x >= bounds.x - 0.001
+        && point.x <= bounds.x + bounds.width + 0.001
+        && point.y >= bounds.y - 0.001
+        && point.y <= bounds.y + bounds.height + 0.001
+}
+
+fn point_bounds_distance(point: Point, bounds: Bounds) -> f64 {
+    let dx = (bounds.x - point.x).max(0.0).max(point.x - (bounds.x + bounds.width));
+    let dy = (bounds.y - point.y).max(0.0).max(point.y - (bounds.y + bounds.height));
+    dx.hypot(dy)
+}
+
+fn bounds_edges(bounds: Bounds) -> [(Point, Point); 4] {
+    let corners = bounds_corners(bounds);
+    [
+        (corners[0], corners[1]),
+        (corners[1], corners[2]),
+        (corners[2], corners[3]),
+        (corners[3], corners[0]),
+    ]
+}
+
+fn segment_intersects_bounds(segment: Segment, bounds: Bounds) -> bool {
+    point_in_bounds(segment.start, bounds)
+        || point_in_bounds(segment.end, bounds)
+        || bounds_edges(bounds)
+            .into_iter()
+            .any(|(start, end)| !segment_intersection_points(segment, start, end).is_empty())
+}
+
+fn primitive_edges(primitive: &SchematicPrimitiveFact) -> Vec<Segment> {
+    let points: Vec<_> = primitive
+        .points_mm
+        .iter()
+        .map(|(x, y)| Point { x: *x, y: *y })
+        .collect();
+    let mut edges: Vec<_> = points
+        .windows(2)
+        .map(|pair| Segment {
+            start: pair[0],
+            end: pair[1],
+            span: ByteSpan::new(0, 0),
+        })
+        .collect();
+    if primitive.closed && points.len() > 2 {
+        edges.push(Segment {
+            start: *points.last().expect("closed path has a last point"),
+            end: points[0],
+            span: ByteSpan::new(0, 0),
+        });
+    }
+    edges
+}
+
+fn symbol_primitive_intersects_bounds(
+    bounds: Bounds,
+    primitive: &SchematicPrimitiveFact,
+) -> bool {
+    if let Some((center_x, center_y, radius)) = primitive.circle_mm {
+        let center = Point {
+            x: center_x,
+            y: center_y,
+        };
+        return point_bounds_distance(center, bounds)
+            <= radius + primitive.stroke_width_mm / 2.0 + 0.001;
+    }
+
+    if primitive.closed
+        && bounds_corners(bounds)
+            .iter()
+            .any(|corner| point_in_polygon(*corner, &primitive.points_mm))
+    {
+        return true;
+    }
+    if primitive
+        .points_mm
+        .iter()
+        .map(|(x, y)| Point { x: *x, y: *y })
+        .any(|point| point_in_bounds(point, bounds))
+    {
+        return true;
+    }
+    primitive_edges(primitive)
+        .into_iter()
+        .any(|edge| segment_intersects_bounds(edge, bounds))
+}
+
+fn symbol_primitive_contains_bounds(
+    bounds: Bounds,
+    primitive: &SchematicPrimitiveFact,
+) -> bool {
+    if let Some((center_x, center_y, radius)) = primitive.circle_mm {
+        let inner_radius = radius - primitive.stroke_width_mm / 2.0;
+        if inner_radius <= 0.0 {
+            return false;
+        }
+        let center = Point {
+            x: center_x,
+            y: center_y,
+        };
+        return bounds_corners(bounds)
+            .iter()
+            .all(|corner| distance(*corner, center) <= inner_radius + 0.001);
+    }
+    primitive.closed
+        && bounds_corners(bounds)
+            .iter()
+            .all(|corner| point_in_polygon(*corner, &primitive.points_mm))
+        && !primitive_edges(primitive)
+            .into_iter()
+            .any(|edge| segment_intersects_bounds(edge, bounds))
 }
 
 fn property_is_hidden(property: &Node) -> bool {
@@ -2737,6 +2904,106 @@ mod tests {
                 .diagnostics
                 .iter()
                 .any(|item| item.code == "SCH010" && item.message.contains("annotation text box"))
+        );
+    }
+
+    #[test]
+    fn visible_reference_field_may_not_be_embedded_in_symbol_body() {
+        let doc = document(
+            r#"
+            (lib_symbols
+              (symbol "Test:Body"
+                (symbol "Body_1_1"
+                  (rectangle (start -2 -2) (end 2 2)
+                    (stroke (width 0.254)) (fill (type none)))
+                )
+              )
+            )
+            (symbol (lib_id "Test:Body") (at 10 10 0) (unit 1)
+              (property "Reference" "U1" (at 10 10 0) (effects (font (size 1 1))))
+            )
+            "#,
+        );
+        assert!(
+            run_builtin_rules(&doc)
+                .diagnostics
+                .iter()
+                .any(|item| item.code == "SCH010" && item.message.contains("own symbol body"))
+        );
+    }
+
+    #[test]
+    fn value_field_fully_inside_closed_symbol_body_is_allowed() {
+        let doc = document(
+            r#"
+            (lib_symbols
+              (symbol "Test:Body"
+                (symbol "Body_1_1"
+                  (rectangle (start -3 -2) (end 3 2)
+                    (stroke (width 0.254)) (fill (type none)))
+                )
+              )
+            )
+            (symbol (lib_id "Test:Body") (at 10 10 0) (unit 1)
+              (property "Reference" "U1" (at 10 7 0) (effects (font (size 1 1))))
+              (property "Value" "PASSIVE" (at 10 10 0) (effects (font (size 1 1))))
+            )
+            "#,
+        );
+        assert!(
+            !run_builtin_rules(&doc)
+                .diagnostics
+                .iter()
+                .any(|item| item.code == "SCH010" && item.message.contains("Value"))
+        );
+    }
+
+    #[test]
+    fn visible_symbol_field_may_not_overlap_wire_segment_or_pin() {
+        let doc = document(
+            r#"
+            (lib_symbols
+              (symbol "Test:Pin"
+                (symbol "Pin_1_1"
+                  (pin passive line (at 0 0 0) (length 1)
+                    (name "1") (number "1"))
+                )
+              )
+            )
+            (symbol (lib_id "Test:Pin") (at 5 5 0) (unit 1)
+              (property "Reference" "U1" (at 5 5 0) (effects (font (size 1 1))))
+            )
+            (wire (pts (xy 3 4.4) (xy 7 4.4)))
+            "#,
+        );
+        let diagnostics = run_builtin_rules(&doc).diagnostics;
+        assert!(
+            diagnostics
+                .iter()
+                .any(|item| item.code == "SCH010" && item.message.contains("overlaps a wire segment"))
+        );
+        assert!(
+            diagnostics
+                .iter()
+                .any(|item| item.code == "SCH010" && item.message.contains("overlaps pin U1.1"))
+        );
+    }
+
+    #[test]
+    fn visible_symbol_field_may_not_overlap_label_glyph() {
+        let doc = document(
+            r#"
+            (symbol (lib_id "Device:R") (at 1 1 0)
+              (property "Reference" "R1" (at 5 5 0) (effects (font (size 1 1))))
+            )
+            (label "NET_NAME" (at 5 5 0) (effects (font (size 1 1))))
+            "#,
+        );
+        assert!(
+            run_builtin_rules(&doc)
+                .diagnostics
+                .iter()
+                .any(|item| item.code == "SCH010" && item.message.contains("overlaps label"))
         );
     }
 
