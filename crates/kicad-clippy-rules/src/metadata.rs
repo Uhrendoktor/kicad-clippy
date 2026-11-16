@@ -80,7 +80,7 @@ pub struct CommonPinNetGroup {
     /// Require all listed pins to share one continuous wire-only component.
     #[serde(default)]
     pub wire_connected: bool,
-    /// Require all listed pins to resolve to the same net in KiCad's exported netlist.
+    /// Require all listed pins to resolve to the same net in the exported `KiCad` netlist.
     #[serde(default)]
     pub netlist_connected: bool,
     /// Require exactly one matching label across the resolved wire components.
