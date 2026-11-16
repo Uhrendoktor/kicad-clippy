@@ -12,7 +12,7 @@ The historical checker defines stable IDs SCH001–SCH020. The Rust migration pr
 | SCH006 | Component spacing | Implemented when group profiles declare `minimum_member_origin_spacing_mm`: enforces Euclidean spacing between placed symbol origins; not a body-clearance check |
 | SCH007 | Group metadata | Implemented when profiles provide `kicad_group_uuid`: resolves native KiCad group and verifies placed-symbol membership against declared component references |
 | SCH008 | Annotation text-box geometry | Implemented: required geometry/font/margins, sizing, overlap and wire penetration |
-| SCH009 | Group containment | Implemented opt-in: checks that each profile group member's placed-symbol origin lies inside its referenced top-level KiCad rectangle; symbol/body/pin/field extents remain pending |
+| SCH009 | Group containment | Implemented opt-in: checks group member symbol origins, resolved pin coordinates, estimated visible property-field bounds, and the group description text-box bounds against its referenced top-level KiCad rectangle; symbol-body, label, wire and other annotation containment remain pending |
 | SCH010 | Symbol field clearance | Implemented partial: estimated visible-field bounds are checked against other fields, own/other embedded symbol bodies, wires, pins, labels and annotation boxes; exact font rendering and maximum field-to-body spacing remain pending |
 | SCH011 | Block annotation structure | Implemented: multiline text boxes require a visible border |
 | SCH012 | Frame content clearance | Implemented partial: profile-defined inset checks for group member symbol origins, resolved embedded pin coordinates, estimated visible property glyph bounds and description text-box bounds relative to a referenced rectangle; labels, wires and other frame contents remain pending |
@@ -37,7 +37,7 @@ SCH005 intentionally checks only connected-wire axis alignment; KiCad native ERC
 
 SCH015 checks only no-connect marker placement against embedded pin coordinates; it skips the rule if any placed symbol pin model is incomplete or unsupported. KiCad native ERC remains responsible for electrical unconnected-pin analysis.
 
-SCH012 checks only the member symbol origins and the group description text-box rectangle against a configured frame inset. It does not currently include symbol extents, pins, wires, labels or other annotations.
+SCH009 checks that group member symbol origins and resolved pin points, estimated visible symbol-property field rectangles, and the configured group description text-box rectangle are contained by the referenced frame. It does not yet check embedded symbol-body outlines, labels, wires or other annotation objects. SCH012 separately applies a configured positive inset to the member origins, pins, estimated field rectangles and description text box.
 
 SCH010 estimates visible symbol-field text bounds from the stored field position, font size, angle and justification. It checks field-to-field and field-to-annotation-box overlap, field-to-wire and field-to-pin collisions, label-glyph collisions, and intersections with the field's own or another symbol's embedded outline. A Value field fully contained within a closed symbol primitive is allowed. The bounds are estimates rather than KiCad's exact rendered glyph geometry; the historical maximum-distance-to-body rule and exact gaps are not implemented.
 
