@@ -1802,8 +1802,9 @@ fn text_visual_bounds(value: &str, node: &Node) -> Option<Bounds> {
         .and_then(|font| font.get(1))
         .and_then(number)
         .unwrap_or(1.0);
-    let width = (newstroke_text_advance_ratio(value) * font_size).max(font_size);
-    let height = font_size * 1.55;
+    let (width_ratio, height_ratio) = newstroke_text_metrics_ratio(value);
+    let width = (width_ratio * font_size).max(font_size);
+    let height = (height_ratio * font_size).max(font_size);
     let anchor = Vec2::new(number(at.get(1)?)?, number(at.get(2)?)?);
     let angle = at.get(3).and_then(number).unwrap_or(0.0);
 
@@ -1863,13 +1864,13 @@ fn newstroke_sentinel() -> &'static (Vec<VectorPoint>, f64) {
 /// The upstream renderer exposes points rather than a text-measurement method.
 /// Appending a known glyph makes its translated start position equal to the
 /// preceding text's full advance, including spaces and trailing blank glyphs.
-fn newstroke_text_advance_ratio(value: &str) -> f64 {
+fn newstroke_text_metrics_ratio(value: &str) -> (f64, f64) {
     let (sentinel, cap_height) = newstroke_sentinel();
     let Some(sentinel_first) = sentinel.first() else {
-        return 0.0;
+        return (0.0, 0.0);
     };
     if *cap_height <= 0.0 {
-        return 0.0;
+        return (0.0, 0.0);
     }
 
     // The upstream renderer indexes a fixed Unicode table. Filter out-of-range
@@ -1885,13 +1886,25 @@ fn newstroke_text_advance_ratio(value: &str) -> f64 {
 
     let rendered = NewstrokeRenderer::render_text(&measured, ());
     let Some(sentinel_start) = rendered.len().checked_sub(sentinel.len()) else {
-        return 0.0;
+        return (0.0, 0.0);
     };
     let Some(rendered_sentinel_first) = rendered.get(sentinel_start) else {
-        return 0.0;
+        return (0.0, 0.0);
     };
     let advance_units = i32::from(rendered_sentinel_first.x) - i32::from(sentinel_first.x);
-    f64::from(advance_units) / cap_height
+    let glyph_points = &rendered[..sentinel_start];
+    let glyph_height = match (
+        glyph_points.iter().map(|point| point.y).min(),
+        glyph_points.iter().map(|point| point.y).max(),
+    ) {
+        (Some(min_y), Some(max_y)) => f64::from(max_y - min_y),
+        _ => *cap_height,
+    };
+
+    (
+        f64::from(advance_units) / cap_height,
+        glyph_height / cap_height,
+    )
 }
 
 fn required_text_box_size(value: &str, font_size: f64, padding: f64) -> (f64, f64) {
@@ -1899,7 +1912,7 @@ fn required_text_box_size(value: &str, font_size: f64, padding: f64) -> (f64, f6
     let line_count = u32::try_from(lines.len().max(1)).unwrap_or(u32::MAX);
     let max_width = lines
         .iter()
-        .map(|line| newstroke_text_advance_ratio(line) * font_size)
+        .map(|line| newstroke_text_metrics_ratio(line).0 * font_size)
         .fold(0.0_f64, f64::max);
     (
         2.0_f64.mul_add(padding, (max_width * 1.30).max(font_size)),
@@ -2782,9 +2795,21 @@ mod tests {
     }
 
     #[test]
+    fn newstroke_text_height_uses_rendered_glyph_geometry() {
+        let cap = super::newstroke_text_metrics_ratio("H").1;
+        let narrow = super::newstroke_text_metrics_ratio("i").1;
+        let lowercase = super::newstroke_text_metrics_ratio("g").1;
+        let blank = super::newstroke_text_metrics_ratio(" ").1;
+
+        assert!((cap - 1.0).abs() < 0.001);
+        assert!(narrow > 0.0 && narrow <= cap);
+        assert!(lowercase > 0.0 && lowercase <= cap);
+        assert!((blank - cap).abs() < 0.001);
+    }
+
+    #[test]
     fn text_bounds_use_kurbo_for_cardinal_rotation_and_justification() {
-        let width = super::newstroke_text_advance_ratio("AB");
-        let height = 1.55;
+        let (width, height) = super::newstroke_text_metrics_ratio("AB");
         let cases = [
             (0.0, "left", "bottom", 10.0, 20.0 - height, width, height),
             (0.0, "left", "top", 10.0, 20.0, width, height),
@@ -2873,7 +2898,7 @@ mod tests {
         ];
 
         for (text, expected_units) in cases {
-            let actual = super::newstroke_text_advance_ratio(text) * cap_height;
+            let actual = super::newstroke_text_metrics_ratio(text).0 * cap_height;
             assert!(
                 (actual - expected_units).abs() < 0.001,
                 "unexpected NewStroke advance for {text:?}: {actual}"
@@ -2883,9 +2908,10 @@ mod tests {
 
     #[test]
     fn unsupported_unicode_does_not_panic_or_shift_newstroke_metrics() {
-        let supported = super::newstroke_text_advance_ratio("AH");
-        let with_unsupported = super::newstroke_text_advance_ratio("A\u{10ffff}H");
-        assert!((supported - with_unsupported).abs() < 0.001);
+        let supported = super::newstroke_text_metrics_ratio("AH");
+        let with_unsupported = super::newstroke_text_metrics_ratio("A\u{10ffff}H");
+        assert!((supported.0 - with_unsupported.0).abs() < 0.001);
+        assert!((supported.1 - with_unsupported.1).abs() < 0.001);
     }
 
     #[test]
