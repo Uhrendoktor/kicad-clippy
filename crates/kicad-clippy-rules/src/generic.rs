@@ -18,7 +18,7 @@ use kicad_clippy_core::{
 use kicad_clippy_parser::SchematicDocument;
 use kiutils_sexpr::{Atom, Node};
 use kurbo::{
-    Affine, Arc as CurveArc, PathEl, Point as CurvePoint, Rect as CurveRect, Shape, Vec2,
+    Affine, Arc as CurveArc, PathEl, Point as CurvePoint, Rect as CurveRect, Shape, Triangle, Vec2,
     flatten as flatten_curve_path,
 };
 use petgraph::unionfind::UnionFind;
