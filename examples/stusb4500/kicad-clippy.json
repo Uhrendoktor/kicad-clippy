@@ -1,0 +1,436 @@
+{
+  "schema_version": 1,
+  "preset": "strict",
+  "rules": {},
+  "profile": {
+    "name": "STUSB4500 child-block",
+    "grid_mm": 2.54,
+    "field_symbol_max_gap_mm": 9,
+    "field_symbol_gap_overrides_mm": {
+      "D50": 2.54,
+      "T1": 3.81,
+      "T4": 3.81
+    },
+    "frame_content_padding_mm": 2.54,
+    "group_gap_mm": 2.54,
+    "groups": [
+      {
+        "id": "usb-port",
+        "title": "USB-C PORT / CC PROTECTION",
+        "members": [
+          "J1",
+          "D1"
+        ],
+        "description_phrases": [
+          "Type-C receptacle and dual CC-line ESD protection."
+        ],
+        "primary": true
+      },
+      {
+        "id": "vbus-bulk",
+        "title": "VBUS BULK PROTECTION",
+        "members": [
+          "C50",
+          "D50"
+        ],
+        "description_phrases": [
+          "Input bulk capacitance and VBUS transient clamp."
+        ],
+        "primary": true
+      },
+      {
+        "id": "vbus-monitor",
+        "title": "VBUS MONITOR / FILTER",
+        "members": [
+          "D4",
+          "C4",
+          "R1",
+          "R4"
+        ],
+        "documentation_members": [
+          "R1",
+          "R4"
+        ],
+        "description_phrases": [
+          "VBUS input filter and STUSB4500 voltage-sense network."
+        ],
+        "primary": true,
+        "component_purposes": [
+          {
+            "reference": "R1",
+            "function": "Series current limiter between VBUS_FILTERED and VBUS_VS_DISCH",
+            "rationale": "limits current through U1.18 during VBUS discharge"
+          },
+          {
+            "reference": "R4",
+            "function": "Bias resistor from VREG_2V7 to VBUS_VS_DISCH",
+            "rationale": "sets the VBUS sense-node bias for monitoring"
+          }
+        ]
+      },
+      {
+        "id": "controller",
+        "title": "STUSB4500 CONTROLLER",
+        "members": [
+          "U1",
+          "C1",
+          "C2",
+          "C3",
+          "R55"
+        ],
+        "description_phrases": [
+          "USB-PD controller with directly wired VREG_1V2 and VREG_2V7 bypass capacitors."
+        ],
+        "primary": true
+      },
+      {
+        "id": "address-straps",
+        "title": "I2C ADDRESS STRAPS",
+        "members": [
+          "R51",
+          "R52",
+          "R53",
+          "R54"
+        ],
+        "description_phrases": [
+          "Selectable ADDR0/ADDR1 pull-up and pull-down networks."
+        ],
+        "primary": false
+      },
+      {
+        "id": "power-switch",
+        "title": "BACK-TO-BACK PMOS SWITCH",
+        "members": [
+          "T4",
+          "T1",
+          "R2",
+          "R10",
+          "R11",
+          "R13"
+        ],
+        "documentation_members": [
+          "R2"
+        ],
+        "description_phrases": [
+          "Back-to-back P-channel switches with common-source gate control."
+        ],
+        "primary": true,
+        "component_purposes": [
+          {
+            "reference": "R2",
+            "function": "Series resistor from VSNK to U1 DISCH",
+            "rationale": "limits DISCH current while output capacitance drains"
+          }
+        ]
+      },
+      {
+        "id": "vsnk-output",
+        "title": "VSNK BULK PROTECTION",
+        "members": [
+          "C10",
+          "D11"
+        ],
+        "description_phrases": [
+          "Local VSNK bypass capacitance and transient clamp at the sink output."
+        ],
+        "primary": true
+      }
+    ],
+    "direct_wire_pairs": [
+      {
+        "first": "U1.21",
+        "second": "C1.1"
+      },
+      {
+        "first": "U1.23",
+        "second": "C2.1"
+      },
+      {
+        "first": "U1.23",
+        "second": "C3.1"
+      },
+      {
+        "first": "T4.3",
+        "second": "T1.2"
+      },
+      {
+        "first": "T1.2",
+        "second": "R10.1"
+      }
+    ],
+    "common_nets": [
+      {
+        "name": "GND",
+        "pins": [
+          "C2.2",
+          "C3.2"
+        ],
+        "wire_connected": true,
+        "single_label": true
+      }
+    ],
+    "required_no_connect_pins": [
+      "U1.11",
+      "U1.14",
+      "U1.15",
+      "U1.17",
+      "U1.20"
+    ],
+    "ground_pins_down": [
+      "D1.3"
+    ],
+    "forbidden_local_labels": [
+      "VREG_1V2",
+      "FET_MID"
+    ],
+    "adjacent_components": [
+      {
+        "left": "R1",
+        "right": "R4",
+        "body_width_mm": 2.54,
+        "max_gap_mm": 2.54,
+        "alignment_tolerance_mm": 0.001
+      },
+      {
+        "left": "C2",
+        "right": "C3",
+        "body_width_mm": 2.54,
+        "max_gap_mm": 2.54,
+        "alignment_tolerance_mm": 0.001
+      }
+    ],
+    "property_distance_limits_mm": {
+      "resistor_reference": 3,
+      "capacitor_reference": 4,
+      "capacitor_value": 5.5
+    },
+    "dnp_components": {
+      "R51": "100k",
+      "R52": "100k"
+    },
+    "wire_length_budgets_mm": {
+      "power-switch": 95
+    },
+    "required_title_fields": [
+      "title"
+    ],
+    "evidence": {
+      "document": "ST DS12499 Rev. 8",
+      "page": "26",
+      "figure": "Figure 10"
+    },
+    "require_component_metadata_for": [
+      "capacitor"
+    ],
+    "decoupling_max_pin_distance_mm": 50.8,
+    "decoupling_max_cluster_spacing_mm": 25.4,
+    "component_metadata": [
+      {
+        "reference": "C1",
+        "kind": "capacitor",
+        "role": "decoupling",
+        "function": "VREG_1V2 regulator decoupling",
+        "rationale": "provides local high-frequency bypass at the controller supply pin",
+        "associated_pin": "U1.21",
+        "connection_pin": "1",
+        "return_pin": "2",
+        "return_net": "GND",
+        "cluster": "U1.21"
+      },
+      {
+        "reference": "C2",
+        "kind": "capacitor",
+        "role": "decoupling",
+        "function": "VREG_2V7 regulator decoupling",
+        "rationale": "provides local high-frequency bypass at the controller supply pin",
+        "associated_pin": "U1.23",
+        "connection_pin": "1",
+        "return_pin": "2",
+        "return_net": "GND",
+        "cluster": "U1.23"
+      },
+      {
+        "reference": "C3",
+        "kind": "capacitor",
+        "role": "decoupling",
+        "function": "VREG_2V7 regulator decoupling",
+        "rationale": "shares the local bypass network at the controller supply pin",
+        "associated_pin": "U1.23",
+        "connection_pin": "1",
+        "return_pin": "2",
+        "return_net": "GND",
+        "cluster": "U1.23"
+      },
+      {
+        "reference": "C4",
+        "kind": "capacitor",
+        "role": "filter",
+        "function": "VBUS_VS_DISCH filter capacitor",
+        "rationale": "filters the controller voltage-sense/discharge node"
+      },
+      {
+        "reference": "C10",
+        "kind": "capacitor",
+        "role": "bypass",
+        "function": "VSNK output bypass capacitor",
+        "rationale": "provides local transient current at the protected sink output"
+      },
+      {
+        "reference": "C50",
+        "kind": "capacitor",
+        "role": "bulk",
+        "function": "VBUS input bulk capacitor",
+        "rationale": "provides local input energy storage for the VBUS protection stage"
+      },
+      {
+        "reference": "R1",
+        "kind": "resistor",
+        "role": "series_current_limit",
+        "function": "Series current limiter between VBUS_FILTERED and VBUS_VS_DISCH",
+        "rationale": "limits current through U1.18 during VBUS discharge"
+      },
+      {
+        "reference": "R2",
+        "kind": "resistor",
+        "role": "discharge",
+        "function": "Series resistor from VSNK to U1 DISCH",
+        "rationale": "limits DISCH current while output capacitance drains"
+      },
+      {
+        "reference": "R4",
+        "kind": "resistor",
+        "role": "pull_up",
+        "function": "Bias resistor from VREG_2V7 to VBUS_VS_DISCH",
+        "rationale": "sets the VBUS sense-node bias for monitoring"
+      },
+      {
+        "reference": "R10",
+        "kind": "resistor",
+        "role": "gate_bias",
+        "function": "Common-source gate-network resistor",
+        "rationale": "sets the static gate bias for the back-to-back switch"
+      },
+      {
+        "reference": "R11",
+        "kind": "resistor",
+        "role": "gate_bias",
+        "function": "Gate-network resistor",
+        "rationale": "sets the switching control bias network"
+      },
+      {
+        "reference": "R13",
+        "kind": "resistor",
+        "role": "gate_bias",
+        "function": "Power-switch control resistor",
+        "rationale": "limits current in the MOSFET control path"
+      },
+      {
+        "reference": "R51",
+        "kind": "resistor",
+        "role": "pull_up",
+        "function": "Optional ADDR0 pull-up",
+        "rationale": "provides the alternate high address strap when populated"
+      },
+      {
+        "reference": "R52",
+        "kind": "resistor",
+        "role": "pull_up",
+        "function": "Optional ADDR1 pull-up",
+        "rationale": "provides the alternate high address strap when populated"
+      },
+      {
+        "reference": "R53",
+        "kind": "resistor",
+        "role": "pull_down",
+        "function": "ADDR0 pull-down",
+        "rationale": "defines the default low address strap"
+      },
+      {
+        "reference": "R54",
+        "kind": "resistor",
+        "role": "pull_down",
+        "function": "ADDR1 pull-down",
+        "rationale": "defines the default low address strap"
+      },
+      {
+        "reference": "R55",
+        "kind": "resistor",
+        "role": "pull_down",
+        "function": "RESET pull-down",
+        "rationale": "defines a deterministic reset state when the parent interface does not drive it"
+      },
+      {
+        "reference": "D1",
+        "kind": "diode",
+        "role": "esd_protection",
+        "function": "Dual CC-line ESD protection",
+        "rationale": "clamps transient events on the externally accessible CC contacts",
+        "protected_nets": [
+          "CC1",
+          "CC2"
+        ]
+      },
+      {
+        "reference": "D4",
+        "kind": "diode",
+        "role": "rectifier",
+        "function": "VBUS fast-charge path diode",
+        "rationale": "provides the intended charge path for the VBUS sense/filter capacitor"
+      },
+      {
+        "reference": "D50",
+        "kind": "diode",
+        "role": "clamp",
+        "function": "VBUS transient clamp",
+        "rationale": "limits external transients on the VBUS input",
+        "protected_nets": [
+          "VBUS"
+        ]
+      },
+      {
+        "reference": "D11",
+        "kind": "diode",
+        "role": "clamp",
+        "function": "VSNK transient clamp",
+        "rationale": "limits transients at the protected sink output",
+        "protected_nets": [
+          "VSNK"
+        ]
+      },
+      {
+        "reference": "T4",
+        "kind": "transistor",
+        "role": "back_to_back_switch",
+        "function": "Input-side P-channel power switch",
+        "rationale": "forms the controlled VBUS-to-VSNK path with T1",
+        "related_components": [
+          "T1"
+        ]
+      },
+      {
+        "reference": "T1",
+        "kind": "transistor",
+        "role": "back_to_back_switch",
+        "function": "Output-side P-channel power switch",
+        "rationale": "forms the controlled VBUS-to-VSNK path with T4",
+        "related_components": [
+          "T4"
+        ]
+      },
+      {
+        "reference": "U1",
+        "kind": "integrated_circuit",
+        "role": "interface",
+        "function": "USB Power Delivery sink controller",
+        "rationale": "negotiates and controls the USB-C sink power path"
+      },
+      {
+        "reference": "J1",
+        "kind": "connector",
+        "role": "interface",
+        "function": "USB Type-C receptacle",
+        "rationale": "provides the external USB-C power and configuration-channel interface"
+      }
+    ]
+  }
+}
