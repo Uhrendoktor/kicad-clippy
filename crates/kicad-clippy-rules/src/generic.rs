@@ -521,7 +521,10 @@ fn arc_primitive_points(node: &Node, source: &str) -> Option<Vec<(f64, f64)>> {
         .into_iter()
         .map(|name| {
             let items = child_list(node, name).and_then(list_items)?;
-            Some((number(items.get(1)?, source)?, number(items.get(2)?, source)?))
+            Some((
+                number(items.get(1)?, source)?,
+                number(items.get(2)?, source)?,
+            ))
         })
         .collect()
 }
