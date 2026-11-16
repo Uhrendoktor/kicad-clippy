@@ -58,10 +58,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get update
+          sudo apt-get -o Acquire::Retries=3 update
           sudo apt-get install -y --no-install-recommends software-properties-common
-          sudo add-apt-repository --yes ppa:kicad/kicad-dev-nightly
-          sudo apt-get update
+          ppa_added=0
+          for attempt in 1 2 3; do
+            if sudo add-apt-repository --yes ppa:kicad/kicad-dev-nightly; then
+              ppa_added=1
+              break
+            fi
+            echo "::warning::KiCad PPA registration attempt ${attempt}/3 failed; retrying."
+            sleep "$((attempt * 10))"
+          done
+          if [[ "$ppa_added" != "1" ]]; then
+            echo "::error::Could not register the KiCad development PPA after three attempts."
+            exit 1
+          fi
+          sudo apt-get -o Acquire::Retries=3 update
           sudo apt-get install -y --no-install-recommends kicad-nightly
           CLI="$(command -v kicad-cli-nightly || command -v kicad-cli || true)"
           if [[ -z "$CLI" ]]; then
