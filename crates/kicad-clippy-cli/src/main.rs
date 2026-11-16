@@ -318,7 +318,7 @@ fn render_diagnostic(
 
     let report = Report::new(rendered).with_source_code(NamedSource::new(
         source.path().display().to_string(),
-        source.text().to_owned(),
+        source.shared_text(),
     ));
     writeln!(stdout, "{report:?}")?;
     Ok(())
