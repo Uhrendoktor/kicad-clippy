@@ -26,6 +26,7 @@ The following table distinguishes adopted libraries from alternatives that remai
 | Terminal diagnostics and source excerpts | [`miette`](https://docs.rs/miette/7.6.0/miette/) | Adopted | Renders named source files, labeled byte spans, severity, diagnostic codes, help and source excerpts. The CLI adapts the project's existing `Diagnostic` to miette; JSON remains the stable interchange schema. |
 | General planar geometry | [`geo`](https://docs.rs/geo/0.31.0/geo/) | Adopted | Replaces handwritten segment-intersection classification, point-to-segment distance, point-in-polygon, and rectangle/polygon predicates. Its Bentley–Ottmann sweep replaces the nested all-pairs wire-intersection scan. |
 | Curves and affine transforms | [`kurbo`](https://docs.rs/kurbo/0.13.1/kurbo/) | Adopted | Replaces hand-written recursive cubic Bézier subdivision, manual arc sampling, and duplicated point/vector rotation and mirror arithmetic with adaptive path flattening and affine transforms. |
+| Physical wire connected components | [`petgraph::UnionFind`](https://docs.rs/petgraph/0.8.3/petgraph/unionfind/struct.UnionFind.html) | Adopted | Replaces the string-keyed adjacency graph and handwritten depth-first connected-component traversal with indexed disjoint sets. Segment splitting remains KiCad-specific; graph equivalence classes are delegated. |
 | Spatial indexing | [`rstar`](https://docs.rs/rstar/0.12.2/rstar/) | Not used directly | Geo's sweep-line algorithm already addresses the current all-wire intersection scan. Do not add a second index until profiling shows a remaining broad-phase bottleneck in a different workload. |
 | Robust geometric predicates | [`robust`](https://docs.rs/robust/1.2.0/robust/) | Not used directly | Geo already supplies the predicates used by the current rules. Reconsider only if fixtures expose specific numerical-degeneracy cases that require a separate robust-predicate layer. |
 | Alternative source diagnostic renderer | [`codespan-reporting`](https://docs.rs/codespan-reporting/latest/codespan_reporting/) | Not used | It overlaps with miette's source-map and span-rendering responsibilities. Keeping both would create competing source/diagnostic abstractions. |
@@ -42,13 +43,13 @@ Against the feature-branch state before this simplification pass (`90b19a296472e
 
 | File | Before | After | Net change |
 | --- | ---: | ---: | ---: |
-| `generic.rs` | 3,523 lines / 115,651 bytes | 3,367 / 110,663 | -156 lines |
+| `generic.rs` | 3,523 lines / 115,651 bytes | 3,360 / 110,410 | -163 lines |
 | `source.rs` | 177 lines / 4,911 bytes | 104 / 2,829 | -73 lines |
 | CLI `main.rs` | 331 lines / 9,695 bytes | 375 / 11,380 | +44 lines |
 | Parser `schematic.rs` | 183 lines / 5,318 bytes | 240 / 7,432 | +57 lines |
-| **Combined** | **4,214 lines / 135,575 bytes** | **4,086 / 132,304** | **-128 lines / -3,271 bytes** |
+| **Combined** | **4,214 lines / 135,575 bytes** | **4,079 / 132,051** | **-135 lines / -3,524 bytes** |
 
-Across all four directly affected implementation files, the net reduction is 128 source lines (3.0%) and 3,271 bytes (2.4%). The parser adapter and CLI grew because they now establish the correct quoted-string and terminal-diagnostic boundaries; this is outweighed by removing duplicated generic geometry, source indexing, source-to-rule plumbing and manual curve/transform algorithms. The comparison is a file-size delta for these four files, not a claim about all repository code or runtime performance.
+Across all four directly affected implementation files, the net reduction is 135 source lines (3.2%) and 3,524 bytes (2.6%). The parser adapter and CLI grew because they now establish the correct quoted-string and terminal-diagnostic boundaries; this is outweighed by removing duplicated generic geometry, source indexing, source-to-rule plumbing and manual curve/transform algorithms. The comparison is a file-size delta for these four files, not a claim about all repository code or runtime performance.
 
 ## Target architecture
 
@@ -65,6 +66,7 @@ typed schematic facts and KiCad-specific context
     +------ geo: intersections, distances, polygons, rectangles
     |
     +------ kurbo: adaptive curve flattening
+    +------ petgraph: disjoint-set wire components
     |
     v
 phase-specific RulePass implementations
@@ -83,7 +85,7 @@ stable Diagnostic contract
 - **Source file:** retain the path and shared original text. Do not maintain a second line-start index solely for terminal presentation.
 - **Geometry adapter:** convert KiCad primitives to library types and apply KiCad-specific tolerances and exemptions. Do not reimplement general intersections, distances or containment.
 - **Curves and transforms:** retain only the KiCad start/mid/end interpretation needed to construct an arc and the coordinate-frame convention; delegate path flattening and affine matrix operations to kurbo.
-- **Connectivity:** keep explicit junctions, pin anchors, label scope and physical wire islands as application logic.
+- **Connectivity:** use `petgraph::UnionFind` for the generic disjoint-set operation; keep explicit junctions, pin anchors, label scope, segment splitting and physical wire-island semantics as application logic.
 - **Rule engine:** keep typed IDs, metadata, registration, pass dependencies and deterministic execution.
 - **Diagnostics:** preserve the project's stable JSON contract; adapt it to miette only at the CLI rendering boundary.
 - **Profiles:** hold project-specific intent and contracts, not generic geometry or terminal formatting.
