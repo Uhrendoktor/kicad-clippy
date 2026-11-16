@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 use std::{
+    fmt::Write as _,
     io::{self, Write},
     path::{Path, PathBuf},
     process::{Command, ExitCode},
@@ -257,13 +258,15 @@ fn render_diagnostic(
 ) -> Result<(), io::Error> {
     let mut message = diagnostic.message.clone();
     if let Some(location) = diagnostic.schematic_location {
-        message.push_str(&format!(
+        let _ = write!(
+            message,
             " at ({:.3} mm, {:.3} mm)",
-            location.x_mm, location.y_mm
-        ));
+            location.x_mm,
+            location.y_mm
+        );
     }
     if let Some(sheet_path) = &diagnostic.sheet_path {
-        message.push_str(&format!(" on sheet {sheet_path}"));
+        let _ = write!(message, " on sheet {sheet_path}");
     }
     if diagnostic.excluded {
         message.push_str(" [excluded]");
@@ -301,13 +304,15 @@ fn render_diagnostic(
             .map(|item| {
                 let mut description = item.description.clone();
                 if let Some(uuid) = &item.uuid {
-                    description.push_str(&format!(" [{uuid}]"));
+                    let _ = write!(description, " [{uuid}]");
                 }
                 if let Some(location) = item.location {
-                    description.push_str(&format!(
+                    let _ = write!(
+                        description,
                         " at ({:.3} mm, {:.3} mm)",
-                        location.x_mm, location.y_mm
-                    ));
+                        location.x_mm,
+                        location.y_mm
+                    );
                 }
                 description
             })
