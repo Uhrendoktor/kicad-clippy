@@ -5,7 +5,7 @@ The historical checker defines stable IDs SCH001–SCH020. The Rust migration pr
 | ID | Historical rule | Rust status |
 | --- | --- | --- |
 | SCH001 | Wire geometry | Implemented: orthogonal segments, zero-length wires, crossings and unmarked T-junctions |
-| SCH002 | Label topology | Initial port: local-label attachment/reuse and hierarchical twig termination; island graph refinement pending |
+| SCH002 | Label topology | Implemented: physical wire-island graph, local-label reuse across distinct islands, duplicate-label detection on one island, and hierarchical twig termination |
 | SCH003 | Label/wire glyph overlap | Pending exact text-glyph bounds |
 | SCH004 | Physical net connectivity | Pending exported-netlist and physical wire-graph integration |
 | SCH005 | Pin orientation | Pending transformed embedded-pin geometry |
