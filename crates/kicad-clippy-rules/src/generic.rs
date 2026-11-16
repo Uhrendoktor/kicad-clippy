@@ -613,14 +613,14 @@ fn char_advance(character: char) -> f64 {
 fn required_text_box_size(value: &str, font_size: f64, padding: f64) -> (f64, f64) {
     let normalized = value.replace("\\n", "\n").replace("\\r", "\r");
     let lines: Vec<_> = normalized.lines().collect();
-    let line_count = lines.len().max(1);
+    let line_count = u32::try_from(lines.len().max(1)).unwrap_or(u32::MAX);
     let max_width = lines
         .iter()
         .map(|line| line.chars().map(char_advance).sum::<f64>())
         .fold(0.0_f64, f64::max);
     (
-        2.0 * padding + (max_width * font_size * 1.30).max(font_size),
-        2.0 * padding + line_count as f64 * font_size * 1.55,
+        2.0_f64.mul_add(padding, (max_width * font_size * 1.30).max(font_size)),
+        (f64::from(line_count) * font_size).mul_add(1.55, 2.0 * padding),
     )
 }
 
