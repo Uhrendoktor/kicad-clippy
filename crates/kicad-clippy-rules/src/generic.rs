@@ -159,61 +159,7 @@ fn check_label_topology(root: &Node, source: &str, segments: &[Segment]) -> Vec<
     points.sort_by_key(|point| point_key(*point));
     points.dedup_by_key(|point| point_key(*point));
 
-    let mut adjacency: BTreeMap<String, Vec<String>> = points
-        .iter()
-        .map(|point| (point_key(*point), Vec::new()))
-        .collect();
-    let mut endpoint_degree: BTreeMap<String, usize> = BTreeMap::new();
-    for segment in segments {
-        *endpoint_degree.entry(point_key(segment.start)).or_default() += 1;
-        *endpoint_degree.entry(point_key(segment.end)).or_default() += 1;
-        let horizontal = (segment.start.y - segment.end.y).abs() < 0.001;
-        let mut split: Vec<_> = points
-            .iter()
-            .copied()
-            .filter(|point| point_on_segment(*point, segment))
-            .collect();
-        split.sort_by(|first, second| {
-            if horizontal {
-                first.x.total_cmp(&second.x)
-            } else {
-                first.y.total_cmp(&second.y)
-            }
-        });
-        for pair in split.windows(2) {
-            let first = point_key(pair[0]);
-            let second = point_key(pair[1]);
-            adjacency
-                .entry(first.clone())
-                .or_default()
-                .push(second.clone());
-            adjacency.entry(second).or_default().push(first);
-        }
-    }
-
-    let mut component_ids = BTreeMap::new();
-    let mut next_component = 0_usize;
-    for start in adjacency.keys() {
-        if component_ids.contains_key(start) {
-            continue;
-        }
-        let mut pending = vec![start.clone()];
-        while let Some(point) = pending.pop() {
-            if component_ids.contains_key(&point) {
-                continue;
-            }
-            component_ids.insert(point.clone(), next_component);
-            if let Some(neighbors) = adjacency.get(&point) {
-                pending.extend(
-                    neighbors
-                        .iter()
-                        .filter(|neighbor| !component_ids.contains_key(*neighbor))
-                        .cloned(),
-                );
-            }
-        }
-        next_component += 1;
-    }
+    let (component_ids, endpoint_degree) = wire_components(segments, &points);
 
     let mut totals: BTreeMap<String, usize> = BTreeMap::new();
     let mut island_uses: BTreeMap<(String, usize), usize> = BTreeMap::new();
@@ -273,6 +219,65 @@ fn check_label_topology(root: &Node, source: &str, segments: &[Segment]) -> Vec<
         }
     }
     diagnostics
+}
+
+fn wire_components(
+    segments: &[Segment],
+    points: &[Point],
+) -> (BTreeMap<String, usize>, BTreeMap<String, usize>) {
+    let mut adjacency: BTreeMap<String, Vec<String>> = points
+        .iter()
+        .map(|point| (point_key(*point), Vec::new()))
+        .collect();
+    let mut endpoint_degree: BTreeMap<String, usize> = BTreeMap::new();
+    for segment in segments {
+        *endpoint_degree.entry(point_key(segment.start)).or_default() += 1;
+        *endpoint_degree.entry(point_key(segment.end)).or_default() += 1;
+        let horizontal = (segment.start.y - segment.end.y).abs() < 0.001;
+        let mut split: Vec<_> = points
+            .iter()
+            .copied()
+            .filter(|point| point_on_segment(*point, segment))
+            .collect();
+        split.sort_by(|first, second| {
+            if horizontal {
+                first.x.total_cmp(&second.x)
+            } else {
+                first.y.total_cmp(&second.y)
+            }
+        });
+        for pair in split.windows(2) {
+            let first = point_key(pair[0]);
+            let second = point_key(pair[1]);
+            adjacency.entry(first.clone()).or_default().push(second.clone());
+            adjacency.entry(second).or_default().push(first);
+        }
+    }
+
+    let mut component_ids = BTreeMap::new();
+    let mut next_component = 0_usize;
+    for start in adjacency.keys() {
+        if component_ids.contains_key(start) {
+            continue;
+        }
+        let mut pending = vec![start.clone()];
+        while let Some(point) = pending.pop() {
+            if component_ids.contains_key(&point) {
+                continue;
+            }
+            component_ids.insert(point.clone(), next_component);
+            if let Some(neighbors) = adjacency.get(&point) {
+                pending.extend(
+                    neighbors
+                        .iter()
+                        .filter(|neighbor| !component_ids.contains_key(*neighbor))
+                        .cloned(),
+                );
+            }
+        }
+        next_component += 1;
+    }
+    (component_ids, endpoint_degree)
 }
 
 fn point_key(point: Point) -> String {
