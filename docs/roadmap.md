@@ -43,7 +43,7 @@ The profile format is deliberately explicit; project-specific expectations are n
 ## Rule configuration and extensibility
 
 - Add a project rule-policy file such as `kicad-clippy.toml` with explicit `allow`, `warn`, and `deny` levels and named presets.
-- Split the initial in-process RulePass implementation into phase-specific passes with explicit analysis dependencies; version the extension contract and add typed per-rule options.
+- Extend the initial geometry, label and annotation passes with explicit semantic/connectivity phases; version the extension contract and add typed per-rule options.
 - Add rule explain/list commands and schema validation for configuration.
 - Consider sandboxed WASM rule packs only after the in-process API and semantic model are stable.
 
