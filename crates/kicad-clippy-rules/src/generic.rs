@@ -2559,7 +2559,14 @@ fn atom_value(node: &Node, source: &str) -> Option<String> {
 }
 
 fn number(node: &Node) -> Option<f64> {
-    atom_value(node, source)?.parse().ok()
+    let Node::Atom {
+        atom: Atom::Symbol(value),
+        ..
+    } = node
+    else {
+        return None;
+    };
+    value.parse().ok()
 }
 
 fn child_list<'a>(node: &'a Node, name: &'a str) -> Option<&'a Node> {
