@@ -19,7 +19,7 @@ The exact status and limitations for every rule are maintained in [rules.md](rul
 - Generic schematic rules: SCH001–SCH003, SCH005, SCH008, SCH010 (partial), SCH011, SCH015, SCH018, and SCH019.
 - Project-profile rules: SCH006, SCH007, SCH009, SCH012 (partial), SCH014, SCH016, SCH017, SCH020, SCH021, and SCH022.
 - SCH004 has partial profile-driven support for direct-wire pin pairs and common-pin groups with optional wire-only connectivity and single-label cardinality; automatic inference of all intended physical nets remains pending.
-- SCH013 symbol-primitive wire-obstacle checks remain pending.
+- SCH013 has partial wire-obstacle coverage for embedded rectangles, polylines/polygons, circles and three-point arc paths, visible Reference/Value fields, intermediate pins and annotation text boxes; arc geometry is approximated by two chords.
 
 Some migrated rules intentionally implement only a subset of their historical requirements. In particular, current SCH009 checks member symbol origins against a referenced rectangle, SCH010 checks text-field overlap using estimated text bounds, SCH012 checks configured inset for member origins and the description text box, and SCH015 checks the placement of explicit no-connect markers. These do not yet prove full symbol, pin, field, label, wire, or note containment/clearance.
 
@@ -36,7 +36,7 @@ The profile format is deliberately explicit; project-specific expectations are n
 ## Next: physical connectivity and symbol geometry
 
 1. Extend the current physical-wire graph and SCH004 profile contracts to infer or declare broader project-specific physical connectivity beyond explicit pin pairs and common-pin groups. Labels must never create physical connectivity edges.
-2. Use embedded symbol primitive geometry to implement SCH013 wire-obstacle checks, including lines, rectangles, circles, arcs, and polygons.
+2. Extend SCH013 beyond its current selected-unit/cardinal-transform scope and replace three-point arc chord approximation with exact arc intersections where needed.
 3. Extend frame and field rules beyond symbol origins and estimated text boxes: check actual pin positions, visible field extents, labels, wire segments, and annotation bounds against frames and obstacles.
 4. Improve multi-unit, alternate-convert, mirrored, and non-cardinal symbol transform coverage, with conservative skips for geometry that cannot be resolved.
 

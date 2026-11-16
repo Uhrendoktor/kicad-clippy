@@ -16,7 +16,7 @@ The historical checker defines stable IDs SCH001–SCH020. The Rust migration pr
 | SCH010 | Symbol field clearance | Implemented partial: detects overlaps between visible symbol fields and between fields and annotation boxes using estimated text bounds; symbol-body/primitive clearance remains pending |
 | SCH011 | Block annotation structure | Implemented: multiline text boxes require a visible border |
 | SCH012 | Frame content clearance | Implemented partial: profile-defined inset checks for group member symbol origins and description text-box bounds relative to a referenced rectangle; other frame contents remain pending |
-| SCH013 | Wire obstacle clearance | Pending embedded symbol primitive geometry |
+| SCH013 | Wire obstacle clearance | Implemented partial: checks wires against selected-unit embedded rectangles, polylines/polygons, circles and three-point arc paths, plus intermediate pins, visible Reference/Value text and annotation boxes; arcs are chord approximations |
 | SCH014 | Shared pin/net contracts | Implemented for profile-declared component pins and connector `pin.N` mappings against exported KiCad netlist membership |
 | SCH015 | Required no-connect markers | Implemented: verifies each explicit no-connect marker coincides with an embedded placed-symbol pin; incomplete/non-cardinal pin models are conservatively skipped |
 | SCH016 | Wire compactness | Implemented: per-group total length of wire segments wholly inside the referenced frame divided by a positive `wire_length_budget_mm`; over-budget results are warnings |

@@ -71,6 +71,20 @@ pub struct SchematicPinFact {
 }
 
 #[derive(Clone, Debug)]
+pub struct SchematicPrimitiveFact {
+    /// Placed-symbol reference that owns this primitive.
+    pub reference: String,
+    /// Transformed path points in sheet coordinates, or empty for a circle.
+    pub points_mm: Vec<(f64, f64)>,
+    /// Whether the path is closed.
+    pub closed: bool,
+    /// Optional transformed circle (centre x, centre y, radius).
+    pub circle_mm: Option<(f64, f64, f64)>,
+    /// Approximate stroke width in millimetres.
+    pub stroke_width_mm: f64,
+}
+
+#[derive(Clone, Debug)]
 pub struct SchematicLabelFact {
     /// Label form: `local`, `hierarchical_label`, or `global_label`.
     pub kind: String,
@@ -104,6 +118,8 @@ pub struct SchematicFacts {
     pub wires: Vec<SchematicWireFact>,
     /// Resolved placed-symbol pin coordinates.
     pub pins: Vec<SchematicPinFact>,
+    /// Transformed outlines from embedded symbol primitives.
+    pub symbol_primitives: Vec<SchematicPrimitiveFact>,
     /// Label anchors used to ensure labels are not mistaken for physical wires.
     pub labels: Vec<SchematicLabelFact>,
     /// Explicit junction marker coordinates.
@@ -123,6 +139,7 @@ impl SchematicFacts {
             frames: collect_frame_facts(root, source),
             wires: collect_wire_facts(root, source),
             pins: collect_pin_facts(root, source),
+            symbol_primitives: collect_symbol_primitive_facts(root, source),
             labels: collect_label_facts(root, source),
             junctions: collect_points(root, source, "junction")
                 .into_iter()
@@ -329,6 +346,202 @@ fn collect_pin_facts(root: &Node, source: &str) -> Vec<SchematicPinFact> {
     pins
 }
 
+
+fn collect_symbol_primitive_facts(root: &Node, source: &str) -> Vec<SchematicPrimitiveFact> {
+    let Some(library_symbols) = child_list(root, "lib_symbols") else {
+        return Vec::new();
+    };
+    let definitions: Vec<_> = children(library_symbols, "symbol").collect();
+    children(root, "symbol")
+        .flat_map(|instance| collect_instance_primitives(instance, &definitions, source))
+        .collect()
+}
+
+fn collect_instance_primitives(
+    instance: &Node,
+    definitions: &[&Node],
+    source: &str,
+) -> Vec<SchematicPrimitiveFact> {
+    let Some(transform) = read_symbol_transform(instance, source) else {
+        return Vec::new();
+    };
+    let Some(lib_id) = child_list(instance, "lib_id")
+        .and_then(list_items)
+        .and_then(|items| items.get(1))
+        .and_then(|item| atom_value(item, source))
+    else {
+        return Vec::new();
+    };
+    let Some(definition) = definitions.iter().copied().find(|definition| {
+        list_items(definition)
+            .and_then(|items| items.get(1))
+            .and_then(|item| atom_value(item, source))
+            .is_some_and(|name| name == lib_id)
+    }) else {
+        return Vec::new();
+    };
+    selected_symbol_units(definition, transform.unit, transform.convert, source)
+        .into_iter()
+        .flat_map(|unit| collect_primitives_from_unit(unit, &transform, source))
+        .collect()
+}
+
+fn selected_symbol_units<'a>(
+    definition: &'a Node,
+    unit: u32,
+    convert: u32,
+    source: &str,
+) -> Vec<&'a Node> {
+    let sub_symbols: Vec<_> = children(definition, "symbol").collect();
+    if sub_symbols.is_empty() {
+        return vec![definition];
+    }
+    sub_symbols
+        .into_iter()
+        .filter(|sub_symbol| {
+            list_items(sub_symbol)
+                .and_then(|items| items.get(1))
+                .and_then(|item| atom_value(item, source))
+                .and_then(|name| sub_symbol_unit_convert(&name))
+                .is_some_and(|(sub_unit, sub_convert)| {
+                    (sub_unit == 0 || sub_unit == unit) && sub_convert == convert
+                })
+        })
+        .collect()
+}
+
+fn collect_primitives_from_unit(
+    unit: &Node,
+    transform: &SymbolTransform,
+    source: &str,
+) -> Vec<SchematicPrimitiveFact> {
+    let mut primitives = Vec::new();
+    for kind in ["rectangle", "polyline", "polygon", "circle", "arc"] {
+        for node in children(unit, kind) {
+            if let Some(primitive) = parse_symbol_primitive(node, transform, source) {
+                primitives.push(primitive);
+            }
+        }
+    }
+    primitives
+}
+
+fn parse_symbol_primitive(
+    node: &Node,
+    transform: &SymbolTransform,
+    source: &str,
+) -> Option<SchematicPrimitiveFact> {
+    let stroke_width_mm = symbol_primitive_stroke_width(node, source);
+    if head(node) == Some("circle") {
+        let center = child_list(node, "center").and_then(list_items)?;
+        let radius = child_list(node, "radius")
+            .and_then(list_items)
+            .and_then(|items| items.get(1))
+            .and_then(|item| number(item, source))?
+            .abs();
+        let local_x = number(center.get(1)?, source)?;
+        let local_y = number(center.get(2)?, source)?;
+        let (world_x, world_y) = transform_symbol_point(
+            local_x,
+            local_y,
+            transform.rotation,
+            transform.mirror.as_deref(),
+        )?;
+        return Some(SchematicPrimitiveFact {
+            reference: transform.reference.clone(),
+            points_mm: Vec::new(),
+            closed: false,
+            circle_mm: Some((
+                transform.origin.x + world_x,
+                transform.origin.y + world_y,
+                radius,
+            )),
+            stroke_width_mm,
+        });
+    }
+
+    let kind = head(node)?;
+    let local_points = match kind {
+        "rectangle" => rectangle_primitive_points(node, source)?,
+        "polyline" | "polygon" => polyline_primitive_points(node, source)?,
+        "arc" => arc_primitive_points(node, source)?,
+        _ => return None,
+    };
+    let mut points_mm = transform_primitive_points(&local_points, transform)?;
+    let repeated_endpoint =
+        points_mm.len() > 2 && same_wire_point(points_mm[0], *points_mm.last()?);
+    let closed = kind == "rectangle" || kind == "polygon" || repeated_endpoint;
+    if closed && repeated_endpoint {
+        points_mm.pop();
+    }
+    (points_mm.len() >= 2).then(|| SchematicPrimitiveFact {
+        reference: transform.reference.clone(),
+        points_mm,
+        closed,
+        circle_mm: None,
+        stroke_width_mm,
+    })
+}
+
+fn symbol_primitive_stroke_width(node: &Node, source: &str) -> f64 {
+    child_list(node, "stroke")
+        .and_then(|stroke| child_list(stroke, "width"))
+        .and_then(list_items)
+        .and_then(|items| items.get(1))
+        .and_then(|item| number(item, source))
+        .filter(|width| width.is_finite() && width.abs() > 0.001)
+        .map_or(0.254, f64::abs)
+}
+
+fn rectangle_primitive_points(node: &Node, source: &str) -> Option<Vec<(f64, f64)>> {
+    let start = child_list(node, "start").and_then(list_items)?;
+    let end = child_list(node, "end").and_then(list_items)?;
+    let x1 = number(start.get(1)?, source)?;
+    let y1 = number(start.get(2)?, source)?;
+    let x2 = number(end.get(1)?, source)?;
+    let y2 = number(end.get(2)?, source)?;
+    Some(vec![(x1, y1), (x2, y1), (x2, y2), (x1, y2)])
+}
+
+fn polyline_primitive_points(node: &Node, source: &str) -> Option<Vec<(f64, f64)>> {
+    let points = child_list(node, "pts")?;
+    let points: Vec<_> = children(points, "xy")
+        .filter_map(|point| {
+            let items = list_items(point)?;
+            Some((number(items.get(1)?, source)?, number(items.get(2)?, source)?))
+        })
+        .collect();
+    (points.len() >= 2).then_some(points)
+}
+
+fn arc_primitive_points(node: &Node, source: &str) -> Option<Vec<(f64, f64)>> {
+    ["start", "mid", "end"]
+        .into_iter()
+        .map(|name| {
+            let items = child_list(node, name).and_then(list_items)?;
+            Some((number(items.get(1)?, source)?, number(items.get(2)?, source)?))
+        })
+        .collect()
+}
+
+fn transform_primitive_points(
+    points: &[(f64, f64)],
+    transform: &SymbolTransform,
+) -> Option<Vec<(f64, f64)>> {
+    points
+        .iter()
+        .map(|(x, y)| {
+            let (offset_x, offset_y) = transform_symbol_point(
+                *x,
+                *y,
+                transform.rotation,
+                transform.mirror.as_deref(),
+            )?;
+            Some((transform.origin.x + offset_x, transform.origin.y + offset_y))
+        })
+        .collect()
+}
+
 fn number_value(node: &Node, source: &str) -> Option<f64> {
     number(node, source)
 }
@@ -357,6 +570,7 @@ pub fn run_builtin_rules(document: &SchematicDocument) -> RuleRun {
     let mut diagnostics = check_wire_geometry(root, &segments, &junctions);
     diagnostics.extend(check_pin_orientation(root, source, &segments));
     diagnostics.extend(check_no_connect_markers(root, source));
+    diagnostics.extend(check_wire_obstacles(root, source, &segments, &facts));
     diagnostics.extend(check_label_topology(root, source, &segments));
     diagnostics.extend(check_label_wire_clearance(root, source, &segments));
     diagnostics.extend(check_text_box_layout(root, source, &segments));
@@ -395,6 +609,306 @@ struct SymbolTransform {
     mirror: Option<String>,
     unit: u32,
     convert: u32,
+}
+
+
+fn check_wire_obstacles(
+    root: &Node,
+    source: &str,
+    segments: &[Segment],
+    facts: &SchematicFacts,
+) -> Vec<Diagnostic> {
+    let fields = collect_visible_field_bounds(root, source);
+    let text_boxes: Vec<_> = children(root, "text_box")
+        .enumerate()
+        .filter_map(|(index, node)| {
+            text_box_bounds(node, source).map(|bounds| (index, bounds))
+        })
+        .collect();
+    let mut diagnostics = Vec::new();
+
+    for (wire_index, segment) in segments.iter().enumerate() {
+        let mut reported_symbols = BTreeSet::new();
+        for primitive in &facts.symbol_primitives {
+            if !reported_symbols.contains(&primitive.reference)
+                && wire_crosses_symbol_primitive(*segment, primitive, &facts.pins)
+            {
+                reported_symbols.insert(primitive.reference.clone());
+                diagnostics.push(at_segment(
+                    "SCH013",
+                    &format!("wire {wire_index} penetrates symbol body {}", primitive.reference),
+                    *segment,
+                ));
+            }
+        }
+        for pin in &facts.pins {
+            let point = Point {
+                x: pin.position_mm.0,
+                y: pin.position_mm.1,
+            };
+            if point_on_segment_any(point, segment.start, segment.end)
+                && !is_endpoint(point, *segment)
+            {
+                diagnostics.push(at_segment(
+                    "SCH013",
+                    &format!(
+                        "wire {wire_index} passes through intermediate pin {}.{}",
+                        pin.reference, pin.number
+                    ),
+                    *segment,
+                ));
+            }
+        }
+        for (field_name, bounds, _span) in &fields {
+            if strict_line_hits_bounds(*segment, *bounds) {
+                diagnostics.push(at_segment(
+                    "SCH013",
+                    &format!("wire {wire_index} passes through symbol field {field_name}"),
+                    *segment,
+                ));
+            }
+        }
+        for (box_index, bounds) in &text_boxes {
+            if strict_line_hits_bounds(*segment, *bounds) {
+                diagnostics.push(at_segment(
+                    "SCH013",
+                    &format!("wire {wire_index} penetrates annotation text box {box_index}"),
+                    *segment,
+                ));
+            }
+        }
+    }
+    diagnostics
+}
+
+fn collect_visible_field_bounds(
+    root: &Node,
+    source: &str,
+) -> Vec<(String, Bounds, ByteSpan)> {
+    let mut fields = Vec::new();
+    for symbol in children(root, "symbol") {
+        let reference = children(symbol, "property").find_map(|property| {
+            let items = list_items(property)?;
+            if atom_value(items.get(1)?, source)? == "Reference" {
+                atom_value(items.get(2)?, source)
+            } else {
+                None
+            }
+        });
+        let Some(reference) = reference else {
+            continue;
+        };
+        for property in children(symbol, "property") {
+            if property_is_hidden(property) {
+                continue;
+            }
+            let Some(items) = list_items(property) else {
+                continue;
+            };
+            let Some(name) = items.get(1).and_then(|item| atom_value(item, source)) else {
+                continue;
+            };
+            if !matches!(name.as_str(), "Reference" | "Value") {
+                continue;
+            }
+            let Some(value) = items.get(2).and_then(|item| atom_value(item, source)) else {
+                continue;
+            };
+            if let Some(bounds) = text_visual_bounds(&value, property, source) {
+                fields.push((format!("{reference} {name}"), bounds, span_of(property)));
+            }
+        }
+    }
+    fields
+}
+
+fn wire_crosses_symbol_primitive(
+    wire: Segment,
+    primitive: &SchematicPrimitiveFact,
+    pins: &[SchematicPinFact],
+) -> bool {
+    if let Some((center_x, center_y, radius)) = primitive.circle_mm {
+        let center = Point {
+            x: center_x,
+            y: center_y,
+        };
+        let inner_radius = radius - primitive.stroke_width_mm / 2.0;
+        return inner_radius > 0.0
+            && point_segment_distance(center, wire.start, wire.end) < inner_radius - 0.001;
+    }
+
+    let mut edges: Vec<_> = primitive
+        .points_mm
+        .windows(2)
+        .map(|pair| (pair[0], pair[1]))
+        .collect();
+    if primitive.closed && primitive.points_mm.len() > 2 {
+        if let (Some(last), Some(first)) = (
+            primitive.points_mm.last().copied(),
+            primitive.points_mm.first().copied(),
+        ) {
+            edges.push((last, first));
+        }
+    }
+    for (edge_start, edge_end) in edges {
+        for point in segment_intersection_points(wire, edge_start, edge_end) {
+            if !wire_intersection_is_allowed_pin(point, wire, &primitive.reference, pins) {
+                return true;
+            }
+        }
+    }
+    if primitive.closed {
+        let midpoint = Point {
+            x: (wire.start.x + wire.end.x) / 2.0,
+            y: (wire.start.y + wire.end.y) / 2.0,
+        };
+        if point_in_polygon(midpoint, &primitive.points_mm)
+            || (!wire_endpoint_is_pin(wire.start, &primitive.reference, pins)
+                && point_in_polygon(wire.start, &primitive.points_mm))
+            || (!wire_endpoint_is_pin(wire.end, &primitive.reference, pins)
+                && point_in_polygon(wire.end, &primitive.points_mm))
+        {
+            return true;
+        }
+    }
+    false
+}
+
+fn wire_intersection_is_allowed_pin(
+    point: Point,
+    wire: Segment,
+    reference: &str,
+    pins: &[SchematicPinFact],
+) -> bool {
+    (distance(point, wire.start) <= 0.001
+        && wire_endpoint_is_pin(wire.start, reference, pins))
+        || (distance(point, wire.end) <= 0.001
+            && wire_endpoint_is_pin(wire.end, reference, pins))
+}
+
+fn wire_endpoint_is_pin(
+    endpoint: Point,
+    reference: &str,
+    pins: &[SchematicPinFact],
+) -> bool {
+    pins.iter().any(|pin| {
+        pin.reference == reference
+            && distance(
+                endpoint,
+                Point {
+                    x: pin.position_mm.0,
+                    y: pin.position_mm.1,
+                },
+            ) <= 0.001
+    })
+}
+
+fn segment_intersection_points(
+    first: Segment,
+    second_start: Point,
+    second_end: Point,
+) -> Vec<Point> {
+    let rx = first.end.x - first.start.x;
+    let ry = first.end.y - first.start.y;
+    let sx = second_end.x - second_start.x;
+    let sy = second_end.y - second_start.y;
+    let qpx = second_start.x - first.start.x;
+    let qpy = second_start.y - first.start.y;
+    let denominator = rx * sy - ry * sx;
+
+    if denominator.abs() <= 0.000_001 {
+        if (qpx * ry - qpy * rx).abs() > 0.001 {
+            return Vec::new();
+        }
+        let candidates = [first.start, first.end, second_start, second_end];
+        let mut intersections = Vec::new();
+        for candidate in candidates {
+            if point_on_segment_any(candidate, first.start, first.end)
+                && point_on_segment_any(candidate, second_start, second_end)
+                && intersections
+                    .iter()
+                    .all(|prior: &Point| distance(*prior, candidate) > 0.001)
+            {
+                intersections.push(candidate);
+            }
+        }
+        return intersections;
+    }
+
+    let t = (qpx * sy - qpy * sx) / denominator;
+    let u = (qpx * ry - qpy * rx) / denominator;
+    if (-0.001..=1.001).contains(&t) && (-0.001..=1.001).contains(&u) {
+        vec![Point {
+            x: first.start.x + t * rx,
+            y: first.start.y + t * ry,
+        }]
+    } else {
+        Vec::new()
+    }
+}
+
+fn point_on_segment_any(point: Point, start: Point, end: Point) -> bool {
+    let dx = end.x - start.x;
+    let dy = end.y - start.y;
+    let length = dx.hypot(dy);
+    if length <= 0.001 {
+        return distance(point, start) <= 0.001;
+    }
+    let cross = (point.x - start.x) * dy - (point.y - start.y) * dx;
+    if cross.abs() > 0.001 * length.max(1.0) {
+        return false;
+    }
+    let dot = (point.x - start.x) * dx + (point.y - start.y) * dy;
+    let length_squared = dx * dx + dy * dy;
+    dot >= -0.001 && dot <= length_squared + 0.001
+}
+
+fn point_segment_distance(point: Point, start: Point, end: Point) -> f64 {
+    let dx = end.x - start.x;
+    let dy = end.y - start.y;
+    let length_squared = dx * dx + dy * dy;
+    if length_squared <= 0.000_001 {
+        return distance(point, start);
+    }
+    let projection = (((point.x - start.x) * dx + (point.y - start.y) * dy)
+        / length_squared)
+        .clamp(0.0, 1.0);
+    distance(
+        point,
+        Point {
+            x: start.x + projection * dx,
+            y: start.y + projection * dy,
+        },
+    )
+}
+
+fn point_in_polygon(point: Point, polygon: &[(f64, f64)]) -> bool {
+    if polygon.len() < 3 {
+        return false;
+    }
+    let mut inside = false;
+    for index in 0..polygon.len() {
+        let first = Point {
+            x: polygon[index].0,
+            y: polygon[index].1,
+        };
+        let second = Point {
+            x: polygon[(index + 1) % polygon.len()].0,
+            y: polygon[(index + 1) % polygon.len()].1,
+        };
+        if point_on_segment_any(point, first, second) {
+            return true;
+        }
+        if (first.y > point.y) != (second.y > point.y) {
+            let crossing_x = (second.x - first.x) * (point.y - first.y)
+                / (second.y - first.y)
+                + first.x;
+            if point.x < crossing_x {
+                inside = !inside;
+            }
+        }
+    }
+    inside
 }
 
 fn check_pin_orientation(root: &Node, source: &str, segments: &[Segment]) -> Vec<Diagnostic> {
@@ -1981,6 +2495,144 @@ mod tests {
                 .diagnostics
                 .iter()
                 .any(|item| item.code == "SCH002")
+        );
+    }
+
+    const TRIANGLE_SYMBOL: &str = r#"
+        (lib_symbols
+          (symbol "Test:Triangle"
+            (symbol "Triangle_0_1"
+              (polyline
+                (pts (xy 0 0) (xy 4 0) (xy 0 4) (xy 0 0))
+                (stroke (width 0.254))
+                (fill (type none))
+              )
+            )
+          )
+        )
+        (symbol (lib_id "Test:Triangle") (at 0 0 0)
+          (property "Reference" "Q1" (at 10 10 0) (effects (font (size 1 1))))
+        )
+    "#;
+
+    #[test]
+    fn wire_obstacle_uses_actual_triangle_outline_not_its_bounding_box() {
+        let outside = document(&format!(
+            "{TRIANGLE_SYMBOL} (wire (pts (xy 3 -3) (xy 4 -4)))"
+        ));
+        assert!(
+            !run_builtin_rules(&outside)
+                .diagnostics
+                .iter()
+                .any(|item| item.code == "SCH013" && item.message.contains("symbol body Q1"))
+        );
+
+        let crossing = document(&format!(
+            "{TRIANGLE_SYMBOL} (wire (pts (xy 1 -1) (xy 3 -1)))"
+        ));
+        assert!(
+            run_builtin_rules(&crossing)
+                .diagnostics
+                .iter()
+                .any(|item| item.code == "SCH013" && item.message.contains("symbol body Q1"))
+        );
+    }
+
+    #[test]
+    fn wire_obstacle_detects_circle_primitive_interiors() {
+        let doc = document(
+            r#"
+            (lib_symbols
+              (symbol "Test:Circle"
+                (symbol "Circle_1_1"
+                  (circle (center 0 0) (radius 2)
+                    (stroke (width 0.254)) (fill (type none)))
+                )
+              )
+            )
+            (symbol (lib_id "Test:Circle") (at 10 10 0)
+              (property "Reference" "U1" (at 10 10 0) (effects (font (size 1 1))))
+            )
+            (wire (pts (xy 9 10) (xy 11 10)))
+            "#,
+        );
+        assert!(
+            run_builtin_rules(&doc)
+                .diagnostics
+                .iter()
+                .any(|item| item.code == "SCH013" && item.message.contains("symbol body U1"))
+        );
+    }
+
+    #[test]
+    fn wire_may_start_at_its_intended_symbol_pin_without_body_penetration() {
+        let doc = document(
+            r#"
+            (lib_symbols
+              (symbol "Test:PinBody"
+                (symbol "PinBody_1_1"
+                  (rectangle (start -1 -1) (end 1 1)
+                    (stroke (width 0.254)) (fill (type none)))
+                  (pin passive line (at 1 0 180) (length 1)
+                    (name "1") (number "1"))
+                )
+              )
+            )
+            (symbol (lib_id "Test:PinBody") (at 10 10 0) (unit 1)
+              (property "Reference" "U2" (at 10 10 0) (effects (font (size 1 1))))
+            )
+            (wire (pts (xy 11 10) (xy 13 10)))
+            "#,
+        );
+        assert!(
+            !run_builtin_rules(&doc)
+                .diagnostics
+                .iter()
+                .any(|item| item.code == "SCH013" && item.message.contains("symbol body U2"))
+        );
+    }
+
+    #[test]
+    fn wire_obstacle_rejects_intermediate_pins_visible_fields_and_text_boxes() {
+        let doc = document(
+            r#"
+            (lib_symbols
+              (symbol "Test:TwoPins"
+                (symbol "TwoPins_1_1"
+                  (pin passive line (at 0 0 0) (length 1)
+                    (name "1") (number "1"))
+                  (pin passive line (at 1 0 0) (length 1)
+                    (name "2") (number "2"))
+                )
+              )
+            )
+            (symbol (lib_id "Test:TwoPins") (at 10 10 0) (unit 1)
+              (property "Reference" "U3" (at 5 5 0) (effects (font (size 1 1))))
+              (property "Value" "TEST" (at 5 5 0) (effects (font (size 1 1))))
+            )
+            (text_box "Annotation" (at 4 4) (size 4 2)
+              (margins 0.5 0.5 0.5 0.5) (stroke (width 0.1))
+              (effects (font (size 1 1))))
+            (wire (pts (xy 10 10) (xy 12 10)))
+            (wire (pts (xy 4 4.5) (xy 6 4.5)))
+            (wire (pts (xy 3 5) (xy 7 5)))
+            "#,
+        );
+        let diagnostics = run_builtin_rules(&doc).diagnostics;
+        assert!(
+            diagnostics
+                .iter()
+                .any(|item| item.code == "SCH013" && item.message.contains("intermediate pin U3.2"))
+        );
+        assert!(
+            diagnostics
+                .iter()
+                .any(|item| item.code == "SCH013" && item.message.contains("symbol field U3 Reference"))
+        );
+        assert!(
+            diagnostics
+                .iter()
+                .any(|item| item.code == "SCH013" && item.message.contains("annotation text box"))
         );
     }
 
