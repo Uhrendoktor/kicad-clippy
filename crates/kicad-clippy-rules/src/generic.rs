@@ -72,7 +72,7 @@ pub struct SchematicPinFact {
 
 #[derive(Clone, Debug)]
 pub struct SchematicLabelFact {
-    /// Label form: local, hierarchical_label, or global_label.
+    /// Label form: `local`, `hierarchical_label`, or `global_label`.
     pub kind: String,
     /// Label name.
     pub name: String,
@@ -1436,7 +1436,7 @@ fn point_key(point: Point) -> String {
     format!("{:.3}:{:.3}", point.x, point.y)
 }
 
-pub(crate) fn physical_wire_component_ids(facts: &SchematicFacts) -> BTreeMap<String, usize> {
+pub fn physical_wire_component_ids(facts: &SchematicFacts) -> BTreeMap<String, usize> {
     let segments: Vec<_> = facts
         .wires
         .iter()
