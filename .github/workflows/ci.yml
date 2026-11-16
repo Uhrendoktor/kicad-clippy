@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust-quality:
+    name: Rust quality gates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install stable Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+          rustc --version
+          cargo --version
+
+      - name: Verify locked dependencies
+        run: cargo fetch --locked
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run strict Clippy
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+
+      - name: Run workspace tests
+        run: cargo test --workspace --all-features --locked
+
+      - name: Run documentation tests
+        run: cargo test --workspace --doc --locked
+
+      - name: Build release binary
+        run: cargo build --release --package kicad-clippy --locked
+
+  native-erc:
+    name: Native KiCad ERC smoke test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install KiCad CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends kicad
+          CLI="$(command -v kicad-cli || true)"
+          if [[ -z "$CLI" ]]; then
+            echo "::error::kicad-cli was not installed."
+            exit 1
+          fi
+          echo "KICAD_CLI=$CLI" >> "$GITHUB_ENV"
+          "$CLI" version
+
+      - name: Install stable Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install stable --profile minimal
+          rustc --version
+          cargo --version
+
+      - name: Run native ERC smoke test
+        run: bash scripts/validate-native-erc.sh
