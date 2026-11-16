@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use kicad_clippy_core::{ByteSpan, Diagnostic, RelatedLocation, SchematicLocation, Severity};
+use kicad_clippy_core::{BuiltinRuleId, ByteSpan, Diagnostic, RelatedLocation, SchematicLocation, Severity};
 use kicad_clippy_parser::SchematicDocument;
 use kiutils_sexpr::{Atom, Node};
 
@@ -884,8 +884,7 @@ fn check_wire_obstacles(
                 && wire_crosses_symbol_primitive(*segment, primitive, &facts.pins)
             {
                 reported_symbols.insert(primitive.reference.clone());
-                diagnostics.push(at_segment(
-                    "SCH013",
+                diagnostics.push(at_segment(BuiltinRuleId::Sch013,
                     &format!(
                         "wire {wire_index} penetrates symbol body {}",
                         primitive.reference
@@ -902,8 +901,7 @@ fn check_wire_obstacles(
             if point_on_segment_any(point, segment.start, segment.end)
                 && !is_endpoint(point, *segment)
             {
-                diagnostics.push(at_segment(
-                    "SCH013",
+                diagnostics.push(at_segment(BuiltinRuleId::Sch013,
                     &format!(
                         "wire {wire_index} passes through intermediate pin {}.{}",
                         pin.reference, pin.number
@@ -914,8 +912,7 @@ fn check_wire_obstacles(
         }
         for (field_name, bounds, _span) in &fields {
             if strict_line_hits_bounds(*segment, *bounds) {
-                diagnostics.push(at_segment(
-                    "SCH013",
+                diagnostics.push(at_segment(BuiltinRuleId::Sch013,
                     &format!("wire {wire_index} passes through symbol field {field_name}"),
                     *segment,
                 ));
@@ -923,8 +920,7 @@ fn check_wire_obstacles(
         }
         for (box_index, bounds) in &text_boxes {
             if strict_line_hits_bounds(*segment, *bounds) {
-                diagnostics.push(at_segment(
-                    "SCH013",
+                diagnostics.push(at_segment(BuiltinRuleId::Sch013,
                     &format!("wire {wire_index} penetrates annotation text box {box_index}"),
                     *segment,
                 ));
@@ -1215,8 +1211,7 @@ fn check_no_connect_markers(root: &Node, source: &str) -> Vec<Diagnostic> {
                 .iter()
                 .any(|pin| distance(*pin, point) < 0.001);
             (!matches_pin).then(|| {
-                at_point(
-                    "SCH015",
+                at_point(BuiltinRuleId::Sch015,
                     format!(
                         "no-connect marker at ({:.3}, {:.3}) does not coincide with a placed symbol pin",
                         point.x, point.y
@@ -1395,8 +1390,7 @@ fn pin_orientation_diagnostic(
         .and_then(|items| items.get(1))
         .and_then(|item| atom_value(item, source))
         .unwrap_or_else(|| "?".to_owned());
-    Some(at_point(
-        "SCH005",
+    Some(at_point(BuiltinRuleId::Sch005,
         format!(
             "{} pin {pin_number} faces {} but its connected wire is not aligned with the pin",
             transform.reference,
@@ -1463,20 +1457,18 @@ fn check_wire_geometry(root: &Node, segments: &[Segment], junctions: &[Point]) -
     let mut diagnostics = collect_invalid_wire_diagnostics(root);
     for (index, segment) in segments.iter().enumerate() {
         if distance(segment.start, segment.end) < 0.001 {
-            diagnostics.push(at_segment("SCH001", "wire has zero length", *segment));
+            diagnostics.push(at_segment(BuiltinRuleId::Sch001, "wire has zero length", *segment));
         } else if (segment.start.x - segment.end.x).abs() > 0.001
             && (segment.start.y - segment.end.y).abs() > 0.001
         {
-            diagnostics.push(at_segment(
-                "SCH001",
+            diagnostics.push(at_segment(BuiltinRuleId::Sch001,
                 "wire is diagonal; route with orthogonal segments",
                 *segment,
             ));
         }
         for other in segments.iter().skip(index + 1) {
             if collinear_overlap(*segment, *other) {
-                diagnostics.push(at_segment(
-                    "SCH001",
+                diagnostics.push(at_segment(BuiltinRuleId::Sch001,
                     "collinear wire segments overlap",
                     *segment,
                 ));
@@ -1486,8 +1478,7 @@ fn check_wire_geometry(root: &Node, segments: &[Segment], junctions: &[Point]) -
                 let first_end = is_endpoint(point, *segment);
                 let second_end = is_endpoint(point, *other);
                 if !first_end && !second_end {
-                    let mut diagnostic = at_segment(
-                        "SCH001",
+                    let mut diagnostic = at_segment(BuiltinRuleId::Sch001,
                         "wire crossing is ambiguous; split the net or reroute",
                         *segment,
                     );
@@ -1509,8 +1500,7 @@ fn check_wire_geometry(root: &Node, segments: &[Segment], junctions: &[Point]) -
                         .iter()
                         .any(|junction| distance(*junction, point) < 0.001)
                 {
-                    let mut diagnostic = at_segment(
-                        "SCH001",
+                    let mut diagnostic = at_segment(BuiltinRuleId::Sch001,
                         "T-junction requires an explicit junction marker",
                         *segment,
                     );
@@ -1536,8 +1526,7 @@ fn collect_invalid_wire_diagnostics(root: &Node) -> Vec<Diagnostic> {
             .map(|points| children(points, "xy").count())
             .unwrap_or_default();
         if point_count != 2 {
-            diagnostics.push(at_span(
-                "SCH001",
+            diagnostics.push(at_span(BuiltinRuleId::Sch001,
                 "wire must have exactly two endpoints",
                 span_of(node),
             ));
@@ -1595,8 +1584,7 @@ fn check_label_wire_clearance(root: &Node, source: &str, segments: &[Segment]) -
             .iter()
             .any(|segment| strict_line_hits_bounds(*segment, bounds))
         {
-            diagnostics.push(at_span(
-                "SCH003",
+            diagnostics.push(at_span(BuiltinRuleId::Sch003,
                 format!("{kind} {label:?} overlaps a wire's visible glyph area"),
                 span,
             ));
@@ -1609,8 +1597,7 @@ fn check_text_box_layout(root: &Node, source: &str, segments: &[Segment]) -> Vec
     let mut diagnostics: Vec<_> = collect_nodes(root, "text")
         .into_iter()
         .map(|node| {
-            at_span(
-                "SCH008",
+            at_span(BuiltinRuleId::Sch008,
                 "free-standing annotation text is forbidden; use a KiCad text box",
                 span_of(node),
             )
@@ -1650,8 +1637,7 @@ fn inspect_text_box(
     if metrics.bounds.width + 0.001 < required_width
         || metrics.bounds.height + 0.001 < required_height
     {
-        diagnostics.push(at_span(
-            "SCH008",
+        diagnostics.push(at_span(BuiltinRuleId::Sch008,
             format!(
                 "text_box {index} is undersized ({:.2}x{:.2} mm); needs {required_width:.2}x{required_height:.2} mm",
                 metrics.bounds.width, metrics.bounds.height
@@ -1660,8 +1646,7 @@ fn inspect_text_box(
         ));
     }
     if metrics.stroke_width <= 0.0 && metrics.bounds.width + 0.001 < required_width + 10.16 {
-        diagnostics.push(at_span(
-            "SCH008",
+        diagnostics.push(at_span(BuiltinRuleId::Sch008,
             format!(
                 "unbordered text_box {index} needs at least {:.2} mm width for reliable single-line rendering",
                 required_width + 10.16
@@ -1698,8 +1683,7 @@ fn read_text_box_metrics(
     let Some(items) = list_items(node) else {
         return (
             None,
-            Some(at_span(
-                "SCH008",
+            Some(at_span(BuiltinRuleId::Sch008,
                 format!("text_box {index} is malformed"),
                 span,
             )),
@@ -1722,8 +1706,7 @@ fn read_text_box_metrics(
     else {
         return (
             None,
-            Some(at_span(
-                "SCH008",
+            Some(at_span(BuiltinRuleId::Sch008,
                 format!("text_box {index} is missing geometry, margins or font"),
                 span,
             )),
@@ -1737,8 +1720,7 @@ fn read_text_box_metrics(
     let Some(pads) = pads else {
         return (
             None,
-            Some(at_span(
-                "SCH008",
+            Some(at_span(BuiltinRuleId::Sch008,
                 format!("text_box {index} has invalid margins"),
                 span,
             )),
@@ -1747,8 +1729,7 @@ fn read_text_box_metrics(
     if pads.len() != 4 || pads.iter().any(|pad| (pad - 1.27).abs() > 0.001) {
         return (
             None,
-            Some(at_span(
-                "SCH008",
+            Some(at_span(BuiltinRuleId::Sch008,
                 format!("text_box {index} must have 1.27 mm equal padding"),
                 span,
             )),
@@ -1763,8 +1744,7 @@ fn read_text_box_metrics(
     let (Some(x), Some(y), Some(width), Some(height)) = dimensions else {
         return (
             None,
-            Some(at_span(
-                "SCH008",
+            Some(at_span(BuiltinRuleId::Sch008,
                 format!("text_box {index} has invalid dimensions"),
                 span,
             )),
@@ -1799,8 +1779,7 @@ fn check_text_box_interactions(boxes: &[TextBoxRecord], segments: &[Segment]) ->
     for (index, first) in boxes.iter().enumerate() {
         for second in boxes.iter().skip(index + 1) {
             if bounds_overlap(first.bounds, second.bounds) {
-                diagnostics.push(at_span(
-                    "SCH008",
+                diagnostics.push(at_span(BuiltinRuleId::Sch008,
                     format!("text boxes overlap: {} and {}", first.id, second.id),
                     first.span,
                 ));
@@ -1810,8 +1789,7 @@ fn check_text_box_interactions(boxes: &[TextBoxRecord], segments: &[Segment]) ->
             .iter()
             .any(|segment| line_hits_bounds(*segment, first.bounds))
         {
-            diagnostics.push(at_span(
-                "SCH008",
+            diagnostics.push(at_span(BuiltinRuleId::Sch008,
                 format!("a wire penetrates text box {}", first.id),
                 first.span,
             ));
@@ -1837,8 +1815,7 @@ fn check_block_annotation_structure(root: &Node, source: &str) -> Vec<Diagnostic
                 .and_then(|item| number(item, source))
                 .unwrap_or(-1.0);
             (multiline && stroke_width <= 0.0).then(|| {
-                at_span(
-                    "SCH011",
+                at_span(BuiltinRuleId::Sch011,
                     "multiline annotation must be a single line or have its own visible box outline",
                     span_of(node),
                 )
@@ -2046,8 +2023,8 @@ fn strict_line_hits_bounds(segment: Segment, bounds: Bounds) -> bool {
     }
 }
 
-fn at_span(code: &str, message: impl Into<String>, span: ByteSpan) -> Diagnostic {
-    let mut diagnostic = Diagnostic::new(code, Severity::Error, message);
+fn at_span(code: BuiltinRuleId, message: impl Into<String>, span: ByteSpan) -> Diagnostic {
+    let mut diagnostic = Diagnostic::for_builtin_rule(code, Severity::Error, message);
     diagnostic.span = Some(span);
     diagnostic
 }
@@ -2080,8 +2057,7 @@ fn check_label_topology(root: &Node, source: &str, segments: &[Segment]) -> Vec<
                 .iter()
                 .any(|segment| point_on_segment(point, segment))
             {
-                diagnostics.push(at_point(
-                    "SCH002",
+                diagnostics.push(at_point(BuiltinRuleId::Sch002,
                     format!(
                         "local label {label:?} at ({:.3}, {:.3}) is not attached to a wire",
                         point.x, point.y
@@ -2097,8 +2073,7 @@ fn check_label_topology(root: &Node, source: &str, segments: &[Segment]) -> Vec<
                     .iter()
                     .any(|segment| point_on_segment(point, segment))
             {
-                diagnostics.push(at_point(
-                    "SCH002",
+                diagnostics.push(at_point(BuiltinRuleId::Sch002,
                     format!("hierarchical label {label:?} at ({:.3}, {:.3}) must sit at the end of one wire twig", point.x, point.y),
                     point,
                     span,
@@ -2108,8 +2083,8 @@ fn check_label_topology(root: &Node, source: &str, segments: &[Segment]) -> Vec<
     }
     for ((label, _island), count) in island_uses {
         if count > 1 {
-            diagnostics.push(Diagnostic::new(
-                "SCH002",
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch002,
                 Severity::Error,
                 format!("local label {label:?} occurs {count} times on one physical wire network"),
             ));
@@ -2117,8 +2092,8 @@ fn check_label_topology(root: &Node, source: &str, segments: &[Segment]) -> Vec<
     }
     for (label, count) in totals {
         if count < 2 {
-            diagnostics.push(Diagnostic::new(
-                "SCH002",
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch002,
                 Severity::Error,
                 format!("local label {label:?} is used only {count} time(s)"),
             ));
@@ -2267,8 +2242,7 @@ fn check_label_text_collisions(root: &Node, source: &str) -> Vec<Diagnostic> {
     for (index, (first_name, first_bounds, first_span)) in labels.iter().enumerate() {
         for (second_name, second_bounds, _second_span) in labels.iter().skip(index + 1) {
             if bounds_overlap(*first_bounds, *second_bounds) {
-                diagnostics.push(at_span(
-                    "SCH018",
+                diagnostics.push(at_span(BuiltinRuleId::Sch018,
                     format!("label text overlaps: {first_name} and {second_name}"),
                     *first_span,
                 ));
@@ -2287,8 +2261,7 @@ fn check_label_text_collisions(root: &Node, source: &str) -> Vec<Diagnostic> {
             if text_visual_bounds(&value, property, source)
                 .is_some_and(|field_bounds| bounds_overlap(*first_bounds, field_bounds))
             {
-                diagnostics.push(at_span(
-                    "SCH018",
+                diagnostics.push(at_span(BuiltinRuleId::Sch018,
                     format!("{first_name} overlaps a visible symbol field"),
                     *first_span,
                 ));
@@ -2298,8 +2271,7 @@ fn check_label_text_collisions(root: &Node, source: &str) -> Vec<Diagnostic> {
             if text_box_bounds(text_box, source)
                 .is_some_and(|box_bounds| bounds_overlap(*first_bounds, box_bounds))
             {
-                diagnostics.push(at_span(
-                    "SCH018",
+                diagnostics.push(at_span(BuiltinRuleId::Sch018,
                     format!("{first_name} overlaps an annotation text box"),
                     *first_span,
                 ));
@@ -2346,8 +2318,7 @@ fn check_symbol_field_clearance(
             } else {
                 "another symbol body"
             };
-            diagnostics.push(at_span(
-                "SCH010",
+            diagnostics.push(at_span(BuiltinRuleId::Sch010,
                 format!(
                     "{field_label} overlaps {description} {}",
                     primitive.reference
@@ -2358,8 +2329,7 @@ fn check_symbol_field_clearance(
 
         for segment in segments {
             if strict_line_hits_bounds(*segment, *bounds) {
-                diagnostics.push(at_span(
-                    "SCH010",
+                diagnostics.push(at_span(BuiltinRuleId::Sch010,
                     format!("{field_label} overlaps a wire segment"),
                     *span,
                 ));
@@ -2371,8 +2341,7 @@ fn check_symbol_field_clearance(
                 y: pin.position_mm.1,
             };
             if point_in_bounds(point, *bounds) {
-                diagnostics.push(at_span(
-                    "SCH010",
+                diagnostics.push(at_span(BuiltinRuleId::Sch010,
                     format!(
                         "{field_label} overlaps pin {}.{}",
                         pin.reference, pin.number
@@ -2383,8 +2352,7 @@ fn check_symbol_field_clearance(
         }
         for (kind, label, label_bounds) in &label_bounds {
             if bounds_overlap(*bounds, *label_bounds) {
-                diagnostics.push(at_span(
-                    "SCH010",
+                diagnostics.push(at_span(BuiltinRuleId::Sch010,
                     format!("{field_label} overlaps {kind} {label:?}"),
                     *span,
                 ));
@@ -2392,8 +2360,7 @@ fn check_symbol_field_clearance(
         }
         for box_bounds in &text_boxes {
             if bounds_overlap(*bounds, *box_bounds) {
-                diagnostics.push(at_span(
-                    "SCH010",
+                diagnostics.push(at_span(BuiltinRuleId::Sch010,
                     format!("{field_label} overlaps an annotation text box"),
                     *span,
                 ));
@@ -2401,8 +2368,7 @@ fn check_symbol_field_clearance(
         }
         for (other_label, other_bounds, _other_span) in fields.iter().skip(index + 1) {
             if bounds_overlap(*bounds, *other_bounds) {
-                diagnostics.push(at_span(
-                    "SCH010",
+                diagnostics.push(at_span(BuiltinRuleId::Sch010,
                     format!("visible symbol fields overlap: {field_label} and {other_label}"),
                     *span,
                 ));
@@ -2571,8 +2537,8 @@ fn check_label_kind_consistency(root: &Node, source: &str) -> Vec<Diagnostic> {
         .into_iter()
         .filter_map(|(label, kinds)| {
             (kinds.len() > 1).then(|| {
-                Diagnostic::new(
-                    "SCH019",
+                Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch019,
                     Severity::Error,
                     format!(
                         "label {label:?} mixes types: {}; use one scope consistently",
@@ -2758,13 +2724,13 @@ fn intersection(first: Segment, second: Segment) -> Option<Point> {
     (point_on_segment(point, &horizontal) && point_on_segment(point, &vertical)).then_some(point)
 }
 
-fn at_segment(code: &str, message: &str, segment: Segment) -> Diagnostic {
+fn at_segment(code: BuiltinRuleId, message: &str, segment: Segment) -> Diagnostic {
     let mut diagnostic = Diagnostic::new(code, Severity::Error, message);
     diagnostic.span = Some(segment.span);
     diagnostic
 }
 
-fn at_point(code: &str, message: String, point: Point, span: ByteSpan) -> Diagnostic {
+fn at_point(code: BuiltinRuleId, message: String, point: Point, span: ByteSpan) -> Diagnostic {
     let mut diagnostic = Diagnostic::new(code, Severity::Error, message);
     diagnostic.span = Some(span);
     diagnostic.schematic_location = Some(SchematicLocation {
