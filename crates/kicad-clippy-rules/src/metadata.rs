@@ -1,4 +1,8 @@
-use std::{collections::{BTreeMap, BTreeSet}, fs, path::Path};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs,
+    path::Path,
+};
 
 use kicad_clippy_core::{Diagnostic, Severity};
 use kicad_clippy_parser::SchematicDocument;
@@ -22,8 +26,18 @@ pub enum ProfileMode {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ComponentKind {
-    Capacitor, Resistor, Diode, Inductor, Transistor, Connector,
-    IntegratedCircuit, Fuse, FerriteBead, Crystal, Switch, Other,
+    Capacitor,
+    Resistor,
+    Diode,
+    Inductor,
+    Transistor,
+    Connector,
+    IntegratedCircuit,
+    Fuse,
+    FerriteBead,
+    Crystal,
+    Switch,
+    Other,
 }
 
 /// Extensible component role, such as decoupling, bulk, pull_up, clamp, or load_switch.
@@ -102,20 +116,32 @@ impl LintProfile {
     pub fn validate(&self, document: &SchematicDocument) -> Vec<Diagnostic> {
         let facts = SchematicFacts::from_document(document);
         let mut diagnostics = Vec::new();
-        let references: BTreeSet<_> = facts.components.iter().map(|item| item.reference.clone()).collect();
+        let references: BTreeSet<_> = facts
+            .components
+            .iter()
+            .map(|item| item.reference.clone())
+            .collect();
 
         for reference in self.components.keys() {
             if !references.contains(reference) {
-                diagnostics.push(Diagnostic::new("SCH021", Severity::Error,
-                    format!("profile metadata references missing component {reference}")));
+                diagnostics.push(Diagnostic::new(
+                    "SCH021",
+                    Severity::Error,
+                    format!("profile metadata references missing component {reference}"),
+                ));
             }
         }
 
         for component in &facts.components {
             let Some(intent) = self.components.get(&component.reference) else {
-                if self.mode == ProfileMode::Strict && !self.ignore_components.contains(&component.reference) {
-                    diagnostics.push(Diagnostic::new("SCH021", Severity::Error,
-                        format!("{} has no component-intent metadata", component.reference)));
+                if self.mode == ProfileMode::Strict
+                    && !self.ignore_components.contains(&component.reference)
+                {
+                    diagnostics.push(Diagnostic::new(
+                        "SCH021",
+                        Severity::Error,
+                        format!("{} has no component-intent metadata", component.reference),
+                    ));
                 }
                 continue;
             };
@@ -123,8 +149,14 @@ impl LintProfile {
             if intent.function.as_deref().is_none_or(str::is_empty)
                 || intent.rationale.as_deref().is_none_or(str::is_empty)
             {
-                diagnostics.push(Diagnostic::new("SCH020", Severity::Error,
-                    format!("{} must document both its circuit function and design rationale", component.reference)));
+                diagnostics.push(Diagnostic::new(
+                    "SCH020",
+                    Severity::Error,
+                    format!(
+                        "{} must document both its circuit function and design rationale",
+                        component.reference
+                    ),
+                ));
             }
 
             if intent.kind == ComponentKind::Capacitor && intent.role.0 == "decoupling" {
@@ -151,7 +183,17 @@ impl LintProfile {
             }
 
             if intent.kind == ComponentKind::Capacitor
-                && !matches!(intent.role.0.as_str(), "decoupling" | "bulk" | "filter" | "timing" | "coupling" | "snubber" | "reservoir" | "safety")
+                && !matches!(
+                    intent.role.0.as_str(),
+                    "decoupling"
+                        | "bulk"
+                        | "filter"
+                        | "timing"
+                        | "coupling"
+                        | "snubber"
+                        | "reservoir"
+                        | "safety"
+                )
             {
                 diagnostics.push(Diagnostic::new("SCH021", Severity::Warning,
                     format!("{} uses unknown capacitor role {:?}; document its meaning or use a standard role", component.reference, intent.role.0)));
@@ -162,20 +204,41 @@ impl LintProfile {
         for (reference, intent) in &self.components {
             if intent.kind == ComponentKind::Capacitor && intent.role.0 == "decoupling" {
                 if let Some(contract) = &intent.decoupling {
-                    by_target.entry(&contract.target_pin).or_default().push((reference, contract));
+                    by_target
+                        .entry(&contract.target_pin)
+                        .or_default()
+                        .push((reference, contract));
                 }
             }
         }
         for (target, capacitors) in by_target {
-            let returns: BTreeSet<_> = capacitors.iter().map(|(_, item)| item.return_net.as_str()).collect();
-            let clusters: BTreeSet<_> = capacitors.iter().map(|(_, item)| item.cluster.as_str()).collect();
+            let returns: BTreeSet<_> = capacitors
+                .iter()
+                .map(|(_, item)| item.return_net.as_str())
+                .collect();
+            let clusters: BTreeSet<_> = capacitors
+                .iter()
+                .map(|(_, item)| item.cluster.as_str())
+                .collect();
             if returns.len() > 1 {
-                diagnostics.push(Diagnostic::new("SCH022", Severity::Error,
-                    format!("decouplers for {target} disagree on their return net: {}", returns.into_iter().collect::<Vec<_>>().join(", "))));
+                diagnostics.push(Diagnostic::new(
+                    "SCH022",
+                    Severity::Error,
+                    format!(
+                        "decouplers for {target} disagree on their return net: {}",
+                        returns.into_iter().collect::<Vec<_>>().join(", ")
+                    ),
+                ));
             }
             if clusters.len() > 1 {
-                diagnostics.push(Diagnostic::new("SCH022", Severity::Warning,
-                    format!("decouplers for {target} are split across cluster identifiers: {}", clusters.into_iter().collect::<Vec<_>>().join(", "))));
+                diagnostics.push(Diagnostic::new(
+                    "SCH022",
+                    Severity::Warning,
+                    format!(
+                        "decouplers for {target} are split across cluster identifiers: {}",
+                        clusters.into_iter().collect::<Vec<_>>().join(", ")
+                    ),
+                ));
             }
         }
         diagnostics
@@ -183,8 +246,14 @@ impl LintProfile {
 }
 
 fn valid_pin_ref(value: &str) -> bool {
-    let Some((reference, pin)) = value.rsplit_once('.') else { return false; };
-    !reference.is_empty() && !pin.is_empty() && pin.chars().all(|character| character.is_ascii_alphanumeric())
+    let Some((reference, pin)) = value.rsplit_once('.') else {
+        return false;
+    };
+    !reference.is_empty()
+        && !pin.is_empty()
+        && pin
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric())
 }
 
 /// Profile loading and validation errors.
@@ -213,7 +282,13 @@ mod tests {
         let intent = profile.components.get("C1").expect("C1 metadata");
         assert_eq!(intent.kind, ComponentKind::Capacitor);
         assert_eq!(intent.role, ComponentRole("decoupling".to_owned()));
-        assert_eq!(intent.decoupling.as_ref().map(|item| item.target_pin.as_str()), Some("U1.21"));
+        assert_eq!(
+            intent
+                .decoupling
+                .as_ref()
+                .map(|item| item.target_pin.as_str()),
+            Some("U1.21")
+        );
         assert_eq!(profile.mode, ProfileMode::Strict);
     }
 }
