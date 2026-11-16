@@ -534,10 +534,8 @@ fn sample_arc_through_three_points(
     mid: (f64, f64),
     end: (f64, f64),
 ) -> Option<Vec<(f64, f64)>> {
-    let determinant = 2.0
-        * (start.0 * (mid.1 - end.1)
-            + mid.0 * (end.1 - start.1)
-            + end.0 * (start.1 - mid.1));
+    let determinant =
+        2.0 * (start.0 * (mid.1 - end.1) + mid.0 * (end.1 - start.1) + end.0 * (start.1 - mid.1));
     if determinant.abs() <= 1.0e-9 {
         return Some(vec![start, mid, end]);
     }
