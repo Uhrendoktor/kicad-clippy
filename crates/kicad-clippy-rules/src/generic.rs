@@ -1881,7 +1881,7 @@ fn newstroke_sentinel() -> &'static (Vec<VectorPoint>, f64) {
     })
 }
 
-/// Returns NewStroke's total glyph advance normalized by its measured cap height.
+/// Returns `NewStroke`'s total glyph advance normalized by its measured cap height.
 ///
 /// The upstream renderer exposes points rather than a text-measurement method.
 /// Appending a known glyph makes its translated start position equal to the
