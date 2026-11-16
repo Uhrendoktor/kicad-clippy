@@ -58,6 +58,11 @@ impl SchematicDocument {
             return Err(SchematicParseError::LosslessInvariant { path });
         }
 
+        // The CST keeps its original raw buffer and byte spans, but the parser's
+        // quoted Atom payload only removes the escape backslash. Decode from the
+        // original token here so all downstream consumers see semantic text.
+        unescape_quoted_atoms(&mut cst.nodes, &text);
+
         Ok(Self {
             source: SourceFile::new(path, text),
             cst,
@@ -82,6 +87,27 @@ impl SchematicDocument {
         match self.cst.nodes.first() {
             Some(Node::List { span, .. }) => Some(ByteSpan::new(span.start, span.end)),
             _ => None,
+        }
+    }
+}
+
+fn unescape_quoted_atoms(nodes: &mut [Node], source: &str) {
+    for node in nodes {
+        match node {
+            Node::List { items, .. } => unescape_quoted_atoms(items, source),
+            Node::Atom {
+                atom: Atom::Quoted(value),
+                span,
+            } => {
+                if let Some(content) = source
+                    .get(span.start..span.end)
+                    .and_then(|token| token.strip_prefix('"'))
+                    .and_then(|token| token.strip_suffix('"'))
+                {
+                    *value = unescaper::unescape_lossy(content);
+                }
+            }
+            Node::Atom { .. } => {}
         }
     }
 }
@@ -162,6 +188,37 @@ mod tests {
         if let Some(span) = root_span {
             assert_eq!(document.source().slice(span), Some(SCHEMATIC));
         }
+        Ok(())
+    }
+
+    #[test]
+    fn unescapes_quoted_atoms_and_preserves_lossless_source() -> Result<(), Box<dyn Error>> {
+        use kiutils_sexpr::{Atom, Node};
+
+        let text = r#"(kicad_sch (title "first\nsecond") (literal "slash\\nsequence") (quote "say \"ok\""))"#;
+        let document = SchematicDocument::from_text("quoted.kicad_sch", text)?;
+
+        assert_eq!(document.cst().to_lossless_string(), text);
+        let Node::List { items, .. } = &document.cst().nodes[0] else {
+            return Err("expected schematic root list".into());
+        };
+        let quoted_value = |index: usize| {
+            let Node::List { items, .. } = &items[index] else {
+                return None;
+            };
+            let Node::Atom {
+                atom: Atom::Quoted(value),
+                ..
+            } = items.get(1)?
+            else {
+                return None;
+            };
+            Some(value.as_str())
+        };
+
+        assert_eq!(quoted_value(1), Some("first\nsecond"));
+        assert_eq!(quoted_value(2), Some("slash\\nsequence"));
+        assert_eq!(quoted_value(3), Some("say \"ok\""));
         Ok(())
     }
 
