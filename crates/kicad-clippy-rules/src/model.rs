@@ -37,7 +37,6 @@ impl Rect {
     }
 
     pub fn width(self) -> f64 { self.max.x - self.min.x }
-    pub fn height(self) -> f64 { self.max.y - self.min.y }
 
     pub fn contains(self, point: Point, margin: f64) -> bool {
         point.x >= self.min.x + margin - TOL
@@ -89,7 +88,6 @@ pub(crate) struct Label<'a> {
 #[derive(Clone, Debug)]
 pub(crate) struct Field<'a> {
     pub name: String,
-    pub value: String,
     pub point: Point,
     pub bounds: Rect,
     pub node: &'a Node,
@@ -101,7 +99,6 @@ pub(crate) struct Symbol<'a> {
     pub reference: String,
     pub value: String,
     pub point: Point,
-    pub rotation: i32,
     pub dnp: bool,
     pub fields: Vec<Field<'a>>,
     pub node: &'a Node,
@@ -123,7 +120,6 @@ pub(crate) struct TextBox<'a> {
     pub bounds: Rect,
     pub outlined: bool,
     pub node: &'a Node,
-    pub span: Option<ByteSpan>,
 }
 
 /// A transformed primitive from an embedded symbol definition.
@@ -216,7 +212,6 @@ impl<'a> SchematicModel<'a> {
                     let (field_point, angle) = at(field)?;
                     Some(Field {
                         name,
-                        value: value.clone(),
                         point: field_point,
                         bounds: text_bounds(&value, field, field_point, angle),
                         node: field,
@@ -227,7 +222,6 @@ impl<'a> SchematicModel<'a> {
                 reference: reference.to_owned(),
                 value,
                 point,
-                rotation,
                 dnp,
                 fields,
                 node: instance,
