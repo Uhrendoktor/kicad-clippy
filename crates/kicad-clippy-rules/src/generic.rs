@@ -284,20 +284,10 @@ fn collect_frame_facts(root: &Node, source: &str) -> Vec<SchematicFrameFact> {
                 .and_then(|item| atom_value(item))?;
             let start = child_list(node, "start")
                 .and_then(list_items)
-                .and_then(|items| {
-                    Some((
-                        number(items.get(1)?)?,
-                        number(items.get(2)?)?,
-                    ))
-                })?;
+                .and_then(|items| Some((number(items.get(1)?)?, number(items.get(2)?)?)))?;
             let end = child_list(node, "end")
                 .and_then(list_items)
-                .and_then(|items| {
-                    Some((
-                        number(items.get(1)?)?,
-                        number(items.get(2)?)?,
-                    ))
-                })?;
+                .and_then(|items| Some((number(items.get(1)?)?, number(items.get(2)?)?)))?;
             Some(SchematicFrameFact {
                 uuid,
                 bounds_mm: (
@@ -600,10 +590,7 @@ fn polyline_primitive_points(node: &Node, source: &str) -> Option<Vec<(f64, f64)
     let points: Vec<_> = children(points, "xy")
         .filter_map(|point| {
             let items = list_items(point)?;
-            Some((
-                number(items.get(1)?)?,
-                number(items.get(2)?)?,
-            ))
+            Some((number(items.get(1)?)?, number(items.get(2)?)?))
         })
         .collect();
     (points.len() >= 2).then_some(points)
@@ -653,10 +640,7 @@ fn bezier_primitive_points(node: &Node, source: &str) -> Option<Vec<(f64, f64)>>
     let coordinates: Option<Vec<_>> = children(points_node, "xy")
         .map(|point| {
             let items = list_items(point)?;
-            Some((
-                number(items.get(1)?)?,
-                number(items.get(2)?)?,
-            ))
+            Some((number(items.get(1)?)?, number(items.get(2)?)?))
         })
         .collect();
     let coordinates = coordinates?;
@@ -1266,11 +1250,7 @@ fn read_symbol_transform(instance: &Node, source: &str) -> Option<SymbolTransfor
         x: number(at.get(1)?)?,
         y: number(at.get(2)?)?,
     };
-    let rotation = cardinal_rotation(
-        at.get(3)
-            .and_then(|item| number(item))
-            .unwrap_or(0.0),
-    )?;
+    let rotation = cardinal_rotation(at.get(3).and_then(|item| number(item)).unwrap_or(0.0))?;
     let unit = instance_integer(instance, "unit", source).unwrap_or(1);
     let convert = instance_integer(instance, "convert", source).unwrap_or(1);
     let mirror = child_list(instance, "mirror")
@@ -1709,11 +1689,7 @@ fn read_text_box_metrics(
             )),
         );
     };
-    let pads: Option<Vec<f64>> = margins
-        .iter()
-        .skip(1)
-        .map(|item| number(item))
-        .collect();
+    let pads: Option<Vec<f64>> = margins.iter().skip(1).map(|item| number(item)).collect();
     let Some(pads) = pads else {
         return (
             None,
@@ -1868,10 +1844,7 @@ fn text_visual_bounds(value: &str, node: &Node, source: &str) -> Option<Bounds> 
     let height = font_size * 1.55;
     let x = number(at.get(1)?)?;
     let y = number(at.get(2)?)?;
-    let angle = at
-        .get(3)
-        .and_then(|item| number(item))
-        .unwrap_or(0.0);
+    let angle = at.get(3).and_then(|item| number(item)).unwrap_or(0.0);
     let justify = effects.and_then(|effects| child_list(effects, "justify"));
     let justify_items = justify.and_then(list_items);
     let justify_name = justify_items
