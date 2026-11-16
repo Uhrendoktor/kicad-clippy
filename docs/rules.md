@@ -8,7 +8,7 @@ The historical checker defines stable IDs SCH001–SCH020. The Rust migration pr
 | SCH002 | Label topology | Implemented: physical wire-island graph, local-label reuse across distinct islands, duplicate-label detection on one island, and hierarchical twig termination |
 | SCH003 | Label/wire glyph overlap | Implemented: estimated visible glyph bounds and strict wire-interior intersection |
 | SCH004 | Physical net connectivity | Pending exported-netlist and physical wire-graph integration |
-| SCH005 | Pin orientation | Pending transformed embedded-pin geometry |
+| SCH005 | Pin orientation | Implemented: checks connected wire axes against embedded pin geometry for selected unit/convert, right-angle rotation, and X/Y mirroring |
 | SCH006 | Component spacing | Pending profile-driven spacing limits |
 | SCH007 | Group metadata | Pending profile-driven group extraction |
 | SCH008 | Annotation text-box geometry | Implemented: required geometry/font/margins, sizing, overlap and wire penetration |
@@ -29,4 +29,4 @@ The historical checker defines stable IDs SCH001–SCH020. The Rust migration pr
 
 KiCad native ERC remains the electrical authority. Rust rules must not duplicate pin-type conflicts, undriven power pins, or native unconnected-pin analysis. Rules requiring exact pin-to-net facts must consume KiCad's exported netlist, not infer connectivity from equal label strings.
 
-A rule ID is not considered ported merely because it appears in the catalogue. A rule becomes implemented only when it has positive and negative tests and a documented analysis model.
+SCH005 intentionally checks only connected-wire axis alignment; KiCad native ERC remains responsible for electrical pin compatibility and unconnected-pin findings. Pin layouts that cannot be resolved from the embedded symbol definition or use non-cardinal symbol rotation are skipped rather than guessed.\n\nA rule ID is not considered ported merely because it appears in the catalogue. A rule becomes implemented only when it has positive and negative tests and a documented analysis model.

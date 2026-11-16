@@ -52,43 +52,40 @@ impl SchematicFacts {
         let Some(root) = document.cst().nodes.first() else {
             return facts;
         };
-        walk(root, &mut |node| match head(node) {
-            Some("symbol") => {
-                let reference = children(node, "property").find_map(|property| {
-                    let items = list_items(property)?;
-                    if atom_value(items.get(1)?, document.source().text())? == "Reference" {
-                        atom_value(items.get(2)?, document.source().text())
-                    } else {
-                        None
-                    }
-                });
-                if let Some(reference) = reference {
-                    if !reference.starts_with('#') && !reference.is_empty() {
-                        facts.components.push(ComponentFact { reference });
-                    }
+        for node in children(root, "symbol") {
+            let reference = children(node, "property").find_map(|property| {
+                let items = list_items(property)?;
+                if atom_value(items.get(1)?, document.source().text())? == "Reference" {
+                    atom_value(items.get(2)?, document.source().text())
+                } else {
+                    None
+                }
+            });
+            if let Some(reference) = reference {
+                if !reference.starts_with('#') && !reference.is_empty() {
+                    facts.components.push(ComponentFact { reference });
                 }
             }
-            Some("text_box") => {
-                let Some(items) = list_items(node) else {
-                    return;
-                };
-                let Some(text) = items
-                    .get(1)
-                    .and_then(|item| atom_value(item, document.source().text()))
-                else {
-                    return;
-                };
-                let Some(uuid) = child_list(node, "uuid")
-                    .and_then(list_items)
-                    .and_then(|items| items.get(1))
-                    .and_then(|item| atom_value(item, document.source().text()))
-                else {
-                    return;
-                };
-                facts.text_boxes.push(TextBoxFact { uuid, text });
-            }
-            _ => {}
-        });
+        }
+        for node in children(root, "text_box") {
+            let Some(items) = list_items(node) else {
+                continue;
+            };
+            let Some(text) = items
+                .get(1)
+                .and_then(|item| atom_value(item, document.source().text()))
+            else {
+                continue;
+            };
+            let Some(uuid) = child_list(node, "uuid")
+                .and_then(list_items)
+                .and_then(|items| items.get(1))
+                .and_then(|item| atom_value(item, document.source().text()))
+            else {
+                continue;
+            };
+            facts.text_boxes.push(TextBoxFact { uuid, text });
+        }
         facts
     }
 }
@@ -115,6 +112,7 @@ pub fn run_builtin_rules(document: &SchematicDocument) -> RuleRun {
     let segments = collect_segments(root, source);
     let junctions = collect_points(root, source, "junction");
     let mut diagnostics = check_wire_geometry(root, &segments, &junctions);
+    diagnostics.extend(check_pin_orientation(root, source, &segments));
     diagnostics.extend(check_label_topology(root, source, &segments));
     diagnostics.extend(check_label_wire_clearance(root, source, &segments));
     diagnostics.extend(check_text_box_layout(root, source, &segments));
@@ -127,6 +125,234 @@ pub fn run_builtin_rules(document: &SchematicDocument) -> RuleRun {
         wires: segments.len(),
         components: facts.components.len(),
     }
+}
+
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PinAxis {
+    Horizontal,
+    Vertical,
+}
+
+impl PinAxis {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Horizontal => "horizontal",
+            Self::Vertical => "vertical",
+        }
+    }
+}
+
+fn check_pin_orientation(root: &Node, source: &str, segments: &[Segment]) -> Vec<Diagnostic> {
+    let Some(library_symbols) = child_list(root, "lib_symbols") else {
+        return Vec::new();
+    };
+    let mut diagnostics = Vec::new();
+
+    for instance in children(root, "symbol") {
+        let Some(lib_id) = child_list(instance, "lib_id")
+            .and_then(list_items)
+            .and_then(|items| items.get(1))
+            .and_then(|item| atom_value(item, source))
+        else {
+            continue;
+        };
+        let Some(reference) = children(instance, "property").find_map(|property| {
+            let items = list_items(property)?;
+            (atom_value(items.get(1)?, source)? == "Reference")
+                .then(|| atom_value(items.get(2)?, source))
+                .flatten()
+        }) else {
+            continue;
+        };
+        if reference.starts_with('#') {
+            continue;
+        }
+        let Some(instance_at) = child_list(instance, "at").and_then(list_items) else {
+            continue;
+        };
+        let (Some(origin_x), Some(origin_y)) = (
+            instance_at.get(1).and_then(|item| number(item, source)),
+            instance_at.get(2).and_then(|item| number(item, source)),
+        ) else {
+            continue;
+        };
+        let rotation = instance_at
+            .get(3)
+            .and_then(|item| number(item, source))
+            .unwrap_or(0.0);
+        let Some(rotation) = cardinal_rotation(rotation) else {
+            continue;
+        };
+        let unit = child_list(instance, "unit")
+            .and_then(list_items)
+            .and_then(|items| items.get(1))
+            .and_then(|item| atom_value(item, source))
+            .and_then(|value| value.parse::<u32>().ok())
+            .unwrap_or(1);
+        let convert = child_list(instance, "convert")
+            .and_then(list_items)
+            .and_then(|items| items.get(1))
+            .and_then(|item| atom_value(item, source))
+            .and_then(|value| value.parse::<u32>().ok())
+            .unwrap_or(1);
+        let mirror = child_list(instance, "mirror")
+            .and_then(list_items)
+            .and_then(|items| items.get(1))
+            .and_then(|item| atom_value(item, source));
+        if mirror.is_some_and(|value| value != "x" && value != "y") {
+            continue;
+        }
+
+        let Some(library_symbol) = children(library_symbols, "symbol").find(|definition| {
+            list_items(definition)
+                .and_then(|items| items.get(1))
+                .and_then(|item| atom_value(item, source))
+                .is_some_and(|name| name == lib_id)
+        }) else {
+            continue;
+        };
+
+        let mut pin_nodes = Vec::new();
+        for sub_symbol in children(library_symbol, "symbol") {
+            let Some(name) = list_items(sub_symbol)
+                .and_then(|items| items.get(1))
+                .and_then(|item| atom_value(item, source))
+            else {
+                continue;
+            };
+            let Some((sub_unit, sub_convert)) = sub_symbol_unit_convert(&name) else {
+                continue;
+            };
+            if (sub_unit == 0 || sub_unit == unit) && sub_convert == convert {
+                pin_nodes.extend(children(sub_symbol, "pin"));
+            }
+        }
+        if pin_nodes.is_empty() {
+            pin_nodes.extend(children(library_symbol, "pin"));
+        }
+
+        for pin in pin_nodes {
+            let Some(pin_at) = child_list(pin, "at").and_then(list_items) else {
+                continue;
+            };
+            let (Some(pin_x), Some(pin_y), Some(pin_angle)) = (
+                pin_at.get(1).and_then(|item| number(item, source)),
+                pin_at.get(2).and_then(|item| number(item, source)),
+                pin_at
+                    .get(3)
+                    .and_then(|item| number(item, source)),
+            ) else {
+                continue;
+            };
+            let Some((x_offset, y_offset)) = transform_symbol_point(
+                pin_x, pin_y, rotation, mirror,
+            ) else {
+                continue;
+            };
+            let point = Point {
+                x: origin_x + x_offset,
+                y: origin_y + y_offset,
+            };
+            let Some((axis_x, axis_y)) =
+                transform_symbol_vector(pin_angle, rotation, mirror)
+            else {
+                continue;
+            };
+            let expected_axis = if axis_x.abs() >= axis_y.abs() {
+                PinAxis::Horizontal
+            } else {
+                PinAxis::Vertical
+            };
+            let touching_segments: Vec<_> = segments
+                .iter()
+                .filter(|segment| point_on_segment(point, segment))
+                .collect();
+            if touching_segments.is_empty() {
+                continue;
+            }
+            let has_aligned_segment = touching_segments.iter().any(|segment| {
+                match expected_axis {
+                    PinAxis::Horizontal => (segment.start.y - segment.end.y).abs() < 0.001,
+                    PinAxis::Vertical => (segment.start.x - segment.end.x).abs() < 0.001,
+                }
+            });
+            if has_aligned_segment {
+                continue;
+            }
+            let pin_number = child_list(pin, "number")
+                .and_then(list_items)
+                .and_then(|items| items.get(1))
+                .and_then(|item| atom_value(item, source))
+                .unwrap_or_else(|| "?".to_owned());
+            diagnostics.push(at_point(
+                "SCH005",
+                format!(
+                    "{reference} pin {pin_number} faces {} but its connected wire is not aligned with the pin",
+                    expected_axis.as_str()
+                ),
+                point,
+                span_of(instance),
+            ));
+        }
+    }
+    diagnostics
+}
+
+fn sub_symbol_unit_convert(name: &str) -> Option<(u32, u32)> {
+    let (prefix, convert) = name.rsplit_once('_')?;
+    let (_, unit) = prefix.rsplit_once('_')?;
+    Some((unit.parse().ok()?, convert.parse().ok()?))
+}
+
+fn cardinal_rotation(angle: f64) -> Option<i32> {
+    let normalized = angle.rem_euclid(360.0);
+    let nearest = (normalized / 90.0).round() * 90.0;
+    ((normalized - nearest).abs() <= 0.001)
+        .then_some((nearest as i32).rem_euclid(360))
+}
+
+fn transform_symbol_point(
+    mut x: f64,
+    mut y: f64,
+    rotation: i32,
+    mirror: Option<String>,
+) -> Option<(f64, f64)> {
+    match mirror.as_deref() {
+        Some("x") => y = -y,
+        Some("y") => x = -x,
+        None => {}
+        Some(_) => return None,
+    }
+    Some(match rotation {
+        0 => (x, -y),
+        90 => (-y, -x),
+        180 => (-x, y),
+        270 => (y, x),
+        _ => return None,
+    })
+}
+
+fn transform_symbol_vector(
+    angle: f64,
+    rotation: i32,
+    mirror: Option<String>,
+) -> Option<(f64, f64)> {
+    let radians = angle.to_radians();
+    let (mut x, mut y) = (radians.cos(), radians.sin());
+    match mirror.as_deref() {
+        Some("x") => y = -y,
+        Some("y") => x = -x,
+        None => {}
+        Some(_) => return None,
+    }
+    Some(match rotation {
+        0 => (x, -y),
+        90 => (-y, -x),
+        180 => (-x, y),
+        270 => (y, x),
+        _ => return None,
+    })
 }
 
 fn check_wire_geometry(root: &Node, segments: &[Segment], junctions: &[Point]) -> Vec<Diagnostic> {
@@ -1153,6 +1379,75 @@ mod tests {
     fn document(body: &str) -> SchematicDocument {
         SchematicDocument::from_text("fixture.kicad_sch", format!("(kicad_sch {body})"))
             .expect("fixture parses")
+    }
+
+
+    const EMBEDDED_PIN: &str = r#"
+        (lib_symbols
+          (symbol "Device:Test"
+            (property "Reference" "R" (at 0 2.54 0) (effects (font (size 1 1))))
+            (symbol "Test_1_1"
+              (pin passive line (at 0 2.54 90) (length 1.27)
+                (name "1") (number "1"))
+            )
+          )
+        )
+        (symbol (lib_id "Device:Test") (at 10 10 0) (unit 1)
+          (property "Reference" "J1" (at 10 10 0) (effects (font (size 1 1))))
+        )
+    "#;
+
+    #[test]
+    fn pin_wire_must_follow_the_embedded_pin_axis() {
+        let doc = document(&format!(
+            "{EMBEDDED_PIN} (wire (pts (xy 10 7.46) (xy 11.27 7.46)))"
+        ));
+        assert!(run_builtin_rules(&doc)
+            .diagnostics
+            .iter()
+            .any(|item| item.code == "SCH005" && item.message.contains("J1 pin 1")));
+    }
+
+    #[test]
+    fn correctly_aligned_pin_wire_is_accepted() {
+        let doc = document(&format!(
+            "{EMBEDDED_PIN} (wire (pts (xy 10 7.46) (xy 10 6.19)))"
+        ));
+        assert!(!run_builtin_rules(&doc)
+            .diagnostics
+            .iter()
+            .any(|item| item.code == "SCH005"));
+    }
+
+    #[test]
+    fn pin_axis_and_position_follow_symbol_rotation_and_mirroring() {
+        let doc = document(
+            r#"
+            (lib_symbols
+              (symbol "Device:Test"
+                (symbol "Test_1_1"
+                  (pin passive line (at 2.54 0 0) (length 1.27)
+                    (name "1") (number "1"))
+                )
+              )
+            )
+            (symbol (lib_id "Device:Test") (at 10 10 90) (mirror y) (unit 1)
+              (property "Reference" "J2" (at 10 10 0) (effects (font (size 1 1))))
+            )
+            (wire (pts (xy 10 12.54) (xy 10 13.81)))
+            "#,
+        );
+        assert!(!run_builtin_rules(&doc)
+            .diagnostics
+            .iter()
+            .any(|item| item.code == "SCH005"));
+    }
+
+    #[test]
+    fn embedded_library_fields_are_not_counted_as_placed_components() {
+        let doc = document(EMBEDDED_PIN);
+        let run = run_builtin_rules(&doc);
+        assert_eq!(run.components, 1);
     }
 
     #[test]
