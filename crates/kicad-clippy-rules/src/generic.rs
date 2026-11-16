@@ -507,6 +507,24 @@ mod tests {
     }
 
     #[test]
+    fn repeated_local_label_on_one_wire_is_rejected() {
+        let doc = document(
+            r#"(wire (pts (xy 0 0) (xy 4 0))) (label "NET" (at 1 0 0)) (label "NET" (at 3 0 0))"#,
+        );
+        assert!(run_builtin_rules(&doc).diagnostics.iter().any(|item| {
+            item.code == "SCH002" && item.message.contains("one physical wire network")
+        }));
+    }
+
+    #[test]
+    fn repeated_local_label_joins_distinct_wire_islands() {
+        let doc = document(
+            r#"(wire (pts (xy 0 0) (xy 1 0))) (wire (pts (xy 3 0) (xy 4 0))) (label "NET" (at 0.5 0 0)) (label "NET" (at 3.5 0 0))"#,
+        );
+        assert!(!run_builtin_rules(&doc).diagnostics.iter().any(|item| item.code == "SCH002"));
+    }
+
+    #[test]
     fn same_label_cannot_be_local_and_hierarchical() {
         let doc = document(
             r#"(label "NET" (at 1 1 0) (effects (font (size 1 1)))) (hierarchical_label "NET" (shape input) (at 2 2 0) (effects (font (size 1 1))))"#,
