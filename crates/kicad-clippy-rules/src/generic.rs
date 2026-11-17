@@ -36,7 +36,7 @@ pub struct Segment {
     pub span: ByteSpan,
 }
 
-/// Exact circular geometry reconstructed from KiCad's start/mid/end arc points.
+/// Exact circular geometry reconstructed from `KiCad`'s start/mid/end arc points.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SchematicArcFact {
     /// Circle centre in schematic coordinates, in millimetres.
@@ -45,7 +45,7 @@ pub struct SchematicArcFact {
     pub radius_mm: f64,
     /// Start angle in radians, measured in the schematic coordinate plane.
     pub start_angle_rad: f64,
-    /// Signed sweep in radians, selected to pass through KiCad's midpoint.
+    /// Signed sweep in radians, selected to pass through `KiCad`'s midpoint.
     pub sweep_rad: f64,
 }
 
@@ -1510,8 +1510,8 @@ fn segment_arc_intersection_points(wire: Segment, arc: SchematicArcFact) -> Vec<
 
     // Bound only floating-point roundoff in the quadratic discriminant; this is
     // not a geometric clearance tolerance.
-    let roundoff = (64.0 * f64::EPSILON * half_b.abs()) * half_b.abs()
-        + (64.0 * f64::EPSILON) * a_times_c.abs();
+    let roundoff = (64.0 * f64::EPSILON * half_b.abs())
+        .mul_add(half_b.abs(), (64.0 * f64::EPSILON) * a_times_c.abs());
     let discriminant = if discriminant < 0.0 {
         if discriminant < -roundoff {
             return Vec::new();
@@ -3460,7 +3460,10 @@ mod tests {
             },
             span: kicad_clippy_core::ByteSpan::new(0, 0),
         };
-        assert!(super::segment_arc_intersection_points(outside_wire, arc).is_empty());
+        assert_eq!(
+            super::segment_arc_intersection_points(outside_wire, arc),
+            Vec::new()
+        );
 
         let tangent_wire = super::Segment {
             start: super::Point { x: -1.0, y: 2.0 },
@@ -3924,13 +3927,13 @@ mod tests {
     #[test]
     fn wire_obstacle_uses_exact_intersections_for_top_level_three_point_arcs() {
         let doc = document(
-            r#"
+            r"
             (arc (start 2 0) (mid 1.4142135623730951 1.4142135623730951) (end 0 2)
               (stroke (width 0.254)) (fill (type none)))
             (wire (pts
               (xy 1.864654691212069 0.723230863929924)
               (xy 1.8739779646681292 0.7268470182495735)))
-            "#,
+            ",
         );
         assert!(
             run_builtin_rules(&doc).diagnostics.iter().any(|item| {
