@@ -970,7 +970,7 @@ fn validate_group_containment(
         group_id, group, facts, frame_uuid, bounds,
     ));
     diagnostics.extend(validate_group_plain_text_containment(
-        group_id, group, facts, frame_uuid, bounds,
+        group_id, facts, frame_uuid, bounds,
     ));
     diagnostics
 }
@@ -1247,7 +1247,6 @@ fn validate_group_annotation_box_containment(
 
 fn validate_group_plain_text_containment(
     group_id: &str,
-    group: &GroupIntent,
     facts: &SchematicFacts,
     frame_uuid: &str,
     frame_bounds: (f64, f64, f64, f64),
@@ -1415,7 +1414,7 @@ fn validate_frame_clearance(
         group_id, group, facts, frame_uuid, bounds, clearance,
     ));
     diagnostics.extend(validate_group_plain_text_clearance(
-        group_id, group, facts, frame_uuid, bounds, clearance,
+        group_id, facts, frame_uuid, bounds, clearance,
     ));
     diagnostics
 }
@@ -1674,7 +1673,6 @@ fn validate_group_annotation_box_clearance(
 
 fn validate_group_plain_text_clearance(
     group_id: &str,
-    group: &GroupIntent,
     facts: &SchematicFacts,
     frame_uuid: &str,
     frame_bounds: (f64, f64, f64, f64),
@@ -3839,6 +3837,93 @@ mod tests {
         assert!(diagnostics.iter().any(|item| {
             item.code == "SCH012"
                 && item.message.contains("member wire label")
+                && item.message.contains("2.00 mm clearance")
+        }));
+    }
+
+    #[test]
+    fn group_frame_contains_free_standing_wires_labels_and_plain_text() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "group-frame-free-standing-test.kicad_sch",
+            r#"(kicad_sch
+                (lib_symbols
+                  (symbol "Test:OnePin"
+                    (symbol "OnePin_1_1"
+                      (pin passive line (at 0 0 0) (length 1.27)
+                        (name "1") (number "1"))
+                    )
+                  )
+                )
+                (symbol (lib_id "Test:OnePin") (at 4 5 0) (unit 1)
+                  (property "Reference" "R1" (at 4 4 0) (effects (font (size 1 1))))
+                )
+                (wire (pts (xy 2 7) (xy 10 7)))
+                (label "UNATTACHED_LABEL_THAT_EXTENDS" (at 7.5 3 0) (effects (font (size 1 1))))
+                (text "Unattached note beyond the right edge" (at 7.5 5 0)
+                  (effects (font (size 1 1))))
+                (rectangle (start 1 1) (end 8 9) (uuid "frame-1"))
+                (text_box "Power input group" (at 4 6) (size 1 1) (uuid "description-1"))
+            )"#,
+        )
+        .expect("schematic parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"groups":{"power-input":{"members":["R1"],"description_uuid":"description-1","frame_uuid":"frame-1","evidence":{"document":"Power input design note","page":2,"figure":"Figure 1"}}}}"#,
+        )
+        .expect("profile parses");
+        let diagnostics = profile.validate(&schematic);
+
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "SCH009" && item.message.contains("member wire segment")
+        }));
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "SCH009" && item.message.contains("member wire label")
+        }));
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "SCH009" && item.message.contains("plain text annotation")
+        }));
+    }
+
+    #[test]
+    fn group_frame_clearance_covers_free_standing_wires_labels_and_plain_text() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "group-frame-free-standing-clearance-test.kicad_sch",
+            r#"(kicad_sch
+                (lib_symbols
+                  (symbol "Test:OnePin"
+                    (symbol "OnePin_1_1"
+                      (pin passive line (at 0 0 0) (length 1.27)
+                        (name "1") (number "1"))
+                    )
+                  )
+                )
+                (symbol (lib_id "Test:OnePin") (at 4 5 0) (unit 1)
+                  (property "Reference" "R1" (at 4 4 0) (effects (font (size 1 1))))
+                )
+                (wire (pts (xy 1.5 7) (xy 2.5 7)))
+                (label "UNATTACHED_LONG_LABEL" (at 13.5 3 0) (effects (font (size 1 1))))
+                (text "Unattached note near right edge" (at 13.5 5 0)
+                  (effects (font (size 1 1))))
+                (rectangle (start 1 1) (end 14 9) (uuid "frame-1"))
+                (text_box "Power input group" (at 5 5) (size 1 1) (uuid "description-1"))
+            )"#,
+        )
+        .expect("schematic parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"groups":{"power-input":{"members":["R1"],"description_uuid":"description-1","frame_uuid":"frame-1","minimum_frame_clearance_mm":2.0,"evidence":{"document":"Power input design note","page":2,"figure":"Figure 1"}}}}"#,
+        )
+        .expect("profile parses");
+        let diagnostics = profile.validate(&schematic);
+
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "SCH012" && item.message.contains("member wire segment")
+                && item.message.contains("2.00 mm clearance")
+        }));
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "SCH012" && item.message.contains("member wire label")
+                && item.message.contains("2.00 mm clearance")
+        }));
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "SCH012" && item.message.contains("plain text annotation")
                 && item.message.contains("2.00 mm clearance")
         }));
     }
