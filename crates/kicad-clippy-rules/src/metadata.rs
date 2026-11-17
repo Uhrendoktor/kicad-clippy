@@ -694,9 +694,7 @@ fn invalid_physical_wire_reference(group_name: &str, pin_ref: &str) -> Diagnosti
     Diagnostic::for_builtin_rule(
         BuiltinRuleId::Sch004,
         Severity::Error,
-        format!(
-            "physical wire group {group_name:?} contains invalid pin reference {pin_ref:?}"
-        ),
+        format!("physical wire group {group_name:?} contains invalid pin reference {pin_ref:?}"),
     )
 }
 
@@ -2754,9 +2752,21 @@ mod tests {
             .filter(|item| item.code == "SCH004")
             .map(|item| item.message)
             .collect();
-        assert!(messages.iter().any(|message| message.contains("invalid pin reference")));
-        assert!(messages.iter().any(|message| message.contains("missing or unsupported pin U1.99")));
-        assert!(messages.iter().any(|message| message.contains("R1.1") && message.contains("not attached")));
+        assert!(
+            messages
+                .iter()
+                .any(|message| message.contains("invalid pin reference"))
+        );
+        assert!(
+            messages
+                .iter()
+                .any(|message| message.contains("missing or unsupported pin U1.99"))
+        );
+        assert!(
+            messages
+                .iter()
+                .any(|message| message.contains("R1.1") && message.contains("not attached"))
+        );
     }
 
     #[test]
@@ -2772,8 +2782,16 @@ mod tests {
             .filter(|item| item.code == "SCH004")
             .map(|item| item.message)
             .collect();
-        assert!(messages.iter().any(|message| message.contains("at least two distinct")));
-        assert!(messages.iter().any(|message| message.contains("non-empty name")));
+        assert!(
+            messages
+                .iter()
+                .any(|message| message.contains("at least two distinct"))
+        );
+        assert!(
+            messages
+                .iter()
+                .any(|message| message.contains("non-empty name"))
+        );
     }
 
     #[test]
