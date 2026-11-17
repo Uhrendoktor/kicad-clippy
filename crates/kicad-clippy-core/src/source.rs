@@ -26,7 +26,6 @@ impl ByteSpan {
     pub const fn is_empty(self) -> bool {
         self.start == self.end
     }
-
 }
 
 /// Original source text and its file name.
