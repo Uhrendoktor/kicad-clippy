@@ -249,23 +249,12 @@ fn default_wire_stroke_width_mm_from_project(project_path: &Path) -> Result<Opti
 fn project_default_wire_stroke_width_mm(project: &serde_json::Value) -> Option<f64> {
     let settings = project.get("net_settings")?.as_object()?;
 
-    // A global Default width is safe only when no project-level net assignment
-    // mechanism can select a higher-priority class for an individual wire.
-    for key in [
-        "netclass_assignments",
-        "net_chain_classes",
-        "net_chain_netclasses",
-    ] {
-        if settings
-            .get(key)
-            .is_some_and(|value| value.as_object().is_none_or(|entries| !entries.is_empty()))
-        {
-            return None;
-        }
-    }
-    if settings
-        .get("netclass_patterns")
-        .is_some_and(|value| value.as_array().is_none_or(|patterns| !patterns.is_empty()))
+    // Explicit Default-only mappings do not change the effective width. Reject
+    // malformed maps and any assignment that can select a different netclass.
+    if !project_netclass_assignments_are_default_only(settings.get("netclass_assignments"))
+        || !project_netclass_class_map_is_default_only(settings.get("net_chain_classes"))
+        || !project_netclass_class_map_is_default_only(settings.get("net_chain_netclasses"))
+        || !project_netclass_patterns_are_default_only(settings.get("netclass_patterns"))
     {
         return None;
     }
@@ -277,6 +266,40 @@ fn project_default_wire_stroke_width_mm(project: &serde_json::Value) -> Option<f
     let width_mils = default_class.get("wire_width")?.as_f64()?;
     let width_mm = width_mils * 0.0254;
     (width_mm.is_finite() && width_mm > 0.0).then_some(width_mm)
+}
+
+fn project_netclass_assignments_are_default_only(value: Option<&serde_json::Value>) -> bool {
+    match value {
+        None | Some(serde_json::Value::Null) => true,
+        Some(serde_json::Value::Object(assignments)) => assignments.values().all(|classes| {
+            classes.as_array().is_some_and(|names| {
+                names
+                    .iter()
+                    .all(|name| name.as_str() == Some("Default"))
+            })
+        }),
+        _ => false,
+    }
+}
+
+fn project_netclass_class_map_is_default_only(value: Option<&serde_json::Value>) -> bool {
+    match value {
+        None | Some(serde_json::Value::Null) => true,
+        Some(serde_json::Value::Object(assignments)) => assignments
+            .values()
+            .all(|class_name| class_name.as_str() == Some("Default")),
+        _ => false,
+    }
+}
+
+fn project_netclass_patterns_are_default_only(value: Option<&serde_json::Value>) -> bool {
+    match value {
+        None | Some(serde_json::Value::Null) => true,
+        Some(serde_json::Value::Array(patterns)) => patterns.iter().all(|pattern| {
+            pattern.get("netclass").and_then(serde_json::Value::as_str) == Some("Default")
+        }),
+        _ => false,
+    }
 }
 
 fn render_text(output: &LintOutput, source: &SourceFile) -> Result<(), io::Error> {
@@ -425,6 +448,39 @@ mod tests {
         });
 
         assert_eq!(project_default_wire_stroke_width_mm(&project), Some(0.254));
+    }
+
+    #[test]
+    fn project_default_wire_width_accepts_null_maps_and_default_only_patterns() {
+        let project = serde_json::json!({
+            "net_settings": {
+                "classes": [{"name": "Default", "wire_width": 10.0}],
+                "netclass_assignments": null,
+                "netclass_patterns": [
+                    {"pattern": "GND", "netclass": "Default"},
+                    {"pattern": "/Power*", "netclass": "Default"}
+                ],
+                "net_chain_classes": null,
+                "net_chain_netclasses": null
+            }
+        });
+
+        assert_eq!(project_default_wire_stroke_width_mm(&project), Some(0.254));
+    }
+
+    #[test]
+    fn project_default_wire_width_rejects_non_default_named_assignments() {
+        let project = serde_json::json!({
+            "net_settings": {
+                "classes": [{"name": "Default", "wire_width": 10.0}],
+                "netclass_assignments": {"/USB": ["HighSpeed"]},
+                "netclass_patterns": [],
+                "net_chain_classes": {},
+                "net_chain_netclasses": {}
+            }
+        });
+
+        assert_eq!(project_default_wire_stroke_width_mm(&project), None);
     }
 
     #[test]
