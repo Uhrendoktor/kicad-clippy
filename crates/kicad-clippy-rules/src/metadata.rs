@@ -3872,12 +3872,16 @@ mod tests {
         .expect("profile parses");
         let diagnostics = profile.validate(&schematic);
 
-        assert!(diagnostics.iter().any(|item| {
-            item.code == "SCH009" && item.message.contains("member wire segment")
-        }));
-        assert!(diagnostics.iter().any(|item| {
-            item.code == "SCH009" && item.message.contains("member wire label")
-        }));
+        assert!(
+            diagnostics.iter().any(|item| {
+                item.code == "SCH009" && item.message.contains("member wire segment")
+            })
+        );
+        assert!(
+            diagnostics.iter().any(|item| {
+                item.code == "SCH009" && item.message.contains("member wire label")
+            })
+        );
         assert!(diagnostics.iter().any(|item| {
             item.code == "SCH009" && item.message.contains("plain text annotation")
         }));
@@ -3915,15 +3919,18 @@ mod tests {
         let diagnostics = profile.validate(&schematic);
 
         assert!(diagnostics.iter().any(|item| {
-            item.code == "SCH012" && item.message.contains("member wire segment")
+            item.code == "SCH012"
+                && item.message.contains("member wire segment")
                 && item.message.contains("2.00 mm clearance")
         }));
         assert!(diagnostics.iter().any(|item| {
-            item.code == "SCH012" && item.message.contains("member wire label")
+            item.code == "SCH012"
+                && item.message.contains("member wire label")
                 && item.message.contains("2.00 mm clearance")
         }));
         assert!(diagnostics.iter().any(|item| {
-            item.code == "SCH012" && item.message.contains("plain text annotation")
+            item.code == "SCH012"
+                && item.message.contains("plain text annotation")
                 && item.message.contains("2.00 mm clearance")
         }));
     }
