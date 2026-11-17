@@ -4392,9 +4392,11 @@ mod tests {
             "#,
         );
 
-        assert!(run_builtin_rules(&document).diagnostics.iter().any(|item| {
-            item.code == "SCH013" && item.message.contains("hierarchical sheet")
-        }));
+        assert!(
+            run_builtin_rules(&document).diagnostics.iter().any(|item| {
+                item.code == "SCH013" && item.message.contains("hierarchical sheet")
+            })
+        );
     }
 
     #[test]
@@ -4412,9 +4414,11 @@ mod tests {
             "#,
         );
 
-        assert!(!run_builtin_rules(&document).diagnostics.iter().any(|item| {
-            item.code == "SCH013" && item.message.contains("hierarchical sheet")
-        }));
+        assert!(
+            !run_builtin_rules(&document).diagnostics.iter().any(|item| {
+                item.code == "SCH013" && item.message.contains("hierarchical sheet")
+            })
+        );
     }
 
     #[test]
@@ -4432,9 +4436,11 @@ mod tests {
             "#,
         );
 
-        assert!(run_builtin_rules(&document).diagnostics.iter().any(|item| {
-            item.code == "SCH013" && item.message.contains("hierarchical sheet")
-        }));
+        assert!(
+            run_builtin_rules(&document).diagnostics.iter().any(|item| {
+                item.code == "SCH013" && item.message.contains("hierarchical sheet")
+            })
+        );
     }
 
     #[test]
