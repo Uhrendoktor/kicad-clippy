@@ -20,7 +20,7 @@ pub use generic::{
 pub use metadata::{
     CommonPinNetGroup, ComponentIntent, ComponentKind, ComponentPurpose, ComponentRole,
     DecouplingIntent, DirectWirePair, GroupEvidence, GroupIntent, LintProfile, MetadataError,
-    ProfileMode, SeparateWirePair,
+    PhysicalWireGroup, ProfileMode, SeparateWirePair,
 };
 
 /// Immutable data shared by all rule passes for one schematic.
