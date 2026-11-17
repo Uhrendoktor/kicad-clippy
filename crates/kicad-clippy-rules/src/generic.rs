@@ -1867,7 +1867,7 @@ fn wire_crosses_symbol_primitive(
     };
     let pin_contact_clearance = primitive.stroke_width_mm.abs().mul_add(
         0.5,
-        flatten_tolerance + 2.0 * SCH013_STROKE_DISTANCE_EPSILON_MM,
+        2.0_f64.mul_add(SCH013_STROKE_DISTANCE_EPSILON_MM, flatten_tolerance),
     );
     if let Some(clearance_wire) =
         wire_without_pin_contact_region(wire, &primitive.reference, pins, pin_contact_clearance)
