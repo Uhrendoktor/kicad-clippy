@@ -40,7 +40,7 @@ enum Commands {
         /// Explicit path or command name for kicad-cli.
         #[arg(long, value_name = "PATH")]
         kicad_cli: Option<PathBuf>,
-        /// KiCad project file with netclass settings for SCH013 wire widths.
+        /// `KiCad` project file with netclass settings for SCH013 wire widths.
         #[arg(long, value_name = "FILE")]
         project: Option<PathBuf>,
         /// JSON project profile containing component-intent metadata.
@@ -146,7 +146,13 @@ fn execute(cli: Cli) -> Result<ExitCode, CliError> {
             profile,
             strict,
         } => lint(
-            &schematic, format, skip_erc, kicad_cli, project, profile, strict,
+            &schematic,
+            format,
+            skip_erc,
+            kicad_cli,
+            project.as_deref(),
+            profile,
+            strict,
         ),
     }
 }
@@ -156,7 +162,7 @@ fn lint(
     format: OutputFormat,
     skip_erc: bool,
     explicit_cli: Option<PathBuf>,
-    project_path: Option<PathBuf>,
+    project_path: Option<&Path>,
     profile_path: Option<PathBuf>,
     strict: bool,
 ) -> Result<ExitCode, CliError> {
