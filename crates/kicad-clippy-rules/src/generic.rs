@@ -393,7 +393,7 @@ fn collect_sheet_image_facts(root: &Node) -> Vec<SchematicImageFact> {
         .and_then(|items| items.get(1))
         .and_then(atom_value)
         .and_then(|value| value.parse::<u32>().ok())
-        .unwrap_or(20260623);
+        .unwrap_or(20_260_623);
 
     children(root, "image")
         .map(|node| {
@@ -420,9 +420,9 @@ fn collect_sheet_image_facts(root: &Node) -> Vec<SchematicImageFact> {
                         .and_then(number)
                         .filter(|scale| scale.is_finite() && *scale > 0.0)
                         .unwrap_or(1.0);
-                    let ppi = if format_version <= 20230121 {
+                    let ppi = if format_version <= 20_230_121 {
                         300.0
-                    } else if format_version < 20260623 {
+                    } else if format_version < 20_260_623 {
                         f64::from(metadata.legacy_ppi)
                     } else {
                         f64::from(metadata.ppi)
@@ -537,7 +537,7 @@ fn parse_png_image_metadata(bytes: &[u8]) -> Option<BitmapImageMetadata> {
     let mut height_pixels = None;
     let mut ppi = 300;
     let mut legacy_ppi = 300;
-    let mut offset = 8;
+    let mut offset: usize = 8;
 
     while offset.checked_add(12)? <= bytes.len() {
         let chunk_length = usize::try_from(read_be_u32(bytes, offset)?).ok()?;
