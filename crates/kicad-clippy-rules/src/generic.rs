@@ -471,7 +471,7 @@ fn selected_symbol_units(definition: &Node, unit: u32, convert: u32) -> Vec<&Nod
             list_items(sub_symbol)
                 .and_then(|items| items.get(1))
                 .and_then(atom_value)
-                .and_then(|name| sub_symbol_unit_convert(&name))
+                .and_then(sub_symbol_unit_convert)
                 .is_some_and(|(sub_unit, sub_convert)| {
                     (sub_unit == 0 || sub_unit == unit) && sub_convert == convert
                 })
@@ -1242,7 +1242,7 @@ fn embedded_symbol_pins(library_symbol: &Node, unit: u32, convert: u32) -> Vec<&
         else {
             continue;
         };
-        let Some((sub_unit, sub_convert)) = sub_symbol_unit_convert(&name) else {
+        let Some((sub_unit, sub_convert)) = sub_symbol_unit_convert(name) else {
             continue;
         };
         if (sub_unit == 0 || sub_unit == unit) && sub_convert == convert {
@@ -2188,7 +2188,7 @@ fn check_label_text_collisions(root: &Node) -> Vec<Diagnostic> {
             let Some(value) = items.get(2).and_then(atom_value) else {
                 continue;
             };
-            if text_visual_bounds(&value, property)
+            if text_visual_bounds(value, property)
                 .is_some_and(|field_bounds| bounds_overlap(*first_bounds, field_bounds))
             {
                 diagnostics.push(at_span(
