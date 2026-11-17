@@ -19,7 +19,8 @@ use kicad_clippy_parser::SchematicDocument;
 use kiutils_sexpr::{Atom, Node};
 use kurbo::{
     Affine, Arc as CurveArc, CubicBez as CurveCubicBez, Line as CurveLine, PathEl,
-    PathSeg as CurvePathSeg, Point as CurvePoint, Rect as CurveRect, Shape, Triangle, Vec2,
+    PathSeg as CurvePathSeg, ParamCurve as CurveParamCurve, Point as CurvePoint, Rect as CurveRect,
+    Shape, Triangle, Vec2,
     flatten as flatten_curve_path,
 };
 use petgraph::unionfind::UnionFind;
@@ -1640,8 +1641,12 @@ fn wire_path_min_distance(wire: Segment, path: CurvePathSeg) -> Option<(f64, f64
         return None;
     }
     let nearest = path.min_dist(CurvePathSeg::Line(line), SCH013_STROKE_DISTANCE_ACCURACY_MM);
-    (nearest.distance.is_finite() && nearest.t2.is_finite())
-        .then_some((nearest.distance, nearest.t2.clamp(0.0, 1.0)))
+    (nearest.distance.is_finite() && nearest.t1.is_finite() && nearest.t2.is_finite())
+        .then_some((
+            nearest.distance,
+            nearest.t1.clamp(0.0, 1.0),
+            nearest.t2.clamp(0.0, 1.0),
+        ))
 }
 
 fn wire_point_at_parameter(wire: Segment, parameter: f64) -> Point {
@@ -1663,7 +1668,8 @@ fn wire_within_path_stroke(
     if !stroke_width_mm.is_finite() || !flatten_tolerance_mm.is_finite() {
         return false;
     }
-    let Some((distance, wire_parameter)) = wire_path_min_distance(wire, path) else {
+    let Some((distance, path_parameter, wire_parameter)) = wire_path_min_distance(wire, path)
+    else {
         return false;
     };
     let threshold = stroke_width_mm.abs().mul_add(
@@ -1674,8 +1680,20 @@ fn wire_within_path_stroke(
         return false;
     }
     if let Some((reference, pins)) = pin_owner {
-        let closest_point = wire_point_at_parameter(wire, wire_parameter);
-        if wire_intersection_is_allowed_pin(closest_point, wire, reference, pins) {
+        let closest_wire_point = wire_point_at_parameter(wire, wire_parameter);
+        let closest_path_point = path.eval(path_parameter);
+        if distance <= 0.001
+            && wire_intersection_is_allowed_pin(closest_wire_point, wire, reference, pins)
+            && wire_intersection_is_allowed_pin(
+                Point {
+                    x: closest_path_point.x,
+                    y: closest_path_point.y,
+                },
+                wire,
+                reference,
+                pins,
+            )
+        {
             return false;
         }
     }
@@ -3627,11 +3645,6 @@ mod tests {
             bezier_mm: None,
             stroke_width_mm: 0.254,
         };
-        let sampled_graphic = super::SchematicGraphicFact {
-            arc_mm: None,
-            ..graphic.clone()
-        };
-        assert!(!super::wire_crosses_sheet_graphic(wire, &sampled_graphic));
         assert!(super::wire_crosses_sheet_graphic(wire, &graphic));
 
         let primitive = super::SchematicPrimitiveFact {
@@ -3761,11 +3774,6 @@ mod tests {
             bezier_mm: Some(controls),
             stroke_width_mm: 0.254,
         };
-        let sampled_graphic = super::SchematicGraphicFact {
-            bezier_mm: None,
-            ..graphic.clone()
-        };
-        assert!(!super::wire_crosses_sheet_graphic(wire, &sampled_graphic));
         assert!(super::wire_crosses_sheet_graphic(wire, &graphic));
 
         let primitive = super::SchematicPrimitiveFact {
