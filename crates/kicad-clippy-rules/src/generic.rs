@@ -1349,7 +1349,10 @@ fn check_wire_obstacles(
             {
                 diagnostics.push(at_segment(
                     BuiltinRuleId::Sch013,
-                    &format!("wire {wire_index} penetrates embedded bitmap image {:?}", image.uuid),
+                    &format!(
+                        "wire {wire_index} penetrates embedded bitmap image {:?}",
+                        image.uuid
+                    ),
                     *segment,
                 ));
             }
@@ -1457,9 +1460,10 @@ fn wire_crosses_sheet_graphic(wire: Segment, graphic: &SchematicGraphicFact) -> 
             edges.push((to_point(last), to_point(first)));
         }
     }
-    if edges.iter().any(|(start, end)| {
-        !segment_intersection_points(wire, *start, *end).is_empty()
-    }) {
+    if edges
+        .iter()
+        .any(|(start, end)| !segment_intersection_points(wire, *start, *end).is_empty())
+    {
         return true;
     }
     if graphic.closed {
@@ -1474,10 +1478,7 @@ fn wire_crosses_sheet_graphic(wire: Segment, graphic: &SchematicGraphicFact) -> 
     false
 }
 
-fn wire_crosses_bitmap_image(
-    wire: Segment,
-    bounds: (f64, f64, f64, f64),
-) -> bool {
+fn wire_crosses_bitmap_image(wire: Segment, bounds: (f64, f64, f64, f64)) -> bool {
     let (left, top, right, bottom) = bounds;
     strict_line_hits_bounds(
         wire,
