@@ -1666,9 +1666,10 @@ fn wire_within_path_stroke(
     let Some((distance, wire_parameter)) = wire_path_min_distance(wire, path) else {
         return false;
     };
-    let threshold = stroke_width_mm
-        .abs()
-        .mul_add(0.5, flatten_tolerance_mm.max(0.0) + SCH013_STROKE_DISTANCE_EPSILON_MM);
+    let threshold = stroke_width_mm.abs().mul_add(
+        0.5,
+        flatten_tolerance_mm.max(0.0) + SCH013_STROKE_DISTANCE_EPSILON_MM,
+    );
     if distance > threshold {
         return false;
     }
