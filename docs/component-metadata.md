@@ -92,6 +92,19 @@ SCH014 checks logical net membership in KiCad's exported netlist. Some design re
 
 SCH004 resolves each `REF.PIN` against the embedded symbol definition and its placed transform, verifies that both pin anchors lie on wire segments, then checks that both pins belong to the same physical wire component. Wire segments are split at endpoints, pin coordinates, explicit junctions and label anchors; only wire segments create connectivity edges. An endpoint that touches the interior of another wire does not join that wire unless an explicit junction marker is present, consistent with SCH001. Matching local or hierarchical label names do not join separate islands. Labels anchored directly on a declared direct-wire pin are reported, and configured forbidden names are checked only on the physical wire components covered by those contracts.
 
+Physical wire groups express multi-terminal physical topology without requiring a shared label or exported netlist. Each configured pin must resolve to an embedded placed-symbol pin, be attached to a wire, and belong to the same continuous physical wire-only component. Matching labels do not join separate components.
+
+    {
+      "physical_wire_groups": [
+        {
+          "name": "SPI_MISO",
+          "pins": ["U1.12", "R5.2", "J3.4"]
+        }
+      ]
+    }
+
+The group name is a profile identifier used in diagnostics, not an electrical label. This check verifies only physical wire connectivity; it does not assert the exported logical net name or electrical compatibility. Use `common_pin_groups` when a named label/net contract is also required, and `direct_wire_pairs` for an individual pin pair.
+
 Common-pin groups can express the complementary case where several pins must carry one named net:
 
     {
