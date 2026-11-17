@@ -3160,14 +3160,12 @@ mod tests {
             r#"{"schema_version":1,"separate_wire_pairs":[{"first":"U1.1","second":"R1.1"}]}"#,
         )
         .expect("profile parses");
-        assert!(
-            profile.validate(&schematic).iter().any(|item| {
+        assert!(profile.validate(&schematic).iter().any(|item| {
             item.code == "SCH004"
                 && item
                     .message
                     .contains("separate physical wire-only networks")
-        })
-        );
+        }));
     }
 
     #[test]
@@ -3201,13 +3199,10 @@ mod tests {
             ]),
             ..Netlist::default()
         };
-        assert!(
-            profile
-                .validate_with_netlist(&schematic, Some(&netlist))
-                .iter()
-                .any(|item| item.code == "SCH004"
-                    && item.message.contains("different exported KiCad nets"))
-        );
+        assert!(profile.validate_with_netlist(&schematic, Some(&netlist)).iter().any(|item| {
+            item.code == "SCH004"
+                && item.message.contains("different exported KiCad nets")
+        }));
     }
 
     #[test]
@@ -3222,13 +3217,11 @@ mod tests {
             r#"{"schema_version":1,"separate_wire_pairs":[{"first":"U1.1","second":"R1.1","netlist_separate":true}]}"#,
         )
         .expect("profile parses");
-        assert!(
-            profile.validate(&schematic).iter().any(|item| {
+        assert!(profile.validate(&schematic).iter().any(|item| {
             item.code == "SCH004"
                 && item.severity == Severity::Warning
                 && item.message.contains("no exported KiCad netlist")
-        })
-        );
+        }));
     }
 
     fn decoupling_netlist(capacitor_target_net: &str) -> Netlist {
