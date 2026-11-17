@@ -18,10 +18,9 @@ use kicad_clippy_core::{
 use kicad_clippy_parser::SchematicDocument;
 use kiutils_sexpr::{Atom, Node};
 use kurbo::{
-    Affine, Arc as CurveArc, CubicBez as CurveCubicBez, Line as CurveLine, PathEl,
-    PathSeg as CurvePathSeg, ParamCurve as CurveParamCurve, Point as CurvePoint, Rect as CurveRect,
-    Shape, Triangle, Vec2,
-    flatten as flatten_curve_path,
+    Affine, Arc as CurveArc, CubicBez as CurveCubicBez, Line as CurveLine,
+    ParamCurve as CurveParamCurve, PathEl, PathSeg as CurvePathSeg, Point as CurvePoint,
+    Rect as CurveRect, Shape, Triangle, Vec2, flatten as flatten_curve_path,
 };
 use petgraph::unionfind::UnionFind;
 use vector_text_core::{Point as VectorPoint, Renderer};
@@ -1641,12 +1640,11 @@ fn wire_path_min_distance(wire: Segment, path: CurvePathSeg) -> Option<(f64, f64
         return None;
     }
     let nearest = path.min_dist(CurvePathSeg::Line(line), SCH013_STROKE_DISTANCE_ACCURACY_MM);
-    (nearest.distance.is_finite() && nearest.t1.is_finite() && nearest.t2.is_finite())
-        .then_some((
-            nearest.distance,
-            nearest.t1.clamp(0.0, 1.0),
-            nearest.t2.clamp(0.0, 1.0),
-        ))
+    (nearest.distance.is_finite() && nearest.t1.is_finite() && nearest.t2.is_finite()).then_some((
+        nearest.distance,
+        nearest.t1.clamp(0.0, 1.0),
+        nearest.t2.clamp(0.0, 1.0),
+    ))
 }
 
 fn wire_point_at_parameter(wire: Segment, parameter: f64) -> Point {
