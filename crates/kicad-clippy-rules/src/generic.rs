@@ -1478,19 +1478,16 @@ pub fn run_geometry_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
 fn schematic_has_graphical_netclass_assignments(root: &Node) -> bool {
     let mut has_assignments = false;
     walk(root, &mut |node| match head(node) {
-        Some("directive_label" | "rule_area") => {
-            has_assignments = true;
-            return;
-        }
-        Some("label" | "hierarchical_label" | "global_label") => {
+        Some("directive_label" | "rule_area") => has_assignments = true,
+        Some("label" | "hierarchical_label" | "global_label")
             if children(node, "property").any(|property| {
                 list_items(property)
                     .and_then(|items| items.get(1))
                     .and_then(atom_value)
                     == Some("Net Class")
-            }) {
-                has_assignments = true;
-            }
+            }) =>
+        {
+            has_assignments = true;
         }
         _ => {}
     });
@@ -5243,7 +5240,7 @@ mod tests {
     fn sch013_does_not_apply_project_default_when_graphical_assignments_exist() {
         for assignment in [
             r#"(directive_label "HighSpeed" (property "Net Class" "HighSpeed"))"#,
-            r#"(rule_area (pts (xy 0 0) (xy 1 1)))"#,
+            r"(rule_area (pts (xy 0 0) (xy 1 1))),
             r#"(label "NET" (at 0 0 0) (property "Net Class" "HighSpeed"))"#,
         ] {
             let schematic = document(&format!(
