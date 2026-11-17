@@ -338,12 +338,39 @@ fn collect_text_box_facts(root: &Node) -> Vec<TextBoxFact> {
         .collect()
 }
 
+fn table_cell_text_rotation_is_supported(cell: &Node) -> bool {
+    let Some(angle) = child_list(cell, "at")
+        .and_then(list_items)
+        .and_then(|items| items.get(3))
+        .and_then(number)
+    else {
+        return false;
+    };
+    angle.is_finite()
+        && [0.0, 90.0, 270.0, 360.0]
+            .iter()
+            .any(|supported| (angle - supported).abs() <= 0.001)
+}
+
+fn table_text_rotations_are_supported(table: &Node) -> bool {
+    let Some(cells) = child_list(table, "cells") else {
+        return false;
+    };
+    let mut cell_iterator = children(cells, "table_cell");
+    cell_iterator
+        .next()
+        .is_some_and(table_cell_text_rotation_is_supported)
+        && cell_iterator.all(table_cell_text_rotation_is_supported)
+}
+
 fn collect_plain_text_facts(root: &Node) -> Vec<SchematicTextFact> {
-    let table_cells = children(root, "table").flat_map(|table| {
-        child_list(table, "cells")
-            .into_iter()
-            .flat_map(|cells| children(cells, "table_cell"))
-    });
+    let table_cells = children(root, "table")
+        .filter(|table| table_text_rotations_are_supported(table))
+        .flat_map(|table| {
+            child_list(table, "cells")
+                .into_iter()
+                .flat_map(|cells| children(cells, "table_cell"))
+        });
     children(root, "text")
         .chain(table_cells)
         .filter_map(|node| {
@@ -4318,6 +4345,27 @@ mod tests {
             "#,
         );
         assert!(run_builtin_rules(&document).diagnostics.iter().any(|item| {
+            item.code == "SCH013" && item.message.contains("free-standing schematic text")
+        }));
+    }
+
+    #[test]
+    fn sch013_skips_table_cell_text_for_unsupported_non_cardinal_rotation() {
+        let document = document(
+            r#"
+            (wire (pts (xy 1 0.4) (xy 1 0.9)))
+            (table
+              (column_count 1)
+              (column_widths 4)
+              (row_heights 2)
+              (cells
+                (table_cell "R1" (at 1 0.5 45) (size 4 2)
+                  (effects (font (size 1 1)))))
+              (border (external no) (header no))
+              (separators (rows no) (cols no)))
+            "#,
+        );
+        assert!(!run_builtin_rules(&document).diagnostics.iter().any(|item| {
             item.code == "SCH013" && item.message.contains("free-standing schematic text")
         }));
     }
