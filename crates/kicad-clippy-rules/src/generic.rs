@@ -2169,11 +2169,12 @@ fn table_stroke_obstacle_diagnostics(
         .collect()
 }
 
-fn sheet_and_table_stroke_obstacle_diagnostics(
+fn sheet_table_bus_obstacle_diagnostics(
     wire_index: usize,
     segment: Segment,
     sheets: &[SchematicSheetFact],
     table_strokes: &[SchematicGraphicFact],
+    bus_obstacles: &[SchematicBusObstacleFact],
     wire_stroke_width_mm: f64,
 ) -> Vec<Diagnostic> {
     let mut diagnostics =
@@ -2182,6 +2183,12 @@ fn sheet_and_table_stroke_obstacle_diagnostics(
         wire_index,
         segment,
         table_strokes,
+        wire_stroke_width_mm,
+    ));
+    diagnostics.extend(bus_obstacle_diagnostics(
+        wire_index,
+        segment,
+        bus_obstacles,
         wire_stroke_width_mm,
     ));
     diagnostics
@@ -2242,16 +2249,11 @@ fn check_wire_obstacles(
                 ));
             }
         }
-        diagnostics.extend(sheet_and_table_stroke_obstacle_diagnostics(
+        diagnostics.extend(sheet_table_bus_obstacle_diagnostics(
             wire_index,
             *segment,
             &facts.sheets,
             &table_strokes,
-            wire_stroke_width_mm,
-        ));
-        diagnostics.extend(bus_obstacle_diagnostics(
-            wire_index,
-            *segment,
             &facts.bus_obstacles,
             wire_stroke_width_mm,
         ));
