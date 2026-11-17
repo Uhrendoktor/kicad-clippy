@@ -1607,8 +1607,7 @@ fn segment_bezier_intersection_points(
         .intersect_line(line)
         .into_iter()
         .filter(|intersection| {
-            intersection.is_finite()
-                && (-1.0e-9..=1.0 + 1.0e-9).contains(&intersection.segment_t)
+            intersection.is_finite() && (-1.0e-9..=1.0 + 1.0e-9).contains(&intersection.segment_t)
         })
         .map(|intersection| {
             let line_parameter = intersection.line_t.clamp(0.0, 1.0);
@@ -4140,11 +4139,9 @@ mod tests {
               (xy 4.296703753236958 7.435694965564273)))
             ",
         );
-        assert!(
-            run_builtin_rules(&doc).diagnostics.iter().any(|item| {
-                item.code == "SCH013" && item.message.contains("sheet graphic bezier")
-            })
-        );
+        assert!(run_builtin_rules(&doc).diagnostics.iter().any(|item| {
+            item.code == "SCH013" && item.message.contains("sheet graphic bezier")
+        }));
     }
 
     #[test]
