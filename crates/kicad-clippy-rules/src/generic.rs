@@ -2114,17 +2114,17 @@ fn symbol_primitive_has_centerline_collision(
         .map(|pair| (pair[0], pair[1]))
         .chain(closing_edge)
         .any(|(start, end)| {
-        segment_intersection_points(
-            wire,
-            Point {
-                x: start.0,
-                y: start.1,
-            },
-            Point { x: end.0, y: end.1 },
-        )
-        .into_iter()
-        .any(|point| !wire_intersection_is_allowed_pin(point, wire, &primitive.reference, pins))
-    })
+            segment_intersection_points(
+                wire,
+                Point {
+                    x: start.0,
+                    y: start.1,
+                },
+                Point { x: end.0, y: end.1 },
+            )
+            .into_iter()
+            .any(|point| !wire_intersection_is_allowed_pin(point, wire, &primitive.reference, pins))
+        })
 }
 
 fn symbol_primitive_wire_stroke_collision(
