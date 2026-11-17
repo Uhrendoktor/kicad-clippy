@@ -1761,6 +1761,54 @@ fn wire_crosses_bitmap_image(wire: Segment, bounds: (f64, f64, f64, f64)) -> boo
     )
 }
 
+/// Excludes only the local stroke-clearance neighbourhood at matching pin endpoints.
+fn wire_without_pin_contact_region(
+    wire: Segment,
+    reference: &str,
+    pins: &[SchematicPinFact],
+    exclusion_distance_mm: f64,
+) -> Option<Segment> {
+    let start_is_pin = wire_endpoint_is_pin(wire.start, reference, pins);
+    let end_is_pin = wire_endpoint_is_pin(wire.end, reference, pins);
+    if !start_is_pin && !end_is_pin {
+        return Some(wire);
+    }
+
+    let wire_length = distance(wire.start, wire.end);
+    if !wire_length.is_finite() || wire_length <= 0.0 || !exclusion_distance_mm.is_finite() {
+        return None;
+    }
+
+    let exclusion_distance_mm = exclusion_distance_mm.max(0.0);
+    let start_exclusion = if start_is_pin {
+        exclusion_distance_mm
+    } else {
+        0.0
+    };
+    let end_exclusion = if end_is_pin {
+        exclusion_distance_mm
+    } else {
+        0.0
+    };
+    if start_exclusion + end_exclusion >= wire_length {
+        return None;
+    }
+
+    let direction_x = (wire.end.x - wire.start.x) / wire_length;
+    let direction_y = (wire.end.y - wire.start.y) / wire_length;
+    Some(Segment {
+        start: Point {
+            x: direction_x.mul_add(start_exclusion, wire.start.x),
+            y: direction_y.mul_add(start_exclusion, wire.start.y),
+        },
+        end: Point {
+            x: (-direction_x).mul_add(end_exclusion, wire.end.x),
+            y: (-direction_y).mul_add(end_exclusion, wire.end.y),
+        },
+        span: wire.span,
+    })
+}
+
 fn wire_crosses_symbol_primitive(
     wire: Segment,
     primitive: &SchematicPrimitiveFact,
@@ -1811,6 +1859,51 @@ fn wire_crosses_symbol_primitive(
             }
         }
     }
+
+    let flatten_tolerance = if primitive.arc_mm.is_some() {
+        CURVE_FLATTEN_TOLERANCE_MM
+    } else {
+        0.0
+    };
+    let pin_contact_clearance = primitive.stroke_width_mm.abs().mul_add(
+        0.5,
+        flatten_tolerance + 2.0 * SCH013_STROKE_DISTANCE_EPSILON_MM,
+    );
+    if let Some(clearance_wire) = wire_without_pin_contact_region(
+        wire,
+        &primitive.reference,
+        pins,
+        pin_contact_clearance,
+    ) {
+        let within_stroke = if primitive.arc_mm.is_some() {
+            wire_within_sampled_path_stroke(
+                clearance_wire,
+                &primitive.points_mm,
+                false,
+                primitive.stroke_width_mm,
+                flatten_tolerance,
+            )
+        } else if let Some(bezier) = primitive.bezier_mm {
+            wire_within_path_stroke(
+                clearance_wire,
+                cubic_bezier_path_segment(bezier),
+                primitive.stroke_width_mm,
+                0.0,
+            )
+        } else {
+            wire_within_sampled_path_stroke(
+                clearance_wire,
+                &primitive.points_mm,
+                primitive.closed,
+                primitive.stroke_width_mm,
+                0.0,
+            )
+        };
+        if within_stroke {
+            return true;
+        }
+    }
+
     if primitive.closed {
         let midpoint = Point {
             x: f64::midpoint(wire.start.x, wire.end.x),
@@ -4200,6 +4293,149 @@ mod tests {
         assert!(!run_builtin_rules(&clear).diagnostics.iter().any(|item| {
             item.code == "SCH013" && item.message.contains("sheet graphic polyline")
         }));
+    }
+
+    #[test]
+    fn sch013_checks_declared_stroke_width_for_embedded_symbol_paths() {
+        const EMBEDDED_STROKE_SYMBOL: &str = r#"
+            (lib_symbols
+              (symbol "Test:Stroked"
+                (symbol "Stroked_1_1"
+                  (polyline (pts (xy 0 -1) (xy 0 1))
+                    (stroke (width 0.4)) (fill (type none)))
+                )
+              )
+            )
+            (symbol (lib_id "Test:Stroked") (at 10 10 0) (unit 1)
+              (property "Reference" "U1" (at 10 10 0) (effects (font (size 1 1))))
+            )
+        "#;
+        let near = document(&format!(
+            "{EMBEDDED_STROKE_SYMBOL} (wire (pts (xy 10.15 9.5) (xy 10.15 10.5)))"
+        ));
+        assert!(run_builtin_rules(&near).diagnostics.iter().any(|item| {
+            item.code == "SCH013" && item.message.contains("symbol body U1")
+        }));
+
+        let clear = document(&format!(
+            "{EMBEDDED_STROKE_SYMBOL} (wire (pts (xy 10.21 9.5) (xy 10.21 10.5)))"
+        ));
+        assert!(!run_builtin_rules(&clear).diagnostics.iter().any(|item| {
+            item.code == "SCH013" && item.message.contains("symbol body U1")
+        }));
+    }
+
+    #[test]
+    fn sch013_checks_embedded_symbol_arc_and_bezier_stroke_clearance() {
+        let arc = super::SchematicArcFact {
+            center_mm: (0.0, 0.0),
+            radius_mm: 2.0,
+            start_angle_rad: 0.0,
+            sweep_rad: std::f64::consts::FRAC_PI_2,
+        };
+        let angle = 0.37_f64;
+        let radial_point = |radius: f64| super::Point {
+            x: radius * angle.cos(),
+            y: radius * angle.sin(),
+        };
+        let arc_wire = super::Segment {
+            start: radial_point(2.1),
+            end: radial_point(2.2),
+            span: kicad_clippy_core::ByteSpan::new(0, 0),
+        };
+        let arc_primitive = super::SchematicPrimitiveFact {
+            reference: "U1".to_owned(),
+            points_mm: super::sample_arc_through_three_points(
+                (2.0, 0.0),
+                (2.0 / 2.0_f64.sqrt(), 2.0 / 2.0_f64.sqrt()),
+                (0.0, 2.0),
+            ),
+            closed: false,
+            circle_mm: None,
+            arc_mm: Some(arc),
+            bezier_mm: None,
+            stroke_width_mm: 0.3,
+        };
+        assert!(super::wire_crosses_symbol_primitive(
+            arc_wire,
+            &arc_primitive,
+            &[],
+        ));
+
+        let controls = [(0.0, 0.0), (0.0, 10.0), (10.0, 10.0), (10.0, 0.0)];
+        let curve = super::CurveCubicBez::new(
+            super::CurvePoint::new(controls[0].0, controls[0].1),
+            super::CurvePoint::new(controls[1].0, controls[1].1),
+            super::CurvePoint::new(controls[2].0, controls[2].1),
+            super::CurvePoint::new(controls[3].0, controls[3].1),
+        );
+        let point = curve.eval(0.453);
+        let tangent = curve.deriv().eval(0.453);
+        let tangent_length = tangent.x.hypot(tangent.y);
+        let tangent = (tangent.x / tangent_length, tangent.y / tangent_length);
+        let normal = (-tangent.1, tangent.0);
+        let bezier_wire = super::Segment {
+            start: super::Point {
+                x: tangent.0.mul_add(-0.02, normal.0.mul_add(0.1, point.x)),
+                y: tangent.1.mul_add(-0.02, normal.1.mul_add(0.1, point.y)),
+            },
+            end: super::Point {
+                x: tangent.0.mul_add(0.02, normal.0.mul_add(0.1, point.x)),
+                y: tangent.1.mul_add(0.02, normal.1.mul_add(0.1, point.y)),
+            },
+            span: kicad_clippy_core::ByteSpan::new(0, 0),
+        };
+        let bezier_primitive = super::SchematicPrimitiveFact {
+            reference: "U1".to_owned(),
+            points_mm: Vec::new(),
+            closed: false,
+            circle_mm: None,
+            arc_mm: None,
+            bezier_mm: Some(controls),
+            stroke_width_mm: 0.3,
+        };
+        assert!(super::wire_crosses_symbol_primitive(
+            bezier_wire,
+            &bezier_primitive,
+            &[],
+        ));
+        let narrow_stroke = super::SchematicPrimitiveFact {
+            stroke_width_mm: 0.18,
+            ..bezier_primitive
+        };
+        assert!(!super::wire_crosses_symbol_primitive(
+            bezier_wire,
+            &narrow_stroke,
+            &[],
+        ));
+    }
+
+    #[test]
+    fn sch013_pin_endpoint_exemption_is_limited_to_local_stroke_contact() {
+        let primitive = super::SchematicPrimitiveFact {
+            reference: "U1".to_owned(),
+            points_mm: vec![(0.0, 0.1), (2.0, 0.1)],
+            closed: false,
+            circle_mm: None,
+            arc_mm: None,
+            bezier_mm: None,
+            stroke_width_mm: 0.4,
+        };
+        let wire = super::Segment {
+            start: super::Point { x: 0.0, y: 0.0 },
+            end: super::Point { x: 2.0, y: 0.0 },
+            span: kicad_clippy_core::ByteSpan::new(0, 0),
+        };
+        let pin = super::SchematicPinFact {
+            reference: "U1".to_owned(),
+            number: "1".to_owned(),
+            position_mm: (0.0, 0.0),
+        };
+        assert!(super::wire_crosses_symbol_primitive(
+            wire,
+            &primitive,
+            &[pin],
+        ));
     }
 
     #[test]
