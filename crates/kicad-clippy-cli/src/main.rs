@@ -171,7 +171,6 @@ fn lint(
     }
     let schematic = SchematicDocument::from_path(schematic_path)?;
     let default_wire_stroke_width_mm = project_path
-        .as_deref()
         .map(default_wire_stroke_width_mm_from_project)
         .transpose()?
         .flatten();
