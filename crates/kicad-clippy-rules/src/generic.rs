@@ -1631,7 +1631,7 @@ fn cubic_bezier_path_segment(control_points: [(f64, f64); 4]) -> CurvePathSeg {
 const SCH013_STROKE_DISTANCE_ACCURACY_MM: f64 = 1.0e-6;
 const SCH013_STROKE_DISTANCE_EPSILON_MM: f64 = 1.0e-6;
 
-fn wire_path_min_distance(wire: Segment, path: CurvePathSeg) -> Option<(f64, f64)> {
+fn wire_path_min_distance(wire: Segment, path: CurvePathSeg) -> Option<(f64, f64, f64)> {
     let line = CurveLine::new(
         CurvePoint::new(wire.start.x, wire.start.y),
         CurvePoint::new(wire.end.x, wire.end.y),
