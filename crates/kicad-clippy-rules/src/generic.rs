@@ -18,7 +18,8 @@ use kicad_clippy_core::{
 use kicad_clippy_parser::SchematicDocument;
 use kiutils_sexpr::{Atom, Node};
 use kurbo::{
-    Affine, Arc as CurveArc, PathEl, Point as CurvePoint, Rect as CurveRect, Shape, Triangle, Vec2,
+    Affine, Arc as CurveArc, CubicBez as CurveCubicBez, Line as CurveLine, PathEl,
+    PathSeg as CurvePathSeg, Point as CurvePoint, Rect as CurveRect, Shape, Triangle, Vec2,
     flatten as flatten_curve_path,
 };
 use petgraph::unionfind::UnionFind;
@@ -124,6 +125,8 @@ pub struct SchematicPrimitiveFact {
     pub circle_mm: Option<(f64, f64, f64)>,
     /// Exact transformed three-point arc geometry, when the arc is non-degenerate.
     pub arc_mm: Option<SchematicArcFact>,
+    /// Exact transformed cubic Bézier control points, when available.
+    pub bezier_mm: Option<[(f64, f64); 4]>,
     /// Approximate stroke width in millimetres.
     pub stroke_width_mm: f64,
 }
@@ -176,6 +179,8 @@ pub struct SchematicGraphicFact {
     pub circle_mm: Option<(f64, f64, f64)>,
     /// Exact three-point circular arc geometry, when the arc is non-degenerate.
     pub arc_mm: Option<SchematicArcFact>,
+    /// Exact cubic Bézier control points for analytic wire intersections, when available.
+    pub bezier_mm: Option<[(f64, f64); 4]>,
     /// Approximate graphic stroke width in millimetres.
     pub stroke_width_mm: f64,
 }
@@ -375,6 +380,11 @@ fn collect_sheet_graphic_facts(root: &Node) -> Vec<SchematicGraphicFact> {
             } else {
                 None
             };
+            let bezier_mm = if kind == "bezier" {
+                bezier_primitive_control_points(node)
+            } else {
+                None
+            };
             let mut points_mm = if kind == "circle" {
                 Vec::new()
             } else {
@@ -403,6 +413,7 @@ fn collect_sheet_graphic_facts(root: &Node) -> Vec<SchematicGraphicFact> {
                 closed,
                 circle_mm,
                 arc_mm,
+                bezier_mm,
                 stroke_width_mm,
             });
         }
@@ -1020,6 +1031,7 @@ fn parse_symbol_primitive(
                 radius,
             )),
             arc_mm: None,
+            bezier_mm: None,
             stroke_width_mm,
         });
     }
@@ -1040,6 +1052,18 @@ fn parse_symbol_primitive(
     } else {
         None
     };
+    let bezier_mm = if kind == "bezier" {
+        let controls = bezier_primitive_control_points(node)?;
+        let transformed = transform_primitive_points(&controls, transform)?;
+        Some([
+            transformed[0],
+            transformed[1],
+            transformed[2],
+            transformed[3],
+        ])
+    } else {
+        None
+    };
     let last_point = *points_mm.last()?;
     let repeated_endpoint = points_mm.len() > 2
         && (points_mm[0].0 - last_point.0).abs() <= 0.001
@@ -1054,6 +1078,7 @@ fn parse_symbol_primitive(
         closed,
         circle_mm: None,
         arc_mm,
+        bezier_mm,
         stroke_width_mm,
     })
 }
@@ -1131,7 +1156,7 @@ fn flattened_curve_points(
     points
 }
 
-fn bezier_primitive_points(node: &Node) -> Option<Vec<(f64, f64)>> {
+fn bezier_primitive_control_points(node: &Node) -> Option<[(f64, f64); 4]> {
     let points_node = child_list(node, "pts")?;
     let coordinates: Option<Vec<_>> = children(points_node, "xy")
         .map(|point| {
@@ -1143,6 +1168,11 @@ fn bezier_primitive_points(node: &Node) -> Option<Vec<(f64, f64)>> {
     let [start, control_one, control_two, end] = coordinates.as_slice() else {
         return None;
     };
+    Some([*start, *control_one, *control_two, *end])
+}
+
+fn bezier_primitive_points(node: &Node) -> Option<Vec<(f64, f64)>> {
+    let [start, control_one, control_two, end] = bezier_primitive_control_points(node)?;
     let path = [
         PathEl::MoveTo(CurvePoint::new(start.0, start.1)),
         PathEl::CurveTo(
@@ -1151,7 +1181,7 @@ fn bezier_primitive_points(node: &Node) -> Option<Vec<(f64, f64)>> {
             CurvePoint::new(end.0, end.1),
         ),
     ];
-    Some(flattened_curve_points(path, *start, *end))
+    Some(flattened_curve_points(path, start, end))
 }
 
 fn sample_arc_through_three_points(
@@ -1550,9 +1580,53 @@ fn segment_arc_intersection_points(wire: Segment, arc: SchematicArcFact) -> Vec<
     intersections
 }
 
+fn segment_bezier_intersection_points(
+    wire: Segment,
+    control_points: [(f64, f64); 4],
+) -> Vec<Point> {
+    let direction_x = wire.end.x - wire.start.x;
+    let direction_y = wire.end.y - wire.start.y;
+    if direction_x == 0.0 && direction_y == 0.0 {
+        return Vec::new();
+    }
+    let curve = CurvePathSeg::Cubic(CurveCubicBez::new(
+        CurvePoint::new(control_points[0].0, control_points[0].1),
+        CurvePoint::new(control_points[1].0, control_points[1].1),
+        CurvePoint::new(control_points[2].0, control_points[2].1),
+        CurvePoint::new(control_points[3].0, control_points[3].1),
+    ));
+    let line = CurveLine::new(
+        CurvePoint::new(wire.start.x, wire.start.y),
+        CurvePoint::new(wire.end.x, wire.end.y),
+    );
+    if !curve.is_finite() || !line.is_finite() {
+        return Vec::new();
+    }
+
+    curve
+        .intersect_line(line)
+        .into_iter()
+        .filter(|intersection| {
+            intersection.is_finite()
+                && (-1.0e-9..=1.0 + 1.0e-9).contains(&intersection.segment_t)
+        })
+        .map(|intersection| {
+            let line_parameter = intersection.line_t.clamp(0.0, 1.0);
+            Point {
+                x: line_parameter.mul_add(direction_x, wire.start.x),
+                y: line_parameter.mul_add(direction_y, wire.start.y),
+            }
+        })
+        .collect()
+}
+
 fn wire_crosses_sheet_graphic(wire: Segment, graphic: &SchematicGraphicFact) -> bool {
     if let Some(arc) = graphic.arc_mm {
         if !segment_arc_intersection_points(wire, arc).is_empty() {
+            return true;
+        }
+    } else if let Some(bezier) = graphic.bezier_mm {
+        if !segment_bezier_intersection_points(wire, bezier).is_empty() {
             return true;
         }
     } else if let Some((center_x, center_y, radius)) = graphic.circle_mm {
@@ -1617,6 +1691,13 @@ fn wire_crosses_symbol_primitive(
 ) -> bool {
     if let Some(arc) = primitive.arc_mm {
         if segment_arc_intersection_points(wire, arc)
+            .into_iter()
+            .any(|point| !wire_intersection_is_allowed_pin(point, wire, &primitive.reference, pins))
+        {
+            return true;
+        }
+    } else if let Some(bezier) = primitive.bezier_mm {
+        if segment_bezier_intersection_points(wire, bezier)
             .into_iter()
             .any(|point| !wire_intersection_is_allowed_pin(point, wire, &primitive.reference, pins))
         {
@@ -3311,6 +3392,7 @@ mod tests {
     #![allow(clippy::expect_used)]
     use super::run_builtin_rules;
     use kicad_clippy_parser::SchematicDocument;
+    use kurbo::{ParamCurve, ParamCurveDeriv};
 
     fn document(body: &str) -> SchematicDocument {
         SchematicDocument::from_text("fixture.kicad_sch", format!("(kicad_sch {body})"))
@@ -3405,6 +3487,7 @@ mod tests {
             closed: false,
             circle_mm: None,
             arc_mm: Some(arc),
+            bezier_mm: None,
             stroke_width_mm: 0.254,
         };
         let sampled_graphic = super::SchematicGraphicFact {
@@ -3420,6 +3503,7 @@ mod tests {
             closed: false,
             circle_mm: None,
             arc_mm: Some(arc),
+            bezier_mm: None,
             stroke_width_mm: 0.254,
         };
         assert!(super::wire_crosses_symbol_primitive(wire, &primitive, &[]));
@@ -3474,6 +3558,108 @@ mod tests {
         assert_eq!(tangent.len(), 1);
         assert!(tangent[0].x.abs() < 1.0e-9);
         assert!((tangent[0].y - 2.0).abs() < 1.0e-9);
+    }
+
+    #[test]
+    fn analytic_bezier_intersection_detects_a_curve_hit_missed_by_its_flattened_polyline() {
+        let controls = [(0.0, 0.0), (0.0, 10.0), (10.0, 10.0), (10.0, 0.0)];
+        let curve = super::CurveCubicBez::new(
+            super::CurvePoint::new(controls[0].0, controls[0].1),
+            super::CurvePoint::new(controls[1].0, controls[1].1),
+            super::CurvePoint::new(controls[2].0, controls[2].1),
+            super::CurvePoint::new(controls[3].0, controls[3].1),
+        );
+        let angle_parameter = 0.453_f64;
+        let point = curve.eval(angle_parameter);
+        let tangent = curve.deriv().eval(angle_parameter);
+        let normal_length = tangent.hypot();
+        let normal = (-tangent.y / normal_length, tangent.x / normal_length);
+        let wire = super::Segment {
+            start: super::Point {
+                x: point.x - normal.0 * 0.002,
+                y: point.y - normal.1 * 0.002,
+            },
+            end: super::Point {
+                x: point.x + normal.0 * 0.002,
+                y: point.y + normal.1 * 0.002,
+            },
+            span: kicad_clippy_core::ByteSpan::new(0, 0),
+        };
+        let path = [
+            super::PathEl::MoveTo(super::CurvePoint::new(controls[0].0, controls[0].1)),
+            super::PathEl::CurveTo(
+                super::CurvePoint::new(controls[1].0, controls[1].1),
+                super::CurvePoint::new(controls[2].0, controls[2].1),
+                super::CurvePoint::new(controls[3].0, controls[3].1),
+            ),
+        ];
+        let sampled = super::flattened_curve_points(path, controls[0], controls[3]);
+        assert!(!sampled.windows(2).any(|pair| {
+            !super::segment_intersection_points(
+                wire,
+                super::Point {
+                    x: pair[0].0,
+                    y: pair[0].1,
+                },
+                super::Point {
+                    x: pair[1].0,
+                    y: pair[1].1,
+                },
+            )
+            .is_empty()
+        }));
+        assert_eq!(
+            super::segment_bezier_intersection_points(wire, controls).len(),
+            1
+        );
+
+        let graphic = super::SchematicGraphicFact {
+            kind: "bezier".to_owned(),
+            uuid: None,
+            bounds_mm: None,
+            points_mm: sampled.clone(),
+            closed: false,
+            circle_mm: None,
+            arc_mm: None,
+            bezier_mm: Some(controls),
+            stroke_width_mm: 0.254,
+        };
+        let sampled_graphic = super::SchematicGraphicFact {
+            bezier_mm: None,
+            ..graphic.clone()
+        };
+        assert!(!super::wire_crosses_sheet_graphic(wire, &sampled_graphic));
+        assert!(super::wire_crosses_sheet_graphic(wire, &graphic));
+
+        let primitive = super::SchematicPrimitiveFact {
+            reference: "U1".to_owned(),
+            points_mm: sampled,
+            closed: false,
+            circle_mm: None,
+            arc_mm: None,
+            bezier_mm: Some(controls),
+            stroke_width_mm: 0.254,
+        };
+        assert!(super::wire_crosses_symbol_primitive(wire, &primitive, &[]));
+
+        let pin_wire = super::Segment {
+            start: super::Point {
+                x: point.x,
+                y: point.y,
+            },
+            end: wire.end,
+            span: wire.span,
+        };
+        let allowed_pin = super::SchematicPinFact {
+            reference: "U1".to_owned(),
+            number: "1".to_owned(),
+            position_mm: (point.x, point.y),
+        };
+        assert!(!super::wire_crosses_symbol_primitive(
+            pin_wire,
+            &primitive,
+            &[allowed_pin],
+        ));
     }
 
     #[test]
@@ -3938,6 +4124,25 @@ mod tests {
         assert!(
             run_builtin_rules(&doc).diagnostics.iter().any(|item| {
                 item.code == "SCH013" && item.message.contains("sheet graphic arc")
+            })
+        );
+    }
+
+    #[test]
+    fn wire_obstacle_uses_exact_intersections_for_top_level_cubic_beziers() {
+        let doc = document(
+            r"
+            (bezier
+              (pts (xy 0 0) (xy 0 10) (xy 10 10) (xy 10 0))
+              (stroke (width 0.254)) (fill (type none)))
+            (wire (pts
+              (xy 4.297449166763041 7.431765034435725)
+              (xy 4.296703753236958 7.435694965564273)))
+            ",
+        );
+        assert!(
+            run_builtin_rules(&doc).diagnostics.iter().any(|item| {
+                item.code == "SCH013" && item.message.contains("sheet graphic bezier")
             })
         );
     }
