@@ -4452,7 +4452,7 @@ mod tests {
               (property "Reference" "U1" (at 10 10 0) (effects (font (size 1 1))))
             )
             (wire (pts (xy 9 10.5) (xy 11 10.5)))
-            (wire (pts (xy 14 11) (xy 18 11)))
+            (wire (pts (xy 14 9) (xy 18 9)))
             "#,
         );
         let facts = super::SchematicFacts::from_document(&doc);
