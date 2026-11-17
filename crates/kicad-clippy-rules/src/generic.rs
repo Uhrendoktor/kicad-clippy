@@ -1951,10 +1951,6 @@ fn wire_within_circle_stroke(
     intersects_stroke_ring || penetrates_existing_body_region
 }
 
-fn wire_crosses_sheet_graphic(wire: Segment, graphic: &SchematicGraphicFact) -> bool {
-    wire_crosses_sheet_graphic_with_wire_stroke(wire, graphic, 0.0)
-}
-
 fn wire_crosses_sheet_graphic_with_wire_stroke(
     wire: Segment,
     graphic: &SchematicGraphicFact,
@@ -2086,12 +2082,97 @@ fn wire_without_pin_contact_region(
     })
 }
 
-fn wire_crosses_symbol_primitive(
+fn symbol_primitive_has_centerline_collision(
     wire: Segment,
     primitive: &SchematicPrimitiveFact,
     pins: &[SchematicPinFact],
 ) -> bool {
-    wire_crosses_symbol_primitive_with_wire_stroke(wire, primitive, pins, 0.0)
+    if let Some(arc) = primitive.arc_mm {
+        return segment_arc_intersection_points(wire, arc)
+            .into_iter()
+            .any(|point| !wire_intersection_is_allowed_pin(point, wire, &primitive.reference, pins));
+    }
+    if let Some(bezier) = primitive.bezier_mm {
+        return segment_bezier_intersection_points(wire, bezier)
+            .into_iter()
+            .any(|point| !wire_intersection_is_allowed_pin(point, wire, &primitive.reference, pins));
+    }
+
+    primitive
+        .points_mm
+        .windows(2)
+        .chain(
+            primitive
+                .closed
+                .then(|| primitive.points_mm.last().zip(primitive.points_mm.first()))
+                .flatten()
+                .map(|(last, first)| [last, first].as_slice()),
+        )
+        .flat_map(|edge| {
+            let (start, end) = (edge[0], edge[1]);
+            segment_intersection_points(
+                wire,
+                Point {
+                    x: start.0,
+                    y: start.1,
+                },
+                Point {
+                    x: end.0,
+                    y: end.1,
+                },
+            )
+        })
+        .any(|point| !wire_intersection_is_allowed_pin(point, wire, &primitive.reference, pins))
+}
+
+fn symbol_primitive_wire_stroke_collision(
+    wire: Segment,
+    primitive: &SchematicPrimitiveFact,
+    pins: &[SchematicPinFact],
+    combined_stroke_width_mm: f64,
+) -> bool {
+    let flatten_tolerance = if primitive.arc_mm.is_some() {
+        CURVE_FLATTEN_TOLERANCE_MM
+    } else {
+        0.0
+    };
+    let pin_contact_clearance = combined_stroke_width_mm.mul_add(
+        0.5,
+        2.0_f64.mul_add(SCH013_STROKE_DISTANCE_EPSILON_MM, flatten_tolerance),
+    );
+    let Some(clearance_wire) = wire_without_pin_contact_region(
+        wire,
+        &primitive.reference,
+        pins,
+        pin_contact_clearance,
+    ) else {
+        return false;
+    };
+
+    if primitive.arc_mm.is_some() {
+        return wire_within_sampled_path_stroke(
+            clearance_wire,
+            &primitive.points_mm,
+            false,
+            combined_stroke_width_mm,
+            flatten_tolerance,
+        );
+    }
+    if let Some(bezier) = primitive.bezier_mm {
+        return wire_within_path_stroke(
+            clearance_wire,
+            cubic_bezier_path_segment(bezier),
+            combined_stroke_width_mm,
+            0.0,
+        );
+    }
+    wire_within_sampled_path_stroke(
+        clearance_wire,
+        &primitive.points_mm,
+        primitive.closed,
+        combined_stroke_width_mm,
+        0.0,
+    )
 }
 
 fn wire_crosses_symbol_primitive_with_wire_stroke(
@@ -2108,112 +2189,42 @@ fn wire_crosses_symbol_primitive_with_wire_stroke(
         return false;
     }
 
-    if let Some(arc) = primitive.arc_mm {
-        if segment_arc_intersection_points(wire, arc)
-            .into_iter()
-            .any(|point| !wire_intersection_is_allowed_pin(point, wire, &primitive.reference, pins))
-        {
-            return true;
-        }
-    } else if let Some(bezier) = primitive.bezier_mm {
-        if segment_bezier_intersection_points(wire, bezier)
-            .into_iter()
-            .any(|point| !wire_intersection_is_allowed_pin(point, wire, &primitive.reference, pins))
-        {
-            return true;
-        }
-    } else if let Some((center_x, center_y, radius)) = primitive.circle_mm {
-        let center = Point {
-            x: center_x,
-            y: center_y,
-        };
+    if let Some((center_x, center_y, radius)) = primitive.circle_mm {
         return wire_within_circle_stroke(
             wire,
-            center,
+            Point {
+                x: center_x,
+                y: center_y,
+            },
             radius,
             primitive.stroke_width_mm,
             wire_stroke_width_mm,
         );
-    } else {
-        let to_point = |(x, y): (f64, f64)| Point { x, y };
-        let mut edges: Vec<_> = primitive
-            .points_mm
-            .windows(2)
-            .map(|pair| (to_point(pair[0]), to_point(pair[1])))
-            .collect();
-        if primitive.closed && primitive.points_mm.len() > 2 {
-            if let (Some(last), Some(first)) = (
-                primitive.points_mm.last().copied(),
-                primitive.points_mm.first().copied(),
-            ) {
-                edges.push((to_point(last), to_point(first)));
-            }
-        }
-        for (edge_start, edge_end) in edges {
-            for point in segment_intersection_points(wire, edge_start, edge_end) {
-                if !wire_intersection_is_allowed_pin(point, wire, &primitive.reference, pins) {
-                    return true;
-                }
-            }
-        }
+    }
+    if symbol_primitive_has_centerline_collision(wire, primitive, pins) {
+        return true;
+    }
+    if symbol_primitive_wire_stroke_collision(
+        wire,
+        primitive,
+        pins,
+        combined_stroke_width_mm,
+    ) {
+        return true;
+    }
+    if !primitive.closed {
+        return false;
     }
 
-    let flatten_tolerance = if primitive.arc_mm.is_some() {
-        CURVE_FLATTEN_TOLERANCE_MM
-    } else {
-        0.0
+    let midpoint = Point {
+        x: f64::midpoint(wire.start.x, wire.end.x),
+        y: f64::midpoint(wire.start.y, wire.end.y),
     };
-    let pin_contact_clearance = combined_stroke_width_mm.mul_add(
-        0.5,
-        2.0_f64.mul_add(SCH013_STROKE_DISTANCE_EPSILON_MM, flatten_tolerance),
-    );
-    if let Some(clearance_wire) =
-        wire_without_pin_contact_region(wire, &primitive.reference, pins, pin_contact_clearance)
-    {
-        let within_stroke = if primitive.arc_mm.is_some() {
-            wire_within_sampled_path_stroke(
-                clearance_wire,
-                &primitive.points_mm,
-                false,
-                combined_stroke_width_mm,
-                flatten_tolerance,
-            )
-        } else if let Some(bezier) = primitive.bezier_mm {
-            wire_within_path_stroke(
-                clearance_wire,
-                cubic_bezier_path_segment(bezier),
-                combined_stroke_width_mm,
-                0.0,
-            )
-        } else {
-            wire_within_sampled_path_stroke(
-                clearance_wire,
-                &primitive.points_mm,
-                primitive.closed,
-                combined_stroke_width_mm,
-                0.0,
-            )
-        };
-        if within_stroke {
-            return true;
-        }
-    }
-
-    if primitive.closed {
-        let midpoint = Point {
-            x: f64::midpoint(wire.start.x, wire.end.x),
-            y: f64::midpoint(wire.start.y, wire.end.y),
-        };
-        if point_in_polygon(midpoint, &primitive.points_mm)
-            || (!wire_endpoint_is_pin(wire.start, &primitive.reference, pins)
-                && point_in_polygon(wire.start, &primitive.points_mm))
-            || (!wire_endpoint_is_pin(wire.end, &primitive.reference, pins)
-                && point_in_polygon(wire.end, &primitive.points_mm))
-        {
-            return true;
-        }
-    }
-    false
+    point_in_polygon(midpoint, &primitive.points_mm)
+        || (!wire_endpoint_is_pin(wire.start, &primitive.reference, pins)
+            && point_in_polygon(wire.start, &primitive.points_mm))
+        || (!wire_endpoint_is_pin(wire.end, &primitive.reference, pins)
+            && point_in_polygon(wire.end, &primitive.points_mm))
 }
 
 fn wire_intersection_is_allowed_pin(
@@ -3973,7 +3984,7 @@ mod tests {
             bezier_mm: None,
             stroke_width_mm: 0.254,
         };
-        assert!(super::wire_crosses_sheet_graphic(wire, &graphic));
+        assert!(super::wire_crosses_sheet_graphic_with_wire_stroke(wire, &graphic, 0.0));
 
         let primitive = super::SchematicPrimitiveFact {
             reference: "U1".to_owned(),
@@ -3984,17 +3995,17 @@ mod tests {
             bezier_mm: None,
             stroke_width_mm: 0.254,
         };
-        assert!(super::wire_crosses_symbol_primitive(wire, &primitive, &[]));
+        assert!(super::wire_crosses_symbol_primitive_with_wire_stroke(wire, &primitive, &[], 0.0));
         let allowed_pin = super::SchematicPinFact {
             reference: "U1".to_owned(),
             number: "1".to_owned(),
             position_mm: (wire.start.x, wire.start.y),
         };
-        assert!(!super::wire_crosses_symbol_primitive(
+        assert!(!super::wire_crosses_symbol_primitive_with_wire_stroke(
             wire,
             &primitive,
             &[allowed_pin],
-        ));
+         0.0,));
 
         let intersections = super::segment_arc_intersection_points(wire, arc);
         assert_eq!(intersections.len(), 1);
@@ -4102,7 +4113,7 @@ mod tests {
             bezier_mm: Some(controls),
             stroke_width_mm: 0.254,
         };
-        assert!(super::wire_crosses_sheet_graphic(wire, &graphic));
+        assert!(super::wire_crosses_sheet_graphic_with_wire_stroke(wire, &graphic, 0.0));
 
         let primitive = super::SchematicPrimitiveFact {
             reference: "U1".to_owned(),
@@ -4113,7 +4124,7 @@ mod tests {
             bezier_mm: Some(controls),
             stroke_width_mm: 0.254,
         };
-        assert!(super::wire_crosses_symbol_primitive(wire, &primitive, &[]));
+        assert!(super::wire_crosses_symbol_primitive_with_wire_stroke(wire, &primitive, &[], 0.0));
 
         let pin_wire = super::Segment {
             start: super::Point {
@@ -4128,11 +4139,11 @@ mod tests {
             number: "1".to_owned(),
             position_mm: (point.x, point.y),
         };
-        assert!(!super::wire_crosses_symbol_primitive(
+        assert!(!super::wire_crosses_symbol_primitive_with_wire_stroke(
             pin_wire,
             &primitive,
             &[allowed_pin],
-        ));
+         0.0,));
     }
 
     #[test]
@@ -4783,11 +4794,11 @@ mod tests {
             bezier_mm: None,
             stroke_width_mm: 0.3,
         };
-        assert!(super::wire_crosses_symbol_primitive(
+        assert!(super::wire_crosses_symbol_primitive_with_wire_stroke(
             arc_wire,
             &arc_primitive,
             &[],
-        ));
+         0.0,));
 
         let controls = [(0.0, 0.0), (0.0, 10.0), (10.0, 10.0), (10.0, 0.0)];
         let curve = super::CurveCubicBez::new(
@@ -4821,20 +4832,20 @@ mod tests {
             bezier_mm: Some(controls),
             stroke_width_mm: 0.3,
         };
-        assert!(super::wire_crosses_symbol_primitive(
+        assert!(super::wire_crosses_symbol_primitive_with_wire_stroke(
             bezier_wire,
             &bezier_primitive,
             &[],
-        ));
+         0.0,));
         let narrow_stroke = super::SchematicPrimitiveFact {
             stroke_width_mm: 0.18,
             ..bezier_primitive
         };
-        assert!(!super::wire_crosses_symbol_primitive(
+        assert!(!super::wire_crosses_symbol_primitive_with_wire_stroke(
             bezier_wire,
             &narrow_stroke,
             &[],
-        ));
+         0.0,));
     }
 
     #[test]
@@ -4858,11 +4869,11 @@ mod tests {
             number: "1".to_owned(),
             position_mm: (0.0, 0.0),
         };
-        assert!(super::wire_crosses_symbol_primitive(
+        assert!(super::wire_crosses_symbol_primitive_with_wire_stroke(
             wire,
             &primitive,
             &[pin],
-        ));
+         0.0,));
     }
 
     #[test]
@@ -4904,13 +4915,13 @@ mod tests {
             bezier_mm: Some(controls),
             stroke_width_mm: 0.3,
         };
-        assert!(super::wire_crosses_sheet_graphic(wire, &graphic));
+        assert!(super::wire_crosses_sheet_graphic_with_wire_stroke(wire, &graphic, 0.0));
 
         let narrow_stroke = super::SchematicGraphicFact {
             stroke_width_mm: 0.18,
             ..graphic
         };
-        assert!(!super::wire_crosses_sheet_graphic(wire, &narrow_stroke));
+        assert!(!super::wire_crosses_sheet_graphic_with_wire_stroke(wire, &narrow_stroke, 0.0));
     }
 
     #[test]
@@ -4944,13 +4955,13 @@ mod tests {
             bezier_mm: None,
             stroke_width_mm: 0.3,
         };
-        assert!(super::wire_crosses_sheet_graphic(wire, &graphic));
+        assert!(super::wire_crosses_sheet_graphic_with_wire_stroke(wire, &graphic, 0.0));
 
         let narrow_stroke = super::SchematicGraphicFact {
             stroke_width_mm: 0.18,
             ..graphic
         };
-        assert!(!super::wire_crosses_sheet_graphic(wire, &narrow_stroke));
+        assert!(!super::wire_crosses_sheet_graphic_with_wire_stroke(wire, &narrow_stroke, 0.0));
     }
 
     #[test]
@@ -5172,7 +5183,7 @@ mod tests {
             end: super::Point { x: 0.19, y: 0.5 },
             span: kicad_clippy_core::ByteSpan::new(0, 0),
         };
-        assert!(!super::wire_crosses_symbol_primitive(wire, &primitive, &[]));
+        assert!(!super::wire_crosses_symbol_primitive_with_wire_stroke(wire, &primitive, &[], 0.0));
         assert!(super::wire_crosses_symbol_primitive_with_wire_stroke(
             wire,
             &primitive,
