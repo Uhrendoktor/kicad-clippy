@@ -272,11 +272,9 @@ fn project_netclass_assignments_are_default_only(value: Option<&serde_json::Valu
     match value {
         None | Some(serde_json::Value::Null) => true,
         Some(serde_json::Value::Object(assignments)) => assignments.values().all(|classes| {
-            classes.as_array().is_some_and(|names| {
-                names
-                    .iter()
-                    .all(|name| name.as_str() == Some("Default"))
-            })
+            classes
+                .as_array()
+                .is_some_and(|names| names.iter().all(|name| name.as_str() == Some("Default")))
         }),
         _ => false,
     }
