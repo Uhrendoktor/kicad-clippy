@@ -3155,7 +3155,7 @@ mod tests {
 
     #[test]
     fn separate_wire_pair_rejects_pins_on_the_same_physical_wire_network() {
-        let schematic = direct_wire_schematic(r#"(wire (pts (xy 10 10) (xy 20 10)))"#);
+        let schematic = direct_wire_schematic(r"(wire (pts (xy 10 10) (xy 20 10)))");
         let profile: LintProfile = serde_json::from_str(
             r#"{"schema_version":1,"separate_wire_pairs":[{"first":"U1.1","second":"R1.1"}]}"#,
         )
@@ -3171,10 +3171,10 @@ mod tests {
     #[test]
     fn separate_wire_pair_can_require_distinct_exported_nets() {
         let schematic = direct_wire_schematic(
-            r#"
+            r"
             (wire (pts (xy 10 10) (xy 12 10)))
             (wire (pts (xy 20 10) (xy 18 10)))
-            "#,
+            ",
         );
         let profile: LintProfile = serde_json::from_str(
             r#"{"schema_version":1,"separate_wire_pairs":[{"first":"U1.1","second":"R1.1","netlist_separate":true}]}"#,
@@ -3212,10 +3212,10 @@ mod tests {
     #[test]
     fn separate_wire_pair_warns_when_requested_netlist_is_unavailable() {
         let schematic = direct_wire_schematic(
-            r#"
+            r"
             (wire (pts (xy 10 10) (xy 12 10)))
             (wire (pts (xy 20 10) (xy 18 10)))
-            "#,
+            ",
         );
         let profile: LintProfile = serde_json::from_str(
             r#"{"schema_version":1,"separate_wire_pairs":[{"first":"U1.1","second":"R1.1","netlist_separate":true}]}"#,
