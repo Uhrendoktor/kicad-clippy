@@ -3586,6 +3586,149 @@ mod tests {
         }));
     }
 
+    #[test]
+    fn group_symbol_body_primitive_must_be_inside_frame() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "group-frame-body-test.kicad_sch",
+            r#"(kicad_sch
+                (lib_symbols
+                  (symbol "Test:OnePin"
+                    (symbol "OnePin_1_1"
+                      (rectangle (start -3 -1) (end 3 1)
+                        (stroke (width 0.254) (type default)) (fill (type none)))
+                      (pin passive line (at 0 0 0) (length 1.27)
+                        (name "1") (number "1"))
+                    )
+                  )
+                )
+                (symbol (lib_id "Test:OnePin") (at 4 5 0) (unit 1)
+                  (property "Reference" "R1" (at 4 4 0) (effects (font (size 1 1))))
+                )
+                (rectangle (start 1 1) (end 6 9) (uuid "frame-1"))
+                (text_box "Power input group" (uuid "description-1"))
+            )"#,
+        )
+        .expect("schematic parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"groups":{"power-input":{"members":["R1"],"description_uuid":"description-1","frame_uuid":"frame-1","evidence":{"document":"Power input design note","page":2,"figure":"Figure 1"}}}}"#,
+        )
+        .expect("profile parses");
+
+        assert!(profile.validate(&schematic).iter().any(|item| {
+            item.code == "SCH009" && item.message.contains("symbol primitive extends outside frame")
+        }));
+    }
+
+    #[test]
+    fn group_symbol_body_primitive_must_maintain_frame_clearance() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "group-frame-body-clearance-test.kicad_sch",
+            r#"(kicad_sch
+                (lib_symbols
+                  (symbol "Test:OnePin"
+                    (symbol "OnePin_1_1"
+                      (rectangle (start -2 -1) (end 2 1)
+                        (stroke (width 0.254) (type default)) (fill (type none)))
+                      (pin passive line (at 0 0 0) (length 1.27)
+                        (name "1") (number "1"))
+                    )
+                  )
+                )
+                (symbol (lib_id "Test:OnePin") (at 4.5 5 0) (unit 1)
+                  (property "Reference" "R1" (at 4.5 4 0) (effects (font (size 1 1))))
+                )
+                (rectangle (start 1 1) (end 8 9) (uuid "frame-1"))
+                (text_box "Power input group" (at 4 4) (size 1 1) (uuid "description-1"))
+            )"#,
+        )
+        .expect("schematic parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"groups":{"power-input":{"members":["R1"],"description_uuid":"description-1","frame_uuid":"frame-1","minimum_frame_clearance_mm":2.0,"evidence":{"document":"Power input design note","page":2,"figure":"Figure 1"}}}}"#,
+        )
+        .expect("profile parses");
+
+        assert!(profile.validate(&schematic).iter().any(|item| {
+            item.code == "SCH012"
+                && item.message.contains("symbol primitive does not maintain 2.00 mm clearance")
+        }));
+    }
+
+    #[test]
+    fn group_wire_label_and_annotation_geometry_must_be_inside_frame() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "group-frame-wire-label-test.kicad_sch",
+            r#"(kicad_sch
+                (lib_symbols
+                  (symbol "Test:OnePin"
+                    (symbol "OnePin_1_1"
+                      (pin passive line (at 0 0 0) (length 1.27)
+                        (name "1") (number "1"))
+                    )
+                  )
+                )
+                (symbol (lib_id "Test:OnePin") (at 4 5 0) (unit 1)
+                  (property "Reference" "R1" (at 4 4 0) (effects (font (size 1 1))))
+                )
+                (wire (pts (xy 4 5) (xy 10 5)))
+                (label "LONG_SIGNAL_NAME" (at 7.5 5 0) (effects (font (size 1 1))))
+                (rectangle (start 1 1) (end 8 9) (uuid "frame-1"))
+                (text_box "Power input group" (at 4 6) (size 1 1) (uuid "description-1"))
+                (text_box "Other note" (at 7.5 6) (size 2 1) (uuid "note-1"))
+            )"#,
+        )
+        .expect("schematic parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"groups":{"power-input":{"members":["R1"],"description_uuid":"description-1","frame_uuid":"frame-1","evidence":{"document":"Power input design note","page":2,"figure":"Figure 1"}}}}"#,
+        )
+        .expect("profile parses");
+        let diagnostics = profile.validate(&schematic);
+
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "SCH009" && item.message.contains("member wire segment")
+        }));
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "SCH009" && item.message.contains("member wire label")
+        }));
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "SCH009" && item.message.contains("annotation text box note-1")
+        }));
+    }
+
+    #[test]
+    fn group_wire_labels_must_maintain_configured_frame_clearance() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "group-frame-label-clearance-test.kicad_sch",
+            r#"(kicad_sch
+                (lib_symbols
+                  (symbol "Test:OnePin"
+                    (symbol "OnePin_1_1"
+                      (pin passive line (at 0 0 0) (length 1.27)
+                        (name "1") (number "1"))
+                    )
+                  )
+                )
+                (symbol (lib_id "Test:OnePin") (at 4 5 0) (unit 1)
+                  (property "Reference" "R1" (at 4 4 0) (effects (font (size 1 1))))
+                )
+                (wire (pts (xy 4 5) (xy 10 5)))
+                (label "LONG_SIGNAL_NAME" (at 10 5 0) (effects (font (size 1 1))))
+                (rectangle (start 1 1) (end 14 9) (uuid "frame-1"))
+                (text_box "Power input group" (at 5 5) (size 1 1) (uuid "description-1"))
+            )"#,
+        )
+        .expect("schematic parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"groups":{"power-input":{"members":["R1"],"description_uuid":"description-1","frame_uuid":"frame-1","minimum_frame_clearance_mm":2.0,"evidence":{"document":"Power input design note","page":2,"figure":"Figure 1"}}}}"#,
+        )
+        .expect("profile parses");
+        let diagnostics = profile.validate(&schematic);
+
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "SCH012" && item.message.contains("member wire label")
+                && item.message.contains("2.00 mm clearance")
+        }));
+    }
+
     fn decoupling_netlist(capacitor_target_net: &str) -> Netlist {
         Netlist {
             pin_nets: BTreeMap::from([
