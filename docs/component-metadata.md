@@ -108,7 +108,18 @@ Common-pin groups can express the complementary case where several pins must car
 
 For each pin, SCH004 requires a resolved embedded pin coordinate attached to a physical wire and a matching label on that pin's physical wire component. `wire_connected` additionally requires all listed pins to share one wire-only component. `single_label` requires exactly one matching label across the resolved components. Set `netlist_connected` to additionally require all listed pins to resolve to the same net in the KiCad-exported netlist; this is separate from `wire_connected`, which checks physical wire-only topology. When `netlist_connected` is requested through the profile API without a netlist, SCH004 emits a warning that the logical check was not performed. Label names never create graph edges, so separately wired islands with matching labels do not satisfy a wire-connected group.
 
-These are opt-in profile contracts. `direct_wire_pairs` require the named pin pair to be attached to and joined by one physical wire-only component; a local or hierarchical label cannot substitute for that path. `common_pin_groups` require each listed pin to have a physical wire attachment and the expected label on its wire component. Set `wire_connected` to require all pins in the group to share one physical wire-only component, and `single_label` to require exactly one matching label across the resolved components. These checks do not infer all intended connections automatically or replace KiCad ERC. Unsupported embedded pin transforms and pins that cannot be resolved are reported as unresolved rather than guessed.
+These are opt-in profile contracts. `direct_wire_pairs` require the named pin pair to be attached to and joined by one physical wire-only component; a local or hierarchical label cannot substitute for that path. `common_pin_groups` require each listed pin to have a physical wire attachment and the expected label on its wire component. Set `wire_connected` to require all pins in the group to share one physical wire-only component, and `single_label` to require exactly one matching label across the resolved components. `separate_wire_pairs` assert the opposite physical condition: two resolved pins must not occupy the same wire-only component. This contract does not require either pin to be wired; it only rejects a shared physical wire island. Set `netlist_separate` to additionally require the two pins to resolve to different nets in the exported KiCad netlist, which catches label-mediated logical joins as well. If requested without a netlist, the logical separation check emits a warning. Labels never create physical graph edges. These checks do not infer all intended connections automatically or replace KiCad ERC. Unsupported embedded pin transforms and pins that cannot be resolved are reported as unresolved rather than guessed.
+
+Example: require two endpoints to remain physically and logically separate:
+
+    {
+      "schema_version": 1,
+      "separate_wire_pairs": [
+        { "first": "U1.2", "second": "J1.1", "netlist_separate": true }
+      ]
+    }
+
+Without `netlist_separate`, the rule only forbids a shared physical wire island; separate islands carrying the same label still satisfy physical separation. Enabling the option also checks the exported KiCad netlist and rejects a label-mediated connection that places both pins on the same logical net.
 
 ## Component role vocabulary
 
