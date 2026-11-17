@@ -281,7 +281,7 @@ fn render_diagnostic(
 
     if let Some(span) = diagnostic
         .span
-        .filter(|span| span.is_valid_for(source.text()))
+        .filter(|span| source.slice(*span).is_some())
     {
         rendered = rendered.with_label(LabeledSpan::new_primary_with_span(
             Some("here".to_owned()),
