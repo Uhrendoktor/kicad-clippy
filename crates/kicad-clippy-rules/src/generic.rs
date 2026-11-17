@@ -1477,24 +1477,22 @@ pub fn run_geometry_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
 
 fn schematic_has_graphical_netclass_assignments(root: &Node) -> bool {
     let mut has_assignments = false;
-    walk(root, &mut |node| {
-        match head(node) {
-            Some("directive_label" | "rule_area") => {
-                has_assignments = true;
-                return;
-            }
-            Some("label" | "hierarchical_label" | "global_label") => {
-                if children(node, "property").any(|property| {
-                    list_items(property)
-                        .and_then(|items| items.get(1))
-                        .and_then(atom_value)
-                        == Some("Net Class")
-                }) {
-                    has_assignments = true;
-                }
-            }
-            _ => {}
+    walk(root, &mut |node| match head(node) {
+        Some("directive_label" | "rule_area") => {
+            has_assignments = true;
+            return;
         }
+        Some("label" | "hierarchical_label" | "global_label") => {
+            if children(node, "property").any(|property| {
+                list_items(property)
+                    .and_then(|items| items.get(1))
+                    .and_then(atom_value)
+                    == Some("Net Class")
+            }) {
+                has_assignments = true;
+            }
+        }
+        _ => {}
     });
     has_assignments
 }

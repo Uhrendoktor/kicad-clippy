@@ -262,9 +262,9 @@ fn project_default_wire_stroke_width_mm(project: &serde_json::Value) -> Option<f
     }
 
     let classes = settings.get("classes")?.as_array()?;
-    let default_class = classes.iter().find(|class| {
-        class.get("name").and_then(serde_json::Value::as_str) == Some("Default")
-    })?;
+    let default_class = classes
+        .iter()
+        .find(|class| class.get("name").and_then(serde_json::Value::as_str) == Some("Default"))?;
     let width_mils = default_class.get("wire_width")?.as_f64()?;
     let width_mm = width_mils * 0.0254;
     (width_mm.is_finite() && width_mm > 0.0).then_some(width_mm)
