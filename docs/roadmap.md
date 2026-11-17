@@ -43,7 +43,7 @@ The profile format is deliberately explicit; project-specific expectations are n
 ## Next: physical connectivity and symbol geometry
 
 1. SCH004 now supports explicit multi-terminal `physical_wire_groups` independently of named `common_pin_groups`. Continue extending the physical-wire contract for richer path/topology constraints where pin groups alone are insufficient; any inference must use physical wire geometry, never label equality.
-2. Refine SCH013's current selected-unit, top-level vector and PNG/JPEG image obstacle coverage: add exact analytic arc intersections if the bounded polyline approximation proves insufficient, and identify any remaining unsupported obstacle classes.
+2. SCH013 now uses analytic segment/circular-arc intersections reconstructed from the three KiCad control points and directed midpoint-selected sweep. Continue refining Bézier intersections if the bounded 0.01 mm polyline approximation proves insufficient, and identify any remaining unsupported obstacle classes.
 3. Extend SCH009/SCH012 beyond the current vector graphics and PNG/JPEG bitmap bounds to cover unsupported image encodings and remaining annotation types; improve exact body-curve coverage.
 4. Broaden multi-unit, alternate-convert and mirrored transform coverage. Finite non-cardinal rotations now resolve pin and primitive coordinates for frame/obstacle rules; SCH005 axis checks remain cardinal-only, and unresolvable geometry must continue to be skipped conservatively.
 

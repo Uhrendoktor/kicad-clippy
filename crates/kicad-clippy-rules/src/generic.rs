@@ -36,6 +36,19 @@ pub struct Segment {
     pub span: ByteSpan,
 }
 
+/// Exact circular geometry reconstructed from KiCad's start/mid/end arc points.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SchematicArcFact {
+    /// Circle centre in schematic coordinates, in millimetres.
+    pub center_mm: (f64, f64),
+    /// Circle radius in millimetres.
+    pub radius_mm: f64,
+    /// Start angle in radians, measured in the schematic coordinate plane.
+    pub start_angle_rad: f64,
+    /// Signed sweep in radians, selected to pass through KiCad's midpoint.
+    pub sweep_rad: f64,
+}
+
 #[derive(Clone, Copy, Debug)]
 struct Bounds {
     x: f64,
@@ -109,6 +122,8 @@ pub struct SchematicPrimitiveFact {
     pub closed: bool,
     /// Optional transformed circle (centre x, centre y, radius).
     pub circle_mm: Option<(f64, f64, f64)>,
+    /// Exact transformed three-point arc geometry, when the arc is non-degenerate.
+    pub arc_mm: Option<SchematicArcFact>,
     /// Approximate stroke width in millimetres.
     pub stroke_width_mm: f64,
 }
@@ -159,6 +174,8 @@ pub struct SchematicGraphicFact {
     pub closed: bool,
     /// Optional sheet-space circle (centre x, centre y, radius).
     pub circle_mm: Option<(f64, f64, f64)>,
+    /// Exact three-point circular arc geometry, when the arc is non-degenerate.
+    pub arc_mm: Option<SchematicArcFact>,
     /// Approximate graphic stroke width in millimetres.
     pub stroke_width_mm: f64,
 }
@@ -353,6 +370,11 @@ fn collect_sheet_graphic_facts(root: &Node) -> Vec<SchematicGraphicFact> {
             } else {
                 None
             };
+            let arc_mm = if kind == "arc" {
+                arc_primitive_geometry(node)
+            } else {
+                None
+            };
             let mut points_mm = if kind == "circle" {
                 Vec::new()
             } else {
@@ -380,6 +402,7 @@ fn collect_sheet_graphic_facts(root: &Node) -> Vec<SchematicGraphicFact> {
                 points_mm,
                 closed,
                 circle_mm,
+                arc_mm,
                 stroke_width_mm,
             });
         }
@@ -996,6 +1019,7 @@ fn parse_symbol_primitive(
                 transform.origin.y + world_y,
                 radius,
             )),
+            arc_mm: None,
             stroke_width_mm,
         });
     }
@@ -1009,6 +1033,13 @@ fn parse_symbol_primitive(
         _ => return None,
     };
     let mut points_mm = transform_primitive_points(&local_points, transform)?;
+    let arc_mm = if kind == "arc" {
+        let [start, mid, end] = arc_primitive_control_points(node)?;
+        let controls = transform_primitive_points(&[start, mid, end], transform)?;
+        circular_arc_through_three_points(controls[0], controls[1], controls[2])
+    } else {
+        None
+    };
     let last_point = *points_mm.last()?;
     let repeated_endpoint = points_mm.len() > 2
         && (points_mm[0].0 - last_point.0).abs() <= 0.001
@@ -1022,6 +1053,7 @@ fn parse_symbol_primitive(
         points_mm,
         closed,
         circle_mm: None,
+        arc_mm,
         stroke_width_mm,
     })
 }
@@ -1057,16 +1089,22 @@ fn polyline_primitive_points(node: &Node) -> Option<Vec<(f64, f64)>> {
     (points.len() >= 2).then_some(points)
 }
 
-fn arc_primitive_points(node: &Node) -> Option<Vec<(f64, f64)>> {
+fn arc_primitive_control_points(node: &Node) -> Option<[(f64, f64); 3]> {
     let point = |name| {
         let items = child_list(node, name).and_then(list_items)?;
         Some((number(items.get(1)?)?, number(items.get(2)?)?))
     };
-    Some(sample_arc_through_three_points(
-        point("start")?,
-        point("mid")?,
-        point("end")?,
-    ))
+    Some([point("start")?, point("mid")?, point("end")?])
+}
+
+fn arc_primitive_geometry(node: &Node) -> Option<SchematicArcFact> {
+    let [start, mid, end] = arc_primitive_control_points(node)?;
+    circular_arc_through_three_points(start, mid, end)
+}
+
+fn arc_primitive_points(node: &Node) -> Option<Vec<(f64, f64)>> {
+    let [start, mid, end] = arc_primitive_control_points(node)?;
+    Some(sample_arc_through_three_points(start, mid, end))
 }
 
 const CURVE_FLATTEN_TOLERANCE_MM: f64 = 0.01;
@@ -1121,6 +1159,24 @@ fn sample_arc_through_three_points(
     mid: (f64, f64),
     end: (f64, f64),
 ) -> Vec<(f64, f64)> {
+    let Some(arc) = circular_arc_through_three_points(start, mid, end) else {
+        return vec![start, mid, end];
+    };
+    let path = CurveArc::new(
+        CurvePoint::new(arc.center_mm.0, arc.center_mm.1),
+        Vec2::new(arc.radius_mm, arc.radius_mm),
+        arc.start_angle_rad,
+        arc.sweep_rad,
+        0.0,
+    );
+    flattened_curve_points(path.path_elements(CURVE_FLATTEN_TOLERANCE_MM), start, end)
+}
+
+fn circular_arc_through_three_points(
+    start: (f64, f64),
+    mid: (f64, f64),
+    end: (f64, f64),
+) -> Option<SchematicArcFact> {
     let triangle = Triangle::new(
         CurvePoint::new(start.0, start.1),
         CurvePoint::new(mid.0, mid.1),
@@ -1129,15 +1185,19 @@ fn sample_arc_through_three_points(
     // Preserve the previous near-collinear fallback before asking Kurbo for
     // the circumcircle; its circumcircle method assumes non-zero triangle area.
     if triangle.area().abs() <= 2.5e-10 {
-        return vec![start, mid, end];
+        return None;
     }
 
     let circle = triangle.circumscribed_circle();
     let center_x = circle.center.x;
     let center_y = circle.center.y;
     let radius = circle.radius.abs();
-    if !center_x.is_finite() || !center_y.is_finite() || !radius.is_finite() || radius <= 1.0e-9 {
-        return vec![start, mid, end];
+    if !center_x.is_finite()
+        || !center_y.is_finite()
+        || !radius.is_finite()
+        || radius <= 1.0e-9
+    {
+        return None;
     }
 
     let start_angle = (start.1 - center_y).atan2(start.0 - center_x);
@@ -1151,17 +1211,15 @@ fn sample_arc_through_three_points(
         counter_clockwise_sweep - std::f64::consts::TAU
     };
     if sweep.abs() <= 1.0e-9 {
-        return vec![start, mid, end];
+        return None;
     }
 
-    let arc = CurveArc::new(
-        CurvePoint::new(center_x, center_y),
-        Vec2::new(radius, radius),
-        start_angle,
-        sweep,
-        0.0,
-    );
-    flattened_curve_points(arc.path_elements(CURVE_FLATTEN_TOLERANCE_MM), start, end)
+    Some(SchematicArcFact {
+        center_mm: (center_x, center_y),
+        radius_mm: radius,
+        start_angle_rad: start_angle,
+        sweep_rad: sweep,
+    })
 }
 
 fn transform_primitive_points(
@@ -1435,8 +1493,73 @@ fn collect_visible_field_bounds(root: &Node) -> Vec<(String, Bounds, ByteSpan)> 
     fields
 }
 
+fn segment_arc_intersection_points(wire: Segment, arc: SchematicArcFact) -> Vec<Point> {
+    let direction_x = wire.end.x - wire.start.x;
+    let direction_y = wire.end.y - wire.start.y;
+    let a = direction_x.mul_add(direction_x, direction_y * direction_y);
+    if a == 0.0 || !a.is_finite() || !arc.radius_mm.is_finite() || arc.radius_mm <= 0.0 {
+        return Vec::new();
+    }
+
+    let relative_x = wire.start.x - arc.center_mm.0;
+    let relative_y = wire.start.y - arc.center_mm.1;
+    let half_b = relative_x.mul_add(direction_x, relative_y * direction_y);
+    let radius_squared = arc.radius_mm * arc.radius_mm;
+    let c = relative_x.mul_add(relative_x, relative_y.mul_add(relative_y, -radius_squared));
+    let a_times_c = a * c;
+    let discriminant = half_b.mul_add(half_b, -a_times_c);
+    if !half_b.is_finite() || !c.is_finite() || !discriminant.is_finite() {
+        return Vec::new();
+    }
+
+    // Bound only floating-point roundoff in the quadratic discriminant; this is
+    // not a geometric clearance tolerance.
+    let roundoff = (64.0 * f64::EPSILON * half_b.abs()) * half_b.abs()
+        + (64.0 * f64::EPSILON) * a_times_c.abs();
+    let discriminant = if discriminant < 0.0 {
+        if discriminant < -roundoff {
+            return Vec::new();
+        }
+        0.0
+    } else {
+        discriminant
+    };
+    let square_root = discriminant.sqrt();
+    let q = -half_b - square_root.copysign(half_b);
+    let first_root = q / a;
+    let second_root = if q == 0.0 { first_root } else { c / q };
+    let root_count = if square_root == 0.0 { 1 } else { 2 };
+    let mut intersections = Vec::with_capacity(root_count);
+
+    for (index, parameter) in [first_root, second_root].into_iter().enumerate() {
+        if index >= root_count || !(-1.0e-9..=1.0 + 1.0e-9).contains(&parameter) {
+            continue;
+        }
+        let parameter = parameter.clamp(0.0, 1.0);
+        let point = Point {
+            x: parameter.mul_add(direction_x, wire.start.x),
+            y: parameter.mul_add(direction_y, wire.start.y),
+        };
+        let angle = (point.y - arc.center_mm.1).atan2(point.x - arc.center_mm.0);
+        let directed_sweep = if arc.sweep_rad >= 0.0 {
+            (angle - arc.start_angle_rad).rem_euclid(std::f64::consts::TAU)
+        } else {
+            (arc.start_angle_rad - angle).rem_euclid(std::f64::consts::TAU)
+        };
+        if directed_sweep <= arc.sweep_rad.abs() + 1.0e-9 {
+            intersections.push(point);
+        }
+    }
+
+    intersections
+}
+
 fn wire_crosses_sheet_graphic(wire: Segment, graphic: &SchematicGraphicFact) -> bool {
-    if let Some((center_x, center_y, radius)) = graphic.circle_mm {
+    if let Some(arc) = graphic.arc_mm {
+        if !segment_arc_intersection_points(wire, arc).is_empty() {
+            return true;
+        }
+    } else if let Some((center_x, center_y, radius)) = graphic.circle_mm {
         let center = Point {
             x: center_x,
             y: center_y,
@@ -1444,27 +1567,27 @@ fn wire_crosses_sheet_graphic(wire: Segment, graphic: &SchematicGraphicFact) -> 
         let inner_radius = radius - graphic.stroke_width_mm / 2.0;
         return inner_radius > 0.0
             && point_segment_distance(center, wire.start, wire.end) < inner_radius - 0.001;
-    }
-
-    let to_point = |(x, y): (f64, f64)| Point { x, y };
-    let mut edges: Vec<_> = graphic
-        .points_mm
-        .windows(2)
-        .map(|pair| (to_point(pair[0]), to_point(pair[1])))
-        .collect();
-    if graphic.closed && graphic.points_mm.len() > 2 {
-        if let (Some(last), Some(first)) = (
-            graphic.points_mm.last().copied(),
-            graphic.points_mm.first().copied(),
-        ) {
-            edges.push((to_point(last), to_point(first)));
+    } else {
+        let to_point = |(x, y): (f64, f64)| Point { x, y };
+        let mut edges: Vec<_> = graphic
+            .points_mm
+            .windows(2)
+            .map(|pair| (to_point(pair[0]), to_point(pair[1])))
+            .collect();
+        if graphic.closed && graphic.points_mm.len() > 2 {
+            if let (Some(last), Some(first)) = (
+                graphic.points_mm.last().copied(),
+                graphic.points_mm.first().copied(),
+            ) {
+                edges.push((to_point(last), to_point(first)));
+            }
         }
-    }
-    if edges
-        .iter()
-        .any(|(start, end)| !segment_intersection_points(wire, *start, *end).is_empty())
-    {
-        return true;
+        if edges
+            .iter()
+            .any(|(start, end)| !segment_intersection_points(wire, *start, *end).is_empty())
+        {
+            return true;
+        }
     }
     if graphic.closed {
         let midpoint = Point {
@@ -1496,7 +1619,16 @@ fn wire_crosses_symbol_primitive(
     primitive: &SchematicPrimitiveFact,
     pins: &[SchematicPinFact],
 ) -> bool {
-    if let Some((center_x, center_y, radius)) = primitive.circle_mm {
+    if let Some(arc) = primitive.arc_mm {
+        if segment_arc_intersection_points(wire, arc)
+            .into_iter()
+            .any(|point| {
+                !wire_intersection_is_allowed_pin(point, wire, &primitive.reference, pins)
+            })
+        {
+            return true;
+        }
+    } else if let Some((center_x, center_y, radius)) = primitive.circle_mm {
         let center = Point {
             x: center_x,
             y: center_y,
@@ -1504,26 +1636,26 @@ fn wire_crosses_symbol_primitive(
         let inner_radius = radius - primitive.stroke_width_mm / 2.0;
         return inner_radius > 0.0
             && point_segment_distance(center, wire.start, wire.end) < inner_radius - 0.001;
-    }
-
-    let to_point = |(x, y): (f64, f64)| Point { x, y };
-    let mut edges: Vec<_> = primitive
-        .points_mm
-        .windows(2)
-        .map(|pair| (to_point(pair[0]), to_point(pair[1])))
-        .collect();
-    if primitive.closed && primitive.points_mm.len() > 2 {
-        if let (Some(last), Some(first)) = (
-            primitive.points_mm.last().copied(),
-            primitive.points_mm.first().copied(),
-        ) {
-            edges.push((to_point(last), to_point(first)));
+    } else {
+        let to_point = |(x, y): (f64, f64)| Point { x, y };
+        let mut edges: Vec<_> = primitive
+            .points_mm
+            .windows(2)
+            .map(|pair| (to_point(pair[0]), to_point(pair[1])))
+            .collect();
+        if primitive.closed && primitive.points_mm.len() > 2 {
+            if let (Some(last), Some(first)) = (
+                primitive.points_mm.last().copied(),
+                primitive.points_mm.first().copied(),
+            ) {
+                edges.push((to_point(last), to_point(first)));
+            }
         }
-    }
-    for (edge_start, edge_end) in edges {
-        for point in segment_intersection_points(wire, edge_start, edge_end) {
-            if !wire_intersection_is_allowed_pin(point, wire, &primitive.reference, pins) {
-                return true;
+        for (edge_start, edge_end) in edges {
+            for point in segment_intersection_points(wire, edge_start, edge_end) {
+                if !wire_intersection_is_allowed_pin(point, wire, &primitive.reference, pins) {
+                    return true;
+                }
             }
         }
     }
@@ -3237,6 +3369,123 @@ mod tests {
     }
 
     #[test]
+    fn analytic_arc_intersection_detects_a_curve_hit_missed_by_its_sampled_chord() {
+        let arc = super::SchematicArcFact {
+            center_mm: (0.0, 0.0),
+            radius_mm: 2.0,
+            start_angle_rad: 0.0,
+            sweep_rad: std::f64::consts::FRAC_PI_2,
+        };
+        let angle = 0.37_f64;
+        let point_at_radius = |radius: f64| super::Point {
+            x: radius * angle.cos(),
+            y: radius * angle.sin(),
+        };
+        let wire = super::Segment {
+            start: point_at_radius(2.0),
+            end: point_at_radius(2.01),
+            span: kicad_clippy_core::ByteSpan::new(0, 0),
+        };
+
+        let midpoint = (2.0 / 2.0_f64.sqrt(), 2.0 / 2.0_f64.sqrt());
+        let sampled = super::sample_arc_through_three_points(
+            (2.0, 0.0),
+            midpoint,
+            (0.0, 2.0),
+        );
+        assert!(
+            !sampled.windows(2).any(|pair| {
+                !super::segment_intersection_points(
+                    wire,
+                    super::Point {
+                        x: pair[0].0,
+                        y: pair[0].1,
+                    },
+                    super::Point {
+                        x: pair[1].0,
+                        y: pair[1].1,
+                    },
+                )
+                .is_empty()
+            })
+        );
+        let graphic = super::SchematicGraphicFact {
+            kind: "arc".to_owned(),
+            uuid: None,
+            bounds_mm: None,
+            points_mm: sampled.clone(),
+            closed: false,
+            circle_mm: None,
+            arc_mm: Some(arc),
+            stroke_width_mm: 0.254,
+        };
+        let sampled_graphic = super::SchematicGraphicFact {
+            arc_mm: None,
+            ..graphic.clone()
+        };
+        assert!(!super::wire_crosses_sheet_graphic(wire, &sampled_graphic));
+        assert!(super::wire_crosses_sheet_graphic(wire, &graphic));
+
+        let primitive = super::SchematicPrimitiveFact {
+            reference: "U1".to_owned(),
+            points_mm: sampled,
+            closed: false,
+            circle_mm: None,
+            arc_mm: Some(arc),
+            stroke_width_mm: 0.254,
+        };
+        assert!(super::wire_crosses_symbol_primitive(wire, &primitive, &[]));
+        let allowed_pin = super::SchematicPinFact {
+            reference: "U1".to_owned(),
+            number: "1".to_owned(),
+            position_mm: (wire.start.x, wire.start.y),
+        };
+        assert!(!super::wire_crosses_symbol_primitive(
+            wire,
+            &primitive,
+            &[allowed_pin],
+        ));
+
+        let intersections = super::segment_arc_intersection_points(wire, arc);
+        assert_eq!(intersections.len(), 1);
+        assert!((intersections[0].x - wire.start.x).abs() < 1.0e-9);
+        assert!((intersections[0].y - wire.start.y).abs() < 1.0e-9);
+    }
+
+    #[test]
+    fn analytic_arc_intersection_respects_directed_sweep_and_tangency() {
+        let arc = super::SchematicArcFact {
+            center_mm: (0.0, 0.0),
+            radius_mm: 2.0,
+            start_angle_rad: 0.0,
+            sweep_rad: std::f64::consts::FRAC_PI_2,
+        };
+        let outside_angle = 3.0 * std::f64::consts::FRAC_PI_4;
+        let outside_wire = super::Segment {
+            start: super::Point {
+                x: 2.0 * outside_angle.cos(),
+                y: 2.0 * outside_angle.sin(),
+            },
+            end: super::Point {
+                x: 2.01 * outside_angle.cos(),
+                y: 2.01 * outside_angle.sin(),
+            },
+            span: kicad_clippy_core::ByteSpan::new(0, 0),
+        };
+        assert!(super::segment_arc_intersection_points(outside_wire, arc).is_empty());
+
+        let tangent_wire = super::Segment {
+            start: super::Point { x: -1.0, y: 2.0 },
+            end: super::Point { x: 1.0, y: 2.0 },
+            span: kicad_clippy_core::ByteSpan::new(0, 0),
+        };
+        let tangent = super::segment_arc_intersection_points(tangent_wire, arc);
+        assert_eq!(tangent.len(), 1);
+        assert!(tangent[0].x.abs() < 1.0e-9);
+        assert!((tangent[0].y - 2.0).abs() < 1.0e-9);
+    }
+
+    #[test]
     fn kurbo_circumcircle_preserves_arc_direction_and_collinear_fallback() {
         let upper = super::sample_arc_through_three_points((-2.0, 0.0), (0.0, 2.0), (2.0, 0.0));
         assert_eq!(upper.first(), Some(&(-2.0, 0.0)));
@@ -3681,6 +3930,27 @@ mod tests {
                 .diagnostics
                 .iter()
                 .any(|item| item.code == "SCH013" && item.message.contains("symbol body Q1"))
+        );
+    }
+
+    #[test]
+    fn wire_obstacle_uses_exact_intersections_for_top_level_three_point_arcs() {
+        let doc = document(
+            r#"
+            (arc (start 2 0) (mid 1.4142135623730951 1.4142135623730951) (end 0 2)
+              (stroke (width 0.254)) (fill (type none)))
+            (wire (pts
+              (xy 1.864654691212069 0.723230863929924)
+              (xy 1.8739779646681292 0.7268470182495735)))
+            "#,
+        );
+        assert!(
+            run_builtin_rules(&doc)
+                .diagnostics
+                .iter()
+                .any(|item| {
+                    item.code == "SCH013" && item.message.contains("sheet graphic arc")
+                })
         );
     }
 
