@@ -2759,14 +2759,25 @@ mod tests {
     "#;
 
     #[test]
-    fn non_cardinal_symbol_rotation_resolves_embedded_pin_geometry() {
-        let source = EMBEDDED_PIN.replace("(at 10 10 0)", "(at 10 10 45)");
+    fn non_cardinal_symbol_rotation_resolves_embedded_pin_and_primitive_geometry() {
+        let source = EMBEDDED_PIN
+            .replace("(at 10 10 0)", "(at 10 10 45)")
+            .replace(
+                "(pin passive",
+                "(rectangle (start 0 0) (end 2 1) (stroke (width 0.254) (type default)) (fill (type none)))\n              (pin passive",
+            );
         let doc = document(&source);
         let facts = super::SchematicFacts::from_document(&doc);
         assert_eq!(facts.pins.len(), 1);
         let expected = 10.0 - 2.54 / 2.0_f64.sqrt();
         assert!((facts.pins[0].position_mm.0 - expected).abs() < 0.001);
         assert!((facts.pins[0].position_mm.1 - expected).abs() < 0.001);
+
+        assert_eq!(facts.symbol_primitives.len(), 1);
+        let rotated_corner = facts.symbol_primitives[0].points_mm[1];
+        let expected_corner = (10.0 + 2.0 / 2.0_f64.sqrt(), 10.0 - 2.0 / 2.0_f64.sqrt());
+        assert!((rotated_corner.0 - expected_corner.0).abs() < 0.001);
+        assert!((rotated_corner.1 - expected_corner.1).abs() < 0.001);
         assert!(
             !run_builtin_rules(&doc)
                 .diagnostics
