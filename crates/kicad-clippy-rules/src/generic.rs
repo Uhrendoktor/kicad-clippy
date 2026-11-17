@@ -1603,32 +1603,13 @@ fn check_wire_obstacles(
                 ));
             }
         }
-        diagnostics.extend(embedded_symbol_text_obstacle_diagnostics(
+        diagnostics.extend(wire_text_annotation_obstacle_diagnostics(
             wire_index,
             *segment,
-            &facts.symbol_texts,
+            facts,
+            &fields,
+            &text_boxes,
         ));
-        for (text_index, text) in facts.texts.iter().enumerate() {
-            let Some((left, top, right, bottom)) = text.bounds_mm else {
-                continue;
-            };
-            let bounds = Bounds {
-                x: left,
-                y: top,
-                width: right - left,
-                height: bottom - top,
-            };
-            if strict_line_hits_bounds(*segment, bounds) {
-                diagnostics.push(at_segment(
-                    BuiltinRuleId::Sch013,
-                    &format!(
-                        "wire {wire_index} passes through free-standing schematic text {text_index} {:?}",
-                        text.text
-                    ),
-                    *segment,
-                ));
-            }
-        }
         for pin in &facts.pins {
             let point = Point {
                 x: pin.position_mm.0,
@@ -1647,23 +1628,59 @@ fn check_wire_obstacles(
                 ));
             }
         }
-        for (field_name, bounds, _span) in &fields {
-            if strict_line_hits_bounds(*segment, *bounds) {
-                diagnostics.push(at_segment(
-                    BuiltinRuleId::Sch013,
-                    &format!("wire {wire_index} passes through symbol field {field_name}"),
-                    *segment,
-                ));
-            }
+    }
+    diagnostics
+}
+
+fn wire_text_annotation_obstacle_diagnostics(
+    wire_index: usize,
+    segment: Segment,
+    facts: &SchematicFacts,
+    fields: &[(String, Bounds, ByteSpan)],
+    text_boxes: &[(usize, Bounds)],
+) -> Vec<Diagnostic> {
+    let mut diagnostics = embedded_symbol_text_obstacle_diagnostics(
+        wire_index,
+        segment,
+        &facts.symbol_texts,
+    );
+    for (text_index, text) in facts.texts.iter().enumerate() {
+        let Some((left, top, right, bottom)) = text.bounds_mm else {
+            continue;
+        };
+        let bounds = Bounds {
+            x: left,
+            y: top,
+            width: right - left,
+            height: bottom - top,
+        };
+        if strict_line_hits_bounds(segment, bounds) {
+            diagnostics.push(at_segment(
+                BuiltinRuleId::Sch013,
+                &format!(
+                    "wire {wire_index} passes through free-standing schematic text {text_index} {:?}",
+                    text.text
+                ),
+                segment,
+            ));
         }
-        for (box_index, bounds) in &text_boxes {
-            if strict_line_hits_bounds(*segment, *bounds) {
-                diagnostics.push(at_segment(
-                    BuiltinRuleId::Sch013,
-                    &format!("wire {wire_index} penetrates annotation text box {box_index}"),
-                    *segment,
-                ));
-            }
+    }
+    for (field_name, bounds, _span) in fields {
+        if strict_line_hits_bounds(segment, *bounds) {
+            diagnostics.push(at_segment(
+                BuiltinRuleId::Sch013,
+                &format!("wire {wire_index} passes through symbol field {field_name}"),
+                segment,
+            ));
+        }
+    }
+    for (box_index, bounds) in text_boxes {
+        if strict_line_hits_bounds(segment, *bounds) {
+            diagnostics.push(at_segment(
+                BuiltinRuleId::Sch013,
+                &format!("wire {wire_index} penetrates annotation text box {box_index}"),
+                segment,
+            ));
         }
     }
     diagnostics
