@@ -1015,7 +1015,10 @@ fn collect_symbol_text_from_unit(
     transform: &SymbolTransform,
 ) -> Vec<SchematicSymbolTextFact> {
     let mut texts = Vec::new();
-    for (kind, nodes) in [("text", children(unit, "text")), ("text_box", children(unit, "text_box"))] {
+    for (kind, nodes) in [
+        ("text", children(unit, "text")),
+        ("text_box", children(unit, "text_box")),
+    ] {
         for node in nodes {
             if property_is_hidden(node) {
                 continue;
@@ -1031,14 +1034,21 @@ fn collect_symbol_text_from_unit(
             } else {
                 text_box_bounds(node)
             };
-            let Some(bounds) = local_bounds.and_then(|bounds| transform_symbol_bounds(bounds, transform)) else {
+            let Some(bounds) =
+                local_bounds.and_then(|bounds| transform_symbol_bounds(bounds, transform))
+            else {
                 continue;
             };
             texts.push(SchematicSymbolTextFact {
                 reference: transform.reference.clone(),
                 kind: kind.to_owned(),
                 text: text.to_owned(),
-                bounds_mm: (bounds.x, bounds.y, bounds.x + bounds.width, bounds.y + bounds.height),
+                bounds_mm: (
+                    bounds.x,
+                    bounds.y,
+                    bounds.x + bounds.width,
+                    bounds.y + bounds.height,
+                ),
             });
         }
     }
@@ -1059,10 +1069,22 @@ fn transform_symbol_bounds(bounds: Bounds, transform: &SymbolTransform) -> Optio
     {
         return None;
     }
-    let left = transformed.iter().map(|point| point.0).fold(f64::INFINITY, f64::min);
-    let top = transformed.iter().map(|point| point.1).fold(f64::INFINITY, f64::min);
-    let right = transformed.iter().map(|point| point.0).fold(f64::NEG_INFINITY, f64::max);
-    let bottom = transformed.iter().map(|point| point.1).fold(f64::NEG_INFINITY, f64::max);
+    let left = transformed
+        .iter()
+        .map(|point| point.0)
+        .fold(f64::INFINITY, f64::min);
+    let top = transformed
+        .iter()
+        .map(|point| point.1)
+        .fold(f64::INFINITY, f64::min);
+    let right = transformed
+        .iter()
+        .map(|point| point.0)
+        .fold(f64::NEG_INFINITY, f64::max);
+    let bottom = transformed
+        .iter()
+        .map(|point| point.1)
+        .fold(f64::NEG_INFINITY, f64::max);
     Some(Bounds {
         x: left,
         y: top,
@@ -4421,7 +4443,12 @@ mod tests {
         let facts = super::SchematicFacts::from_document(&doc);
         assert_eq!(facts.symbol_texts.len(), 2);
         assert!(facts.symbol_texts.iter().any(|text| text.kind == "text"));
-        assert!(facts.symbol_texts.iter().any(|text| text.kind == "text_box"));
+        assert!(
+            facts
+                .symbol_texts
+                .iter()
+                .any(|text| text.kind == "text_box")
+        );
         let diagnostics = run_builtin_rules(&doc).diagnostics;
         assert!(diagnostics.iter().any(|item| {
             item.code == "SCH013"
