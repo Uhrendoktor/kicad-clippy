@@ -1639,10 +1639,7 @@ fn wire_path_min_distance(wire: Segment, path: CurvePathSeg) -> Option<(f64, f64
     if !path.is_finite() || !line.is_finite() {
         return None;
     }
-    let nearest = path.min_dist(
-        CurvePathSeg::Line(line),
-        SCH013_STROKE_DISTANCE_ACCURACY_MM,
-    );
+    let nearest = path.min_dist(CurvePathSeg::Line(line), SCH013_STROKE_DISTANCE_ACCURACY_MM);
     (nearest.distance.is_finite() && nearest.t2.is_finite())
         .then_some((nearest.distance, nearest.t2.clamp(0.0, 1.0)))
 }
@@ -1700,9 +1697,7 @@ fn wire_within_sampled_path_stroke(
             CurvePoint::new(pair[0].0, pair[0].1),
             CurvePoint::new(pair[1].0, pair[1].1),
         ));
-        wire_within_path_stroke(
-            wire, path, stroke_width_mm, flatten_tolerance_mm, pin_owner,
-        )
+        wire_within_path_stroke(wire, path, stroke_width_mm, flatten_tolerance_mm, pin_owner)
     }) {
         return true;
     }
@@ -1713,7 +1708,11 @@ fn wire_within_sampled_path_stroke(
                 CurvePoint::new(first.0, first.1),
             ));
             return wire_within_path_stroke(
-                wire, path, stroke_width_mm, flatten_tolerance_mm, pin_owner,
+                wire,
+                path,
+                stroke_width_mm,
+                flatten_tolerance_mm,
+                pin_owner,
             );
         }
     }
@@ -1726,8 +1725,12 @@ fn wire_crosses_sheet_graphic(wire: Segment, graphic: &SchematicGraphicFact) -> 
             return true;
         }
         if wire_within_sampled_path_stroke(
-            wire, &graphic.points_mm, false, graphic.stroke_width_mm,
-            CURVE_FLATTEN_TOLERANCE_MM, None,
+            wire,
+            &graphic.points_mm,
+            false,
+            graphic.stroke_width_mm,
+            CURVE_FLATTEN_TOLERANCE_MM,
+            None,
         ) {
             return true;
         }
@@ -1736,17 +1739,29 @@ fn wire_crosses_sheet_graphic(wire: Segment, graphic: &SchematicGraphicFact) -> 
             return true;
         }
         if wire_within_path_stroke(
-            wire, cubic_bezier_path_segment(bezier), graphic.stroke_width_mm, 0.0, None,
+            wire,
+            cubic_bezier_path_segment(bezier),
+            graphic.stroke_width_mm,
+            0.0,
+            None,
         ) {
             return true;
         }
     } else if let Some((center_x, center_y, radius)) = graphic.circle_mm {
-        let center = Point { x: center_x, y: center_y };
+        let center = Point {
+            x: center_x,
+            y: center_y,
+        };
         let inner_radius = radius - graphic.stroke_width_mm / 2.0;
         return inner_radius > 0.0
             && point_segment_distance(center, wire.start, wire.end) < inner_radius - 0.001;
     } else if wire_within_sampled_path_stroke(
-        wire, &graphic.points_mm, graphic.closed, graphic.stroke_width_mm, 0.0, None,
+        wire,
+        &graphic.points_mm,
+        graphic.closed,
+        graphic.stroke_width_mm,
+        0.0,
+        None,
     ) {
         return true;
     }
@@ -1789,8 +1804,12 @@ fn wire_crosses_symbol_primitive(
             return true;
         }
         if wire_within_sampled_path_stroke(
-            wire, &primitive.points_mm, false, primitive.stroke_width_mm,
-            CURVE_FLATTEN_TOLERANCE_MM, pin_owner,
+            wire,
+            &primitive.points_mm,
+            false,
+            primitive.stroke_width_mm,
+            CURVE_FLATTEN_TOLERANCE_MM,
+            pin_owner,
         ) {
             return true;
         }
@@ -1802,7 +1821,11 @@ fn wire_crosses_symbol_primitive(
             return true;
         }
         if wire_within_path_stroke(
-            wire, cubic_bezier_path_segment(bezier), primitive.stroke_width_mm, 0.0, pin_owner,
+            wire,
+            cubic_bezier_path_segment(bezier),
+            primitive.stroke_width_mm,
+            0.0,
+            pin_owner,
         ) {
             return true;
         }
@@ -1813,12 +1836,15 @@ fn wire_crosses_symbol_primitive(
             && point_segment_distance(center, wire.start, wire.end) < inner_radius - 0.001;
     } else {
         let to_point = |(x, y): (f64, f64)| Point { x, y };
-        let mut edges: Vec<_> = primitive.points_mm.windows(2)
+        let mut edges: Vec<_> = primitive
+            .points_mm
+            .windows(2)
             .map(|pair| (to_point(pair[0]), to_point(pair[1])))
             .collect();
         if primitive.closed && primitive.points_mm.len() > 2 {
             if let (Some(last), Some(first)) = (
-                primitive.points_mm.last().copied(), primitive.points_mm.first().copied(),
+                primitive.points_mm.last().copied(),
+                primitive.points_mm.first().copied(),
             ) {
                 edges.push((to_point(last), to_point(first)));
             }
@@ -1831,7 +1857,12 @@ fn wire_crosses_symbol_primitive(
             }
         }
         if wire_within_sampled_path_stroke(
-            wire, &primitive.points_mm, primitive.closed, primitive.stroke_width_mm, 0.0, pin_owner,
+            wire,
+            &primitive.points_mm,
+            primitive.closed,
+            primitive.stroke_width_mm,
+            0.0,
+            pin_owner,
         ) {
             return true;
         }
@@ -4346,7 +4377,9 @@ mod tests {
             number: "1".to_owned(),
             position_mm: (0.0, 0.0),
         };
-        assert!(!super::wire_crosses_symbol_primitive(wire, &primitive, &[pin]));
+        assert!(!super::wire_crosses_symbol_primitive(
+            wire, &primitive, &[pin]
+        ));
     }
 
     #[test]
