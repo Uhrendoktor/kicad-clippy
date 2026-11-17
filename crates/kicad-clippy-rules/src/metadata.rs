@@ -975,6 +975,9 @@ fn validate_group_containment(
     diagnostics.extend(validate_group_graphic_containment(
         group_id, facts, frame_uuid, bounds,
     ));
+    diagnostics.extend(validate_group_image_containment(
+        group_id, facts, frame_uuid, bounds,
+    ));
     diagnostics
 }
 
@@ -1303,6 +1306,33 @@ fn validate_group_graphic_containment(
         .collect()
 }
 
+fn validate_group_image_containment(
+    group_id: &str,
+    facts: &SchematicFacts,
+    frame_uuid: &str,
+    frame_bounds: (f64, f64, f64, f64),
+) -> Vec<Diagnostic> {
+    facts
+        .images
+        .iter()
+        .filter_map(|image| {
+            let bounds = image.bounds_mm?;
+            (rectangles_overlap(bounds, frame_bounds)
+                && !rectangle_inside_frame(bounds, frame_bounds))
+            .then(|| {
+                Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch009,
+                    Severity::Error,
+                    format!(
+                        "group {group_id} bitmap image {:?} extends outside frame {frame_uuid}",
+                        image.uuid
+                    ),
+                )
+            })
+        })
+        .collect()
+}
+
 fn wire_overlaps_frame(
     wire: &crate::generic::SchematicWireFact,
     frame_bounds: (f64, f64, f64, f64),
@@ -1448,6 +1478,9 @@ fn validate_frame_clearance(
         group_id, facts, frame_uuid, bounds, clearance,
     ));
     diagnostics.extend(validate_group_graphic_clearance(
+        group_id, facts, frame_uuid, bounds, clearance,
+    ));
+    diagnostics.extend(validate_group_image_clearance(
         group_id, facts, frame_uuid, bounds, clearance,
     ));
     diagnostics
@@ -1755,6 +1788,34 @@ fn validate_group_graphic_clearance(
                     format!(
                         "group {group_id} vector graphic {} {:?} does not maintain {clearance:.2} mm clearance from frame {frame_uuid}",
                         graphic.kind, graphic.uuid
+                    ),
+                )
+            })
+        })
+        .collect()
+}
+
+fn validate_group_image_clearance(
+    group_id: &str,
+    facts: &SchematicFacts,
+    frame_uuid: &str,
+    frame_bounds: (f64, f64, f64, f64),
+    clearance: f64,
+) -> Vec<Diagnostic> {
+    facts
+        .images
+        .iter()
+        .filter_map(|image| {
+            let bounds = image.bounds_mm?;
+            (rectangles_overlap(bounds, frame_bounds)
+                && !rectangle_inside_frame_with_clearance(bounds, frame_bounds, clearance))
+            .then(|| {
+                Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch012,
+                    Severity::Error,
+                    format!(
+                        "group {group_id} bitmap image {:?} does not maintain {clearance:.2} mm clearance from frame {frame_uuid}",
+                        image.uuid
                     ),
                 )
             })
@@ -4078,6 +4139,94 @@ mod tests {
                 && item.message.contains("vector graphic circle")
                 && item.message.contains("2.00 mm clearance")
         }));
+    }
+
+    #[test]
+    fn group_frame_contains_embedded_bitmap_image_bounds() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "group-frame-bitmap-test.kicad_sch",
+            r#"(kicad_sch
+                (version 20260623)
+                (lib_symbols
+                  (symbol "Test:OnePin"
+                    (symbol "OnePin_1_1"
+                      (pin passive line (at 0 0 0) (length 1.27)
+                        (name "1") (number "1"))
+                    )
+                  )
+                )
+                (symbol (lib_id "Test:OnePin") (at 4 5 0) (unit 1)
+                  (property "Reference" "R1" (at 4 4 0) (effects (font (size 1 1))))
+                )
+                (image (at 4 5) (scale 1) (uuid "image-1")
+                  (data iVBORw0KGgoAAAANSUhEUgAAAHgAAAA8CAYAAACtrX6oAAAACXBIWXMAAC4jAAAuIwF4pT92AAAAoklEQVR4nO3RAQkAMAzAsPk3vak4h5IoKHSWtPkdwFsGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcd1OAFhGyMXxbAAAAAElFTkSuQmCC))
+                (rectangle (start 1 1) (end 8 9) (uuid "frame-1"))
+                (text_box "Power input group" (at 4 6) (size 1 1) (uuid "description-1"))
+            )"#,
+        )
+        .expect("schematic parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"groups":{"power-input":{"members":["R1"],"description_uuid":"description-1","frame_uuid":"frame-1","evidence":{"document":"Power input design note","page":2,"figure":"Figure 1"}}}}"#,
+        )
+        .expect("profile parses");
+
+        assert!(profile.validate(&schematic).iter().any(|item| {
+            item.code == "SCH009" && item.message.contains("bitmap image Some(\"image-1\")")
+        }));
+    }
+
+    #[test]
+    fn group_frame_clearance_covers_embedded_bitmap_image_bounds() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "group-frame-bitmap-clearance-test.kicad_sch",
+            r#"(kicad_sch
+                (version 20260623)
+                (lib_symbols
+                  (symbol "Test:OnePin"
+                    (symbol "OnePin_1_1"
+                      (pin passive line (at 0 0 0) (length 1.27)
+                        (name "1") (number "1"))
+                    )
+                  )
+                )
+                (symbol (lib_id "Test:OnePin") (at 7.5 5 0) (unit 1)
+                  (property "Reference" "R1" (at 7.5 4 0) (effects (font (size 1 1))))
+                )
+                (image (at 7.5 5) (scale 1) (uuid "image-2")
+                  (data iVBORw0KGgoAAAANSUhEUgAAAHgAAAA8CAYAAACtrX6oAAAACXBIWXMAAC4jAAAuIwF4pT92AAAAoklEQVR4nO3RAQkAMAzAsPk3vak4h5IoKHSWtPkdwFsGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcd1OAFhGyMXxbAAAAAElFTkSuQmCC))
+                (rectangle (start 1 1) (end 14 9) (uuid "frame-1"))
+                (text_box "Power input group" (at 5 5) (size 1 1) (uuid "description-1"))
+            )"#,
+        )
+        .expect("schematic parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"groups":{"power-input":{"members":["R1"],"description_uuid":"description-1","frame_uuid":"frame-1","minimum_frame_clearance_mm":2.0,"evidence":{"document":"Power input design note","page":2,"figure":"Figure 1"}}}}"#,
+        )
+        .expect("profile parses");
+
+        assert!(profile.validate(&schematic).iter().any(|item| {
+            item.code == "SCH012"
+                && item.message.contains("bitmap image Some(\"image-2\")")
+                && item.message.contains("2.00 mm clearance")
+        }));
+    }
+
+    #[test]
+    fn bitmap_bounds_use_legacy_resolution_migration_for_old_schematics() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "legacy-bitmap-resolution-test.kicad_sch",
+            r#"(kicad_sch
+                (version 20250114)
+                (image (at 0 0) (scale 1)
+                  (data iVBORw0KGgoAAAANSUhEUgAAAHgAAAA8CAYAAACtrX6oAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAAoklEQVR4nO3RAQkAMAzAsPk3vak4h5IoKHSWtPkdwFsGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcd1OAFhGyMXxbAAAAAElFTkSuQmCC))
+            )"#,
+        )
+        .expect("schematic parses");
+        let facts = SchematicFacts::from_document(&schematic);
+        let bounds = facts.images[0].bounds_mm.expect("PNG bounds");
+        let width = bounds.2 - bounds.0;
+        let expected = 120.0 * 25.4 / 94.0;
+        assert!((width - expected).abs() < 0.001);
     }
 
     fn decoupling_netlist(capacitor_target_net: &str) -> Netlist {
