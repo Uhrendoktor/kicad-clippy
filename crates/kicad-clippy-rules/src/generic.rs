@@ -1518,6 +1518,35 @@ struct SymbolTransform {
     convert: u32,
 }
 
+fn embedded_symbol_text_obstacle_diagnostics(
+    wire_index: usize,
+    wire: Segment,
+    texts: &[SchematicSymbolTextFact],
+) -> Vec<Diagnostic> {
+    texts
+        .iter()
+        .filter_map(|text| {
+            let (left, top, right, bottom) = text.bounds_mm;
+            let bounds = Bounds {
+                x: left,
+                y: top,
+                width: right - left,
+                height: bottom - top,
+            };
+            strict_line_hits_bounds(wire, bounds).then(|| {
+                at_segment(
+                    BuiltinRuleId::Sch013,
+                    &format!(
+                        "wire {wire_index} passes through embedded symbol {} {} {:?}",
+                        text.kind, text.reference, text.text
+                    ),
+                    wire,
+                )
+            })
+        })
+        .collect()
+}
+
 fn check_wire_obstacles(
     root: &Node,
     segments: &[Segment],
@@ -1574,25 +1603,11 @@ fn check_wire_obstacles(
                 ));
             }
         }
-        for text in &facts.symbol_texts {
-            let (left, top, right, bottom) = text.bounds_mm;
-            let bounds = Bounds {
-                x: left,
-                y: top,
-                width: right - left,
-                height: bottom - top,
-            };
-            if strict_line_hits_bounds(*segment, bounds) {
-                diagnostics.push(at_segment(
-                    BuiltinRuleId::Sch013,
-                    &format!(
-                        "wire {wire_index} passes through embedded symbol {} {} {:?}",
-                        text.kind, text.reference, text.text
-                    ),
-                    *segment,
-                ));
-            }
-        }
+        diagnostics.extend(embedded_symbol_text_obstacle_diagnostics(
+            wire_index,
+            *segment,
+            &facts.symbol_texts,
+        ));
         for pin in &facts.pins {
             let point = Point {
                 x: pin.position_mm.0,
