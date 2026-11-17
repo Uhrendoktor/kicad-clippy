@@ -557,8 +557,6 @@ fn parse_png_image_metadata(bytes: &[u8]) -> Option<BitmapImageMetadata> {
                 let pixels_per_meter = read_be_u32(bytes, data_start)?;
                 let unit_is_meter = bytes[data_start + 8] == 1;
                 if unit_is_meter && pixels_per_meter > 100 {
-                    let pixels_per_cm = f64::from(pixels_per_meter) / 100.0;
-                    ppi = (pixels_per_cm * 2.54).round() as u32;
                     ppi = pixels_per_meter_to_ppi(pixels_per_meter);
                     legacy_ppi = pixels_per_cm_to_ppi(pixels_per_meter / 100);
                 }
