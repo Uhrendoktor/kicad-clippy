@@ -1131,10 +1131,13 @@ fn wire_belongs_to_group(
     component_ids: &BTreeMap<String, usize>,
     member_components: &BTreeSet<usize>,
 ) -> bool {
-    [(wire.start_mm.0, wire.start_mm.1), (wire.end_mm.0, wire.end_mm.1)]
-        .iter()
-        .filter_map(|(x, y)| component_ids.get(&format!("{x:.3}:{y:.3}")))
-        .any(|component| member_components.contains(component))
+    [
+        (wire.start_mm.0, wire.start_mm.1),
+        (wire.end_mm.0, wire.end_mm.1),
+    ]
+    .iter()
+    .filter_map(|(x, y)| component_ids.get(&format!("{x:.3}:{y:.3}")))
+    .any(|component| member_components.contains(component))
 }
 
 fn validate_group_wire_containment(
@@ -1231,10 +1234,7 @@ fn validate_group_annotation_box_containment(
         .collect()
 }
 
-fn rectangles_overlap(
-    first: (f64, f64, f64, f64),
-    second: (f64, f64, f64, f64),
-) -> bool {
+fn rectangles_overlap(first: (f64, f64, f64, f64), second: (f64, f64, f64, f64)) -> bool {
     first.0 <= second.2 + 0.001
         && first.2 >= second.0 - 0.001
         && first.1 <= second.3 + 0.001
@@ -3615,7 +3615,10 @@ mod tests {
         .expect("profile parses");
 
         assert!(profile.validate(&schematic).iter().any(|item| {
-            item.code == "SCH009" && item.message.contains("symbol primitive extends outside frame")
+            item.code == "SCH009"
+                && item
+                    .message
+                    .contains("symbol primitive extends outside frame")
         }));
     }
 
@@ -3649,7 +3652,9 @@ mod tests {
 
         assert!(profile.validate(&schematic).iter().any(|item| {
             item.code == "SCH012"
-                && item.message.contains("symbol primitive does not maintain 2.00 mm clearance")
+                && item
+                    .message
+                    .contains("symbol primitive does not maintain 2.00 mm clearance")
         }));
     }
 
@@ -3683,12 +3688,16 @@ mod tests {
         .expect("profile parses");
         let diagnostics = profile.validate(&schematic);
 
-        assert!(diagnostics.iter().any(|item| {
-            item.code == "SCH009" && item.message.contains("member wire segment")
-        }));
-        assert!(diagnostics.iter().any(|item| {
-            item.code == "SCH009" && item.message.contains("member wire label")
-        }));
+        assert!(
+            diagnostics.iter().any(|item| {
+                item.code == "SCH009" && item.message.contains("member wire segment")
+            })
+        );
+        assert!(
+            diagnostics.iter().any(|item| {
+                item.code == "SCH009" && item.message.contains("member wire label")
+            })
+        );
         assert!(diagnostics.iter().any(|item| {
             item.code == "SCH009" && item.message.contains("annotation text box note-1")
         }));
@@ -3724,7 +3733,8 @@ mod tests {
         let diagnostics = profile.validate(&schematic);
 
         assert!(diagnostics.iter().any(|item| {
-            item.code == "SCH012" && item.message.contains("member wire label")
+            item.code == "SCH012"
+                && item.message.contains("member wire label")
                 && item.message.contains("2.00 mm clearance")
         }));
     }
