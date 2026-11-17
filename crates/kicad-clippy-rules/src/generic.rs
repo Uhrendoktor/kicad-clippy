@@ -305,7 +305,14 @@ fn collect_plain_text_facts(root: &Node) -> Vec<SchematicTextFact> {
 
 fn collect_sheet_graphic_facts(root: &Node) -> Vec<SchematicGraphicFact> {
     let mut graphics = Vec::new();
-    for kind in ["rectangle", "polyline", "polygon", "circle", "arc", "bezier"] {
+    for kind in [
+        "rectangle",
+        "polyline",
+        "polygon",
+        "circle",
+        "arc",
+        "bezier",
+    ] {
         for node in children(root, kind) {
             let uuid = child_list(node, "uuid")
                 .and_then(list_items)
@@ -344,8 +351,14 @@ fn sheet_graphic_bounds(node: &Node, kind: &str) -> Option<(f64, f64, f64, f64)>
         "bezier" => bezier_primitive_points(node)?,
         _ => return None,
     };
-    let min_x = points.iter().map(|point| point.0).fold(f64::INFINITY, f64::min);
-    let min_y = points.iter().map(|point| point.1).fold(f64::INFINITY, f64::min);
+    let min_x = points
+        .iter()
+        .map(|point| point.0)
+        .fold(f64::INFINITY, f64::min);
+    let min_y = points
+        .iter()
+        .map(|point| point.1)
+        .fold(f64::INFINITY, f64::min);
     let max_x = points
         .iter()
         .map(|point| point.0)
