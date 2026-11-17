@@ -144,6 +144,17 @@ pub struct SchematicTextFact {
     pub bounds_mm: Option<(f64, f64, f64, f64)>,
 }
 
+/// A top-level vector graphic and its approximate sheet-space bounds.
+#[derive(Clone, Debug)]
+pub struct SchematicGraphicFact {
+    /// Graphic kind: rectangle, polyline, polygon, circle, arc or bezier.
+    pub kind: String,
+    /// Stable object UUID, when present in the schematic.
+    pub uuid: Option<String>,
+    /// Approximate bounds including half the graphic stroke width.
+    pub bounds_mm: Option<(f64, f64, f64, f64)>,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct SchematicFacts {
     /// Placed symbol instances.
@@ -152,6 +163,8 @@ pub struct SchematicFacts {
     pub text_boxes: Vec<TextBoxFact>,
     /// Free-standing text objects with estimated visible glyph geometry.
     pub texts: Vec<SchematicTextFact>,
+    /// Top-level vector graphics with approximate sheet-space bounds.
+    pub graphics: Vec<SchematicGraphicFact>,
     /// Native `KiCad` schematic groups.
     pub groups: Vec<SchematicGroupFact>,
     /// Top-level rectangular frames on the schematic sheet.
@@ -193,6 +206,7 @@ impl SchematicFacts {
             components: collect_component_facts(root),
             text_boxes: collect_text_box_facts(root),
             texts: collect_plain_text_facts(root),
+            graphics: collect_sheet_graphic_facts(root),
             groups: collect_group_facts(root),
             frames: collect_frame_facts(root),
             wires: segments
@@ -287,6 +301,65 @@ fn collect_plain_text_facts(root: &Node) -> Vec<SchematicTextFact> {
             })
         })
         .collect()
+}
+
+fn collect_sheet_graphic_facts(root: &Node) -> Vec<SchematicGraphicFact> {
+    let mut graphics = Vec::new();
+    for kind in ["rectangle", "polyline", "polygon", "circle", "arc", "bezier"] {
+        for node in children(root, kind) {
+            let uuid = child_list(node, "uuid")
+                .and_then(list_items)
+                .and_then(|items| items.get(1))
+                .and_then(atom_value)
+                .map(str::to_owned);
+            let bounds_mm = sheet_graphic_bounds(node, kind);
+            graphics.push(SchematicGraphicFact {
+                kind: kind.to_owned(),
+                uuid,
+                bounds_mm,
+            });
+        }
+    }
+    graphics
+}
+
+fn sheet_graphic_bounds(node: &Node, kind: &str) -> Option<(f64, f64, f64, f64)> {
+    let stroke_margin = symbol_primitive_stroke_width(node) / 2.0 + 0.01;
+    if kind == "circle" {
+        let center = child_list(node, "center").and_then(list_items)?;
+        let radius = child_list(node, "radius")
+            .and_then(list_items)
+            .and_then(|items| items.get(1))
+            .and_then(number)?
+            .abs()
+            + stroke_margin;
+        let x = number(center.get(1)?)?;
+        let y = number(center.get(2)?)?;
+        return Some((x - radius, y - radius, x + radius, y + radius));
+    }
+    let points = match kind {
+        "rectangle" => rectangle_primitive_points(node)?,
+        "polyline" | "polygon" => polyline_primitive_points(node)?,
+        "arc" => arc_primitive_points(node)?,
+        "bezier" => bezier_primitive_points(node)?,
+        _ => return None,
+    };
+    let min_x = points.iter().map(|point| point.0).fold(f64::INFINITY, f64::min);
+    let min_y = points.iter().map(|point| point.1).fold(f64::INFINITY, f64::min);
+    let max_x = points
+        .iter()
+        .map(|point| point.0)
+        .fold(f64::NEG_INFINITY, f64::max);
+    let max_y = points
+        .iter()
+        .map(|point| point.1)
+        .fold(f64::NEG_INFINITY, f64::max);
+    (min_x.is_finite() && min_y.is_finite() && max_x.is_finite() && max_y.is_finite()).then_some((
+        min_x - stroke_margin,
+        min_y - stroke_margin,
+        max_x + stroke_margin,
+        max_y + stroke_margin,
+    ))
 }
 
 fn collect_group_facts(root: &Node) -> Vec<SchematicGroupFact> {
