@@ -1192,11 +1192,7 @@ fn circular_arc_through_three_points(
     let center_x = circle.center.x;
     let center_y = circle.center.y;
     let radius = circle.radius.abs();
-    if !center_x.is_finite()
-        || !center_y.is_finite()
-        || !radius.is_finite()
-        || radius <= 1.0e-9
-    {
+    if !center_x.is_finite() || !center_y.is_finite() || !radius.is_finite() || radius <= 1.0e-9 {
         return None;
     }
 
@@ -1622,9 +1618,7 @@ fn wire_crosses_symbol_primitive(
     if let Some(arc) = primitive.arc_mm {
         if segment_arc_intersection_points(wire, arc)
             .into_iter()
-            .any(|point| {
-                !wire_intersection_is_allowed_pin(point, wire, &primitive.reference, pins)
-            })
+            .any(|point| !wire_intersection_is_allowed_pin(point, wire, &primitive.reference, pins))
         {
             return true;
         }
@@ -3388,27 +3382,21 @@ mod tests {
         };
 
         let midpoint = (2.0 / 2.0_f64.sqrt(), 2.0 / 2.0_f64.sqrt());
-        let sampled = super::sample_arc_through_three_points(
-            (2.0, 0.0),
-            midpoint,
-            (0.0, 2.0),
-        );
-        assert!(
-            !sampled.windows(2).any(|pair| {
-                !super::segment_intersection_points(
-                    wire,
-                    super::Point {
-                        x: pair[0].0,
-                        y: pair[0].1,
-                    },
-                    super::Point {
-                        x: pair[1].0,
-                        y: pair[1].1,
-                    },
-                )
-                .is_empty()
-            })
-        );
+        let sampled = super::sample_arc_through_three_points((2.0, 0.0), midpoint, (0.0, 2.0));
+        assert!(!sampled.windows(2).any(|pair| {
+            !super::segment_intersection_points(
+                wire,
+                super::Point {
+                    x: pair[0].0,
+                    y: pair[0].1,
+                },
+                super::Point {
+                    x: pair[1].0,
+                    y: pair[1].1,
+                },
+            )
+            .is_empty()
+        }));
         let graphic = super::SchematicGraphicFact {
             kind: "arc".to_owned(),
             uuid: None,
@@ -3944,14 +3932,9 @@ mod tests {
               (xy 1.8739779646681292 0.7268470182495735)))
             "#,
         );
-        assert!(
-            run_builtin_rules(&doc)
-                .diagnostics
-                .iter()
-                .any(|item| {
-                    item.code == "SCH013" && item.message.contains("sheet graphic arc")
-                })
-        );
+        assert!(run_builtin_rules(&doc).diagnostics.iter().any(|item| {
+            item.code == "SCH013" && item.message.contains("sheet graphic arc")
+        }));
     }
 
     #[test]
