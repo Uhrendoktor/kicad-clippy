@@ -969,6 +969,9 @@ fn validate_group_containment(
     diagnostics.extend(validate_group_annotation_box_containment(
         group_id, group, facts, frame_uuid, bounds,
     ));
+    diagnostics.extend(validate_group_plain_text_containment(
+        group_id, group, facts, frame_uuid, bounds,
+    ));
     diagnostics
 }
 
@@ -1151,7 +1154,10 @@ fn validate_group_wire_containment(
     facts
         .wires
         .iter()
-        .filter(|wire| wire_belongs_to_group(wire, &component_ids, &member_components))
+        .filter(|wire| {
+            wire_belongs_to_group(wire, &component_ids, &member_components)
+                || wire_overlaps_frame(wire, frame_bounds)
+        })
         .filter(|wire| {
             !point_inside_frame(frame_bounds, wire.start_mm)
                 || !point_inside_frame(frame_bounds, wire.end_mm)
@@ -1182,9 +1188,14 @@ fn validate_group_label_containment(
         .iter()
         .filter(|label| {
             let key = format!("{:.3}:{:.3}", label.position_mm.0, label.position_mm.1);
-            component_ids
+            let member_wire_label = component_ids
                 .get(&key)
-                .is_some_and(|component| member_components.contains(component))
+                .is_some_and(|component| member_components.contains(component));
+            member_wire_label
+                || point_inside_frame(frame_bounds, label.position_mm)
+                || label
+                    .bounds_mm
+                    .is_some_and(|bounds| rectangles_overlap(bounds, frame_bounds))
         })
         .filter(|label| {
             label.bounds_mm.map_or_else(
@@ -1232,6 +1243,59 @@ fn validate_group_annotation_box_containment(
             })
         })
         .collect()
+}
+
+fn validate_group_plain_text_containment(
+    group_id: &str,
+    group: &GroupIntent,
+    facts: &SchematicFacts,
+    frame_uuid: &str,
+    frame_bounds: (f64, f64, f64, f64),
+) -> Vec<Diagnostic> {
+    facts
+        .texts
+        .iter()
+        .filter_map(|text| {
+            let bounds = text.bounds_mm?;
+            (rectangles_overlap(bounds, frame_bounds)
+                && !rectangle_inside_frame(bounds, frame_bounds))
+            .then(|| {
+                Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch009,
+                    Severity::Error,
+                    format!(
+                        "group {group_id} plain text annotation {:?} extends outside frame {frame_uuid}",
+                        text.text
+                    ),
+                )
+            })
+        })
+        .collect()
+}
+
+fn wire_overlaps_frame(
+    wire: &crate::generic::SchematicWireFact,
+    frame_bounds: (f64, f64, f64, f64),
+) -> bool {
+    let (x1, y1) = wire.start_mm;
+    let (x2, y2) = wire.end_mm;
+    let (left, top, right, bottom) = frame_bounds;
+    if (y1 - y2).abs() < 0.001 {
+        y1 >= top - 0.001
+            && y1 <= bottom + 0.001
+            && x1.min(x2) <= right + 0.001
+            && x1.max(x2) >= left - 0.001
+    } else if (x1 - x2).abs() < 0.001 {
+        x1 >= left - 0.001
+            && x1 <= right + 0.001
+            && y1.min(y2) <= bottom + 0.001
+            && y1.max(y2) >= top - 0.001
+    } else {
+        rectangles_overlap(
+            (x1.min(x2), y1.min(y2), x1.max(x2), y1.max(y2)),
+            frame_bounds,
+        )
+    }
 }
 
 fn rectangles_overlap(first: (f64, f64, f64, f64), second: (f64, f64, f64, f64)) -> bool {
@@ -1348,6 +1412,9 @@ fn validate_frame_clearance(
         group_id, group, facts, frame_uuid, bounds, clearance,
     ));
     diagnostics.extend(validate_group_annotation_box_clearance(
+        group_id, group, facts, frame_uuid, bounds, clearance,
+    ));
+    diagnostics.extend(validate_group_plain_text_clearance(
         group_id, group, facts, frame_uuid, bounds, clearance,
     ));
     diagnostics
@@ -1512,7 +1579,10 @@ fn validate_group_wire_clearance(
     facts
         .wires
         .iter()
-        .filter(|wire| wire_belongs_to_group(wire, &component_ids, &member_components))
+        .filter(|wire| {
+            wire_belongs_to_group(wire, &component_ids, &member_components)
+                || wire_overlaps_frame(wire, frame_bounds)
+        })
         .filter(|wire| {
             !point_inside_frame_with_clearance(frame_bounds, wire.start_mm, clearance)
                 || !point_inside_frame_with_clearance(frame_bounds, wire.end_mm, clearance)
@@ -1544,9 +1614,14 @@ fn validate_group_label_clearance(
         .iter()
         .filter(|label| {
             let key = format!("{:.3}:{:.3}", label.position_mm.0, label.position_mm.1);
-            component_ids
+            let member_wire_label = component_ids
                 .get(&key)
-                .is_some_and(|component| member_components.contains(component))
+                .is_some_and(|component| member_components.contains(component));
+            member_wire_label
+                || point_inside_frame(frame_bounds, label.position_mm)
+                || label
+                    .bounds_mm
+                    .is_some_and(|bounds| rectangles_overlap(bounds, frame_bounds))
         })
         .filter(|label| {
             label.bounds_mm.map_or_else(
@@ -1590,6 +1665,35 @@ fn validate_group_annotation_box_clearance(
                     format!(
                         "group {group_id} annotation text box {} does not maintain {clearance:.2} mm clearance from frame {frame_uuid}",
                         text_box.uuid
+                    ),
+                )
+            })
+        })
+        .collect()
+}
+
+fn validate_group_plain_text_clearance(
+    group_id: &str,
+    group: &GroupIntent,
+    facts: &SchematicFacts,
+    frame_uuid: &str,
+    frame_bounds: (f64, f64, f64, f64),
+    clearance: f64,
+) -> Vec<Diagnostic> {
+    facts
+        .texts
+        .iter()
+        .filter_map(|text| {
+            let bounds = text.bounds_mm?;
+            (rectangles_overlap(bounds, frame_bounds)
+                && !rectangle_inside_frame_with_clearance(bounds, frame_bounds, clearance))
+            .then(|| {
+                Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch012,
+                    Severity::Error,
+                    format!(
+                        "group {group_id} plain text annotation {:?} does not maintain {clearance:.2} mm clearance from frame {frame_uuid}",
+                        text.text
                     ),
                 )
             })
