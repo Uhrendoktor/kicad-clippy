@@ -2735,8 +2735,8 @@ mod tests {
         let diagonal = super::transform_symbol_point(2.0, 3.0, 45.0, None)
             .expect("finite non-cardinal KiCad transform");
         let radians = 45.0_f64.to_radians();
-        let expected_x = 2.0 * radians.cos() - 3.0 * radians.sin();
-        let expected_y = -(2.0 * radians.sin() + 3.0 * radians.cos());
+        let expected_x = 3.0_f64.mul_add(-radians.sin(), 2.0 * radians.cos());
+        let expected_y = -3.0_f64.mul_add(radians.cos(), 2.0 * radians.sin());
         assert!((diagonal.0 - expected_x).abs() < 0.001);
         assert!((diagonal.1 - expected_y).abs() < 0.001);
         assert!(super::transform_symbol_point(2.0, 3.0, 0.0, Some("diagonal")).is_none());
