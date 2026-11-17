@@ -1863,11 +1863,7 @@ fn table_stroke_obstacle_diagnostics(
     table_strokes
         .iter()
         .filter(|table_stroke| {
-            wire_crosses_sheet_graphic_with_wire_stroke(
-                segment,
-                table_stroke,
-                wire_stroke_width_mm,
-            )
+            wire_crosses_sheet_graphic_with_wire_stroke(segment, table_stroke, wire_stroke_width_mm)
         })
         .map(|table_stroke| {
             at_segment(
