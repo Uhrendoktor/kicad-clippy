@@ -578,7 +578,7 @@ fn cumulative_positions(origin: f64, sizes: &[f64]) -> Vec<f64> {
 
 fn table_line_fact(
     kind: &str,
-    uuid: &Option<String>,
+    uuid: Option<&str>,
     start: (f64, f64),
     end: (f64, f64),
     stroke_width_mm: f64,
@@ -586,7 +586,7 @@ fn table_line_fact(
     let margin = stroke_width_mm / 2.0 + 0.01;
     SchematicGraphicFact {
         kind: kind.to_owned(),
-        uuid: uuid.clone(),
+        uuid: uuid.map(str::to_owned),
         bounds_mm: Some((
             start.0.min(end.0) - margin,
             start.1.min(end.1) - margin,
@@ -615,7 +615,7 @@ fn append_table_outline(
     for index in 0..corners.len() {
         graphics.push(table_line_fact(
             "table border",
-            &layout.uuid,
+            layout.uuid.as_deref(),
             corners[index],
             corners[(index + 1) % corners.len()],
             stroke_width_mm,
@@ -652,7 +652,7 @@ fn append_table_separators(
             };
             graphics.push(table_line_fact(
                 "table separator",
-                &layout.uuid,
+                layout.uuid.as_deref(),
                 (column_positions[column + column_span], row_positions[row]),
                 (
                     column_positions[column + column_span],
@@ -678,7 +678,7 @@ fn append_table_separators(
             };
             graphics.push(table_line_fact(
                 "table separator",
-                &layout.uuid,
+                layout.uuid.as_deref(),
                 (column_positions[column], row_positions[row + row_span]),
                 (
                     column_positions[column + column_span],
@@ -1854,6 +1854,34 @@ fn embedded_symbol_text_obstacle_diagnostics(
         .collect()
 }
 
+fn table_stroke_obstacle_diagnostics(
+    wire_index: usize,
+    segment: Segment,
+    table_strokes: &[SchematicGraphicFact],
+    wire_stroke_width_mm: f64,
+) -> Vec<Diagnostic> {
+    table_strokes
+        .iter()
+        .filter(|table_stroke| {
+            wire_crosses_sheet_graphic_with_wire_stroke(
+                segment,
+                table_stroke,
+                wire_stroke_width_mm,
+            )
+        })
+        .map(|table_stroke| {
+            at_segment(
+                BuiltinRuleId::Sch013,
+                &format!(
+                    "wire {wire_index} penetrates sheet graphic {} {:?}",
+                    table_stroke.kind, table_stroke.uuid
+                ),
+                segment,
+            )
+        })
+        .collect()
+}
+
 fn check_wire_obstacles(
     root: &Node,
     segments: &[Segment],
@@ -1909,22 +1937,12 @@ fn check_wire_obstacles(
                 ));
             }
         }
-        for table_stroke in &table_strokes {
-            if wire_crosses_sheet_graphic_with_wire_stroke(
-                *segment,
-                table_stroke,
-                wire_stroke_width_mm,
-            ) {
-                diagnostics.push(at_segment(
-                    BuiltinRuleId::Sch013,
-                    &format!(
-                        "wire {wire_index} penetrates sheet graphic {} {:?}",
-                        table_stroke.kind, table_stroke.uuid
-                    ),
-                    *segment,
-                ));
-            }
-        }
+        diagnostics.extend(table_stroke_obstacle_diagnostics(
+            wire_index,
+            *segment,
+            &table_strokes,
+            wire_stroke_width_mm,
+        ));
         for image in &facts.images {
             if image
                 .bounds_mm
