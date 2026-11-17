@@ -43,7 +43,7 @@ The profile format is deliberately explicit; project-specific expectations are n
 ## Next: physical connectivity and symbol geometry
 
 1. Extend the current physical-wire graph and SCH004 profile contracts to infer or declare broader project-specific physical connectivity beyond explicit pin pairs and common-pin groups. Labels must never create physical connectivity edges.
-2. Extend SCH013 beyond its current selected-unit primitive coverage and consider exact analytic arc intersections if the bounded polyline approximation proves insufficient.
+2. Refine SCH013's current selected-unit, top-level vector and PNG/JPEG image obstacle coverage: add exact analytic arc intersections if the bounded polyline approximation proves insufficient, and identify any remaining unsupported obstacle classes.
 3. Extend SCH009/SCH012 beyond the current vector graphics and PNG/JPEG bitmap bounds to cover unsupported image encodings and remaining annotation types; improve exact body-curve coverage.
 4. Broaden multi-unit, alternate-convert and mirrored transform coverage. Finite non-cardinal rotations now resolve pin and primitive coordinates for frame/obstacle rules; SCH005 axis checks remain cardinal-only, and unresolvable geometry must continue to be skipped conservatively.
 
