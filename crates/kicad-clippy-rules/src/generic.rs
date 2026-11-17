@@ -2804,6 +2804,24 @@ mod tests {
     }
 
     #[test]
+    fn sch015_accepts_no_connect_marker_on_non_cardinal_symbol_pin() {
+        let source = EMBEDDED_PIN.replace("(at 10 10 0)", "(at 10 10 45)");
+        let unmarked = document(&source);
+        let facts = super::SchematicFacts::from_document(&unmarked);
+        let (x, y) = facts.pins[0].position_mm;
+        let marked = document(&format!(
+            "{source} (no_connect (at {x:.3} {y:.3}) (uuid \"no-connect-rotated-pin\"))"
+        ));
+
+        assert!(
+            !run_builtin_rules(&marked)
+                .diagnostics
+                .iter()
+                .any(|item| item.code == "SCH015")
+        );
+    }
+
+    #[test]
     fn pin_wire_must_follow_the_embedded_pin_axis() {
         let doc = document(&format!(
             "{EMBEDDED_PIN} (wire (pts (xy 10 7.46) (xy 11.27 7.46)))"
