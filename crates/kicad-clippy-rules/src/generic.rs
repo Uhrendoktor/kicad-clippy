@@ -511,9 +511,7 @@ fn schematic_table_layout(table: &Node) -> Option<SchematicTableLayout> {
     // KiCad's table renderer rotates its cell-corner paths by the first cell's
     // text angle. Defer nonzero rotations rather than substituting an AABB.
     if !angle.is_finite()
-        || angle.abs() > 0.001
-            && (angle - 360.0).abs() > 0.001
-            && (angle + 360.0).abs() > 0.001
+        || angle.abs() > 0.001 && (angle - 360.0).abs() > 0.001 && (angle + 360.0).abs() > 0.001
     {
         return None;
     }
@@ -529,9 +527,7 @@ fn schematic_table_layout(table: &Node) -> Option<SchematicTableLayout> {
         let column = index % columns;
         let column_end = column.checked_add(column_span)?;
         let row_end = row.checked_add(row_span)?;
-        if (column_span > 0 && column_end > columns)
-            || (row_span > 0 && row_end > rows)
-        {
+        if (column_span > 0 && column_end > columns) || (row_span > 0 && row_end > rows) {
             return None;
         }
     }
@@ -636,8 +632,7 @@ fn append_table_separators(
     border_width_mm: f64,
     separator_width_mm: f64,
 ) {
-    let column_positions =
-        cumulative_positions(layout.origin_mm.0, &layout.column_widths_mm);
+    let column_positions = cumulative_positions(layout.origin_mm.0, &layout.column_widths_mm);
     let row_positions = cumulative_positions(layout.origin_mm.1, &layout.row_heights_mm);
     let columns = layout.column_widths_mm.len();
     let rows = layout.row_heights_mm.len();
@@ -684,10 +679,7 @@ fn append_table_separators(
             graphics.push(table_line_fact(
                 "table separator",
                 &layout.uuid,
-                (
-                    column_positions[column],
-                    row_positions[row + row_span],
-                ),
+                (column_positions[column], row_positions[row + row_span]),
                 (
                     column_positions[column + column_span],
                     row_positions[row + row_span],
@@ -4238,12 +4230,16 @@ mod tests {
         );
 
         let diagnostics = run_builtin_rules(&document).diagnostics;
-        assert!(diagnostics.iter().any(|item| {
-            item.code == "SCH013" && item.message.contains("table border")
-        }));
-        assert!(diagnostics.iter().any(|item| {
-            item.code == "SCH013" && item.message.contains("table separator")
-        }));
+        assert!(
+            diagnostics
+                .iter()
+                .any(|item| { item.code == "SCH013" && item.message.contains("table border") })
+        );
+        assert!(
+            diagnostics
+                .iter()
+                .any(|item| { item.code == "SCH013" && item.message.contains("table separator") })
+        );
     }
 
     #[test]
@@ -4262,10 +4258,12 @@ mod tests {
               (separators (rows no) (cols yes) (stroke (width 0.1))))
             "#,
         );
-        assert!(!run_builtin_rules(&no_strokes)
-            .diagnostics
-            .iter()
-            .any(|item| item.code == "SCH013" && item.message.contains("table")));
+        assert!(
+            !run_builtin_rules(&no_strokes)
+                .diagnostics
+                .iter()
+                .any(|item| item.code == "SCH013" && item.message.contains("table"))
+        );
 
         let disabled_separators = document(
             r#"
@@ -4281,10 +4279,12 @@ mod tests {
               (separators (rows no) (cols no)))
             "#,
         );
-        assert!(!run_builtin_rules(&disabled_separators)
-            .diagnostics
-            .iter()
-            .any(|item| item.code == "SCH013" && item.message.contains("table")));
+        assert!(
+            !run_builtin_rules(&disabled_separators)
+                .diagnostics
+                .iter()
+                .any(|item| item.code == "SCH013" && item.message.contains("table"))
+        );
     }
 
     #[test]
