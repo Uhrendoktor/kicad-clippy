@@ -132,6 +132,18 @@ pub struct SchematicPrimitiveFact {
 }
 
 #[derive(Clone, Debug)]
+pub struct SchematicSymbolTextFact {
+    /// Placed-symbol reference that owns the text.
+    pub reference: String,
+    /// Embedded primitive kind: `text` or `text_box`.
+    pub kind: String,
+    /// Text content.
+    pub text: String,
+    /// Estimated or declared bounds in sheet coordinates (left, top, right, bottom).
+    pub bounds_mm: (f64, f64, f64, f64),
+}
+
+#[derive(Clone, Debug)]
 pub struct SchematicLabelFact {
     /// Label form: `local`, `hierarchical_label`, or `global_label`.
     pub kind: String,
@@ -218,6 +230,8 @@ pub struct SchematicFacts {
     pub visible_fields: Vec<SchematicFieldFact>,
     /// Transformed outlines from embedded symbol primitives.
     pub symbol_primitives: Vec<SchematicPrimitiveFact>,
+    /// Embedded library-symbol text and text-box obstacles in sheet coordinates.
+    pub symbol_texts: Vec<SchematicSymbolTextFact>,
     /// Label anchors used to ensure labels are not mistaken for physical wires.
     pub labels: Vec<SchematicLabelFact>,
     /// Explicit junction marker coordinates.
@@ -261,6 +275,7 @@ impl SchematicFacts {
             pins: collect_pin_facts(root),
             visible_fields: collect_symbol_field_facts(root),
             symbol_primitives: collect_symbol_primitive_facts(root),
+            symbol_texts: collect_symbol_text_facts(root),
             labels: collect_label_facts(root),
             junctions: junctions.iter().map(|point| (point.x, point.y)).collect(),
         }
@@ -960,6 +975,102 @@ fn collect_instance_primitives(
         .collect()
 }
 
+fn collect_symbol_text_facts(root: &Node) -> Vec<SchematicSymbolTextFact> {
+    let Some(library_symbols) = child_list(root, "lib_symbols") else {
+        return Vec::new();
+    };
+    let definitions: Vec<_> = children(library_symbols, "symbol").collect();
+    let mut texts = Vec::new();
+
+    for instance in children(root, "symbol") {
+        let Some(transform) = read_symbol_transform(instance) else {
+            continue;
+        };
+        let Some(lib_id) = child_list(instance, "lib_id")
+            .and_then(list_items)
+            .and_then(|items| items.get(1))
+            .and_then(atom_value)
+        else {
+            continue;
+        };
+        let Some(definition) = definitions.iter().copied().find(|definition| {
+            list_items(definition)
+                .and_then(|items| items.get(1))
+                .and_then(atom_value)
+                .is_some_and(|name| name == lib_id)
+        }) else {
+            continue;
+        };
+
+        for unit in selected_symbol_units(definition, transform.unit, transform.convert) {
+            texts.extend(collect_symbol_text_from_unit(unit, &transform));
+        }
+    }
+
+    texts
+}
+
+fn collect_symbol_text_from_unit(
+    unit: &Node,
+    transform: &SymbolTransform,
+) -> Vec<SchematicSymbolTextFact> {
+    let mut texts = Vec::new();
+    for (kind, nodes) in [("text", children(unit, "text")), ("text_box", children(unit, "text_box"))] {
+        for node in nodes {
+            if property_is_hidden(node) {
+                continue;
+            }
+            let Some(text) = list_items(node)
+                .and_then(|items| items.get(1))
+                .and_then(atom_value)
+            else {
+                continue;
+            };
+            let local_bounds = if kind == "text" {
+                text_visual_bounds(text, node)
+            } else {
+                text_box_bounds(node)
+            };
+            let Some(bounds) = local_bounds.and_then(|bounds| transform_symbol_bounds(bounds, transform)) else {
+                continue;
+            };
+            texts.push(SchematicSymbolTextFact {
+                reference: transform.reference.clone(),
+                kind: kind.to_owned(),
+                text: text.to_owned(),
+                bounds_mm: (bounds.x, bounds.y, bounds.x + bounds.width, bounds.y + bounds.height),
+            });
+        }
+    }
+    texts
+}
+
+fn transform_symbol_bounds(bounds: Bounds, transform: &SymbolTransform) -> Option<Bounds> {
+    let points = [
+        (bounds.x, bounds.y),
+        (bounds.x + bounds.width, bounds.y),
+        (bounds.x + bounds.width, bounds.y + bounds.height),
+        (bounds.x, bounds.y + bounds.height),
+    ];
+    let transformed = transform_primitive_points(&points, transform)?;
+    if transformed
+        .iter()
+        .any(|(x, y)| !x.is_finite() || !y.is_finite())
+    {
+        return None;
+    }
+    let left = transformed.iter().map(|point| point.0).fold(f64::INFINITY, f64::min);
+    let top = transformed.iter().map(|point| point.1).fold(f64::INFINITY, f64::min);
+    let right = transformed.iter().map(|point| point.0).fold(f64::NEG_INFINITY, f64::max);
+    let bottom = transformed.iter().map(|point| point.1).fold(f64::NEG_INFINITY, f64::max);
+    Some(Bounds {
+        x: left,
+        y: top,
+        width: right - left,
+        height: bottom - top,
+    })
+}
+
 fn selected_symbol_units(definition: &Node, unit: u32, convert: u32) -> Vec<&Node> {
     let sub_symbols: Vec<_> = children(definition, "symbol").collect();
     if sub_symbols.is_empty() {
@@ -1436,6 +1547,25 @@ fn check_wire_obstacles(
                     &format!(
                         "wire {wire_index} penetrates embedded bitmap image {:?}",
                         image.uuid
+                    ),
+                    *segment,
+                ));
+            }
+        }
+        for text in &facts.symbol_texts {
+            let (left, top, right, bottom) = text.bounds_mm;
+            let bounds = Bounds {
+                x: left,
+                y: top,
+                width: right - left,
+                height: bottom - top,
+            };
+            if strict_line_hits_bounds(*segment, bounds) {
+                diagnostics.push(at_segment(
+                    BuiltinRuleId::Sch013,
+                    &format!(
+                        "wire {wire_index} passes through embedded symbol {} {} {:?}",
+                        text.kind, text.reference, text.text
                     ),
                     *segment,
                 ));
@@ -4265,6 +4395,74 @@ mod tests {
                 .iter()
                 .any(|item| item.code == "SCH013" && item.message.contains("symbol body Q1"))
         );
+    }
+
+    #[test]
+    fn sch013_checks_embedded_symbol_text_and_text_box_obstacles() {
+        let doc = document(
+            r#"
+            (lib_symbols
+              (symbol "Test:Annotated"
+                (symbol "Annotated_1_1"
+                  (text "SENSE" (at 0 0 0) (effects (font (size 1 1))))
+                  (text_box "NOTE" (at 5 0) (size 2 2)
+                    (margins 0.2 0.2 0.2 0.2)
+                    (stroke (width 0.1)) (effects (font (size 1 1))))
+                )
+              )
+            )
+            (symbol (lib_id "Test:Annotated") (at 10 10 0) (unit 1)
+              (property "Reference" "U1" (at 10 10 0) (effects (font (size 1 1))))
+            )
+            (wire (pts (xy 9 9.5) (xy 11 9.5)))
+            (wire (pts (xy 14 11) (xy 18 11)))
+            "#,
+        );
+        let facts = super::SchematicFacts::from_document(&doc);
+        assert_eq!(facts.symbol_texts.len(), 2);
+        assert!(facts.symbol_texts.iter().any(|text| text.kind == "text"));
+        assert!(facts.symbol_texts.iter().any(|text| text.kind == "text_box"));
+        let diagnostics = run_builtin_rules(&doc).diagnostics;
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "SCH013"
+                && item.message.contains("embedded symbol text")
+                && item.message.contains("U1")
+                && item.message.contains("SENSE")
+        }));
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "SCH013"
+                && item.message.contains("embedded symbol text_box")
+                && item.message.contains("U1")
+                && item.message.contains("NOTE")
+        }));
+    }
+
+    #[test]
+    fn sch013_transforms_embedded_symbol_text_obstacles_with_symbol_mirrors_and_rotation() {
+        let source = r#"
+            (lib_symbols
+              (symbol "Test:Annotated"
+                (symbol "Annotated_1_1"
+                  (text "ROTATED" (at 1 0 0) (effects (font (size 1 1))))
+                )
+              )
+            )
+            (symbol (lib_id "Test:Annotated") (at 10 10 90) (mirror x) (unit 1)
+              (property "Reference" "U1" (at 10 10 0) (effects (font (size 1 1))))
+            )
+            (wire (pts (xy 9.5 10.7) (xy 10.5 10.7)))
+        "#;
+        let doc = document(source);
+        let facts = super::SchematicFacts::from_document(&doc);
+        assert_eq!(facts.symbol_texts.len(), 1);
+        let bounds = facts.symbol_texts[0].bounds_mm;
+        assert!(bounds.0.is_finite() && bounds.1.is_finite());
+        assert!(bounds.2 > bounds.0 && bounds.3 > bounds.1);
+        assert!(run_builtin_rules(&doc).diagnostics.iter().any(|item| {
+            item.code == "SCH013"
+                && item.message.contains("embedded symbol text")
+                && item.message.contains("ROTATED")
+        }));
     }
 
     #[test]
