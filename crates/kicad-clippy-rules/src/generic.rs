@@ -1459,10 +1459,12 @@ pub fn run_geometry_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
     let mut diagnostics = check_wire_geometry(root, context.segments, context.junctions);
     diagnostics.extend(check_pin_orientation(root, context.segments));
     diagnostics.extend(check_no_connect_markers(root));
+    let wire_stroke_widths = collect_explicit_wire_stroke_widths(root);
     diagnostics.extend(check_wire_obstacles(
         root,
         context.segments,
         context.facts(),
+        &wire_stroke_widths,
     ));
     diagnostics
 }
@@ -1551,6 +1553,7 @@ fn check_wire_obstacles(
     root: &Node,
     segments: &[Segment],
     facts: &SchematicFacts,
+    wire_stroke_widths: &BTreeMap<usize, f64>,
 ) -> Vec<Diagnostic> {
     let fields = collect_visible_field_bounds(root);
     let text_boxes: Vec<_> = children(root, "text_box")
@@ -1560,10 +1563,19 @@ fn check_wire_obstacles(
     let mut diagnostics = Vec::new();
 
     for (wire_index, segment) in segments.iter().enumerate() {
+        let wire_stroke_width_mm = wire_stroke_widths
+            .get(&segment.span.start)
+            .copied()
+            .unwrap_or(0.0);
         let mut reported_symbols = BTreeSet::new();
         for primitive in &facts.symbol_primitives {
             if !reported_symbols.contains(&primitive.reference)
-                && wire_crosses_symbol_primitive(*segment, primitive, &facts.pins)
+                && wire_crosses_symbol_primitive_with_wire_stroke(
+                    *segment,
+                    primitive,
+                    &facts.pins,
+                    wire_stroke_width_mm,
+                )
             {
                 reported_symbols.insert(primitive.reference.clone());
                 diagnostics.push(at_segment(
@@ -1577,7 +1589,11 @@ fn check_wire_obstacles(
             }
         }
         for graphic in &facts.graphics {
-            if wire_crosses_sheet_graphic(*segment, graphic) {
+            if wire_crosses_sheet_graphic_with_wire_stroke(
+                *segment,
+                graphic,
+                wire_stroke_width_mm,
+            ) {
                 diagnostics.push(at_segment(
                     BuiltinRuleId::Sch013,
                     &format!(
@@ -1901,11 +1917,13 @@ fn wire_within_circle_stroke(
     center: Point,
     radius_mm: f64,
     stroke_width_mm: f64,
+    wire_stroke_width_mm: f64,
 ) -> bool {
     if !center.x.is_finite()
         || !center.y.is_finite()
         || !radius_mm.is_finite()
         || !stroke_width_mm.is_finite()
+        || !wire_stroke_width_mm.is_finite()
         || !wire.start.x.is_finite()
         || !wire.start.y.is_finite()
         || !wire.end.x.is_finite()
@@ -1916,8 +1934,11 @@ fn wire_within_circle_stroke(
 
     let radius = radius_mm.abs();
     let half_stroke = stroke_width_mm.abs() / 2.0;
+    let wire_radius = wire_stroke_width_mm.max(0.0) / 2.0;
     let inner_radius = (radius - half_stroke).max(0.0);
     let outer_radius = radius + half_stroke;
+    let effective_inner_radius = (inner_radius - wire_radius).max(0.0);
+    let effective_outer_radius = outer_radius + wire_radius;
     let minimum_distance = point_segment_distance(center, wire.start, wire.end);
     let maximum_distance = distance(center, wire.start).max(distance(center, wire.end));
     if !minimum_distance.is_finite() || !maximum_distance.is_finite() {
@@ -1925,15 +1946,33 @@ fn wire_within_circle_stroke(
     }
 
     let intersects_stroke_ring = minimum_distance
-        <= outer_radius + SCH013_STROKE_DISTANCE_EPSILON_MM
-        && maximum_distance + SCH013_STROKE_DISTANCE_EPSILON_MM >= inner_radius;
+        <= effective_outer_radius + SCH013_STROKE_DISTANCE_EPSILON_MM
+        && maximum_distance + SCH013_STROKE_DISTANCE_EPSILON_MM >= effective_inner_radius;
     let penetrates_existing_body_region =
-        inner_radius > 0.0 && minimum_distance < inner_radius - 0.001;
+        inner_radius > 0.0 && minimum_distance < inner_radius + wire_radius - 0.001;
 
     intersects_stroke_ring || penetrates_existing_body_region
 }
 
-fn wire_crosses_sheet_graphic(wire: Segment, graphic: &SchematicGraphicFact) -> bool {
+fn wire_crosses_sheet_graphic(
+    wire: Segment,
+    graphic: &SchematicGraphicFact,
+) -> bool {
+    wire_crosses_sheet_graphic_with_wire_stroke(wire, graphic, 0.0)
+}
+
+fn wire_crosses_sheet_graphic_with_wire_stroke(
+    wire: Segment,
+    graphic: &SchematicGraphicFact,
+    wire_stroke_width_mm: f64,
+) -> bool {
+    if !wire_stroke_width_mm.is_finite() || wire_stroke_width_mm < 0.0 {
+        return false;
+    }
+    let combined_stroke_width_mm = graphic.stroke_width_mm + wire_stroke_width_mm;
+    if !combined_stroke_width_mm.is_finite() {
+        return false;
+    }
     if let Some(arc) = graphic.arc_mm {
         if !segment_arc_intersection_points(wire, arc).is_empty() {
             return true;
@@ -1942,7 +1981,7 @@ fn wire_crosses_sheet_graphic(wire: Segment, graphic: &SchematicGraphicFact) -> 
             wire,
             &graphic.points_mm,
             false,
-            graphic.stroke_width_mm,
+            combined_stroke_width_mm,
             CURVE_FLATTEN_TOLERANCE_MM,
         ) {
             return true;
@@ -1954,7 +1993,7 @@ fn wire_crosses_sheet_graphic(wire: Segment, graphic: &SchematicGraphicFact) -> 
         if wire_within_path_stroke(
             wire,
             cubic_bezier_path_segment(bezier),
-            graphic.stroke_width_mm,
+            combined_stroke_width_mm,
             0.0,
         ) {
             return true;
@@ -1964,12 +2003,18 @@ fn wire_crosses_sheet_graphic(wire: Segment, graphic: &SchematicGraphicFact) -> 
             x: center_x,
             y: center_y,
         };
-        return wire_within_circle_stroke(wire, center, radius, graphic.stroke_width_mm);
+        return wire_within_circle_stroke(
+            wire,
+            center,
+            radius,
+            graphic.stroke_width_mm,
+            wire_stroke_width_mm,
+        );
     } else if wire_within_sampled_path_stroke(
         wire,
         &graphic.points_mm,
         graphic.closed,
-        graphic.stroke_width_mm,
+        combined_stroke_width_mm,
         0.0,
     ) {
         return true;
@@ -2052,6 +2097,23 @@ fn wire_crosses_symbol_primitive(
     primitive: &SchematicPrimitiveFact,
     pins: &[SchematicPinFact],
 ) -> bool {
+    wire_crosses_symbol_primitive_with_wire_stroke(wire, primitive, pins, 0.0)
+}
+
+fn wire_crosses_symbol_primitive_with_wire_stroke(
+    wire: Segment,
+    primitive: &SchematicPrimitiveFact,
+    pins: &[SchematicPinFact],
+    wire_stroke_width_mm: f64,
+) -> bool {
+    if !wire_stroke_width_mm.is_finite() || wire_stroke_width_mm < 0.0 {
+        return false;
+    }
+    let combined_stroke_width_mm = primitive.stroke_width_mm + wire_stroke_width_mm;
+    if !combined_stroke_width_mm.is_finite() {
+        return false;
+    }
+
     if let Some(arc) = primitive.arc_mm {
         if segment_arc_intersection_points(wire, arc)
             .into_iter()
@@ -2071,7 +2133,13 @@ fn wire_crosses_symbol_primitive(
             x: center_x,
             y: center_y,
         };
-        return wire_within_circle_stroke(wire, center, radius, primitive.stroke_width_mm);
+        return wire_within_circle_stroke(
+            wire,
+            center,
+            radius,
+            primitive.stroke_width_mm,
+            wire_stroke_width_mm,
+        );
     } else {
         let to_point = |(x, y): (f64, f64)| Point { x, y };
         let mut edges: Vec<_> = primitive
@@ -2101,7 +2169,7 @@ fn wire_crosses_symbol_primitive(
     } else {
         0.0
     };
-    let pin_contact_clearance = primitive.stroke_width_mm.abs().mul_add(
+    let pin_contact_clearance = combined_stroke_width_mm.mul_add(
         0.5,
         2.0_f64.mul_add(SCH013_STROKE_DISTANCE_EPSILON_MM, flatten_tolerance),
     );
@@ -2113,14 +2181,14 @@ fn wire_crosses_symbol_primitive(
                 clearance_wire,
                 &primitive.points_mm,
                 false,
-                primitive.stroke_width_mm,
+                combined_stroke_width_mm,
                 flatten_tolerance,
             )
         } else if let Some(bezier) = primitive.bezier_mm {
             wire_within_path_stroke(
                 clearance_wire,
                 cubic_bezier_path_segment(bezier),
-                primitive.stroke_width_mm,
+                combined_stroke_width_mm,
                 0.0,
             )
         } else {
@@ -2128,7 +2196,7 @@ fn wire_crosses_symbol_primitive(
                 clearance_wire,
                 &primitive.points_mm,
                 primitive.closed,
-                primitive.stroke_width_mm,
+                combined_stroke_width_mm,
                 0.0,
             )
         };
@@ -3697,6 +3765,24 @@ const fn span_of(node: &Node) -> ByteSpan {
     }
 }
 
+fn collect_explicit_wire_stroke_widths(root: &Node) -> BTreeMap<usize, f64> {
+    let mut widths = BTreeMap::new();
+    walk(root, &mut |node| {
+        if head(node) != Some("wire") {
+            return;
+        }
+        let width = child_list(node, "stroke")
+            .and_then(|stroke| child_list(stroke, "width"))
+            .and_then(list_items)
+            .and_then(|items| items.get(1))
+            .and_then(number);
+        if let Some(width) = width.filter(|width| width.is_finite() && *width > 0.0) {
+            widths.insert(span_of(node).start, width);
+        }
+    });
+    widths
+}
+
 #[must_use]
 pub fn collect_segments(root: &Node) -> Vec<Segment> {
     let mut segments = Vec::new();
@@ -5014,6 +5100,98 @@ mod tests {
                 .iter()
                 .any(|item| item.code == "SCH013" && item.message.contains("symbol body U1"))
         );
+    }
+
+    #[test]
+    fn sch013_combines_explicit_wire_and_sheet_graphic_stroke_widths() {
+        let combined = document(
+            r"
+            (polyline (pts (xy 0 -1) (xy 0 1))
+              (stroke (width 0.2)) (fill (type none)))
+            (wire (pts (xy 0.19 -0.5) (xy 0.19 0.5))
+              (stroke (width 0.2) (type default)))
+            ",
+        );
+        assert!(run_builtin_rules(&combined).diagnostics.iter().any(|item| {
+            item.code == "SCH013" && item.message.contains("sheet graphic polyline")
+        }));
+
+        let zero_width = document(
+            r"
+            (polyline (pts (xy 0 -1) (xy 0 1))
+              (stroke (width 0.2)) (fill (type none)))
+            (wire (pts (xy 0.19 -0.5) (xy 0.19 0.5))
+              (stroke (width 0) (type default)))
+            ",
+        );
+        assert!(!run_builtin_rules(&zero_width).diagnostics.iter().any(|item| {
+            item.code == "SCH013" && item.message.contains("sheet graphic polyline")
+        }));
+
+        let netclass_default = document(
+            r"
+            (polyline (pts (xy 0 -1) (xy 0 1))
+              (stroke (width 0.2)) (fill (type none)))
+            (wire (pts (xy 0.19 -0.5) (xy 0.19 0.5)))
+            ",
+        );
+        assert!(
+            !run_builtin_rules(&netclass_default)
+                .diagnostics
+                .iter()
+                .any(|item| {
+                    item.code == "SCH013" && item.message.contains("sheet graphic polyline")
+                })
+        );
+
+        let clear = document(
+            r"
+            (polyline (pts (xy 0 -1) (xy 0 1))
+              (stroke (width 0.2)) (fill (type none)))
+            (wire (pts (xy 0.21 -0.5) (xy 0.21 0.5))
+              (stroke (width 0.2) (type default)))
+            ",
+        );
+        assert!(!run_builtin_rules(&clear).diagnostics.iter().any(|item| {
+            item.code == "SCH013" && item.message.contains("sheet graphic polyline")
+        }));
+    }
+
+    #[test]
+    fn sch013_combines_explicit_wire_and_embedded_symbol_strokes() {
+        let primitive = super::SchematicPrimitiveFact {
+            reference: "U1".to_owned(),
+            points_mm: vec![(0.0, -1.0), (0.0, 1.0)],
+            closed: false,
+            circle_mm: None,
+            arc_mm: None,
+            bezier_mm: None,
+            stroke_width_mm: 0.2,
+        };
+        let wire = super::Segment {
+            start: super::Point { x: 0.19, y: -0.5 },
+            end: super::Point { x: 0.19, y: 0.5 },
+            span: kicad_clippy_core::ByteSpan::new(0, 0),
+        };
+        assert!(!super::wire_crosses_symbol_primitive(wire, &primitive, &[]));
+        assert!(super::wire_crosses_symbol_primitive_with_wire_stroke(
+            wire,
+            &primitive,
+            &[],
+            0.2,
+        ));
+    }
+
+    #[test]
+    fn sch013_explicit_wire_width_expands_circle_stroke_ring() {
+        let center = super::Point { x: 0.0, y: 0.0 };
+        let wire = super::Segment {
+            start: super::Point { x: 2.15, y: -0.05 },
+            end: super::Point { x: 2.15, y: 0.05 },
+            span: kicad_clippy_core::ByteSpan::new(0, 0),
+        };
+        assert!(!super::wire_within_circle_stroke(wire, center, 2.0, 0.2, 0.0));
+        assert!(super::wire_within_circle_stroke(wire, center, 2.0, 0.2, 0.2));
     }
 
     #[test]
