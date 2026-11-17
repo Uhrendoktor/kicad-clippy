@@ -144,6 +144,17 @@ pub struct SchematicSheetFact {
     pub pins: Vec<SchematicPinFact>,
 }
 
+/// A schematic bus line or wire-to-bus entry used as a wire obstacle.
+#[derive(Clone, Debug)]
+pub struct SchematicBusObstacleFact {
+    /// Obstacle kind shown in SCH013 diagnostics.
+    pub kind: String,
+    /// Two-ended stroked path geometry.
+    pub primitive: SchematicPrimitiveFact,
+    /// Matching endpoint anchors; empty for a bus line.
+    pub pins: Vec<SchematicPinFact>,
+}
+
 #[derive(Clone, Debug)]
 pub struct SchematicSymbolTextFact {
     /// Placed-symbol reference that owns the text.
@@ -245,6 +256,8 @@ pub struct SchematicFacts {
     pub symbol_primitives: Vec<SchematicPrimitiveFact>,
     /// Hierarchical sheet frames and their deliberate connection anchors.
     pub sheets: Vec<SchematicSheetFact>,
+    /// Bus lines and bus-entry strokes, with local wire-entry endpoint anchors.
+    pub bus_obstacles: Vec<SchematicBusObstacleFact>,
     /// Embedded library-symbol text and text-box obstacles in sheet coordinates.
     pub symbol_texts: Vec<SchematicSymbolTextFact>,
     /// Label anchors used to ensure labels are not mistaken for physical wires.
@@ -291,6 +304,7 @@ impl SchematicFacts {
             visible_fields: collect_symbol_field_facts(root),
             symbol_primitives: collect_symbol_primitive_facts(root),
             sheets: collect_sheet_facts(root),
+            bus_obstacles: collect_bus_obstacle_facts(root),
             symbol_texts: collect_symbol_text_facts(root),
             labels: collect_label_facts(root),
             junctions: junctions.iter().map(|point| (point.x, point.y)).collect(),
@@ -1286,6 +1300,109 @@ fn collect_sheet_facts(root: &Node) -> Vec<SchematicSheetFact> {
         .collect()
 }
 
+fn object_reference(node: &Node, prefix: &str) -> String {
+    child_list(node, "uuid")
+        .and_then(list_items)
+        .and_then(|items| items.get(1))
+        .and_then(atom_value)
+        .map_or_else(
+            || format!("{prefix}-{}", span_of(node).start),
+            str::to_owned,
+        )
+}
+
+fn collect_bus_obstacle_facts(root: &Node) -> Vec<SchematicBusObstacleFact> {
+    let mut obstacles = Vec::new();
+    for bus in children(root, "bus") {
+        let Some(points) = polyline_primitive_points(bus) else {
+            continue;
+        };
+        let [start, end] = points.as_slice() else {
+            continue;
+        };
+        if !start.0.is_finite()
+            || !start.1.is_finite()
+            || !end.0.is_finite()
+            || !end.1.is_finite()
+        {
+            continue;
+        }
+        let reference = object_reference(bus, "bus");
+        obstacles.push(SchematicBusObstacleFact {
+            kind: "bus line".to_owned(),
+            primitive: SchematicPrimitiveFact {
+                reference,
+                points_mm: points,
+                closed: false,
+                circle_mm: None,
+                arc_mm: None,
+                bezier_mm: None,
+                stroke_width_mm: symbol_primitive_stroke_width(bus),
+            },
+            pins: Vec::new(),
+        });
+    }
+
+    for entry in children(root, "bus_entry") {
+        let Some(at) = child_list(entry, "at").and_then(list_items) else {
+            continue;
+        };
+        let Some(size) = child_list(entry, "size").and_then(list_items) else {
+            continue;
+        };
+        let Some(start_x) = at.get(1).and_then(number) else {
+            continue;
+        };
+        let Some(start_y) = at.get(2).and_then(number) else {
+            continue;
+        };
+        let Some(size_x) = size.get(1).and_then(number) else {
+            continue;
+        };
+        let Some(size_y) = size.get(2).and_then(number) else {
+            continue;
+        };
+        let start = (start_x, start_y);
+        let end = (start_x + size_x, start_y + size_y);
+        if ![start.0, start.1, end.0, end.1].iter().all(|value| value.is_finite())
+            || distance(
+                Point {
+                    x: start.0,
+                    y: start.1,
+                },
+                Point { x: end.0, y: end.1 },
+            ) <= 0.001
+        {
+            continue;
+        }
+
+        let reference = object_reference(entry, "bus-entry");
+        let pins = [("start", start), ("end", end)]
+            .into_iter()
+            .map(|(name, (x, y))| SchematicPinFact {
+                reference: reference.clone(),
+                number: name.to_owned(),
+                position_mm: (x, y),
+            })
+            .collect();
+        obstacles.push(SchematicBusObstacleFact {
+            kind: "bus entry".to_owned(),
+            primitive: SchematicPrimitiveFact {
+                reference,
+                points_mm: vec![start, end],
+                closed: false,
+                circle_mm: None,
+                arc_mm: None,
+                bezier_mm: None,
+                stroke_width_mm: symbol_primitive_stroke_width(entry),
+            },
+            pins,
+        });
+    }
+
+    obstacles
+}
+
 fn collect_symbol_field_facts(root: &Node) -> Vec<SchematicFieldFact> {
     let mut fields = Vec::new();
     for symbol in children(root, "symbol") {
@@ -1971,6 +2088,35 @@ fn embedded_symbol_text_obstacle_diagnostics(
         .collect()
 }
 
+fn bus_obstacle_diagnostics(
+    wire_index: usize,
+    segment: Segment,
+    obstacles: &[SchematicBusObstacleFact],
+    wire_stroke_width_mm: f64,
+) -> Vec<Diagnostic> {
+    obstacles
+        .iter()
+        .filter(|obstacle| {
+            wire_crosses_symbol_primitive_with_wire_stroke(
+                segment,
+                &obstacle.primitive,
+                &obstacle.pins,
+                wire_stroke_width_mm,
+            )
+        })
+        .map(|obstacle| {
+            at_segment(
+                BuiltinRuleId::Sch013,
+                &format!(
+                    "wire {wire_index} intersects {} {:?}",
+                    obstacle.kind, obstacle.primitive.reference
+                ),
+                segment,
+            )
+        })
+        .collect()
+}
+
 fn sheet_frame_obstacle_diagnostics(
     wire_index: usize,
     segment: Segment,
@@ -2102,6 +2248,12 @@ fn check_wire_obstacles(
             *segment,
             &facts.sheets,
             &table_strokes,
+            wire_stroke_width_mm,
+        ));
+        diagnostics.extend(bus_obstacle_diagnostics(
+            wire_index,
+            *segment,
+            &facts.bus_obstacles,
             wire_stroke_width_mm,
         ));
         for image in &facts.images {
@@ -4388,6 +4540,54 @@ mod tests {
     fn document(body: &str) -> SchematicDocument {
         SchematicDocument::from_text("fixture.kicad_sch", format!("(kicad_sch {body})"))
             .expect("fixture parses")
+    }
+
+    #[test]
+    fn sch013_checks_wire_crossings_of_schematic_bus_lines() {
+        let document = document(
+            r#"
+            (wire (pts (xy 1 -1) (xy 1 1)))
+            (bus (pts (xy 0 0) (xy 2 0))
+              (stroke (width 0.2))
+              (uuid "bus-uuid"))
+            "#,
+        );
+
+        assert!(run_builtin_rules(&document).diagnostics.iter().any(|item| {
+            item.code == "SCH013" && item.message.contains("bus line")
+        }));
+    }
+
+    #[test]
+    fn sch013_allows_wire_endpoint_at_bus_entry_without_exempting_other_crossings() {
+        let attached = document(
+            r#"
+            (wire (pts (xy -1 1) (xy 0 1)))
+            (bus (pts (xy 0 2) (xy 2 2))
+              (stroke (width 0.2))
+              (uuid "bus-uuid"))
+            (bus_entry (at 0 1) (size 0 1)
+              (stroke (width 0.2))
+              (uuid "bus-entry-uuid"))
+            "#,
+        );
+
+        assert!(!run_builtin_rules(&attached).diagnostics.iter().any(|item| {
+            item.code == "SCH013" && item.message.contains("bus entry")
+        }));
+
+        let through_entry = document(
+            r#"
+            (wire (pts (xy 0 1) (xy 0 1.5)))
+            (bus_entry (at 0 1) (size 0 1)
+              (stroke (width 0.2))
+              (uuid "bus-entry-uuid"))
+            "#,
+        );
+
+        assert!(run_builtin_rules(&through_entry).diagnostics.iter().any(|item| {
+            item.code == "SCH013" && item.message.contains("bus entry")
+        }));
     }
 
     #[test]
