@@ -69,7 +69,7 @@ impl SchematicDocument {
         })
     }
 
-    /// Returns the original source and its precomputed line index.
+    /// Returns the original source path and shared text buffer.
     #[must_use]
     pub const fn source(&self) -> &SourceFile {
         &self.source
