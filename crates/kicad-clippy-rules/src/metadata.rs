@@ -957,6 +957,18 @@ fn validate_group_containment(
     diagnostics.extend(validate_group_description_containment(
         group_id, group, facts, frame_uuid, bounds,
     ));
+    diagnostics.extend(validate_group_symbol_primitive_containment(
+        group_id, group, facts, frame_uuid, bounds,
+    ));
+    diagnostics.extend(validate_group_wire_containment(
+        group_id, group, facts, frame_uuid, bounds,
+    ));
+    diagnostics.extend(validate_group_label_containment(
+        group_id, group, facts, frame_uuid, bounds,
+    ));
+    diagnostics.extend(validate_group_annotation_box_containment(
+        group_id, group, facts, frame_uuid, bounds,
+    ));
     diagnostics
 }
 
@@ -1040,6 +1052,217 @@ fn validate_group_description_containment(
     )]
 }
 
+fn validate_group_symbol_primitive_containment(
+    group_id: &str,
+    group: &GroupIntent,
+    facts: &SchematicFacts,
+    frame_uuid: &str,
+    frame_bounds: (f64, f64, f64, f64),
+) -> Vec<Diagnostic> {
+    facts
+        .symbol_primitives
+        .iter()
+        .filter(|primitive| group.members.contains(&primitive.reference))
+        .filter(|primitive| !symbol_primitive_inside_frame(primitive, frame_bounds, 0.0))
+        .map(|primitive| {
+            Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch009,
+                Severity::Error,
+                format!(
+                    "group {group_id} member {} symbol primitive extends outside frame {frame_uuid}",
+                    primitive.reference
+                ),
+            )
+        })
+        .collect()
+}
+
+fn symbol_primitive_inside_frame(
+    primitive: &crate::generic::SchematicPrimitiveFact,
+    frame_bounds: (f64, f64, f64, f64),
+    clearance: f64,
+) -> bool {
+    let stroke_margin = if primitive.stroke_width_mm.is_finite() {
+        primitive.stroke_width_mm.abs() / 2.0
+    } else {
+        0.0
+    };
+    let margin = clearance + stroke_margin + 0.01;
+    if let Some((center_x, center_y, radius)) = primitive.circle_mm {
+        let radius = radius.abs();
+        return rectangle_inside_frame_with_clearance(
+            (
+                center_x - radius,
+                center_y - radius,
+                center_x + radius,
+                center_y + radius,
+            ),
+            frame_bounds,
+            margin,
+        );
+    }
+    !primitive.points_mm.is_empty()
+        && primitive
+            .points_mm
+            .iter()
+            .all(|point| point_inside_frame_with_clearance(frame_bounds, *point, margin))
+}
+
+fn group_wire_components(
+    group: &GroupIntent,
+    facts: &SchematicFacts,
+) -> (BTreeMap<String, usize>, BTreeSet<usize>) {
+    let component_ids = physical_wire_component_ids(facts);
+    let member_components = facts
+        .pins
+        .iter()
+        .filter(|pin| group.members.contains(&pin.reference))
+        .filter(|pin| point_is_on_wire(pin.position_mm, facts))
+        .filter_map(|pin| {
+            let key = format!("{:.3}:{:.3}", pin.position_mm.0, pin.position_mm.1);
+            component_ids.get(&key).copied()
+        })
+        .collect();
+    (component_ids, member_components)
+}
+
+fn wire_belongs_to_group(
+    wire: &crate::generic::SchematicWireFact,
+    component_ids: &BTreeMap<String, usize>,
+    member_components: &BTreeSet<usize>,
+) -> bool {
+    [(wire.start_mm.0, wire.start_mm.1), (wire.end_mm.0, wire.end_mm.1)]
+        .iter()
+        .filter_map(|(x, y)| component_ids.get(&format!("{x:.3}:{y:.3}")))
+        .any(|component| member_components.contains(component))
+}
+
+fn validate_group_wire_containment(
+    group_id: &str,
+    group: &GroupIntent,
+    facts: &SchematicFacts,
+    frame_uuid: &str,
+    frame_bounds: (f64, f64, f64, f64),
+) -> Vec<Diagnostic> {
+    let (component_ids, member_components) = group_wire_components(group, facts);
+    facts
+        .wires
+        .iter()
+        .filter(|wire| wire_belongs_to_group(wire, &component_ids, &member_components))
+        .filter(|wire| {
+            !point_inside_frame(frame_bounds, wire.start_mm)
+                || !point_inside_frame(frame_bounds, wire.end_mm)
+        })
+        .map(|wire| {
+            Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch009,
+                Severity::Error,
+                format!(
+                    "group {group_id} member wire segment from ({:.2}, {:.2}) to ({:.2}, {:.2}) extends outside frame {frame_uuid}",
+                    wire.start_mm.0, wire.start_mm.1, wire.end_mm.0, wire.end_mm.1
+                ),
+            )
+        })
+        .collect()
+}
+
+fn validate_group_label_containment(
+    group_id: &str,
+    group: &GroupIntent,
+    facts: &SchematicFacts,
+    frame_uuid: &str,
+    frame_bounds: (f64, f64, f64, f64),
+) -> Vec<Diagnostic> {
+    let (component_ids, member_components) = group_wire_components(group, facts);
+    facts
+        .labels
+        .iter()
+        .filter(|label| {
+            let key = format!("{:.3}:{:.3}", label.position_mm.0, label.position_mm.1);
+            component_ids
+                .get(&key)
+                .is_some_and(|component| member_components.contains(component))
+        })
+        .filter(|label| {
+            label.bounds_mm.map_or_else(
+                || !point_inside_frame(frame_bounds, label.position_mm),
+                |bounds| !rectangle_inside_frame(bounds, frame_bounds),
+            )
+        })
+        .map(|label| {
+            Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch009,
+                Severity::Error,
+                format!(
+                    "group {group_id} member wire label {} {:?} extends outside frame {frame_uuid}",
+                    label.kind, label.name
+                ),
+            )
+        })
+        .collect()
+}
+
+fn validate_group_annotation_box_containment(
+    group_id: &str,
+    group: &GroupIntent,
+    facts: &SchematicFacts,
+    frame_uuid: &str,
+    frame_bounds: (f64, f64, f64, f64),
+) -> Vec<Diagnostic> {
+    facts
+        .text_boxes
+        .iter()
+        .filter(|text_box| text_box.uuid != group.description_uuid)
+        .filter_map(|text_box| {
+            let bounds = text_box.bounds_mm?;
+            (rectangles_overlap(bounds, frame_bounds)
+                && !rectangle_inside_frame(bounds, frame_bounds))
+            .then(|| {
+                Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch009,
+                    Severity::Error,
+                    format!(
+                        "group {group_id} annotation text box {} extends outside frame {frame_uuid}",
+                        text_box.uuid
+                    ),
+                )
+            })
+        })
+        .collect()
+}
+
+fn rectangles_overlap(
+    first: (f64, f64, f64, f64),
+    second: (f64, f64, f64, f64),
+) -> bool {
+    first.0 <= second.2 + 0.001
+        && first.2 >= second.0 - 0.001
+        && first.1 <= second.3 + 0.001
+        && first.3 >= second.1 - 0.001
+}
+
+fn point_inside_frame_with_clearance(
+    (left, top, right, bottom): (f64, f64, f64, f64),
+    (x, y): (f64, f64),
+    clearance: f64,
+) -> bool {
+    x >= left + clearance - 0.001
+        && x <= right - clearance + 0.001
+        && y >= top + clearance - 0.001
+        && y <= bottom - clearance + 0.001
+}
+
+fn rectangle_inside_frame_with_clearance(
+    (rect_left, rect_top, rect_right, rect_bottom): (f64, f64, f64, f64),
+    (left, top, right, bottom): (f64, f64, f64, f64),
+    clearance: f64,
+) -> bool {
+    rect_left >= left + clearance - 0.001
+        && rect_top >= top + clearance - 0.001
+        && rect_right <= right - clearance + 0.001
+        && rect_bottom <= bottom - clearance + 0.001
+}
+
 fn point_inside_frame(
     (left, top, right, bottom): (f64, f64, f64, f64),
     (x, y): (f64, f64),
@@ -1113,6 +1336,18 @@ fn validate_frame_clearance(
         group_id, group, facts, frame_uuid, bounds, clearance,
     ));
     diagnostics.extend(validate_description_frame_clearance(
+        group_id, group, facts, frame_uuid, bounds, clearance,
+    ));
+    diagnostics.extend(validate_group_symbol_primitive_clearance(
+        group_id, group, facts, frame_uuid, bounds, clearance,
+    ));
+    diagnostics.extend(validate_group_wire_clearance(
+        group_id, group, facts, frame_uuid, bounds, clearance,
+    ));
+    diagnostics.extend(validate_group_label_clearance(
+        group_id, group, facts, frame_uuid, bounds, clearance,
+    ));
+    diagnostics.extend(validate_group_annotation_box_clearance(
         group_id, group, facts, frame_uuid, bounds, clearance,
     ));
     diagnostics
@@ -1237,6 +1472,129 @@ fn validate_member_field_frame_clearance(
         }
     }
     diagnostics
+}
+
+fn validate_group_symbol_primitive_clearance(
+    group_id: &str,
+    group: &GroupIntent,
+    facts: &SchematicFacts,
+    frame_uuid: &str,
+    frame_bounds: (f64, f64, f64, f64),
+    clearance: f64,
+) -> Vec<Diagnostic> {
+    facts
+        .symbol_primitives
+        .iter()
+        .filter(|primitive| group.members.contains(&primitive.reference))
+        .filter(|primitive| !symbol_primitive_inside_frame(primitive, frame_bounds, clearance))
+        .map(|primitive| {
+            Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch012,
+                Severity::Error,
+                format!(
+                    "group {group_id} member {} symbol primitive does not maintain {clearance:.2} mm clearance from frame {frame_uuid}",
+                    primitive.reference
+                ),
+            )
+        })
+        .collect()
+}
+
+fn validate_group_wire_clearance(
+    group_id: &str,
+    group: &GroupIntent,
+    facts: &SchematicFacts,
+    frame_uuid: &str,
+    frame_bounds: (f64, f64, f64, f64),
+    clearance: f64,
+) -> Vec<Diagnostic> {
+    let (component_ids, member_components) = group_wire_components(group, facts);
+    facts
+        .wires
+        .iter()
+        .filter(|wire| wire_belongs_to_group(wire, &component_ids, &member_components))
+        .filter(|wire| {
+            !point_inside_frame_with_clearance(frame_bounds, wire.start_mm, clearance)
+                || !point_inside_frame_with_clearance(frame_bounds, wire.end_mm, clearance)
+        })
+        .map(|wire| {
+            Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch012,
+                Severity::Error,
+                format!(
+                    "group {group_id} member wire segment from ({:.2}, {:.2}) to ({:.2}, {:.2}) does not maintain {clearance:.2} mm clearance from frame {frame_uuid}",
+                    wire.start_mm.0, wire.start_mm.1, wire.end_mm.0, wire.end_mm.1
+                ),
+            )
+        })
+        .collect()
+}
+
+fn validate_group_label_clearance(
+    group_id: &str,
+    group: &GroupIntent,
+    facts: &SchematicFacts,
+    frame_uuid: &str,
+    frame_bounds: (f64, f64, f64, f64),
+    clearance: f64,
+) -> Vec<Diagnostic> {
+    let (component_ids, member_components) = group_wire_components(group, facts);
+    facts
+        .labels
+        .iter()
+        .filter(|label| {
+            let key = format!("{:.3}:{:.3}", label.position_mm.0, label.position_mm.1);
+            component_ids
+                .get(&key)
+                .is_some_and(|component| member_components.contains(component))
+        })
+        .filter(|label| {
+            label.bounds_mm.map_or_else(
+                || !point_inside_frame_with_clearance(frame_bounds, label.position_mm, clearance),
+                |bounds| !rectangle_inside_frame_with_clearance(bounds, frame_bounds, clearance),
+            )
+        })
+        .map(|label| {
+            Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch012,
+                Severity::Error,
+                format!(
+                    "group {group_id} member wire label {} {:?} does not maintain {clearance:.2} mm clearance from frame {frame_uuid}",
+                    label.kind, label.name
+                ),
+            )
+        })
+        .collect()
+}
+
+fn validate_group_annotation_box_clearance(
+    group_id: &str,
+    group: &GroupIntent,
+    facts: &SchematicFacts,
+    frame_uuid: &str,
+    frame_bounds: (f64, f64, f64, f64),
+    clearance: f64,
+) -> Vec<Diagnostic> {
+    facts
+        .text_boxes
+        .iter()
+        .filter(|text_box| text_box.uuid != group.description_uuid)
+        .filter_map(|text_box| {
+            let bounds = text_box.bounds_mm?;
+            (rectangles_overlap(bounds, frame_bounds)
+                && !rectangle_inside_frame_with_clearance(bounds, frame_bounds, clearance))
+            .then(|| {
+                Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch012,
+                    Severity::Error,
+                    format!(
+                        "group {group_id} annotation text box {} does not maintain {clearance:.2} mm clearance from frame {frame_uuid}",
+                        text_box.uuid
+                    ),
+                )
+            })
+        })
+        .collect()
 }
 
 fn validate_description_frame_clearance(
