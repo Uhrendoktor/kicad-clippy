@@ -1619,44 +1619,136 @@ fn segment_bezier_intersection_points(
         .collect()
 }
 
+fn cubic_bezier_path_segment(control_points: [(f64, f64); 4]) -> CurvePathSeg {
+    CurvePathSeg::Cubic(CurveCubicBez::new(
+        CurvePoint::new(control_points[0].0, control_points[0].1),
+        CurvePoint::new(control_points[1].0, control_points[1].1),
+        CurvePoint::new(control_points[2].0, control_points[2].1),
+        CurvePoint::new(control_points[3].0, control_points[3].1),
+    ))
+}
+
+const SCH013_STROKE_DISTANCE_ACCURACY_MM: f64 = 1.0e-6;
+const SCH013_STROKE_DISTANCE_EPSILON_MM: f64 = 1.0e-6;
+
+fn wire_path_min_distance(wire: Segment, path: CurvePathSeg) -> Option<(f64, f64)> {
+    let line = CurveLine::new(
+        CurvePoint::new(wire.start.x, wire.start.y),
+        CurvePoint::new(wire.end.x, wire.end.y),
+    );
+    if !path.is_finite() || !line.is_finite() {
+        return None;
+    }
+    let nearest = path.min_dist(
+        CurvePathSeg::Line(line),
+        SCH013_STROKE_DISTANCE_ACCURACY_MM,
+    );
+    (nearest.distance.is_finite() && nearest.t2.is_finite())
+        .then_some((nearest.distance, nearest.t2.clamp(0.0, 1.0)))
+}
+
+fn wire_point_at_parameter(wire: Segment, parameter: f64) -> Point {
+    let direction_x = wire.end.x - wire.start.x;
+    let direction_y = wire.end.y - wire.start.y;
+    Point {
+        x: parameter.mul_add(direction_x, wire.start.x),
+        y: parameter.mul_add(direction_y, wire.start.y),
+    }
+}
+
+fn wire_within_path_stroke(
+    wire: Segment,
+    path: CurvePathSeg,
+    stroke_width_mm: f64,
+    flatten_tolerance_mm: f64,
+    pin_owner: Option<(&str, &[SchematicPinFact])>,
+) -> bool {
+    if !stroke_width_mm.is_finite() || !flatten_tolerance_mm.is_finite() {
+        return false;
+    }
+    let Some((distance, wire_parameter)) = wire_path_min_distance(wire, path) else {
+        return false;
+    };
+    let threshold = stroke_width_mm.abs() * 0.5
+        + flatten_tolerance_mm.max(0.0)
+        + SCH013_STROKE_DISTANCE_EPSILON_MM;
+    if distance > threshold {
+        return false;
+    }
+    if let Some((reference, pins)) = pin_owner {
+        let closest_point = wire_point_at_parameter(wire, wire_parameter);
+        if wire_intersection_is_allowed_pin(closest_point, wire, reference, pins) {
+            return false;
+        }
+    }
+    true
+}
+
+fn wire_within_sampled_path_stroke(
+    wire: Segment,
+    points: &[(f64, f64)],
+    closed: bool,
+    stroke_width_mm: f64,
+    flatten_tolerance_mm: f64,
+    pin_owner: Option<(&str, &[SchematicPinFact])>,
+) -> bool {
+    if points.len() < 2 {
+        return false;
+    }
+    if points.windows(2).any(|pair| {
+        let path = CurvePathSeg::Line(CurveLine::new(
+            CurvePoint::new(pair[0].0, pair[0].1),
+            CurvePoint::new(pair[1].0, pair[1].1),
+        ));
+        wire_within_path_stroke(
+            wire, path, stroke_width_mm, flatten_tolerance_mm, pin_owner,
+        )
+    }) {
+        return true;
+    }
+    if closed && points.len() > 2 {
+        if let (Some(last), Some(first)) = (points.last(), points.first()) {
+            let path = CurvePathSeg::Line(CurveLine::new(
+                CurvePoint::new(last.0, last.1),
+                CurvePoint::new(first.0, first.1),
+            ));
+            return wire_within_path_stroke(
+                wire, path, stroke_width_mm, flatten_tolerance_mm, pin_owner,
+            );
+        }
+    }
+    false
+}
+
 fn wire_crosses_sheet_graphic(wire: Segment, graphic: &SchematicGraphicFact) -> bool {
     if let Some(arc) = graphic.arc_mm {
         if !segment_arc_intersection_points(wire, arc).is_empty() {
+            return true;
+        }
+        if wire_within_sampled_path_stroke(
+            wire, &graphic.points_mm, false, graphic.stroke_width_mm,
+            CURVE_FLATTEN_TOLERANCE_MM, None,
+        ) {
             return true;
         }
     } else if let Some(bezier) = graphic.bezier_mm {
         if !segment_bezier_intersection_points(wire, bezier).is_empty() {
             return true;
         }
+        if wire_within_path_stroke(
+            wire, cubic_bezier_path_segment(bezier), graphic.stroke_width_mm, 0.0, None,
+        ) {
+            return true;
+        }
     } else if let Some((center_x, center_y, radius)) = graphic.circle_mm {
-        let center = Point {
-            x: center_x,
-            y: center_y,
-        };
+        let center = Point { x: center_x, y: center_y };
         let inner_radius = radius - graphic.stroke_width_mm / 2.0;
         return inner_radius > 0.0
             && point_segment_distance(center, wire.start, wire.end) < inner_radius - 0.001;
-    } else {
-        let to_point = |(x, y): (f64, f64)| Point { x, y };
-        let mut edges: Vec<_> = graphic
-            .points_mm
-            .windows(2)
-            .map(|pair| (to_point(pair[0]), to_point(pair[1])))
-            .collect();
-        if graphic.closed && graphic.points_mm.len() > 2 {
-            if let (Some(last), Some(first)) = (
-                graphic.points_mm.last().copied(),
-                graphic.points_mm.first().copied(),
-            ) {
-                edges.push((to_point(last), to_point(first)));
-            }
-        }
-        if edges
-            .iter()
-            .any(|(start, end)| !segment_intersection_points(wire, *start, *end).is_empty())
-        {
-            return true;
-        }
+    } else if wire_within_sampled_path_stroke(
+        wire, &graphic.points_mm, graphic.closed, graphic.stroke_width_mm, 0.0, None,
+    ) {
+        return true;
     }
     if graphic.closed {
         let midpoint = Point {
@@ -1688,11 +1780,18 @@ fn wire_crosses_symbol_primitive(
     primitive: &SchematicPrimitiveFact,
     pins: &[SchematicPinFact],
 ) -> bool {
+    let pin_owner = Some((primitive.reference.as_str(), pins));
     if let Some(arc) = primitive.arc_mm {
         if segment_arc_intersection_points(wire, arc)
             .into_iter()
             .any(|point| !wire_intersection_is_allowed_pin(point, wire, &primitive.reference, pins))
         {
+            return true;
+        }
+        if wire_within_sampled_path_stroke(
+            wire, &primitive.points_mm, false, primitive.stroke_width_mm,
+            CURVE_FLATTEN_TOLERANCE_MM, pin_owner,
+        ) {
             return true;
         }
     } else if let Some(bezier) = primitive.bezier_mm {
@@ -1702,25 +1801,24 @@ fn wire_crosses_symbol_primitive(
         {
             return true;
         }
+        if wire_within_path_stroke(
+            wire, cubic_bezier_path_segment(bezier), primitive.stroke_width_mm, 0.0, pin_owner,
+        ) {
+            return true;
+        }
     } else if let Some((center_x, center_y, radius)) = primitive.circle_mm {
-        let center = Point {
-            x: center_x,
-            y: center_y,
-        };
+        let center = Point { x: center_x, y: center_y };
         let inner_radius = radius - primitive.stroke_width_mm / 2.0;
         return inner_radius > 0.0
             && point_segment_distance(center, wire.start, wire.end) < inner_radius - 0.001;
     } else {
         let to_point = |(x, y): (f64, f64)| Point { x, y };
-        let mut edges: Vec<_> = primitive
-            .points_mm
-            .windows(2)
+        let mut edges: Vec<_> = primitive.points_mm.windows(2)
             .map(|pair| (to_point(pair[0]), to_point(pair[1])))
             .collect();
         if primitive.closed && primitive.points_mm.len() > 2 {
             if let (Some(last), Some(first)) = (
-                primitive.points_mm.last().copied(),
-                primitive.points_mm.first().copied(),
+                primitive.points_mm.last().copied(), primitive.points_mm.first().copied(),
             ) {
                 edges.push((to_point(last), to_point(first)));
             }
@@ -1731,6 +1829,11 @@ fn wire_crosses_symbol_primitive(
                     return true;
                 }
             }
+        }
+        if wire_within_sampled_path_stroke(
+            wire, &primitive.points_mm, primitive.closed, primitive.stroke_width_mm, 0.0, pin_owner,
+        ) {
+            return true;
         }
     }
     if primitive.closed {
@@ -4107,6 +4210,143 @@ mod tests {
                 .iter()
                 .any(|item| item.code == "SCH013" && item.message.contains("symbol body Q1"))
         );
+    }
+
+    #[test]
+    fn sch013_checks_declared_stroke_width_for_open_sheet_paths() {
+        let near = document(
+            r"
+            (polyline (pts (xy 0 -1) (xy 0 1))
+              (stroke (width 0.4)) (fill (type none)))
+            (wire (pts (xy 0.15 -0.5) (xy 0.15 0.5)))
+            ",
+        );
+        assert!(run_builtin_rules(&near).diagnostics.iter().any(|item| {
+            item.code == "SCH013" && item.message.contains("sheet graphic polyline")
+        }));
+
+        let clear = document(
+            r"
+            (polyline (pts (xy 0 -1) (xy 0 1))
+              (stroke (width 0.4)) (fill (type none)))
+            (wire (pts (xy 0.21 -0.5) (xy 0.21 0.5)))
+            ",
+        );
+        assert!(!run_builtin_rules(&clear).diagnostics.iter().any(|item| {
+            item.code == "SCH013" && item.message.contains("sheet graphic polyline")
+        }));
+    }
+
+    #[test]
+    fn sch013_uses_curve_distance_for_bezier_stroke_clearance() {
+        let controls = [(0.0, 0.0), (0.0, 10.0), (10.0, 10.0), (10.0, 0.0)];
+        let curve = super::CurveCubicBez::new(
+            super::CurvePoint::new(controls[0].0, controls[0].1),
+            super::CurvePoint::new(controls[1].0, controls[1].1),
+            super::CurvePoint::new(controls[2].0, controls[2].1),
+            super::CurvePoint::new(controls[3].0, controls[3].1),
+        );
+        let parameter = 0.453_f64;
+        let point = curve.eval(parameter);
+        let tangent = curve.deriv().eval(parameter);
+        let tangent_length = tangent.x.hypot(tangent.y);
+        let tangent = (tangent.x / tangent_length, tangent.y / tangent_length);
+        let normal = (-tangent.1, tangent.0);
+        let offset = 0.1_f64;
+        let along = 0.02_f64;
+        let wire = super::Segment {
+            start: super::Point {
+                x: tangent.0.mul_add(-along, normal.0.mul_add(offset, point.x)),
+                y: tangent.1.mul_add(-along, normal.1.mul_add(offset, point.y)),
+            },
+            end: super::Point {
+                x: tangent.0.mul_add(along, normal.0.mul_add(offset, point.x)),
+                y: tangent.1.mul_add(along, normal.1.mul_add(offset, point.y)),
+            },
+            span: kicad_clippy_core::ByteSpan::new(0, 0),
+        };
+        let graphic = super::SchematicGraphicFact {
+            kind: "bezier".to_owned(),
+            uuid: None,
+            bounds_mm: None,
+            points_mm: Vec::new(),
+            closed: false,
+            circle_mm: None,
+            arc_mm: None,
+            bezier_mm: Some(controls),
+            stroke_width_mm: 0.3,
+        };
+        assert!(super::wire_crosses_sheet_graphic(wire, &graphic));
+
+        let narrow_stroke = super::SchematicGraphicFact {
+            stroke_width_mm: 0.18,
+            ..graphic
+        };
+        assert!(!super::wire_crosses_sheet_graphic(wire, &narrow_stroke));
+    }
+
+    #[test]
+    fn sch013_applies_arc_stroke_clearance_to_the_selected_sweep() {
+        let arc = super::SchematicArcFact {
+            center_mm: (0.0, 0.0),
+            radius_mm: 2.0,
+            start_angle_rad: 0.0,
+            sweep_rad: std::f64::consts::FRAC_PI_2,
+        };
+        let midpoint = (2.0 / 2.0_f64.sqrt(), 2.0 / 2.0_f64.sqrt());
+        let points = super::sample_arc_through_three_points((2.0, 0.0), midpoint, (0.0, 2.0));
+        let angle = 0.37_f64;
+        let radial_point = |radius: f64| super::Point {
+            x: radius * angle.cos(),
+            y: radius * angle.sin(),
+        };
+        let wire = super::Segment {
+            start: radial_point(2.1),
+            end: radial_point(2.2),
+            span: kicad_clippy_core::ByteSpan::new(0, 0),
+        };
+        let graphic = super::SchematicGraphicFact {
+            kind: "arc".to_owned(),
+            uuid: None,
+            bounds_mm: None,
+            points_mm: points,
+            closed: false,
+            circle_mm: None,
+            arc_mm: Some(arc),
+            bezier_mm: None,
+            stroke_width_mm: 0.3,
+        };
+        assert!(super::wire_crosses_sheet_graphic(wire, &graphic));
+
+        let narrow_stroke = super::SchematicGraphicFact {
+            stroke_width_mm: 0.18,
+            ..graphic
+        };
+        assert!(!super::wire_crosses_sheet_graphic(wire, &narrow_stroke));
+    }
+
+    #[test]
+    fn sch013_stroke_clearance_keeps_embedded_pin_endpoint_exception() {
+        let primitive = super::SchematicPrimitiveFact {
+            reference: "U1".to_owned(),
+            points_mm: vec![(0.0, 0.0), (0.0, 1.0)],
+            closed: false,
+            circle_mm: None,
+            arc_mm: None,
+            bezier_mm: None,
+            stroke_width_mm: 0.4,
+        };
+        let wire = super::Segment {
+            start: super::Point { x: 0.0, y: 0.0 },
+            end: super::Point { x: -1.0, y: 0.0 },
+            span: kicad_clippy_core::ByteSpan::new(0, 0),
+        };
+        let pin = super::SchematicPinFact {
+            reference: "U1".to_owned(),
+            number: "1".to_owned(),
+            position_mm: (0.0, 0.0),
+        };
+        assert!(!super::wire_crosses_symbol_primitive(wire, &primitive, &[pin]));
     }
 
     #[test]
