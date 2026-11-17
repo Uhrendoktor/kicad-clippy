@@ -339,11 +339,20 @@ fn collect_text_box_facts(root: &Node) -> Vec<TextBoxFact> {
 }
 
 fn collect_plain_text_facts(root: &Node) -> Vec<SchematicTextFact> {
+    let table_cells = children(root, "table").flat_map(|table| {
+        child_list(table, "cells")
+            .into_iter()
+            .flat_map(|cells| children(cells, "table_cell"))
+    });
     children(root, "text")
+        .chain(table_cells)
         .filter_map(|node| {
             let text = list_items(node)
                 .and_then(|items| items.get(1))
                 .and_then(atom_value)?;
+            if text.trim().is_empty() {
+                return None;
+            }
             let bounds_mm = text_visual_bounds(text, node).map(|bounds| {
                 (
                     bounds.x,
@@ -432,6 +441,277 @@ fn collect_sheet_graphic_facts(root: &Node) -> Vec<SchematicGraphicFact> {
                 stroke_width_mm,
             });
         }
+    }
+    graphics
+}
+
+const DEFAULT_TABLE_STROKE_WIDTH_MM: f64 = 0.1524;
+
+#[derive(Clone, Debug)]
+struct SchematicTableLayout {
+    uuid: Option<String>,
+    origin_mm: (f64, f64),
+    column_widths_mm: Vec<f64>,
+    row_heights_mm: Vec<f64>,
+    cell_spans: Vec<(usize, usize)>,
+}
+
+fn nonnegative_integer(node: &Node) -> Option<usize> {
+    let value = number(node)?;
+    (value.is_finite() && value >= 0.0 && value.fract() == 0.0)
+        .then_some(value as usize)
+}
+
+fn positive_integer(node: &Node) -> Option<usize> {
+    nonnegative_integer(node).filter(|value| *value > 0)
+}
+
+fn table_dimension_values(table: &Node, name: &str) -> Option<Vec<f64>> {
+    let values = child_list(table, name).and_then(list_items)?;
+    let values: Option<Vec<_>> = values.iter().skip(1).map(number).collect();
+    let values = values?;
+    values
+        .iter()
+        .all(|value| value.is_finite() && *value > 0.0)
+        .then_some(values)
+}
+
+fn table_cell_span(cell: &Node) -> Option<(usize, usize)> {
+    let Some(span) = child_list(cell, "span") else {
+        return Some((1, 1));
+    };
+    let span = list_items(span)?;
+    Some((
+        nonnegative_integer(span.get(1)?)?,
+        nonnegative_integer(span.get(2)?)?,
+    ))
+}
+
+fn schematic_table_layout(table: &Node) -> Option<SchematicTableLayout> {
+    let columns = child_list(table, "column_count")
+        .and_then(list_items)
+        .and_then(|items| items.get(1))
+        .and_then(positive_integer)?;
+    let cells_node = child_list(table, "cells")?;
+    let cells: Vec<_> = children(cells_node, "table_cell").collect();
+    if cells.is_empty() || cells.len() % columns != 0 {
+        return None;
+    }
+    let rows = cells.len() / columns;
+    let column_widths_mm = table_dimension_values(table, "column_widths")?;
+    let row_heights_mm = table_dimension_values(table, "row_heights")?;
+    if column_widths_mm.len() != columns || row_heights_mm.len() != rows {
+        return None;
+    }
+
+    let at = child_list(cells[0], "at").and_then(list_items)?;
+    let angle = number(at.get(3)?)?;
+    // KiCad's table renderer rotates its cell-corner paths by the first cell's
+    // text angle. Defer nonzero rotations rather than substituting an AABB.
+    if !angle.is_finite() || angle.abs() > 0.001 && (angle - 360.0).abs() > 0.001 {
+        return None;
+    }
+    let origin_mm = (number(at.get(1)?)?, number(at.get(2)?)?);
+    if !origin_mm.0.is_finite() || !origin_mm.1.is_finite() {
+        return None;
+    }
+
+    let cell_spans: Option<Vec<_>> = cells.iter().map(|cell| table_cell_span(cell)).collect();
+    let cell_spans = cell_spans?;
+    for (index, (column_span, row_span)) in cell_spans.iter().copied().enumerate() {
+        let row = index / columns;
+        let column = index % columns;
+        if (column_span > 0 && column + column_span > columns)
+            || (row_span > 0 && row + row_span > rows)
+        {
+            return None;
+        }
+    }
+
+    let uuid = child_list(table, "uuid")
+        .and_then(list_items)
+        .and_then(|items| items.get(1))
+        .and_then(atom_value)
+        .map(str::to_owned);
+
+    Some(SchematicTableLayout {
+        uuid,
+        origin_mm,
+        column_widths_mm,
+        row_heights_mm,
+        cell_spans,
+    })
+}
+
+fn table_flag(group: Option<&Node>, name: &str, default: bool) -> bool {
+    group
+        .and_then(|group| child_list(group, name))
+        .and_then(list_items)
+        .and_then(|items| items.get(1))
+        .and_then(atom_value)
+        .map_or(default, |value| value == "yes")
+}
+
+fn table_stroke_width_mm(group: Option<&Node>) -> f64 {
+    group
+        .and_then(|group| child_list(group, "stroke"))
+        .and_then(|stroke| child_list(stroke, "width"))
+        .and_then(list_items)
+        .and_then(|items| items.get(1))
+        .and_then(number)
+        .filter(|width| width.is_finite() && *width > 0.0)
+        .unwrap_or(DEFAULT_TABLE_STROKE_WIDTH_MM)
+}
+
+fn cumulative_positions(origin: f64, sizes: &[f64]) -> Vec<f64> {
+    let mut positions = Vec::with_capacity(sizes.len() + 1);
+    positions.push(origin);
+    for size in sizes {
+        positions.push(positions.last().copied().unwrap_or(origin) + size);
+    }
+    positions
+}
+
+fn table_line_fact(
+    kind: &str,
+    uuid: &Option<String>,
+    start: (f64, f64),
+    end: (f64, f64),
+    stroke_width_mm: f64,
+) -> SchematicGraphicFact {
+    let margin = stroke_width_mm / 2.0 + 0.01;
+    SchematicGraphicFact {
+        kind: kind.to_owned(),
+        uuid: uuid.clone(),
+        bounds_mm: Some((
+            start.0.min(end.0) - margin,
+            start.1.min(end.1) - margin,
+            start.0.max(end.0) + margin,
+            start.1.max(end.1) + margin,
+        )),
+        points_mm: vec![start, end],
+        closed: false,
+        circle_mm: None,
+        arc_mm: None,
+        bezier_mm: None,
+        stroke_width_mm,
+    }
+}
+
+fn append_table_outline(
+    graphics: &mut Vec<SchematicGraphicFact>,
+    layout: &SchematicTableLayout,
+    stroke_width_mm: f64,
+) {
+    let left = layout.origin_mm.0;
+    let top = layout.origin_mm.1;
+    let right = left + layout.column_widths_mm.iter().sum::<f64>();
+    let bottom = top + layout.row_heights_mm.iter().sum::<f64>();
+    let corners = [(left, top), (right, top), (right, bottom), (left, bottom)];
+    for index in 0..corners.len() {
+        graphics.push(table_line_fact(
+            "table border",
+            &layout.uuid,
+            corners[index],
+            corners[(index + 1) % corners.len()],
+            stroke_width_mm,
+        ));
+    }
+}
+
+fn append_table_separators(
+    graphics: &mut Vec<SchematicGraphicFact>,
+    layout: &SchematicTableLayout,
+    header_enabled: bool,
+    columns_enabled: bool,
+    rows_enabled: bool,
+    border_width_mm: f64,
+    separator_width_mm: f64,
+) {
+    let column_positions =
+        cumulative_positions(layout.origin_mm.0, &layout.column_widths_mm);
+    let row_positions = cumulative_positions(layout.origin_mm.1, &layout.row_heights_mm);
+    let columns = layout.column_widths_mm.len();
+    let rows = layout.row_heights_mm.len();
+
+    for row in 0..rows {
+        for column in 0..columns {
+            let (column_span, row_span) = layout.cell_spans[row * columns + column];
+            if column_span == 0 || row_span == 0 || column + column_span == columns {
+                continue;
+            }
+            let stroke_width_mm = if row == 0 && header_enabled {
+                border_width_mm
+            } else if columns_enabled {
+                separator_width_mm
+            } else {
+                continue;
+            };
+            graphics.push(table_line_fact(
+                "table separator",
+                &layout.uuid,
+                (column_positions[column + column_span], row_positions[row]),
+                (
+                    column_positions[column + column_span],
+                    row_positions[row + row_span],
+                ),
+                stroke_width_mm,
+            ));
+        }
+    }
+
+    for row in 0..rows {
+        for column in 0..columns {
+            let (column_span, row_span) = layout.cell_spans[row * columns + column];
+            if column_span == 0 || row_span == 0 || row + row_span == rows {
+                continue;
+            }
+            let stroke_width_mm = if row == 0 && header_enabled {
+                border_width_mm
+            } else if rows_enabled {
+                separator_width_mm
+            } else {
+                continue;
+            };
+            graphics.push(table_line_fact(
+                "table separator",
+                &layout.uuid,
+                (
+                    column_positions[column],
+                    row_positions[row + row_span],
+                ),
+                (
+                    column_positions[column + column_span],
+                    row_positions[row + row_span],
+                ),
+                stroke_width_mm,
+            ));
+        }
+    }
+}
+
+fn collect_sheet_table_stroke_facts(root: &Node) -> Vec<SchematicGraphicFact> {
+    let mut graphics = Vec::new();
+    for table in children(root, "table") {
+        let Some(layout) = schematic_table_layout(table) else {
+            continue;
+        };
+        let border = child_list(table, "border");
+        let separators = child_list(table, "separators");
+        let border_width_mm = table_stroke_width_mm(border);
+        let separator_width_mm = table_stroke_width_mm(separators);
+        if table_flag(border, "external", true) {
+            append_table_outline(&mut graphics, &layout, border_width_mm);
+        }
+        append_table_separators(
+            &mut graphics,
+            &layout,
+            table_flag(border, "header", true),
+            table_flag(separators, "cols", true),
+            table_flag(separators, "rows", true),
+            border_width_mm,
+            separator_width_mm,
+        );
     }
     graphics
 }
@@ -1586,6 +1866,7 @@ fn check_wire_obstacles(
         .enumerate()
         .filter_map(|(index, node)| text_box_bounds(node).map(|bounds| (index, bounds)))
         .collect();
+    let table_strokes = collect_sheet_table_stroke_facts(root);
     let mut diagnostics = Vec::new();
 
     for (wire_index, segment) in segments.iter().enumerate() {
@@ -1623,6 +1904,22 @@ fn check_wire_obstacles(
                     &format!(
                         "wire {wire_index} penetrates sheet graphic {} {:?}",
                         graphic.kind, graphic.uuid
+                    ),
+                    *segment,
+                ));
+            }
+        }
+        for table_stroke in &table_strokes {
+            if wire_crosses_sheet_graphic_with_wire_stroke(
+                *segment,
+                table_stroke,
+                wire_stroke_width_mm,
+            ) {
+                diagnostics.push(at_segment(
+                    BuiltinRuleId::Sch013,
+                    &format!(
+                        "wire {wire_index} penetrates sheet graphic {} {:?}",
+                        table_stroke.kind, table_stroke.uuid
                     ),
                     *segment,
                 ));
@@ -3912,6 +4209,95 @@ mod tests {
     fn document(body: &str) -> SchematicDocument {
         SchematicDocument::from_text("fixture.kicad_sch", format!("(kicad_sch {body})"))
             .expect("fixture parses")
+    }
+
+    #[test]
+    fn sch013_checks_enabled_table_external_borders_and_column_separators() {
+        let document = document(
+            r#"
+            (wire (pts (xy 1 -1) (xy 1 2)))
+            (table
+              (column_count 2)
+              (column_widths 1 1)
+              (row_heights 1)
+              (cells
+                (table_cell "" (at 0 0 0) (size 1 1))
+                (table_cell "" (at 1 0 0) (size 1 1)))
+              (border (external yes) (header no) (stroke (width 0.2)))
+              (separators (rows no) (cols yes) (stroke (width 0.1)))
+              (uuid "table-uuid"))
+            "#,
+        );
+
+        let diagnostics = run_builtin_rules(&document).diagnostics;
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "SCH013" && item.message.contains("table border")
+        }));
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "SCH013" && item.message.contains("table separator")
+        }));
+    }
+
+    #[test]
+    fn sch013_ignores_disabled_table_strokes_and_merged_cell_separators() {
+        let no_strokes = document(
+            r#"
+            (wire (pts (xy 1 0.2) (xy 1 0.8)))
+            (table
+              (column_count 2)
+              (column_widths 1 1)
+              (row_heights 1)
+              (cells
+                (table_cell "" (at 0 0 0) (size 2 1) (span 2 1))
+                (table_cell "" (at 2 0 0) (size 0 0) (span 0 0)))
+              (border (external no) (header no) (stroke (width 0.2)))
+              (separators (rows no) (cols yes) (stroke (width 0.1))))
+            "#,
+        );
+        assert!(!run_builtin_rules(&no_strokes)
+            .diagnostics
+            .iter()
+            .any(|item| item.code == "SCH013" && item.message.contains("table")));
+
+        let disabled_separators = document(
+            r#"
+            (wire (pts (xy 1 0.2) (xy 1 0.8)))
+            (table
+              (column_count 2)
+              (column_widths 1 1)
+              (row_heights 1)
+              (cells
+                (table_cell "" (at 0 0 0) (size 1 1))
+                (table_cell "" (at 1 0 0) (size 1 1)))
+              (border (external no) (header no))
+              (separators (rows no) (cols no)))
+            "#,
+        );
+        assert!(!run_builtin_rules(&disabled_separators)
+            .diagnostics
+            .iter()
+            .any(|item| item.code == "SCH013" && item.message.contains("table")));
+    }
+
+    #[test]
+    fn sch013_checks_table_cell_text_with_estimated_glyph_bounds() {
+        let document = document(
+            r#"
+            (wire (pts (xy 2 0.4) (xy 2 0.9)))
+            (table
+              (column_count 1)
+              (column_widths 4)
+              (row_heights 2)
+              (cells
+                (table_cell "R1" (at 1 0.5 0) (size 4 2)
+                  (effects (font (size 1 1)))))
+              (border (external no) (header no))
+              (separators (rows no) (cols no)))
+            "#,
+        );
+        assert!(run_builtin_rules(&document).diagnostics.iter().any(|item| {
+            item.code == "SCH013" && item.message.contains("text annotation")
+        }));
     }
 
     #[test]
