@@ -839,7 +839,7 @@ impl PinAxis {
 struct SymbolTransform {
     reference: String,
     origin: Point,
-    rotation: i32,
+    rotation: f64,
     mirror: Option<String>,
     unit: u32,
     convert: u32,
@@ -1215,7 +1215,10 @@ fn read_symbol_transform(instance: &Node) -> Option<SymbolTransform> {
         x: number(at.get(1)?)?,
         y: number(at.get(2)?)?,
     };
-    let rotation = cardinal_rotation(at.get(3).and_then(number).unwrap_or(0.0))?;
+    let rotation = at.get(3).and_then(number).unwrap_or(0.0);
+    if !rotation.is_finite() {
+        return None;
+    }
     let unit = instance_integer(instance, "unit").unwrap_or(1);
     let convert = instance_integer(instance, "convert").unwrap_or(1);
     let mirror = child_list(instance, "mirror")
@@ -1275,6 +1278,9 @@ fn pin_orientation_diagnostic(
     let pin_x = number(at.get(1)?)?;
     let pin_y = number(at.get(2)?)?;
     let pin_angle = number(at.get(3)?)?;
+    // SCH005 models only horizontal/vertical pin axes; other rotations are
+    // now usable for transformed geometry but remain outside this rule.
+    cardinal_rotation(transform.rotation)?;
     let affine = symbol_transform_affine(transform.rotation, transform.mirror.as_deref())?;
     let pin_offset = affine * CurvePoint::new(pin_x, pin_y);
     let point = Point {
@@ -1336,16 +1342,14 @@ fn cardinal_rotation(angle: f64) -> Option<i32> {
 /// Builds the common `KiCad` symbol-local to schematic-space linear transform.
 ///
 /// `KiCad`'s symbol coordinates use a Y-up library frame while schematic sheet
-/// coordinates are Y-down. The mirrors and cardinal rotations are delegated
-/// to Kurbo's affine implementation instead of duplicated point/vector math.
-fn symbol_transform_affine(rotation: i32, mirror: Option<&str>) -> Option<Affine> {
-    let rotation = match rotation {
-        0 => 0.0,
-        90 => std::f64::consts::FRAC_PI_2,
-        180 => std::f64::consts::PI,
-        270 => 3.0 * std::f64::consts::FRAC_PI_2,
-        _ => return None,
-    };
+/// coordinates are Y-down. Kurbo applies any finite rotation and the supported
+/// mirror modes, avoiding a separate hand-written geometry path for diagonal
+/// symbol placements.
+fn symbol_transform_affine(rotation_degrees: f64, mirror: Option<&str>) -> Option<Affine> {
+    if !rotation_degrees.is_finite() {
+        return None;
+    }
+    let rotation = rotation_degrees.rem_euclid(360.0).to_radians();
     let mirror = match mirror {
         Some("x") => Affine::FLIP_Y,
         Some("y") => Affine::FLIP_X,
@@ -1359,10 +1363,10 @@ fn symbol_transform_affine(rotation: i32, mirror: Option<&str>) -> Option<Affine
 fn transform_symbol_point(
     x: f64,
     y: f64,
-    rotation: i32,
+    rotation_degrees: f64,
     mirror: Option<&str>,
 ) -> Option<(f64, f64)> {
-    let point = symbol_transform_affine(rotation, mirror)? * CurvePoint::new(x, y);
+    let point = symbol_transform_affine(rotation_degrees, mirror)? * CurvePoint::new(x, y);
     Some((point.x, point.y))
 }
 
@@ -2728,8 +2732,17 @@ mod tests {
             assert!((actual.0 - expected.0).abs() < 0.001);
             assert!((actual.1 - expected.1).abs() < 0.001);
         }
-        assert!(super::transform_symbol_point(2.0, 3.0, 45, None).is_none());
-        assert!(super::transform_symbol_point(2.0, 3.0, 0, Some("diagonal")).is_none());
+        let diagonal = super::transform_symbol_point(2.0, 3.0, 45.0, None)
+            .expect("finite non-cardinal KiCad transform");
+        let expected = 5.0_f64.sqrt() * 0.0 + 0.0;
+        let radians = 45.0_f64.to_radians();
+        let expected_x = 2.0 * radians.cos() - 3.0 * radians.sin();
+        let expected_y = -(2.0 * radians.sin() + 3.0 * radians.cos());
+        assert!((diagonal.0 - expected_x).abs() < 0.001);
+        assert!((diagonal.1 - expected_y).abs() < 0.001);
+        assert!(super::transform_symbol_point(2.0, 3.0, 0.0, Some("diagonal")).is_none());
+        assert!(super::transform_symbol_point(2.0, 3.0, f64::NAN, None).is_none());
+        let _ = expected;
     }
 
     const EMBEDDED_PIN: &str = r#"
@@ -2746,6 +2759,23 @@ mod tests {
           (property "Reference" "J1" (at 10 10 0) (effects (font (size 1 1))))
         )
     "#;
+
+    #[test]
+    fn non_cardinal_symbol_rotation_resolves_embedded_pin_geometry() {
+        let source = EMBEDDED_PIN.replace("(at 10 10 0)", "(at 10 10 45)");
+        let doc = document(&source);
+        let facts = super::SchematicFacts::from_document(&doc);
+        assert_eq!(facts.pins.len(), 1);
+        let expected = 10.0 - 2.54 / 2.0_f64.sqrt();
+        assert!((facts.pins[0].position_mm.0 - expected).abs() < 0.001);
+        assert!((facts.pins[0].position_mm.1 - expected).abs() < 0.001);
+        assert!(
+            !run_builtin_rules(&doc)
+                .diagnostics
+                .iter()
+                .any(|item| item.code == "SCH005")
+        );
+    }
 
     #[test]
     fn pin_wire_must_follow_the_embedded_pin_axis() {
