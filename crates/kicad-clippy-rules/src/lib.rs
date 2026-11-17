@@ -13,7 +13,8 @@ mod metadata;
 
 pub use generic::{
     ComponentFact, RuleRun, SchematicFacts, SchematicFieldFact, SchematicFrameFact,
-    SchematicGroupFact, SchematicLabelFact, SchematicPinFact, SchematicPrimitiveFact,
+    SchematicGraphicFact, SchematicGroupFact, SchematicLabelFact, SchematicPinFact,
+    SchematicPrimitiveFact,
     SchematicTextFact, SchematicWireFact, TextBoxFact, physical_wire_component_ids,
     run_builtin_rules,
 };
