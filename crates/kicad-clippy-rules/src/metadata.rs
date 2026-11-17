@@ -3199,10 +3199,14 @@ mod tests {
             ]),
             ..Netlist::default()
         };
-        assert!(profile.validate_with_netlist(&schematic, Some(&netlist)).iter().any(|item| {
-            item.code == "SCH004"
-                && item.message.contains("different exported KiCad nets")
-        }));
+        assert!(
+            profile
+                .validate_with_netlist(&schematic, Some(&netlist))
+                .iter()
+                .any(|item| {
+                    item.code == "SCH004" && item.message.contains("different exported KiCad nets")
+                })
+        );
     }
 
     #[test]
