@@ -457,9 +457,7 @@ struct SchematicTableLayout {
 }
 
 fn nonnegative_integer(node: &Node) -> Option<usize> {
-    let value = number(node)?;
-    (value.is_finite() && value >= 0.0 && value.fract() == 0.0)
-        .then_some(value as usize)
+    atom_value(node)?.parse::<usize>().ok()
 }
 
 fn positive_integer(node: &Node) -> Option<usize> {
@@ -500,7 +498,11 @@ fn schematic_table_layout(table: &Node) -> Option<SchematicTableLayout> {
     let rows = cells.len() / columns;
     let column_widths_mm = table_dimension_values(table, "column_widths")?;
     let row_heights_mm = table_dimension_values(table, "row_heights")?;
-    if column_widths_mm.len() != columns || row_heights_mm.len() != rows {
+    if column_widths_mm.len() != columns
+        || row_heights_mm.len() != rows
+        || !column_widths_mm.iter().sum::<f64>().is_finite()
+        || !row_heights_mm.iter().sum::<f64>().is_finite()
+    {
         return None;
     }
 
@@ -508,7 +510,11 @@ fn schematic_table_layout(table: &Node) -> Option<SchematicTableLayout> {
     let angle = number(at.get(3)?)?;
     // KiCad's table renderer rotates its cell-corner paths by the first cell's
     // text angle. Defer nonzero rotations rather than substituting an AABB.
-    if !angle.is_finite() || angle.abs() > 0.001 && (angle - 360.0).abs() > 0.001 {
+    if !angle.is_finite()
+        || angle.abs() > 0.001
+            && (angle - 360.0).abs() > 0.001
+            && (angle + 360.0).abs() > 0.001
+    {
         return None;
     }
     let origin_mm = (number(at.get(1)?)?, number(at.get(2)?)?);
@@ -521,8 +527,10 @@ fn schematic_table_layout(table: &Node) -> Option<SchematicTableLayout> {
     for (index, (column_span, row_span)) in cell_spans.iter().copied().enumerate() {
         let row = index / columns;
         let column = index % columns;
-        if (column_span > 0 && column + column_span > columns)
-            || (row_span > 0 && row + row_span > rows)
+        let column_end = column.checked_add(column_span)?;
+        let row_end = row.checked_add(row_span)?;
+        if (column_span > 0 && column_end > columns)
+            || (row_span > 0 && row_end > rows)
         {
             return None;
         }
@@ -4283,7 +4291,7 @@ mod tests {
     fn sch013_checks_table_cell_text_with_estimated_glyph_bounds() {
         let document = document(
             r#"
-            (wire (pts (xy 2 0.4) (xy 2 0.9)))
+            (wire (pts (xy 1 0.4) (xy 1 0.9)))
             (table
               (column_count 1)
               (column_widths 4)
@@ -4296,7 +4304,7 @@ mod tests {
             "#,
         );
         assert!(run_builtin_rules(&document).diagnostics.iter().any(|item| {
-            item.code == "SCH013" && item.message.contains("text annotation")
+            item.code == "SCH013" && item.message.contains("free-standing schematic text")
         }));
     }
 
