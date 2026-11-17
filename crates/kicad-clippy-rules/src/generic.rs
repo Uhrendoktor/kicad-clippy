@@ -3575,12 +3575,12 @@ mod tests {
         let normal = (-tangent.y / normal_length, tangent.x / normal_length);
         let wire = super::Segment {
             start: super::Point {
-                x: point.x - normal.0 * 0.002,
-                y: point.y - normal.1 * 0.002,
+                x: normal.0.mul_add(-0.002, point.x),
+                y: normal.1.mul_add(-0.002, point.y),
             },
             end: super::Point {
-                x: point.x + normal.0 * 0.002,
-                y: point.y + normal.1 * 0.002,
+                x: normal.0.mul_add(0.002, point.x),
+                y: normal.1.mul_add(0.002, point.y),
             },
             span: kicad_clippy_core::ByteSpan::new(0, 0),
         };
