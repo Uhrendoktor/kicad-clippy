@@ -1608,6 +1608,27 @@ fn check_wire_obstacles(
             *segment,
             &facts.symbol_texts,
         ));
+        for (text_index, text) in facts.texts.iter().enumerate() {
+            let Some((left, top, right, bottom)) = text.bounds_mm else {
+                continue;
+            };
+            let bounds = Bounds {
+                x: left,
+                y: top,
+                width: right - left,
+                height: bottom - top,
+            };
+            if strict_line_hits_bounds(*segment, bounds) {
+                diagnostics.push(at_segment(
+                    BuiltinRuleId::Sch013,
+                    &format!(
+                        "wire {wire_index} passes through free-standing schematic text {text_index} {:?}",
+                        text.text
+                    ),
+                    *segment,
+                ));
+            }
+        }
         for pin in &facts.pins {
             let point = Point {
                 x: pin.position_mm.0,
@@ -4466,6 +4487,36 @@ mod tests {
                 .iter()
                 .any(|item| item.code == "SCH013" && item.message.contains("symbol body Q1"))
         );
+    }
+
+    #[test]
+    fn sch013_checks_free_standing_schematic_text_as_a_wire_obstacle() {
+        let obstructed = document(
+            r#"
+            (text "KEEP OUT" (at 10 10 0)
+              (effects (font (size 1 1))))
+            (wire (pts (xy 8 9.5) (xy 12 9.5)))
+            "#,
+        );
+        let facts = super::SchematicFacts::from_document(&obstructed);
+        assert_eq!(facts.texts.len(), 1);
+        assert!(facts.texts[0].bounds_mm.is_some());
+        assert!(run_builtin_rules(&obstructed).diagnostics.iter().any(|item| {
+            item.code == "SCH013"
+                && item.message.contains("free-standing schematic text")
+                && item.message.contains("KEEP OUT")
+        }));
+
+        let clear = document(
+            r#"
+            (text "KEEP OUT" (at 10 10 0)
+              (effects (font (size 1 1))))
+            (wire (pts (xy 8 11) (xy 12 11)))
+            "#,
+        );
+        assert!(!run_builtin_rules(&clear).diagnostics.iter().any(|item| {
+            item.code == "SCH013" && item.message.contains("free-standing schematic text")
+        }));
     }
 
     #[test]
