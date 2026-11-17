@@ -1320,10 +1320,7 @@ fn collect_bus_obstacle_facts(root: &Node) -> Vec<SchematicBusObstacleFact> {
         let [start, end] = points.as_slice() else {
             continue;
         };
-        if !start.0.is_finite()
-            || !start.1.is_finite()
-            || !end.0.is_finite()
-            || !end.1.is_finite()
+        if !start.0.is_finite() || !start.1.is_finite() || !end.0.is_finite() || !end.1.is_finite()
         {
             continue;
         }
@@ -1364,7 +1361,9 @@ fn collect_bus_obstacle_facts(root: &Node) -> Vec<SchematicBusObstacleFact> {
         };
         let start = (start_x, start_y);
         let end = (start_x + size_x, start_y + size_y);
-        if ![start.0, start.1, end.0, end.1].iter().all(|value| value.is_finite())
+        if ![start.0, start.1, end.0, end.1]
+            .iter()
+            .all(|value| value.is_finite())
             || distance(
                 Point {
                     x: start.0,
@@ -4553,9 +4552,12 @@ mod tests {
             "#,
         );
 
-        assert!(run_builtin_rules(&document).diagnostics.iter().any(|item| {
-            item.code == "SCH013" && item.message.contains("bus line")
-        }));
+        assert!(
+            run_builtin_rules(&document)
+                .diagnostics
+                .iter()
+                .any(|item| { item.code == "SCH013" && item.message.contains("bus line") })
+        );
     }
 
     #[test]
@@ -4572,9 +4574,12 @@ mod tests {
             "#,
         );
 
-        assert!(!run_builtin_rules(&attached).diagnostics.iter().any(|item| {
-            item.code == "SCH013" && item.message.contains("bus entry")
-        }));
+        assert!(
+            !run_builtin_rules(&attached)
+                .diagnostics
+                .iter()
+                .any(|item| { item.code == "SCH013" && item.message.contains("bus entry") })
+        );
 
         let through_entry = document(
             r#"
@@ -4585,9 +4590,12 @@ mod tests {
             "#,
         );
 
-        assert!(run_builtin_rules(&through_entry).diagnostics.iter().any(|item| {
-            item.code == "SCH013" && item.message.contains("bus entry")
-        }));
+        assert!(
+            run_builtin_rules(&through_entry)
+                .diagnostics
+                .iter()
+                .any(|item| { item.code == "SCH013" && item.message.contains("bus entry") })
+        );
     }
 
     #[test]
