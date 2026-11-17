@@ -579,7 +579,12 @@ fn validate_separate_wire_pairs(
     let component_ids = physical_wire_component_ids(facts);
     let mut diagnostics = Vec::new();
     for pair in pairs {
-        diagnostics.extend(validate_separate_wire_pair(pair, facts, &component_ids, netlist));
+        diagnostics.extend(validate_separate_wire_pair(
+            pair,
+            facts,
+            &component_ids,
+            netlist,
+        ));
     }
     diagnostics
 }
@@ -596,7 +601,9 @@ fn validate_separate_wire_pair(
         return vec![Diagnostic::for_builtin_rule(
             BuiltinRuleId::Sch004,
             Severity::Error,
-            format!("separate-wire pair {pair_name} must identify two distinct valid REF.PIN entries"),
+            format!(
+                "separate-wire pair {pair_name} must identify two distinct valid REF.PIN entries"
+            ),
         )];
     }
 
@@ -621,7 +628,9 @@ fn validate_separate_wire_pair(
         return vec![Diagnostic::for_builtin_rule(
             BuiltinRuleId::Sch004,
             Severity::Error,
-            format!("separate-wire pair {pair_name} references a missing or unsupported embedded pin"),
+            format!(
+                "separate-wire pair {pair_name} references a missing or unsupported embedded pin"
+            ),
         )];
     };
 
@@ -634,7 +643,8 @@ fn validate_separate_wire_pair(
     };
     let first_component = physical_component(first_pin.position_mm);
     let second_component = physical_component(second_pin.position_mm);
-    if matches!((first_component, second_component), (Some(first), Some(second)) if first == second) {
+    if matches!((first_component, second_component), (Some(first), Some(second)) if first == second)
+    {
         diagnostics.push(Diagnostic::for_builtin_rule(
             BuiltinRuleId::Sch004,
             Severity::Error,
@@ -3136,22 +3146,27 @@ mod tests {
         )
         .expect("profile parses");
         assert!(
-            !profile.validate(&schematic).iter().any(|item| item.code == "SCH004")
+            !profile
+                .validate(&schematic)
+                .iter()
+                .any(|item| item.code == "SCH004")
         );
     }
 
     #[test]
     fn separate_wire_pair_rejects_pins_on_the_same_physical_wire_network() {
-        let schematic = direct_wire_schematic(
-            r#"(wire (pts (xy 10 10) (xy 20 10)))"#,
-        );
+        let schematic = direct_wire_schematic(r#"(wire (pts (xy 10 10) (xy 20 10)))"#);
         let profile: LintProfile = serde_json::from_str(
             r#"{"schema_version":1,"separate_wire_pairs":[{"first":"U1.1","second":"R1.1"}]}"#,
         )
         .expect("profile parses");
         assert!(
-            profile.validate(&schematic).iter().any(|item| item.code == "SCH004"
-                && item.message.contains("separate physical wire-only networks"))
+            profile.validate(&schematic).iter().any(|item| {
+            item.code == "SCH004"
+                && item
+                    .message
+                    .contains("separate physical wire-only networks")
+        })
         );
     }
 
@@ -3169,13 +3184,27 @@ mod tests {
         .expect("profile parses");
         let netlist = Netlist {
             pin_nets: BTreeMap::from([
-                (PinRef { reference: "U1".to_owned(), pin: "1".to_owned() }, "SHARED".to_owned()),
-                (PinRef { reference: "R1".to_owned(), pin: "1".to_owned() }, "SHARED".to_owned()),
+                (
+                    PinRef {
+                        reference: "U1".to_owned(),
+                        pin: "1".to_owned(),
+                    },
+                    "SHARED".to_owned(),
+                ),
+                (
+                    PinRef {
+                        reference: "R1".to_owned(),
+                        pin: "1".to_owned(),
+                    },
+                    "SHARED".to_owned(),
+                ),
             ]),
             ..Netlist::default()
         };
         assert!(
-            profile.validate_with_netlist(&schematic, Some(&netlist)).iter()
+            profile
+                .validate_with_netlist(&schematic, Some(&netlist))
+                .iter()
                 .any(|item| item.code == "SCH004"
                     && item.message.contains("different exported KiCad nets"))
         );
@@ -3195,9 +3224,10 @@ mod tests {
         .expect("profile parses");
         assert!(
             profile.validate(&schematic).iter().any(|item| {
-                item.code == "SCH004" && item.severity == Severity::Warning
-                    && item.message.contains("no exported KiCad netlist")
-            })
+            item.code == "SCH004"
+                && item.severity == Severity::Warning
+                && item.message.contains("no exported KiCad netlist")
+        })
         );
     }
 
