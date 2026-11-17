@@ -1589,11 +1589,8 @@ fn check_wire_obstacles(
             }
         }
         for graphic in &facts.graphics {
-            if wire_crosses_sheet_graphic_with_wire_stroke(
-                *segment,
-                graphic,
-                wire_stroke_width_mm,
-            ) {
+            if wire_crosses_sheet_graphic_with_wire_stroke(*segment, graphic, wire_stroke_width_mm)
+            {
                 diagnostics.push(at_segment(
                     BuiltinRuleId::Sch013,
                     &format!(
@@ -1954,10 +1951,7 @@ fn wire_within_circle_stroke(
     intersects_stroke_ring || penetrates_existing_body_region
 }
 
-fn wire_crosses_sheet_graphic(
-    wire: Segment,
-    graphic: &SchematicGraphicFact,
-) -> bool {
+fn wire_crosses_sheet_graphic(wire: Segment, graphic: &SchematicGraphicFact) -> bool {
     wire_crosses_sheet_graphic_with_wire_stroke(wire, graphic, 0.0)
 }
 
@@ -5124,9 +5118,14 @@ mod tests {
               (stroke (width 0) (type default)))
             ",
         );
-        assert!(!run_builtin_rules(&zero_width).diagnostics.iter().any(|item| {
-            item.code == "SCH013" && item.message.contains("sheet graphic polyline")
-        }));
+        assert!(
+            !run_builtin_rules(&zero_width)
+                .diagnostics
+                .iter()
+                .any(|item| {
+                    item.code == "SCH013" && item.message.contains("sheet graphic polyline")
+                })
+        );
 
         let netclass_default = document(
             r"
@@ -5190,8 +5189,12 @@ mod tests {
             end: super::Point { x: 2.15, y: 0.05 },
             span: kicad_clippy_core::ByteSpan::new(0, 0),
         };
-        assert!(!super::wire_within_circle_stroke(wire, center, 2.0, 0.2, 0.0));
-        assert!(super::wire_within_circle_stroke(wire, center, 2.0, 0.2, 0.2));
+        assert!(!super::wire_within_circle_stroke(
+            wire, center, 2.0, 0.2, 0.0
+        ));
+        assert!(super::wire_within_circle_stroke(
+            wire, center, 2.0, 0.2, 0.2
+        ));
     }
 
     #[test]
