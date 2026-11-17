@@ -55,19 +55,19 @@ Do not add a second parser, temp-file bridge, or parallel typed AST just to repl
 
 ## Code reduction achieved
 
-Against the feature-branch baseline before the external-library migration (`90b19a296472eb955482e6ba2ceae94a7b46a0fd`), the four directly affected implementation files at the verified PR head were:
+Against the feature-branch baseline before the external-library migration (`90b19a296472eb955482e6ba2ceae94a7b46a0fd`), the four directly affected implementation files at the current verified PR head were:
 
 | File | Before | After | Net change |
 | --- | ---: | ---: | ---: |
 | `generic.rs` | 3,523 lines / 115,651 bytes | 3,548 / 118,643 | +25 lines |
-| `source.rs` | 177 lines / 4,911 bytes | 104 / 2,829 | -73 lines |
-| CLI `main.rs` | 331 lines / 9,695 bytes | 375 / 11,380 | +44 lines |
-| Parser `schematic.rs` | 183 lines / 5,318 bytes | 240 / 7,432 | +57 lines |
-| **Combined** | **4,214 lines / 135,575 bytes** | **4,267 / 140,284** | **+53 lines / +4,709 bytes** |
+| `source.rs` | 177 lines / 4,911 bytes | 91 / 2,418 | -86 lines |
+| CLI `main.rs` | 331 lines / 9,695 bytes | 372 / 11,355 | +41 lines |
+| Parser `schematic.rs` | 183 lines / 5,318 bytes | 240 / 7,429 | +57 lines |
+| **Combined** | **4,214 lines / 135,575 bytes** | **4,251 / 139,845** | **+37 lines / +4,270 bytes** |
 
-This is not yet a raw code-size win: the four files grew by 53 lines (1.26%) and 4,709 bytes (3.47%). The source mapper dropped 73 lines by delegating line/column indexing and source excerpts to `miette`; the CLI and parser adapters added 101 lines for source-aware rendering and correct KiCad quoted-string decoding; the large rules module grew by 25 lines net while replacing several handwritten algorithms and adding regression fixtures. The line-count comparison includes tests and adapters but excludes the extra dependency source pulled into Cargo's build graph. It does not measure maintenance burden, runtime performance, or the complexity removed from bespoke algorithms.
+This is not yet a raw code-size win: the four files grew by 37 lines (0.88%) and 4,270 bytes (3.15%). The source layer dropped 86 lines by removing its duplicate line-start index, line/column conversion logic and repeated span validation in favor of `miette` plus `str::get`; the CLI and parser adapters added 98 lines for source-aware rendering and correct KiCad quoted-string decoding; the large rules module grew by 25 lines net while replacing several handwritten algorithms and adding regression fixtures. The line-count comparison includes tests and adapters but excludes the extra dependency source pulled into Cargo's build graph. It does not measure maintenance burden, runtime performance, or the complexity removed from bespoke algorithms.
 
-The important current win is algorithm ownership, not LOC: the repository no longer owns its own segment intersection classifier/sweep, polygon and rectangle predicates, point-to-segment distance, cubic Bezier subdivision, arc flattening, symbol affine transforms, or disjoint-set union-find implementation. However, the requested outcome is fewer lines and fewer moving parts too; this checkpoint has not achieved that yet. The next work should remove complete extraction/geometry algorithms rather than add more adapter layers. The current `generic.rs` is 3,548 lines; prioritize replacements only when the integration deletes an entire meaningful implementation path and preserves source spans and KiCad semantics.
+The important current win is algorithm ownership, not LOC: the repository no longer owns its own segment-intersection classifier/sweep, polygon and rectangle predicates, point-to-segment distance, cubic Bézier subdivision, arc flattening, symbol affine transforms, or disjoint-set union-find implementation. However, the requested outcome is fewer lines and fewer moving parts too; this checkpoint has not achieved a net source-size reduction. The next work should remove complete extraction/geometry algorithms rather than add more adapter layers. The current `generic.rs` is 3,548 lines; prioritize replacements only when the integration deletes an entire meaningful implementation path and preserves source spans and KiCad semantics.
 
 ## Target architecture
 
