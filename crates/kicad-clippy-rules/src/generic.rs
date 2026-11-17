@@ -4451,7 +4451,7 @@ mod tests {
             (symbol (lib_id "Test:Annotated") (at 10 10 0) (unit 1)
               (property "Reference" "U1" (at 10 10 0) (effects (font (size 1 1))))
             )
-            (wire (pts (xy 9 9.5) (xy 11 9.5)))
+            (wire (pts (xy 9 10.5) (xy 11 10.5)))
             (wire (pts (xy 14 11) (xy 18 11)))
             "#,
         );
