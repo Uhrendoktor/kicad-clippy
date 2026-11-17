@@ -271,8 +271,8 @@ fn collect_group_facts(root: &Node) -> Vec<SchematicGroupFact> {
                 .map(str::to_owned)
                 .collect();
             Some(SchematicGroupFact {
-                name,
-                uuid,
+                name: name.to_owned(),
+                uuid: uuid.to_owned(),
                 member_uuids,
             })
         })
@@ -293,7 +293,7 @@ fn collect_frame_facts(root: &Node) -> Vec<SchematicFrameFact> {
                 .and_then(list_items)
                 .and_then(|items| Some((number(items.get(1)?)?, number(items.get(2)?)?)))?;
             Some(SchematicFrameFact {
-                uuid,
+                uuid: uuid.to_owned(),
                 bounds_mm: (
                     start.0.min(end.0),
                     start.1.min(end.1),
@@ -1297,7 +1297,7 @@ fn pin_orientation_diagnostic(
         .and_then(list_items)
         .and_then(|items| items.get(1))
         .and_then(atom_value)
-        .unwrap_or_else(|| "?".to_owned());
+        .unwrap_or("?");
     Some(at_point(
         BuiltinRuleId::Sch005,
         format!(
@@ -1669,7 +1669,7 @@ fn read_text_box_metrics(
         .unwrap_or(-1.0);
     (
         Some(TextBoxMetrics {
-            label,
+            label: label.to_owned(),
             bounds: Bounds {
                 x,
                 y,
@@ -1757,7 +1757,13 @@ fn collect_label_nodes(root: &Node) -> Vec<(String, String, Point, ByteSpan, &No
         let Some(kind) = head(node) else {
             continue;
         };
-        labels.push((kind.to_owned(), label.to_owned(), point, span_of(node), node));
+        labels.push((
+            kind.to_owned(),
+            label.to_owned(),
+            point,
+            span_of(node),
+            node,
+        ));
     }
     labels
 }
