@@ -2102,20 +2102,18 @@ fn symbol_primitive_has_centerline_collision(
             });
     }
 
-    let mut edges: Vec<_> = primitive
+    let closing_edge = primitive
+        .points_mm
+        .last()
+        .copied()
+        .zip(primitive.points_mm.first().copied())
+        .filter(|_| primitive.closed);
+    primitive
         .points_mm
         .windows(2)
         .map(|pair| (pair[0], pair[1]))
-        .collect();
-    if primitive.closed {
-        if let (Some(last), Some(first)) = (
-            primitive.points_mm.last().copied(),
-            primitive.points_mm.first().copied(),
-        ) {
-            edges.push((last, first));
-        }
-    }
-    edges.into_iter().any(|(start, end)| {
+        .chain(closing_edge)
+        .any(|(start, end)| {
         segment_intersection_points(
             wire,
             Point {
