@@ -3571,7 +3571,7 @@ mod tests {
         let angle_parameter = 0.453_f64;
         let point = curve.eval(angle_parameter);
         let tangent = curve.deriv().eval(angle_parameter);
-        let normal_length = tangent.hypot();
+        let normal_length = tangent.x.hypot(tangent.y);
         let normal = (-tangent.y / normal_length, tangent.x / normal_length);
         let wire = super::Segment {
             start: super::Point {
