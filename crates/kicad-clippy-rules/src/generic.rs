@@ -1873,10 +1873,7 @@ fn subdivide_ellipse_arc(
 
     let middle_angle = f64::midpoint(start_angle, end_angle);
     let middle = evaluate(middle_angle)?;
-    let chord_middle = (
-        f64::midpoint(start.0, end.0),
-        f64::midpoint(start.1, end.1),
-    );
+    let chord_middle = (f64::midpoint(start.0, end.0), f64::midpoint(start.1, end.1));
     let error_x = middle.0 - chord_middle.0;
     let error_y = middle.1 - chord_middle.1;
     let error_squared = error_x.mul_add(error_x, error_y * error_y);
@@ -1922,15 +1919,9 @@ fn ellipse_primitive_points(node: &Node, is_arc: bool) -> Option<Vec<(f64, f64)>
         .and_then(|items| items.get(1))
         .and_then(number)
         .unwrap_or(0.0);
-    if ![
-        center.0,
-        center.1,
-        major_radius,
-        minor_radius,
-        rotation,
-    ]
-    .iter()
-    .all(|value| value.is_finite())
+    if ![center.0, center.1, major_radius, minor_radius, rotation]
+        .iter()
+        .all(|value| value.is_finite())
         || major_radius <= 0.0
         || minor_radius <= 0.0
     {
@@ -6344,9 +6335,14 @@ mod tests {
             (wire (pts (xy 1.3 1.41421356237) (xy 1.5 1.41421356237)))
             ",
         );
-        assert!(run_builtin_rules(&near_ellipse).diagnostics.iter().any(|item| {
-            item.code == "SCH013" && item.message.contains("sheet graphic ellipse")
-        }));
+        assert!(
+            run_builtin_rules(&near_ellipse)
+                .diagnostics
+                .iter()
+                .any(|item| {
+                    item.code == "SCH013" && item.message.contains("sheet graphic ellipse")
+                })
+        );
 
         let clear_ellipse = document(
             r"
@@ -6355,9 +6351,14 @@ mod tests {
             (wire (pts (xy 1.3 1.7) (xy 1.5 1.7)))
             ",
         );
-        assert!(!run_builtin_rules(&clear_ellipse).diagnostics.iter().any(|item| {
-            item.code == "SCH013" && item.message.contains("sheet graphic ellipse")
-        }));
+        assert!(
+            !run_builtin_rules(&clear_ellipse)
+                .diagnostics
+                .iter()
+                .any(|item| {
+                    item.code == "SCH013" && item.message.contains("sheet graphic ellipse")
+                })
+        );
     }
 
     #[test]
@@ -6382,9 +6383,14 @@ mod tests {
             (wire (pts (xy 0.4 0.25) (xy 0.6 0.25)))
             ",
         );
-        assert!(!run_builtin_rules(&inside_open_arc).diagnostics.iter().any(|item| {
-            item.code == "SCH013" && item.message.contains("sheet graphic ellipse_arc")
-        }));
+        assert!(
+            !run_builtin_rules(&inside_open_arc)
+                .diagnostics
+                .iter()
+                .any(|item| {
+                    item.code == "SCH013" && item.message.contains("sheet graphic ellipse_arc")
+                })
+        );
     }
 
     #[test]
