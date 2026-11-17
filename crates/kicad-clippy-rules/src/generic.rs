@@ -135,12 +135,23 @@ pub struct TextBoxFact {
     pub bounds_mm: Option<(f64, f64, f64, f64)>,
 }
 
+/// A free-standing schematic text object and its estimated visible glyph bounds.
+#[derive(Clone, Debug)]
+pub struct SchematicTextFact {
+    /// Rendered text content.
+    pub text: String,
+    /// Estimated visible glyph rectangle as (left, top, right, bottom), in millimetres.
+    pub bounds_mm: Option<(f64, f64, f64, f64)>,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct SchematicFacts {
     /// Placed symbol instances.
     pub components: Vec<ComponentFact>,
     /// Text boxes used for group documentation.
     pub text_boxes: Vec<TextBoxFact>,
+    /// Free-standing text objects with estimated visible glyph geometry.
+    pub texts: Vec<SchematicTextFact>,
     /// Native `KiCad` schematic groups.
     pub groups: Vec<SchematicGroupFact>,
     /// Top-level rectangular frames on the schematic sheet.
@@ -181,6 +192,7 @@ impl SchematicFacts {
         Self {
             components: collect_component_facts(root),
             text_boxes: collect_text_box_facts(root),
+            texts: collect_plain_text_facts(root),
             groups: collect_group_facts(root),
             frames: collect_frame_facts(root),
             wires: segments
@@ -248,6 +260,28 @@ fn collect_text_box_facts(root: &Node) -> Vec<TextBoxFact> {
             });
             Some(TextBoxFact {
                 uuid: uuid.to_owned(),
+                text: text.to_owned(),
+                bounds_mm,
+            })
+        })
+        .collect()
+}
+
+fn collect_plain_text_facts(root: &Node) -> Vec<SchematicTextFact> {
+    children(root, "text")
+        .filter_map(|node| {
+            let text = list_items(node)
+                .and_then(|items| items.get(1))
+                .and_then(atom_value)?;
+            let bounds_mm = text_visual_bounds(text, node).map(|bounds| {
+                (
+                    bounds.x,
+                    bounds.y,
+                    bounds.x + bounds.width,
+                    bounds.y + bounds.height,
+                )
+            });
+            Some(SchematicTextFact {
                 text: text.to_owned(),
                 bounds_mm,
             })
