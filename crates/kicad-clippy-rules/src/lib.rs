@@ -14,9 +14,8 @@ mod metadata;
 pub use generic::{
     ComponentFact, RuleRun, SchematicFacts, SchematicFieldFact, SchematicFrameFact,
     SchematicGraphicFact, SchematicGroupFact, SchematicLabelFact, SchematicPinFact,
-    SchematicPrimitiveFact,
-    SchematicTextFact, SchematicWireFact, TextBoxFact, physical_wire_component_ids,
-    run_builtin_rules,
+    SchematicPrimitiveFact, SchematicTextFact, SchematicWireFact, TextBoxFact,
+    physical_wire_component_ids, run_builtin_rules,
 };
 pub use metadata::{
     CommonPinNetGroup, ComponentIntent, ComponentKind, ComponentPurpose, ComponentRole,
