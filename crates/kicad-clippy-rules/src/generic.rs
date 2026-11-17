@@ -1860,6 +1860,45 @@ fn wire_within_sampled_path_stroke(
     false
 }
 
+/// Checks the declared circular stroke ring while retaining the existing inner-body obstacle rule.
+fn wire_within_circle_stroke(
+    wire: Segment,
+    center: Point,
+    radius_mm: f64,
+    stroke_width_mm: f64,
+) -> bool {
+    if !center.x.is_finite()
+        || !center.y.is_finite()
+        || !radius_mm.is_finite()
+        || !stroke_width_mm.is_finite()
+        || !wire.start.x.is_finite()
+        || !wire.start.y.is_finite()
+        || !wire.end.x.is_finite()
+        || !wire.end.y.is_finite()
+    {
+        return false;
+    }
+
+    let radius = radius_mm.abs();
+    let half_stroke = stroke_width_mm.abs() / 2.0;
+    let inner_radius = (radius - half_stroke).max(0.0);
+    let outer_radius = radius + half_stroke;
+    let minimum_distance = point_segment_distance(center, wire.start, wire.end);
+    let maximum_distance =
+        distance(center, wire.start).max(distance(center, wire.end));
+    if !minimum_distance.is_finite() || !maximum_distance.is_finite() {
+        return false;
+    }
+
+    let intersects_stroke_ring = minimum_distance
+        <= outer_radius + SCH013_STROKE_DISTANCE_EPSILON_MM
+        && maximum_distance + SCH013_STROKE_DISTANCE_EPSILON_MM >= inner_radius;
+    let penetrates_existing_body_region =
+        inner_radius > 0.0 && minimum_distance < inner_radius - 0.001;
+
+    intersects_stroke_ring || penetrates_existing_body_region
+}
+
 fn wire_crosses_sheet_graphic(wire: Segment, graphic: &SchematicGraphicFact) -> bool {
     if let Some(arc) = graphic.arc_mm {
         if !segment_arc_intersection_points(wire, arc).is_empty() {
@@ -1891,9 +1930,12 @@ fn wire_crosses_sheet_graphic(wire: Segment, graphic: &SchematicGraphicFact) -> 
             x: center_x,
             y: center_y,
         };
-        let inner_radius = radius - graphic.stroke_width_mm / 2.0;
-        return inner_radius > 0.0
-            && point_segment_distance(center, wire.start, wire.end) < inner_radius - 0.001;
+        return wire_within_circle_stroke(
+            wire,
+            center,
+            radius,
+            graphic.stroke_width_mm,
+        );
     } else if wire_within_sampled_path_stroke(
         wire,
         &graphic.points_mm,
@@ -2000,9 +2042,12 @@ fn wire_crosses_symbol_primitive(
             x: center_x,
             y: center_y,
         };
-        let inner_radius = radius - primitive.stroke_width_mm / 2.0;
-        return inner_radius > 0.0
-            && point_segment_distance(center, wire.start, wire.end) < inner_radius - 0.001;
+        return wire_within_circle_stroke(
+            wire,
+            center,
+            radius,
+            primitive.stroke_width_mm,
+        );
     } else {
         let to_point = |(x, y): (f64, f64)| Point { x, y };
         let mut edges: Vec<_> = primitive
@@ -4910,6 +4955,91 @@ mod tests {
                 .iter()
                 .any(|item| item.code == "SCH013" && item.message.contains("symbol body U1"))
         );
+    }
+
+    #[test]
+    fn sch013_checks_circle_stroke_proximity_and_preserves_interior_detection() {
+        let near_sheet_circle = document(
+            r"
+            (circle (center 0 0) (radius 2)
+              (stroke (width 0.4)) (fill (type none)))
+            (wire (pts (xy 2.1 -0.05) (xy 2.15 0.05)))
+            ",
+        );
+        assert!(run_builtin_rules(&near_sheet_circle).diagnostics.iter().any(|item| {
+            item.code == "SCH013" && item.message.contains("sheet graphic circle")
+        }));
+
+        let clear_sheet_circle = document(
+            r"
+            (circle (center 0 0) (radius 2)
+              (stroke (width 0.4)) (fill (type none)))
+            (wire (pts (xy 2.25 -0.05) (xy 2.3 0.05)))
+            ",
+        );
+        assert!(!run_builtin_rules(&clear_sheet_circle).diagnostics.iter().any(|item| {
+            item.code == "SCH013" && item.message.contains("sheet graphic circle")
+        }));
+
+        let near_symbol_circle = document(
+            r#"
+            (lib_symbols
+              (symbol "Test:Circle")
+                (symbol "Circle_1_1"
+                  (circle (center 0 0) (radius 2)
+                    (stroke (width 0.4)) (fill (type none)))
+                )
+              )
+            )
+            (symbol (lib_id "Test:Circle") (at 10 10 0) (unit 1)
+              (property "Reference" "U1" (at 10 10 0) (effects (font (size 1 1))))
+            )
+            (wire (pts (xy 12.1 9.95) (xy 12.15 10.05)))
+            "#,
+        );
+        assert!(run_builtin_rules(&near_symbol_circle).diagnostics.iter().any(|item| {
+            item.code == "SCH013" && item.message.contains("symbol body U1")
+        }));
+
+        let clear_symbol_circle = document(
+            r#"
+            (lib_symbols
+              (symbol "Test:Circle")
+                (symbol "Circle_1_1"
+                  (circle (center 0 0) (radius 2)
+                    (stroke (width 0.4)) (fill (type none)))
+                )
+              )
+            )
+            (symbol (lib_id "Test:Circle") (at 10 10 0) (unit 1)
+              (property "Reference" "U1" (at 10 10 0) (effects (font (size 1 1))))
+            )
+            (wire (pts (xy 12.25 9.95) (xy 12.3 10.05)))
+            "#,
+        );
+        assert!(!run_builtin_rules(&clear_symbol_circle).diagnostics.iter().any(|item| {
+            item.code == "SCH013" && item.message.contains("symbol body U1")
+        }));
+
+        let interior_symbol_circle = document(
+            r#"
+            (lib_symbols
+              (symbol "Test:Circle")
+                (symbol "Circle_1_1"
+                  (circle (center 0 0) (radius 2)
+                    (stroke (width 0.4)) (fill (type none)))
+                )
+              )
+            )
+            (symbol (lib_id "Test:Circle") (at 10 10 0) (unit 1)
+              (property "Reference" "U1" (at 10 10 0) (effects (font (size 1 1))))
+            )
+            (wire (pts (xy 9 10) (xy 11 10)))
+            "#,
+        );
+        assert!(run_builtin_rules(&interior_symbol_circle).diagnostics.iter().any(|item| {
+            item.code == "SCH013" && item.message.contains("symbol body U1")
+        }));
     }
 
     #[test]
