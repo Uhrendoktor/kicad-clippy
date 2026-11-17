@@ -3932,9 +3932,11 @@ mod tests {
               (xy 1.8739779646681292 0.7268470182495735)))
             "#,
         );
-        assert!(run_builtin_rules(&doc).diagnostics.iter().any(|item| {
-            item.code == "SCH013" && item.message.contains("sheet graphic arc")
-        }));
+        assert!(
+            run_builtin_rules(&doc).diagnostics.iter().any(|item| {
+                item.code == "SCH013" && item.message.contains("sheet graphic arc")
+            })
+        );
     }
 
     #[test]
