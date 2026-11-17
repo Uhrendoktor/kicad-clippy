@@ -88,6 +88,18 @@ pub struct CommonPinNetGroup {
     pub single_label: bool,
 }
 
+/// A pair of pins that must not share a physical wire-only component.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct SeparateWirePair {
+    /// First pin reference in REF.PIN form.
+    pub first: String,
+    /// Second pin reference in REF.PIN form.
+    pub second: String,
+    /// Also require the pins to resolve to different nets in the exported `KiCad` netlist.
+    #[serde(default)]
+    pub netlist_separate: bool,
+}
+
 /// Declared purpose and engineering constraints for one component.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct ComponentIntent {
@@ -199,6 +211,9 @@ pub struct LintProfile {
     /// Pin groups requiring a named common physical/logical net contract.
     #[serde(default)]
     pub common_pin_groups: Vec<CommonPinNetGroup>,
+    /// Pin pairs that must remain physically separate, with optional netlist separation.
+    #[serde(default)]
+    pub separate_wire_pairs: Vec<SeparateWirePair>,
 }
 
 impl LintProfile {
@@ -261,6 +276,11 @@ impl LintProfile {
         ));
         diagnostics.extend(validate_common_pin_groups(
             &self.common_pin_groups,
+            &facts,
+            netlist,
+        ));
+        diagnostics.extend(validate_separate_wire_pairs(
+            &self.separate_wire_pairs,
             &facts,
             netlist,
         ));
@@ -544,6 +564,121 @@ fn validate_common_pin_group_netlist(
                 nets.into_iter().collect::<Vec<_>>().join(", ")
             ),
         ));
+    }
+    diagnostics
+}
+
+fn validate_separate_wire_pairs(
+    pairs: &[SeparateWirePair],
+    facts: &SchematicFacts,
+    netlist: Option<&Netlist>,
+) -> Vec<Diagnostic> {
+    if pairs.is_empty() {
+        return Vec::new();
+    }
+    let component_ids = physical_wire_component_ids(facts);
+    let mut diagnostics = Vec::new();
+    for pair in pairs {
+        diagnostics.extend(validate_separate_wire_pair(pair, facts, &component_ids, netlist));
+    }
+    diagnostics
+}
+
+fn validate_separate_wire_pair(
+    pair: &SeparateWirePair,
+    facts: &SchematicFacts,
+    component_ids: &BTreeMap<String, usize>,
+    netlist: Option<&Netlist>,
+) -> Vec<Diagnostic> {
+    let pair_name = format!("{} / {}", pair.first, pair.second);
+    let mut diagnostics = Vec::new();
+    if !valid_pin_ref(&pair.first) || !valid_pin_ref(&pair.second) || pair.first == pair.second {
+        return vec![Diagnostic::for_builtin_rule(
+            BuiltinRuleId::Sch004,
+            Severity::Error,
+            format!("separate-wire pair {pair_name} must identify two distinct valid REF.PIN entries"),
+        )];
+    }
+
+    let (Some((first_reference, first_number)), Some((second_reference, second_number))) =
+        (pair.first.rsplit_once('.'), pair.second.rsplit_once('.'))
+    else {
+        return vec![Diagnostic::for_builtin_rule(
+            BuiltinRuleId::Sch004,
+            Severity::Error,
+            format!("separate-wire pair {pair_name} must use REF.PIN notation"),
+        )];
+    };
+    let first_pin = facts
+        .pins
+        .iter()
+        .find(|pin| pin.reference == first_reference && pin.number == first_number);
+    let second_pin = facts
+        .pins
+        .iter()
+        .find(|pin| pin.reference == second_reference && pin.number == second_number);
+    let (Some(first_pin), Some(second_pin)) = (first_pin, second_pin) else {
+        return vec![Diagnostic::for_builtin_rule(
+            BuiltinRuleId::Sch004,
+            Severity::Error,
+            format!("separate-wire pair {pair_name} references a missing or unsupported embedded pin"),
+        )];
+    };
+
+    let physical_component = |point: (f64, f64)| {
+        if !point_is_on_wire(point, facts) {
+            return None;
+        }
+        let key = format!("{:.3}:{:.3}", point.0, point.1);
+        component_ids.get(&key).copied()
+    };
+    let first_component = physical_component(first_pin.position_mm);
+    let second_component = physical_component(second_pin.position_mm);
+    if matches!((first_component, second_component), (Some(first), Some(second)) if first == second) {
+        diagnostics.push(Diagnostic::for_builtin_rule(
+            BuiltinRuleId::Sch004,
+            Severity::Error,
+            format!(
+                "pins {} and {} must remain on separate physical wire-only networks",
+                pair.first, pair.second
+            ),
+        ));
+    }
+
+    if pair.netlist_separate {
+        let Some(netlist) = netlist else {
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch004,
+                Severity::Warning,
+                format!("separate-wire pair {pair_name} requests netlist_separate but no exported KiCad netlist was supplied"),
+            ));
+            return diagnostics;
+        };
+        let first_net = netlist.net_for_pin(first_reference, first_number);
+        let second_net = netlist.net_for_pin(second_reference, second_number);
+        match (first_net, second_net) {
+            (Some(first), Some(second)) if first == second => {
+                diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch004,
+                    Severity::Error,
+                    format!(
+                        "pins {} and {} must resolve to different exported KiCad nets, but both resolve to {first:?}",
+                        pair.first, pair.second
+                    ),
+                ));
+            }
+            (None, _) => diagnostics.push(Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch004,
+                Severity::Error,
+                format!("{} in separate-wire pair {pair_name} is absent from the exported KiCad netlist", pair.first),
+            )),
+            (_, None) => diagnostics.push(Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch004,
+                Severity::Error,
+                format!("{} in separate-wire pair {pair_name} is absent from the exported KiCad netlist", pair.second),
+            )),
+            (Some(_), Some(_)) => {}
+        }
     }
     diagnostics
 }
@@ -2984,6 +3119,86 @@ mod tests {
         let diagnostics = profile.validate(&schematic);
         assert!(diagnostics.iter().any(|item| item.code == "SCH017"));
         assert!(diagnostics.iter().any(|item| item.code == "SCH020"));
+    }
+
+    #[test]
+    fn separate_wire_pair_accepts_disconnected_islands_even_when_labels_match() {
+        let schematic = direct_wire_schematic(
+            r#"
+            (wire (pts (xy 10 10) (xy 12 10)))
+            (wire (pts (xy 20 10) (xy 18 10)))
+            (label "SENSE" (at 10 10 0) (effects (font (size 1 1))))
+            (label "SENSE" (at 20 10 0) (effects (font (size 1 1))))
+            "#,
+        );
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"separate_wire_pairs":[{"first":"U1.1","second":"R1.1"}]}"#,
+        )
+        .expect("profile parses");
+        assert!(
+            !profile.validate(&schematic).iter().any(|item| item.code == "SCH004")
+        );
+    }
+
+    #[test]
+    fn separate_wire_pair_rejects_pins_on_the_same_physical_wire_network() {
+        let schematic = direct_wire_schematic(
+            r#"(wire (pts (xy 10 10) (xy 20 10)))"#,
+        );
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"separate_wire_pairs":[{"first":"U1.1","second":"R1.1"}]}"#,
+        )
+        .expect("profile parses");
+        assert!(
+            profile.validate(&schematic).iter().any(|item| item.code == "SCH004"
+                && item.message.contains("separate physical wire-only networks"))
+        );
+    }
+
+    #[test]
+    fn separate_wire_pair_can_require_distinct_exported_nets() {
+        let schematic = direct_wire_schematic(
+            r#"
+            (wire (pts (xy 10 10) (xy 12 10)))
+            (wire (pts (xy 20 10) (xy 18 10)))
+            "#,
+        );
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"separate_wire_pairs":[{"first":"U1.1","second":"R1.1","netlist_separate":true}]}"#,
+        )
+        .expect("profile parses");
+        let netlist = Netlist {
+            pin_nets: BTreeMap::from([
+                (PinRef { reference: "U1".to_owned(), pin: "1".to_owned() }, "SHARED".to_owned()),
+                (PinRef { reference: "R1".to_owned(), pin: "1".to_owned() }, "SHARED".to_owned()),
+            ]),
+            ..Netlist::default()
+        };
+        assert!(
+            profile.validate_with_netlist(&schematic, Some(&netlist)).iter()
+                .any(|item| item.code == "SCH004"
+                    && item.message.contains("different exported KiCad nets"))
+        );
+    }
+
+    #[test]
+    fn separate_wire_pair_warns_when_requested_netlist_is_unavailable() {
+        let schematic = direct_wire_schematic(
+            r#"
+            (wire (pts (xy 10 10) (xy 12 10)))
+            (wire (pts (xy 20 10) (xy 18 10)))
+            "#,
+        );
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"separate_wire_pairs":[{"first":"U1.1","second":"R1.1","netlist_separate":true}]}"#,
+        )
+        .expect("profile parses");
+        assert!(
+            profile.validate(&schematic).iter().any(|item| {
+                item.code == "SCH004" && item.severity == Severity::Warning
+                    && item.message.contains("no exported KiCad netlist")
+            })
+        );
     }
 
     fn decoupling_netlist(capacitor_target_net: &str) -> Netlist {
