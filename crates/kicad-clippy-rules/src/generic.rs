@@ -518,11 +518,15 @@ fn base64_digit(byte: u8) -> Option<u8> {
 }
 
 fn read_be_u32(bytes: &[u8], offset: usize) -> Option<u32> {
-    Some(u32::from_be_bytes(bytes.get(offset..offset + 4)?.try_into().ok()?))
+    Some(u32::from_be_bytes(
+        bytes.get(offset..offset + 4)?.try_into().ok()?,
+    ))
 }
 
 fn read_be_u16(bytes: &[u8], offset: usize) -> Option<u16> {
-    Some(u16::from_be_bytes(bytes.get(offset..offset + 2)?.try_into().ok()?))
+    Some(u16::from_be_bytes(
+        bytes.get(offset..offset + 2)?.try_into().ok()?,
+    ))
 }
 
 fn parse_png_image_metadata(bytes: &[u8]) -> Option<BitmapImageMetadata> {
@@ -619,7 +623,18 @@ fn parse_jpeg_image_metadata(bytes: &[u8]) -> Option<BitmapImageMetadata> {
 
         if matches!(
             marker,
-            0xc0 | 0xc1 | 0xc2 | 0xc3 | 0xc5 | 0xc6 | 0xc7 | 0xc9 | 0xca | 0xcb | 0xcd | 0xce | 0xcf
+            0xc0 | 0xc1
+                | 0xc2
+                | 0xc3
+                | 0xc5
+                | 0xc6
+                | 0xc7
+                | 0xc9
+                | 0xca
+                | 0xcb
+                | 0xcd
+                | 0xce
+                | 0xcf
         ) && segment.len() >= 5
         {
             height_pixels = Some(u32::from(u16::from_be_bytes([segment[1], segment[2]])));
