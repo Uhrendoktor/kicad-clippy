@@ -153,6 +153,14 @@ pub struct SchematicGraphicFact {
     pub uuid: Option<String>,
     /// Approximate bounds including half the graphic stroke width.
     pub bounds_mm: Option<(f64, f64, f64, f64)>,
+    /// Sheet-space path points (empty for a circle).
+    pub points_mm: Vec<(f64, f64)>,
+    /// Whether the vector graphic path is closed.
+    pub closed: bool,
+    /// Optional sheet-space circle (centre x, centre y, radius).
+    pub circle_mm: Option<(f64, f64, f64)>,
+    /// Approximate graphic stroke width in millimetres.
+    pub stroke_width_mm: f64,
 }
 
 /// An embedded bitmap image with bounds derived from its pixel size, PPI and scale.
@@ -331,11 +339,48 @@ fn collect_sheet_graphic_facts(root: &Node) -> Vec<SchematicGraphicFact> {
                 .and_then(|items| items.get(1))
                 .and_then(atom_value)
                 .map(str::to_owned);
+            let stroke_width_mm = symbol_primitive_stroke_width(node);
+            let circle_mm = if kind == "circle" {
+                let center = child_list(node, "center").and_then(list_items);
+                let radius = child_list(node, "radius")
+                    .and_then(list_items)
+                    .and_then(|items| items.get(1))
+                    .and_then(number)
+                    .map(f64::abs);
+                center.and_then(|center| {
+                    Some((number(center.get(1)?)?, number(center.get(2)?)?, radius?))
+                })
+            } else {
+                None
+            };
+            let mut points_mm = if kind == "circle" {
+                Vec::new()
+            } else {
+                match kind {
+                    "rectangle" => rectangle_primitive_points(node),
+                    "polyline" | "polygon" => polyline_primitive_points(node),
+                    "arc" => arc_primitive_points(node),
+                    "bezier" => bezier_primitive_points(node),
+                    _ => None,
+                }
+                .unwrap_or_default()
+            };
+            let repeated_endpoint = points_mm.len() > 2
+                && (points_mm[0].0 - points_mm[points_mm.len() - 1].0).abs() <= 0.001
+                && (points_mm[0].1 - points_mm[points_mm.len() - 1].1).abs() <= 0.001;
+            let closed = kind == "rectangle" || kind == "polygon" || repeated_endpoint;
+            if closed && repeated_endpoint {
+                points_mm.pop();
+            }
             let bounds_mm = sheet_graphic_bounds(node, kind);
             graphics.push(SchematicGraphicFact {
                 kind: kind.to_owned(),
                 uuid,
                 bounds_mm,
+                points_mm,
+                closed,
+                circle_mm,
+                stroke_width_mm,
             });
         }
     }
@@ -1285,6 +1330,30 @@ fn check_wire_obstacles(
                 ));
             }
         }
+        for graphic in &facts.graphics {
+            if wire_crosses_sheet_graphic(*segment, graphic) {
+                diagnostics.push(at_segment(
+                    BuiltinRuleId::Sch013,
+                    &format!(
+                        "wire {wire_index} penetrates sheet graphic {} {:?}",
+                        graphic.kind, graphic.uuid
+                    ),
+                    *segment,
+                ));
+            }
+        }
+        for image in &facts.images {
+            if image
+                .bounds_mm
+                .is_some_and(|bounds| wire_crosses_bitmap_image(*segment, bounds))
+            {
+                diagnostics.push(at_segment(
+                    BuiltinRuleId::Sch013,
+                    &format!("wire {wire_index} penetrates embedded bitmap image {:?}", image.uuid),
+                    *segment,
+                ));
+            }
+        }
         for pin in &facts.pins {
             let point = Point {
                 x: pin.position_mm.0,
@@ -1361,6 +1430,64 @@ fn collect_visible_field_bounds(root: &Node) -> Vec<(String, Bounds, ByteSpan)> 
         }
     }
     fields
+}
+
+fn wire_crosses_sheet_graphic(wire: Segment, graphic: &SchematicGraphicFact) -> bool {
+    if let Some((center_x, center_y, radius)) = graphic.circle_mm {
+        let center = Point {
+            x: center_x,
+            y: center_y,
+        };
+        let inner_radius = radius - graphic.stroke_width_mm / 2.0;
+        return inner_radius > 0.0
+            && point_segment_distance(center, wire.start, wire.end) < inner_radius - 0.001;
+    }
+
+    let to_point = |(x, y): (f64, f64)| Point { x, y };
+    let mut edges: Vec<_> = graphic
+        .points_mm
+        .windows(2)
+        .map(|pair| (to_point(pair[0]), to_point(pair[1])))
+        .collect();
+    if graphic.closed && graphic.points_mm.len() > 2 {
+        if let (Some(last), Some(first)) = (
+            graphic.points_mm.last().copied(),
+            graphic.points_mm.first().copied(),
+        ) {
+            edges.push((to_point(last), to_point(first)));
+        }
+    }
+    if edges.iter().any(|(start, end)| {
+        !segment_intersection_points(wire, *start, *end).is_empty()
+    }) {
+        return true;
+    }
+    if graphic.closed {
+        let midpoint = Point {
+            x: f64::midpoint(wire.start.x, wire.end.x),
+            y: f64::midpoint(wire.start.y, wire.end.y),
+        };
+        return point_in_polygon(midpoint, &graphic.points_mm)
+            || point_in_polygon(wire.start, &graphic.points_mm)
+            || point_in_polygon(wire.end, &graphic.points_mm);
+    }
+    false
+}
+
+fn wire_crosses_bitmap_image(
+    wire: Segment,
+    bounds: (f64, f64, f64, f64),
+) -> bool {
+    let (left, top, right, bottom) = bounds;
+    strict_line_hits_bounds(
+        wire,
+        Bounds {
+            x: left,
+            y: top,
+            width: right - left,
+            height: bottom - top,
+        },
+    )
 }
 
 fn wire_crosses_symbol_primitive(
@@ -3443,6 +3570,35 @@ mod tests {
         let with_unsupported = super::newstroke_text_metrics_ratio("A\u{10ffff}H");
         assert!((supported.0 - with_unsupported.0).abs() < 0.001);
         assert!((supported.1 - with_unsupported.1).abs() < 0.001);
+    }
+
+    #[test]
+    fn sch013_detects_wire_crossing_a_top_level_sheet_circle() {
+        let doc = document(
+            r#"
+            (circle (center 5 5) (radius 2)
+              (stroke (width 0.254) (type default)) (fill (type none)))
+            (wire (pts (xy 1 5) (xy 9 5)))
+            "#,
+        );
+        assert!(run_builtin_rules(&doc).diagnostics.iter().any(|item| {
+            item.code == "SCH013" && item.message.contains("sheet graphic circle")
+        }));
+    }
+
+    #[test]
+    fn sch013_detects_wire_crossing_an_embedded_bitmap_image() {
+        let doc = document(
+            r#"(kicad_sch
+                (version 20260623)
+                (image (at 5 5) (scale 1)
+                  (data iVBORw0KGgoAAAANSUhEUgAAAHgAAAA8CAYAAACtrX6oAAAACXBIWXMAAC4jAAAuIwF4pT92AAAAoklEQVR4nO3RAQkAMAzAsPk3vak4h5IoKHSWtPkdwFsGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcd1OAFhGyMXxbAAAAAElFTkSuQmCC))
+                (wire (pts (xy 1 5) (xy 9 5)))
+            )"#,
+        );
+        assert!(run_builtin_rules(&doc).diagnostics.iter().any(|item| {
+            item.code == "SCH013" && item.message.contains("embedded bitmap image")
+        }));
     }
 
     #[test]
