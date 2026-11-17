@@ -2716,14 +2716,14 @@ mod tests {
     #[test]
     fn kurbo_affine_matches_kicad_cardinal_symbol_transforms() {
         let cases = [
-            (0, None, (2.0, -3.0)),
-            (90, None, (-3.0, -2.0)),
-            (180, None, (-2.0, 3.0)),
-            (270, None, (3.0, 2.0)),
-            (0, Some("x"), (2.0, 3.0)),
-            (0, Some("y"), (-2.0, -3.0)),
-            (90, Some("x"), (3.0, -2.0)),
-            (90, Some("y"), (-3.0, 2.0)),
+            (0.0, None, (2.0, -3.0)),
+            (90.0, None, (-3.0, -2.0)),
+            (180.0, None, (-2.0, 3.0)),
+            (270.0, None, (3.0, 2.0)),
+            (0.0, Some("x"), (2.0, 3.0)),
+            (0.0, Some("y"), (-2.0, -3.0)),
+            (90.0, Some("x"), (3.0, -2.0)),
+            (90.0, Some("y"), (-3.0, 2.0)),
         ];
 
         for (rotation, mirror, expected) in cases {
