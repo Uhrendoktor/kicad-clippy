@@ -5240,7 +5240,7 @@ mod tests {
     fn sch013_does_not_apply_project_default_when_graphical_assignments_exist() {
         for assignment in [
             r#"(directive_label "HighSpeed" (property "Net Class" "HighSpeed"))"#,
-            r"(rule_area (pts (xy 0 0) (xy 1 1))),
+            r"(rule_area (pts (xy 0 0) (xy 1 1)))",
             r#"(label "NET" (at 0 0 0) (property "Net Class" "HighSpeed"))"#,
         ] {
             let schematic = document(&format!(
