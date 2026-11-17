@@ -1666,7 +1666,8 @@ fn wire_within_path_stroke(
     if !stroke_width_mm.is_finite() || !flatten_tolerance_mm.is_finite() {
         return false;
     }
-    let Some((distance, path_parameter, wire_parameter)) = wire_path_min_distance(wire, path)
+    let Some((minimum_distance, path_parameter, wire_parameter)) =
+        wire_path_min_distance(wire, path)
     else {
         return false;
     };
@@ -1674,7 +1675,7 @@ fn wire_within_path_stroke(
         0.5,
         flatten_tolerance_mm.max(0.0) + SCH013_STROKE_DISTANCE_EPSILON_MM,
     );
-    if distance > threshold {
+    if minimum_distance > threshold {
         return false;
     }
     if let Some((reference, pins)) = pin_owner {
