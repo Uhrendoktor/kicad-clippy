@@ -155,6 +155,15 @@ pub struct SchematicGraphicFact {
     pub bounds_mm: Option<(f64, f64, f64, f64)>,
 }
 
+/// An embedded bitmap image with bounds derived from its pixel size, PPI and scale.
+#[derive(Clone, Debug)]
+pub struct SchematicImageFact {
+    /// Stable image UUID, when present in the schematic.
+    pub uuid: Option<String>,
+    /// Centre-derived bounds in millimetres, when PNG/JPEG metadata resolves.
+    pub bounds_mm: Option<(f64, f64, f64, f64)>,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct SchematicFacts {
     /// Placed symbol instances.
@@ -165,6 +174,8 @@ pub struct SchematicFacts {
     pub texts: Vec<SchematicTextFact>,
     /// Top-level vector graphics with approximate sheet-space bounds.
     pub graphics: Vec<SchematicGraphicFact>,
+    /// Embedded PNG/JPEG images with bounds derived from pixel size and resolution.
+    pub images: Vec<SchematicImageFact>,
     /// Native `KiCad` schematic groups.
     pub groups: Vec<SchematicGroupFact>,
     /// Top-level rectangular frames on the schematic sheet.
@@ -207,6 +218,7 @@ impl SchematicFacts {
             text_boxes: collect_text_box_facts(root),
             texts: collect_plain_text_facts(root),
             graphics: collect_sheet_graphic_facts(root),
+            images: collect_sheet_image_facts(root),
             groups: collect_group_facts(root),
             frames: collect_frame_facts(root),
             wires: segments
@@ -373,6 +385,256 @@ fn sheet_graphic_bounds(node: &Node, kind: &str) -> Option<(f64, f64, f64, f64)>
         max_x + stroke_margin,
         max_y + stroke_margin,
     ))
+}
+
+fn collect_sheet_image_facts(root: &Node) -> Vec<SchematicImageFact> {
+    let format_version = child_list(root, "version")
+        .and_then(list_items)
+        .and_then(|items| items.get(1))
+        .and_then(atom_value)
+        .and_then(|value| value.parse::<u32>().ok())
+        .unwrap_or(20260623);
+
+    children(root, "image")
+        .map(|node| {
+            let uuid = child_list(node, "uuid")
+                .and_then(list_items)
+                .and_then(|items| items.get(1))
+                .and_then(atom_value)
+                .map(str::to_owned);
+            let bounds_mm = child_list(node, "data")
+                .and_then(list_items)
+                .map(|items| {
+                    items
+                        .iter()
+                        .skip(1)
+                        .filter_map(atom_value)
+                        .collect::<String>()
+                })
+                .and_then(|encoded| parse_bitmap_image_metadata(&encoded))
+                .and_then(|metadata| {
+                    let position = point_from_at(node)?;
+                    let scale = child_list(node, "scale")
+                        .and_then(list_items)
+                        .and_then(|items| items.get(1))
+                        .and_then(number)
+                        .filter(|scale| scale.is_finite() && *scale > 0.0)
+                        .unwrap_or(1.0);
+                    let ppi = if format_version <= 20230121 {
+                        300.0
+                    } else if format_version < 20260623 {
+                        f64::from(metadata.legacy_ppi)
+                    } else {
+                        f64::from(metadata.ppi)
+                    };
+                    let width = f64::from(metadata.width_pixels) * 25.4 / ppi * scale;
+                    let height = f64::from(metadata.height_pixels) * 25.4 / ppi * scale;
+                    (width.is_finite() && height.is_finite() && width > 0.0 && height > 0.0)
+                        .then_some((
+                            position.x - width / 2.0,
+                            position.y - height / 2.0,
+                            position.x + width / 2.0,
+                            position.y + height / 2.0,
+                        ))
+                });
+            SchematicImageFact { uuid, bounds_mm }
+        })
+        .collect()
+}
+
+#[derive(Clone, Copy, Debug)]
+struct BitmapImageMetadata {
+    width_pixels: u32,
+    height_pixels: u32,
+    ppi: u32,
+    legacy_ppi: u32,
+}
+
+fn parse_bitmap_image_metadata(encoded: &str) -> Option<BitmapImageMetadata> {
+    const MAX_HEADER_BYTES: usize = 256 * 1024;
+    let bytes = decode_base64_prefix(encoded, MAX_HEADER_BYTES);
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        parse_png_image_metadata(&bytes)
+    } else if bytes.starts_with(&[0xff, 0xd8]) {
+        parse_jpeg_image_metadata(&bytes)
+    } else {
+        None
+    }
+}
+
+fn decode_base64_prefix(encoded: &str, max_bytes: usize) -> Vec<u8> {
+    let mut decoded = Vec::with_capacity(max_bytes.min(encoded.len() * 3 / 4));
+    let mut quartet = [0_u8; 4];
+    let mut quartet_len = 0;
+
+    for byte in encoded.bytes() {
+        if byte.is_ascii_whitespace() {
+            continue;
+        }
+        if byte == b'=' {
+            break;
+        }
+        let Some(value) = base64_digit(byte) else {
+            return Vec::new();
+        };
+        quartet[quartet_len] = value;
+        quartet_len += 1;
+
+        if quartet_len == 4 {
+            decoded.push((quartet[0] << 2) | (quartet[1] >> 4));
+            decoded.push((quartet[1] << 4) | (quartet[2] >> 2));
+            decoded.push((quartet[2] << 6) | quartet[3]);
+            quartet_len = 0;
+            if decoded.len() >= max_bytes {
+                decoded.truncate(max_bytes);
+                break;
+            }
+        }
+    }
+
+    if decoded.len() < max_bytes {
+        match quartet_len {
+            2 => decoded.push((quartet[0] << 2) | (quartet[1] >> 4)),
+            3 => {
+                decoded.push((quartet[0] << 2) | (quartet[1] >> 4));
+                decoded.push((quartet[1] << 4) | (quartet[2] >> 2));
+            }
+            _ => {}
+        }
+    }
+    decoded.truncate(max_bytes);
+    decoded
+}
+
+fn base64_digit(byte: u8) -> Option<u8> {
+    match byte {
+        b'A'..=b'Z' => Some(byte - b'A'),
+        b'a'..=b'z' => Some(byte - b'a' + 26),
+        b'0'..=b'9' => Some(byte - b'0' + 52),
+        b'+' => Some(62),
+        b'/' => Some(63),
+        _ => None,
+    }
+}
+
+fn read_be_u32(bytes: &[u8], offset: usize) -> Option<u32> {
+    Some(u32::from_be_bytes(bytes.get(offset..offset + 4)?.try_into().ok()?))
+}
+
+fn read_be_u16(bytes: &[u8], offset: usize) -> Option<u16> {
+    Some(u16::from_be_bytes(bytes.get(offset..offset + 2)?.try_into().ok()?))
+}
+
+fn parse_png_image_metadata(bytes: &[u8]) -> Option<BitmapImageMetadata> {
+    if !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return None;
+    }
+    let mut width_pixels = None;
+    let mut height_pixels = None;
+    let mut ppi = 300;
+    let mut legacy_ppi = 300;
+    let mut offset = 8;
+
+    while offset.checked_add(12)? <= bytes.len() {
+        let chunk_length = usize::try_from(read_be_u32(bytes, offset)?).ok()?;
+        let chunk_type = bytes.get(offset + 4..offset + 8)?;
+        let data_start = offset + 8;
+        let data_end = data_start.checked_add(chunk_length)?;
+        if data_end.checked_add(4)? > bytes.len() {
+            break;
+        }
+
+        match chunk_type {
+            b"IHDR" if chunk_length == 13 => {
+                width_pixels = Some(read_be_u32(bytes, data_start)?);
+                height_pixels = Some(read_be_u32(bytes, data_start + 4)?);
+            }
+            b"pHYs" if chunk_length == 9 => {
+                let pixels_per_meter = read_be_u32(bytes, data_start)?;
+                let unit_is_meter = bytes[data_start + 8] == 1;
+                if unit_is_meter && pixels_per_meter > 100 {
+                    let pixels_per_cm = f64::from(pixels_per_meter) / 100.0;
+                    ppi = (pixels_per_cm * 2.54).round() as u32;
+                    legacy_ppi = ((pixels_per_meter / 100) as f64 * 2.54).round() as u32;
+                }
+            }
+            b"IDAT" | b"IEND" => break,
+            _ => {}
+        }
+        offset = data_end + 4;
+    }
+
+    let width_pixels = width_pixels.filter(|value| *value > 0 && *value <= 1_000_000)?;
+    let height_pixels = height_pixels.filter(|value| *value > 0 && *value <= 1_000_000)?;
+    Some(BitmapImageMetadata {
+        width_pixels,
+        height_pixels,
+        ppi: ppi.max(1),
+        legacy_ppi: legacy_ppi.max(1),
+    })
+}
+
+fn parse_jpeg_image_metadata(bytes: &[u8]) -> Option<BitmapImageMetadata> {
+    if !bytes.starts_with(&[0xff, 0xd8]) {
+        return None;
+    }
+    let mut width_pixels = None;
+    let mut height_pixels = None;
+    let mut ppi = 300;
+    let mut offset = 2;
+
+    while offset + 4 <= bytes.len() {
+        if bytes[offset] != 0xff {
+            offset += 1;
+            continue;
+        }
+        while offset < bytes.len() && bytes[offset] == 0xff {
+            offset += 1;
+        }
+        let marker = *bytes.get(offset)?;
+        offset += 1;
+        if marker == 0xd9 || marker == 0xda {
+            break;
+        }
+        if marker == 0x01 || (0xd0..=0xd7).contains(&marker) {
+            continue;
+        }
+        let segment_length = usize::from(read_be_u16(bytes, offset)?);
+        if segment_length < 2 {
+            return None;
+        }
+        let data_start = offset + 2;
+        let data_end = offset.checked_add(segment_length)?;
+        let segment = bytes.get(data_start..data_end)?;
+
+        if marker == 0xe0 && segment.len() >= 12 && segment.starts_with(b"JFIF\0") {
+            let units = segment[7];
+            let density_x = u32::from(u16::from_be_bytes([segment[8], segment[9]]));
+            ppi = match units {
+                1 => density_x,
+                2 => (f64::from(density_x) * 2.54).round() as u32,
+                _ => 300,
+            };
+        }
+
+        if matches!(
+            marker,
+            0xc0 | 0xc1 | 0xc2 | 0xc3 | 0xc5 | 0xc6 | 0xc7 | 0xc9 | 0xca | 0xcb | 0xcd | 0xce | 0xcf
+        ) && segment.len() >= 5
+        {
+            height_pixels = Some(u32::from(u16::from_be_bytes([segment[1], segment[2]])));
+            width_pixels = Some(u32::from(u16::from_be_bytes([segment[3], segment[4]])));
+        }
+
+        offset = data_end;
+    }
+
+    Some(BitmapImageMetadata {
+        width_pixels: width_pixels.filter(|value| *value > 0)?,
+        height_pixels: height_pixels.filter(|value| *value > 0)?,
+        ppi: ppi.max(1),
+        legacy_ppi: ppi.max(1),
+    })
 }
 
 fn collect_group_facts(root: &Node) -> Vec<SchematicGroupFact> {
