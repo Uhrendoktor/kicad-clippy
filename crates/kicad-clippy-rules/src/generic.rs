@@ -2098,31 +2098,34 @@ fn symbol_primitive_has_centerline_collision(
             .any(|point| !wire_intersection_is_allowed_pin(point, wire, &primitive.reference, pins));
     }
 
-    primitive
+    let mut edges: Vec<_> = primitive
         .points_mm
         .windows(2)
-        .chain(
-            primitive
-                .closed
-                .then(|| primitive.points_mm.last().zip(primitive.points_mm.first()))
-                .flatten()
-                .map(|(last, first)| [last, first].as_slice()),
+        .map(|pair| (pair[0], pair[1]))
+        .collect();
+    if primitive.closed {
+        if let (Some(last), Some(first)) = (
+            primitive.points_mm.last().copied(),
+            primitive.points_mm.first().copied(),
+        ) {
+            edges.push((last, first));
+        }
+    }
+    edges.into_iter().any(|(start, end)| {
+        segment_intersection_points(
+            wire,
+            Point {
+                x: start.0,
+                y: start.1,
+            },
+            Point {
+                x: end.0,
+                y: end.1,
+            },
         )
-        .flat_map(|edge| {
-            let (start, end) = (edge[0], edge[1]);
-            segment_intersection_points(
-                wire,
-                Point {
-                    x: start.0,
-                    y: start.1,
-                },
-                Point {
-                    x: end.0,
-                    y: end.1,
-                },
-            )
-        })
+        .into_iter()
         .any(|point| !wire_intersection_is_allowed_pin(point, wire, &primitive.reference, pins))
+    })
 }
 
 fn symbol_primitive_wire_stroke_collision(
