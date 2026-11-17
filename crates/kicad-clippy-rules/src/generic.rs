@@ -121,6 +121,8 @@ pub struct SchematicLabelFact {
     pub name: String,
     /// Label anchor on the sheet, in millimetres.
     pub position_mm: (f64, f64),
+    /// Estimated visible glyph bounds in sheet coordinates, when resolvable.
+    pub bounds_mm: Option<(f64, f64, f64, f64)>,
 }
 
 #[derive(Clone, Debug)]
@@ -306,10 +308,18 @@ fn collect_frame_facts(root: &Node) -> Vec<SchematicFrameFact> {
 }
 
 fn collect_label_facts(root: &Node) -> Vec<SchematicLabelFact> {
-    collect_labels(root)
+    collect_label_nodes(root)
         .into_iter()
-        .map(|(kind, name, point, _span)| SchematicLabelFact {
+        .map(|(kind, name, point, _span, node)| SchematicLabelFact {
             kind,
+            bounds_mm: text_visual_bounds(&name, node).map(|bounds| {
+                (
+                    bounds.x,
+                    bounds.y,
+                    bounds.x + bounds.width,
+                    bounds.y + bounds.height,
+                )
+            }),
             name,
             position_mm: (point.x, point.y),
         })
