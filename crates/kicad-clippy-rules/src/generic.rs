@@ -435,6 +435,8 @@ fn collect_sheet_graphic_facts(root: &Node) -> Vec<SchematicGraphicFact> {
         "circle",
         "arc",
         "bezier",
+        "ellipse",
+        "ellipse_arc",
     ] {
         for node in children(root, kind) {
             let uuid = child_list(node, "uuid")
@@ -474,6 +476,8 @@ fn collect_sheet_graphic_facts(root: &Node) -> Vec<SchematicGraphicFact> {
                     "polyline" | "polygon" => polyline_primitive_points(node),
                     "arc" => arc_primitive_points(node),
                     "bezier" => bezier_primitive_points(node),
+                    "ellipse" => ellipse_primitive_points(node, false),
+                    "ellipse_arc" => ellipse_primitive_points(node, true),
                     _ => None,
                 }
                 .unwrap_or_default()
@@ -481,7 +485,10 @@ fn collect_sheet_graphic_facts(root: &Node) -> Vec<SchematicGraphicFact> {
             let repeated_endpoint = points_mm.len() > 2
                 && (points_mm[0].0 - points_mm[points_mm.len() - 1].0).abs() <= 0.001
                 && (points_mm[0].1 - points_mm[points_mm.len() - 1].1).abs() <= 0.001;
-            let closed = kind == "rectangle" || kind == "polygon" || repeated_endpoint;
+            let closed = kind == "rectangle"
+                || kind == "polygon"
+                || kind == "ellipse"
+                || (kind != "ellipse_arc" && repeated_endpoint);
             if closed && repeated_endpoint {
                 points_mm.pop();
             }
@@ -792,6 +799,8 @@ fn sheet_graphic_bounds(node: &Node, kind: &str) -> Option<(f64, f64, f64, f64)>
         "polyline" | "polygon" => polyline_primitive_points(node)?,
         "arc" => arc_primitive_points(node)?,
         "bezier" => bezier_primitive_points(node)?,
+        "ellipse" => ellipse_primitive_points(node, false)?,
+        "ellipse_arc" => ellipse_primitive_points(node, true)?,
         _ => return None,
     };
     let min_x = points
@@ -1848,6 +1857,145 @@ fn sample_arc_through_three_points(
     flattened_curve_points(path.path_elements(CURVE_FLATTEN_TOLERANCE_MM), start, end)
 }
 
+fn subdivide_ellipse_arc(
+    start_angle: f64,
+    start: (f64, f64),
+    end_angle: f64,
+    end: (f64, f64),
+    depth: u8,
+    evaluate: &impl Fn(f64) -> Option<(f64, f64)>,
+    points: &mut Vec<(f64, f64)>,
+) -> Option<()> {
+    if depth == 0 {
+        points.push(end);
+        return Some(());
+    }
+
+    let middle_angle = f64::midpoint(start_angle, end_angle);
+    let middle = evaluate(middle_angle)?;
+    let chord_middle = (
+        f64::midpoint(start.0, end.0),
+        f64::midpoint(start.1, end.1),
+    );
+    let error_x = middle.0 - chord_middle.0;
+    let error_y = middle.1 - chord_middle.1;
+    let error_squared = error_x.mul_add(error_x, error_y * error_y);
+    let tolerance_squared = CURVE_FLATTEN_TOLERANCE_MM * CURVE_FLATTEN_TOLERANCE_MM;
+    if error_squared <= tolerance_squared {
+        points.push(end);
+    } else {
+        subdivide_ellipse_arc(
+            start_angle,
+            start,
+            middle_angle,
+            middle,
+            depth - 1,
+            evaluate,
+            points,
+        )?;
+        subdivide_ellipse_arc(
+            middle_angle,
+            middle,
+            end_angle,
+            end,
+            depth - 1,
+            evaluate,
+            points,
+        )?;
+    }
+    Some(())
+}
+
+fn ellipse_primitive_points(node: &Node, is_arc: bool) -> Option<Vec<(f64, f64)>> {
+    let center = child_list(node, "center").and_then(list_items)?;
+    let center = (number(center.get(1)?)?, number(center.get(2)?)?);
+    let major_radius = child_list(node, "major_radius")
+        .and_then(list_items)
+        .and_then(|items| items.get(1))
+        .and_then(number)?;
+    let minor_radius = child_list(node, "minor_radius")
+        .and_then(list_items)
+        .and_then(|items| items.get(1))
+        .and_then(number)?;
+    let rotation = child_list(node, "rotation_angle")
+        .and_then(list_items)
+        .and_then(|items| items.get(1))
+        .and_then(number)
+        .unwrap_or(0.0);
+    if ![
+        center.0,
+        center.1,
+        major_radius,
+        minor_radius,
+        rotation,
+    ]
+    .iter()
+    .all(|value| value.is_finite())
+        || major_radius <= 0.0
+        || minor_radius <= 0.0
+    {
+        return None;
+    }
+
+    let start_degrees = if is_arc {
+        child_list(node, "start_angle")
+            .and_then(list_items)
+            .and_then(|items| items.get(1))
+            .and_then(number)
+            .unwrap_or(0.0)
+    } else {
+        0.0
+    };
+    let end_degrees = if is_arc {
+        child_list(node, "end_angle")
+            .and_then(list_items)
+            .and_then(|items| items.get(1))
+            .and_then(number)
+            .unwrap_or(90.0)
+    } else {
+        360.0
+    };
+    if !start_degrees.is_finite() || !end_degrees.is_finite() {
+        return None;
+    }
+
+    let mut sweep_degrees = end_degrees - start_degrees;
+    if !sweep_degrees.is_finite() {
+        return None;
+    }
+    if sweep_degrees >= 360.0 || sweep_degrees <= -360.0 {
+        sweep_degrees = 360.0;
+    } else if sweep_degrees < 0.0 {
+        sweep_degrees += 360.0;
+    }
+
+    let start_angle = start_degrees.to_radians().rem_euclid(std::f64::consts::TAU);
+    let end_angle = start_angle + sweep_degrees.to_radians();
+    let (sin_rotation, cos_rotation) = rotation.to_radians().sin_cos();
+    let evaluate = |angle: f64| {
+        let (sin_angle, cos_angle) = angle.sin_cos();
+        let local_x = major_radius * cos_angle;
+        let local_y = minor_radius * sin_angle;
+        let x = center.0 + local_x.mul_add(cos_rotation, -local_y * sin_rotation);
+        let y = center.1 + local_x.mul_add(sin_rotation, local_y * cos_rotation);
+        (x.is_finite() && y.is_finite()).then_some((x, y))
+    };
+
+    let start = evaluate(start_angle)?;
+    let end = evaluate(end_angle)?;
+    let mut points = vec![start];
+    subdivide_ellipse_arc(
+        start_angle,
+        start,
+        end_angle,
+        end,
+        20,
+        &evaluate,
+        &mut points,
+    )?;
+    Some(points)
+}
+
 fn circular_arc_through_three_points(
     start: (f64, f64),
     mid: (f64, f64),
@@ -2656,6 +2804,16 @@ fn wire_crosses_sheet_graphic_with_wire_stroke(
             graphic.stroke_width_mm,
             wire_stroke_width_mm,
         );
+    } else if matches!(graphic.kind.as_str(), "ellipse" | "ellipse_arc") {
+        if wire_within_sampled_path_stroke(
+            wire,
+            &graphic.points_mm,
+            graphic.closed,
+            combined_stroke_width_mm,
+            CURVE_FLATTEN_TOLERANCE_MM,
+        ) {
+            return true;
+        }
     } else if wire_within_sampled_path_stroke(
         wire,
         &graphic.points_mm,
@@ -6175,6 +6333,58 @@ mod tests {
         assert!(super::wire_within_circle_stroke(
             wire, center, 2.0, 0.2, 0.2
         ));
+    }
+
+    #[test]
+    fn sch013_checks_rotated_ellipse_stroke_proximity_and_preserves_clearance() {
+        let near_ellipse = document(
+            r"
+            (ellipse (center 0 0) (major_radius 2) (minor_radius 1)
+              (rotation_angle 45) (stroke (width 0.2)) (fill (type none)))
+            (wire (pts (xy 1.3 1.41421356237) (xy 1.5 1.41421356237)))
+            ",
+        );
+        assert!(run_builtin_rules(&near_ellipse).diagnostics.iter().any(|item| {
+            item.code == "SCH013" && item.message.contains("sheet graphic ellipse")
+        }));
+
+        let clear_ellipse = document(
+            r"
+            (ellipse (center 0 0) (major_radius 2) (minor_radius 1)
+              (rotation_angle 45) (stroke (width 0.2)) (fill (type none)))
+            (wire (pts (xy 1.3 1.7) (xy 1.5 1.7)))
+            ",
+        );
+        assert!(!run_builtin_rules(&clear_ellipse).diagnostics.iter().any(|item| {
+            item.code == "SCH013" && item.message.contains("sheet graphic ellipse")
+        }));
+    }
+
+    #[test]
+    fn sch013_checks_elliptical_arc_stroke_without_blocking_its_interior() {
+        let on_arc = document(
+            r"
+            (ellipse_arc (center 0 0) (major_radius 2) (minor_radius 1)
+              (rotation_angle 0) (start_angle 0) (end_angle 90)
+              (stroke (width 0.2)) (fill (type none)))
+            (wire (pts (xy 1.3 0.70710678118) (xy 1.5 0.70710678118)))
+            ",
+        );
+        assert!(run_builtin_rules(&on_arc).diagnostics.iter().any(|item| {
+            item.code == "SCH013" && item.message.contains("sheet graphic ellipse_arc")
+        }));
+
+        let inside_open_arc = document(
+            r"
+            (ellipse_arc (center 0 0) (major_radius 2) (minor_radius 1)
+              (rotation_angle 0) (start_angle 0) (end_angle 90)
+              (stroke (width 0.2)) (fill (type none)))
+            (wire (pts (xy 0.4 0.25) (xy 0.6 0.25)))
+            ",
+        );
+        assert!(!run_builtin_rules(&inside_open_arc).diagnostics.iter().any(|item| {
+            item.code == "SCH013" && item.message.contains("sheet graphic ellipse_arc")
+        }));
     }
 
     #[test]
