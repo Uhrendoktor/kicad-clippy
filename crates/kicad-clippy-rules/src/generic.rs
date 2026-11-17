@@ -1884,8 +1884,7 @@ fn wire_within_circle_stroke(
     let inner_radius = (radius - half_stroke).max(0.0);
     let outer_radius = radius + half_stroke;
     let minimum_distance = point_segment_distance(center, wire.start, wire.end);
-    let maximum_distance =
-        distance(center, wire.start).max(distance(center, wire.end));
+    let maximum_distance = distance(center, wire.start).max(distance(center, wire.end));
     if !minimum_distance.is_finite() || !maximum_distance.is_finite() {
         return false;
     }
@@ -1930,12 +1929,7 @@ fn wire_crosses_sheet_graphic(wire: Segment, graphic: &SchematicGraphicFact) -> 
             x: center_x,
             y: center_y,
         };
-        return wire_within_circle_stroke(
-            wire,
-            center,
-            radius,
-            graphic.stroke_width_mm,
-        );
+        return wire_within_circle_stroke(wire, center, radius, graphic.stroke_width_mm);
     } else if wire_within_sampled_path_stroke(
         wire,
         &graphic.points_mm,
@@ -2042,12 +2036,7 @@ fn wire_crosses_symbol_primitive(
             x: center_x,
             y: center_y,
         };
-        return wire_within_circle_stroke(
-            wire,
-            center,
-            radius,
-            primitive.stroke_width_mm,
-        );
+        return wire_within_circle_stroke(wire, center, radius, primitive.stroke_width_mm);
     } else {
         let to_point = |(x, y): (f64, f64)| Point { x, y };
         let mut edges: Vec<_> = primitive
@@ -4966,9 +4955,14 @@ mod tests {
             (wire (pts (xy 2.1 -0.05) (xy 2.15 0.05)))
             ",
         );
-        assert!(run_builtin_rules(&near_sheet_circle).diagnostics.iter().any(|item| {
-            item.code == "SCH013" && item.message.contains("sheet graphic circle")
-        }));
+        assert!(
+            run_builtin_rules(&near_sheet_circle)
+                .diagnostics
+                .iter()
+                .any(|item| {
+                    item.code == "SCH013" && item.message.contains("sheet graphic circle")
+                })
+        );
 
         let clear_sheet_circle = document(
             r"
@@ -4977,9 +4971,14 @@ mod tests {
             (wire (pts (xy 2.25 -0.05) (xy 2.3 0.05)))
             ",
         );
-        assert!(!run_builtin_rules(&clear_sheet_circle).diagnostics.iter().any(|item| {
-            item.code == "SCH013" && item.message.contains("sheet graphic circle")
-        }));
+        assert!(
+            !run_builtin_rules(&clear_sheet_circle)
+                .diagnostics
+                .iter()
+                .any(|item| {
+                    item.code == "SCH013" && item.message.contains("sheet graphic circle")
+                })
+        );
 
         let near_symbol_circle = document(
             r#"
@@ -4997,9 +4996,12 @@ mod tests {
             (wire (pts (xy 12.1 9.95) (xy 12.15 10.05)))
             "#,
         );
-        assert!(run_builtin_rules(&near_symbol_circle).diagnostics.iter().any(|item| {
-            item.code == "SCH013" && item.message.contains("symbol body U1")
-        }));
+        assert!(
+            run_builtin_rules(&near_symbol_circle)
+                .diagnostics
+                .iter()
+                .any(|item| { item.code == "SCH013" && item.message.contains("symbol body U1") })
+        );
 
         let clear_symbol_circle = document(
             r#"
@@ -5017,9 +5019,12 @@ mod tests {
             (wire (pts (xy 12.25 9.95) (xy 12.3 10.05)))
             "#,
         );
-        assert!(!run_builtin_rules(&clear_symbol_circle).diagnostics.iter().any(|item| {
-            item.code == "SCH013" && item.message.contains("symbol body U1")
-        }));
+        assert!(
+            !run_builtin_rules(&clear_symbol_circle)
+                .diagnostics
+                .iter()
+                .any(|item| { item.code == "SCH013" && item.message.contains("symbol body U1") })
+        );
 
         let interior_symbol_circle = document(
             r#"
@@ -5037,9 +5042,12 @@ mod tests {
             (wire (pts (xy 9 10) (xy 11 10)))
             "#,
         );
-        assert!(run_builtin_rules(&interior_symbol_circle).diagnostics.iter().any(|item| {
-            item.code == "SCH013" && item.message.contains("symbol body U1")
-        }));
+        assert!(
+            run_builtin_rules(&interior_symbol_circle)
+                .diagnostics
+                .iter()
+                .any(|item| { item.code == "SCH013" && item.message.contains("symbol body U1") })
+        );
     }
 
     #[test]
