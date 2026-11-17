@@ -18,10 +18,10 @@ The exact status and limitations for every rule are maintained in [rules.md](rul
 
 - Generic schematic rules: SCH001–SCH003, SCH005, SCH008, SCH010 (partial), SCH011, SCH015, SCH018, and SCH019.
 - Project-profile rules: SCH006, SCH007, SCH009, SCH012 (partial), SCH014, SCH016, SCH017, SCH020, SCH021, and SCH022.
-- SCH004 has partial profile-driven support for direct-wire pin pairs and common-pin groups with optional wire-only connectivity and single-label cardinality; automatic inference of all intended physical nets remains pending.
+- SCH004 has partial profile-driven support for direct-wire pin pairs, common-pin groups and separate-wire pairs, with optional wire-only connectivity/separation, single-label cardinality and exported-netlist equality/separation checks; automatic inference of all intended physical nets remains pending.
 - SCH013 has partial wire-obstacle coverage for embedded rectangles, polylines/polygons, circles, three-point circular arcs and cubic Bézier curves adaptively flattened through `kurbo` at a target tolerance of 0.01 mm, plus visible Reference/Value fields, intermediate pins and annotation text boxes. All primitive intersections remain polyline/bounds approximations.
 
-Some migrated rules intentionally implement only a subset of their historical requirements. In particular, current SCH009 checks member symbol origins, resolved pin coordinates, estimated visible field rectangles and the group description text-box bounds against a referenced rectangle; SCH010 checks visible-field overlap against embedded symbol outlines, wires, pins, labels and annotation boxes using estimated text bounds; SCH012 checks a configured inset for member origins, resolved pins, estimated property glyph bounds and the description text box; and SCH015 checks the placement of explicit no-connect markers. Symbol-body, label, wire and other annotation containment/clearance remain incomplete.
+Some migrated rules intentionally implement only a subset of their historical requirements. SCH009 now checks group member symbol origins, resolved pins, estimated field bounds, description and overlapping text boxes, selected-unit symbol primitive outlines, member-pin-connected wire segments and the estimated visible glyph bounds of labels on those wire components. SCH012 applies its configured inset to those same object families. Arc/Bézier primitive geometry is sampled and text extents are estimates; free-standing labels and wires, non-text-box annotation types and unsupported transforms remain incomplete. SCH010 still uses estimated text bounds, and SCH015 checks explicit no-connect marker placement only.
 
 ## Project profiles
 
@@ -44,7 +44,7 @@ The profile format is deliberately explicit; project-specific expectations are n
 
 1. Extend the current physical-wire graph and SCH004 profile contracts to infer or declare broader project-specific physical connectivity beyond explicit pin pairs and common-pin groups. Labels must never create physical connectivity edges.
 2. Extend SCH013 beyond its current selected-unit/cardinal-transform scope and consider exact analytic arc intersections if the bounded polyline approximation proves insufficient.
-3. Extend frame and field rules beyond symbol origins and estimated text boxes: check actual pin positions, visible field extents, labels, wire segments, and annotation bounds against frames and obstacles.
+3. Extend SCH009/SCH012 beyond their current member-connected wire islands and text-box annotations to cover free-standing labels/wires, plain text and graphical/bitmap annotations; improve exact body-curve and non-cardinal transform coverage.
 4. Improve multi-unit, alternate-convert, mirrored, and non-cardinal symbol transform coverage, with conservative skips for geometry that cannot be resolved.
 
 ## Rule configuration and extensibility
