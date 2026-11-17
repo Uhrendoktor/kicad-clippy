@@ -3590,12 +3590,9 @@ mod tests {
     #[test]
     fn sch013_detects_wire_crossing_an_embedded_bitmap_image() {
         let doc = document(
-            r"(kicad_sch
-                (version 20260623)
-                (image (at 5 5) (scale 1)
+            r"(image (at 5 5) (scale 1)
                   (data iVBORw0KGgoAAAANSUhEUgAAAHgAAAA8CAYAAACtrX6oAAAACXBIWXMAAC4jAAAuIwF4pT92AAAAoklEQVR4nO3RAQkAMAzAsPk3vak4h5IoKHSWtPkdwFsGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcd1OAFhGyMXxbAAAAAElFTkSuQmCC))
-                (wire (pts (xy 1 5) (xy 9 5)))
-            )",
+                (wire (pts (xy 1 5) (xy 9 5)))",
         );
         assert!(run_builtin_rules(&doc).diagnostics.iter().any(|item| {
             item.code == "SCH013" && item.message.contains("embedded bitmap image")
