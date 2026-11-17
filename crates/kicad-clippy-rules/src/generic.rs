@@ -4501,11 +4501,16 @@ mod tests {
         let facts = super::SchematicFacts::from_document(&obstructed);
         assert_eq!(facts.texts.len(), 1);
         assert!(facts.texts[0].bounds_mm.is_some());
-        assert!(run_builtin_rules(&obstructed).diagnostics.iter().any(|item| {
-            item.code == "SCH013"
-                && item.message.contains("free-standing schematic text")
-                && item.message.contains("KEEP OUT")
-        }));
+        assert!(
+            run_builtin_rules(&obstructed)
+                .diagnostics
+                .iter()
+                .any(|item| {
+                    item.code == "SCH013"
+                        && item.message.contains("free-standing schematic text")
+                        && item.message.contains("KEEP OUT")
+                })
+        );
 
         let clear = document(
             r#"
