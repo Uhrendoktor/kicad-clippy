@@ -4984,7 +4984,7 @@ mod tests {
         let near_symbol_circle = document(
             r#"
             (lib_symbols
-              (symbol "Test:Circle")
+              (symbol "Test:Circle"
                 (symbol "Circle_1_1"
                   (circle (center 0 0) (radius 2)
                     (stroke (width 0.4)) (fill (type none)))
@@ -5004,7 +5004,7 @@ mod tests {
         let clear_symbol_circle = document(
             r#"
             (lib_symbols
-              (symbol "Test:Circle")
+              (symbol "Test:Circle"
                 (symbol "Circle_1_1"
                   (circle (center 0 0) (radius 2)
                     (stroke (width 0.4)) (fill (type none)))
@@ -5024,7 +5024,7 @@ mod tests {
         let interior_symbol_circle = document(
             r#"
             (lib_symbols
-              (symbol "Test:Circle")
+              (symbol "Test:Circle"
                 (symbol "Circle_1_1"
                   (circle (center 0 0) (radius 2)
                     (stroke (width 0.4)) (fill (type none)))
