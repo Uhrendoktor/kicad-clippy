@@ -506,7 +506,7 @@ fn decode_base64_prefix(encoded: &str, max_bytes: usize) -> Vec<u8> {
     decoded
 }
 
-fn base64_digit(byte: u8) -> Option<u8> {
+const fn base64_digit(byte: u8) -> Option<u8> {
     match byte {
         b'A'..=b'Z' => Some(byte - b'A'),
         b'a'..=b'z' => Some(byte - b'a' + 26),
@@ -559,7 +559,8 @@ fn parse_png_image_metadata(bytes: &[u8]) -> Option<BitmapImageMetadata> {
                 if unit_is_meter && pixels_per_meter > 100 {
                     let pixels_per_cm = f64::from(pixels_per_meter) / 100.0;
                     ppi = (pixels_per_cm * 2.54).round() as u32;
-                    legacy_ppi = ((pixels_per_meter / 100) as f64 * 2.54).round() as u32;
+                    ppi = pixels_per_meter_to_ppi(pixels_per_meter);
+                    legacy_ppi = pixels_per_cm_to_ppi(pixels_per_meter / 100);
                 }
             }
             b"IDAT" | b"IEND" => break,
@@ -576,6 +577,21 @@ fn parse_png_image_metadata(bytes: &[u8]) -> Option<BitmapImageMetadata> {
         ppi: ppi.max(1),
         legacy_ppi: legacy_ppi.max(1),
     })
+}
+
+fn pixels_per_meter_to_ppi(pixels_per_meter: u32) -> u32 {
+    // Round pixels/metre * 2.54 / 100 to the nearest integer without a float cast.
+    rounded_ratio_to_u32(u64::from(pixels_per_meter) * 254, 10_000)
+}
+
+fn pixels_per_cm_to_ppi(pixels_per_cm: u32) -> u32 {
+    // Legacy KiCad first truncated pixels/metre to integer pixels/cm.
+    rounded_ratio_to_u32(u64::from(pixels_per_cm) * 254, 100)
+}
+
+fn rounded_ratio_to_u32(numerator: u64, denominator: u64) -> u32 {
+    let rounded = numerator.saturating_add(denominator / 2) / denominator;
+    u32::try_from(rounded).unwrap_or(u32::MAX).max(1)
 }
 
 fn parse_jpeg_image_metadata(bytes: &[u8]) -> Option<BitmapImageMetadata> {
@@ -616,7 +632,7 @@ fn parse_jpeg_image_metadata(bytes: &[u8]) -> Option<BitmapImageMetadata> {
             let density_x = u32::from(u16::from_be_bytes([segment[8], segment[9]]));
             ppi = match units {
                 1 => density_x,
-                2 => (f64::from(density_x) * 2.54).round() as u32,
+                2 => pixels_per_cm_to_ppi(density_x),
                 _ => 300,
             };
         }
