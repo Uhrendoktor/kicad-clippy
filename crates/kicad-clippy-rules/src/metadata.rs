@@ -2547,7 +2547,7 @@ mod tests {
     use kicad_clippy_core::Severity;
     use kicad_clippy_erc::{Netlist, PinRef};
 
-    use super::{ComponentKind, ComponentRole, LintProfile, ProfileMode};
+    use super::{ComponentKind, ComponentRole, LintProfile, ProfileMode, SchematicFacts};
 
     fn direct_wire_schematic(wire_and_label_items: &str) -> kicad_clippy_parser::SchematicDocument {
         kicad_clippy_parser::SchematicDocument::from_text(
@@ -4215,11 +4215,11 @@ mod tests {
     fn bitmap_bounds_use_legacy_resolution_migration_for_old_schematics() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
             "legacy-bitmap-resolution-test.kicad_sch",
-            r#"(kicad_sch
+            r"(kicad_sch
                 (version 20250114)
                 (image (at 0 0) (scale 1)
                   (data iVBORw0KGgoAAAANSUhEUgAAAHgAAAA8CAYAAACtrX6oAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAAoklEQVR4nO3RAQkAMAzAsPk3vak4h5IoKHSWtPkdwFsGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcd1OAFhGyMXxbAAAAAElFTkSuQmCC))
-            )"#,
+            )",
         )
         .expect("schematic parses");
         let facts = SchematicFacts::from_document(&schematic);
