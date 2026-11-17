@@ -2794,9 +2794,7 @@ mod tests {
                 "(pin passive",
                 "(rectangle (start 0 0) (end 2 1) (stroke (width 0.254) (type default)) (fill (type none)))\n              (pin passive",
             );
-        let doc = document(&format!(
-            "{source} (wire (pts (xy 9 9) (xy 12 9)))"
-        ));
+        let doc = document(&format!("{source} (wire (pts (xy 9 9) (xy 12 9)))"));
 
         assert!(run_builtin_rules(&doc).diagnostics.iter().any(|item| {
             item.code == "SCH013" && item.message.contains("penetrates symbol body J1")
