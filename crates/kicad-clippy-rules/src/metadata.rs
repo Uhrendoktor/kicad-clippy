@@ -972,6 +972,9 @@ fn validate_group_containment(
     diagnostics.extend(validate_group_plain_text_containment(
         group_id, facts, frame_uuid, bounds,
     ));
+    diagnostics.extend(validate_group_graphic_containment(
+        group_id, facts, frame_uuid, bounds,
+    ));
     diagnostics
 }
 
@@ -1272,6 +1275,34 @@ fn validate_group_plain_text_containment(
         .collect()
 }
 
+fn validate_group_graphic_containment(
+    group_id: &str,
+    facts: &SchematicFacts,
+    frame_uuid: &str,
+    frame_bounds: (f64, f64, f64, f64),
+) -> Vec<Diagnostic> {
+    facts
+        .graphics
+        .iter()
+        .filter(|graphic| graphic.uuid.as_deref() != Some(frame_uuid))
+        .filter_map(|graphic| {
+            let bounds = graphic.bounds_mm?;
+            (rectangles_overlap(bounds, frame_bounds)
+                && !rectangle_inside_frame(bounds, frame_bounds))
+            .then(|| {
+                Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch009,
+                    Severity::Error,
+                    format!(
+                        "group {group_id} vector graphic {} {:?} extends outside frame {frame_uuid}",
+                        graphic.kind, graphic.uuid
+                    ),
+                )
+            })
+        })
+        .collect()
+}
+
 fn wire_overlaps_frame(
     wire: &crate::generic::SchematicWireFact,
     frame_bounds: (f64, f64, f64, f64),
@@ -1414,6 +1445,9 @@ fn validate_frame_clearance(
         group_id, group, facts, frame_uuid, bounds, clearance,
     ));
     diagnostics.extend(validate_group_plain_text_clearance(
+        group_id, facts, frame_uuid, bounds, clearance,
+    ));
+    diagnostics.extend(validate_group_graphic_clearance(
         group_id, facts, frame_uuid, bounds, clearance,
     ));
     diagnostics
@@ -1692,6 +1726,35 @@ fn validate_group_plain_text_clearance(
                     format!(
                         "group {group_id} plain text annotation {:?} does not maintain {clearance:.2} mm clearance from frame {frame_uuid}",
                         text.text
+                    ),
+                )
+            })
+        })
+        .collect()
+}
+
+fn validate_group_graphic_clearance(
+    group_id: &str,
+    facts: &SchematicFacts,
+    frame_uuid: &str,
+    frame_bounds: (f64, f64, f64, f64),
+    clearance: f64,
+) -> Vec<Diagnostic> {
+    facts
+        .graphics
+        .iter()
+        .filter(|graphic| graphic.uuid.as_deref() != Some(frame_uuid))
+        .filter_map(|graphic| {
+            let bounds = graphic.bounds_mm?;
+            (rectangles_overlap(bounds, frame_bounds)
+                && !rectangle_inside_frame_with_clearance(bounds, frame_bounds, clearance))
+            .then(|| {
+                Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch012,
+                    Severity::Error,
+                    format!(
+                        "group {group_id} vector graphic {} {:?} does not maintain {clearance:.2} mm clearance from frame {frame_uuid}",
+                        graphic.kind, graphic.uuid
                     ),
                 )
             })
@@ -3931,6 +3994,88 @@ mod tests {
         assert!(diagnostics.iter().any(|item| {
             item.code == "SCH012"
                 && item.message.contains("plain text annotation")
+                && item.message.contains("2.00 mm clearance")
+        }));
+    }
+
+    #[test]
+    fn group_frame_contains_free_standing_vector_graphics() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "group-frame-vector-graphics-test.kicad_sch",
+            r#"(kicad_sch
+                (lib_symbols
+                  (symbol "Test:OnePin"
+                    (symbol "OnePin_1_1"
+                      (pin passive line (at 0 0 0) (length 1.27)
+                        (name "1") (number "1"))
+                    )
+                  )
+                )
+                (symbol (lib_id "Test:OnePin") (at 4 5 0) (unit 1)
+                  (property "Reference" "R1" (at 4 4 0) (effects (font (size 1 1))))
+                )
+                (polyline (pts (xy 2 2) (xy 10 2))
+                  (stroke (width 0.254) (type default)) (fill (type none)))
+                (circle (center 7.5 7) (radius 1)
+                  (stroke (width 0.254) (type default)) (fill (type none)))
+                (rectangle (start 1 1) (end 8 9) (uuid "frame-1"))
+                (text_box "Power input group" (at 4 6) (size 1 1) (uuid "description-1"))
+            )"#,
+        )
+        .expect("schematic parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"groups":{"power-input":{"members":["R1"],"description_uuid":"description-1","frame_uuid":"frame-1","evidence":{"document":"Power input design note","page":2,"figure":"Figure 1"}}}}"#,
+        )
+        .expect("profile parses");
+        let diagnostics = profile.validate(&schematic);
+
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "SCH009" && item.message.contains("vector graphic polyline")
+        }));
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "SCH009" && item.message.contains("vector graphic circle")
+        }));
+    }
+
+    #[test]
+    fn group_frame_clearance_covers_free_standing_vector_graphics() {
+        let schematic = kicad_clippy_parser::SchematicDocument::from_text(
+            "group-frame-vector-clearance-test.kicad_sch",
+            r#"(kicad_sch
+                (lib_symbols
+                  (symbol "Test:OnePin"
+                    (symbol "OnePin_1_1"
+                      (pin passive line (at 0 0 0) (length 1.27)
+                        (name "1") (number "1"))
+                    )
+                  )
+                )
+                (symbol (lib_id "Test:OnePin") (at 4 5 0) (unit 1)
+                  (property "Reference" "R1" (at 4 4 0) (effects (font (size 1 1))))
+                )
+                (polyline (pts (xy 1.5 7) (xy 2.5 7))
+                  (stroke (width 0.254) (type default)) (fill (type none)))
+                (circle (center 12.5 5) (radius 0.5)
+                  (stroke (width 0.254) (type default)) (fill (type none)))
+                (rectangle (start 1 1) (end 14 9) (uuid "frame-1"))
+                (text_box "Power input group" (at 5 5) (size 1 1) (uuid "description-1"))
+            )"#,
+        )
+        .expect("schematic parses");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"groups":{"power-input":{"members":["R1"],"description_uuid":"description-1","frame_uuid":"frame-1","minimum_frame_clearance_mm":2.0,"evidence":{"document":"Power input design note","page":2,"figure":"Figure 1"}}}}"#,
+        )
+        .expect("profile parses");
+        let diagnostics = profile.validate(&schematic);
+
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "SCH012"
+                && item.message.contains("vector graphic polyline")
+                && item.message.contains("2.00 mm clearance")
+        }));
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "SCH012"
+                && item.message.contains("vector graphic circle")
                 && item.message.contains("2.00 mm clearance")
         }));
     }
