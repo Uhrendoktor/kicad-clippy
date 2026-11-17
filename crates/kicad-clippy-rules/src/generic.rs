@@ -1869,12 +1869,9 @@ fn wire_crosses_symbol_primitive(
         0.5,
         flatten_tolerance + 2.0 * SCH013_STROKE_DISTANCE_EPSILON_MM,
     );
-    if let Some(clearance_wire) = wire_without_pin_contact_region(
-        wire,
-        &primitive.reference,
-        pins,
-        pin_contact_clearance,
-    ) {
+    if let Some(clearance_wire) =
+        wire_without_pin_contact_region(wire, &primitive.reference, pins, pin_contact_clearance)
+    {
         let within_stroke = if primitive.arc_mm.is_some() {
             wire_within_sampled_path_stroke(
                 clearance_wire,
@@ -4313,16 +4310,22 @@ mod tests {
         let near = document(&format!(
             "{EMBEDDED_STROKE_SYMBOL} (wire (pts (xy 10.15 9.5) (xy 10.15 10.5)))"
         ));
-        assert!(run_builtin_rules(&near).diagnostics.iter().any(|item| {
-            item.code == "SCH013" && item.message.contains("symbol body U1")
-        }));
+        assert!(
+            run_builtin_rules(&near)
+                .diagnostics
+                .iter()
+                .any(|item| { item.code == "SCH013" && item.message.contains("symbol body U1") })
+        );
 
         let clear = document(&format!(
             "{EMBEDDED_STROKE_SYMBOL} (wire (pts (xy 10.21 9.5) (xy 10.21 10.5)))"
         ));
-        assert!(!run_builtin_rules(&clear).diagnostics.iter().any(|item| {
-            item.code == "SCH013" && item.message.contains("symbol body U1")
-        }));
+        assert!(
+            !run_builtin_rules(&clear)
+                .diagnostics
+                .iter()
+                .any(|item| { item.code == "SCH013" && item.message.contains("symbol body U1") })
+        );
     }
 
     #[test]
