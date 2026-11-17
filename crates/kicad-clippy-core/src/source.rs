@@ -27,14 +27,6 @@ impl ByteSpan {
         self.start == self.end
     }
 
-    /// Returns whether this range is ordered, in bounds, and on UTF-8 boundaries.
-    #[must_use]
-    pub fn is_valid_for(self, source: &str) -> bool {
-        self.start <= self.end
-            && self.end <= source.len()
-            && source.is_char_boundary(self.start)
-            && source.is_char_boundary(self.end)
-    }
 }
 
 /// Original source text and its file name.
@@ -79,10 +71,6 @@ impl SourceFile {
     /// Returns the source slice covered by a valid byte span.
     #[must_use]
     pub fn slice(&self, span: ByteSpan) -> Option<&str> {
-        if !span.is_valid_for(&self.text) {
-            return None;
-        }
-
         self.text.get(span.start..span.end)
     }
 }
