@@ -1830,7 +1830,10 @@ fn wire_crosses_symbol_primitive(
             return true;
         }
     } else if let Some((center_x, center_y, radius)) = primitive.circle_mm {
-        let center = Point { x: center_x, y: center_y };
+        let center = Point {
+            x: center_x,
+            y: center_y,
+        };
         let inner_radius = radius - primitive.stroke_width_mm / 2.0;
         return inner_radius > 0.0
             && point_segment_distance(center, wire.start, wire.end) < inner_radius - 0.001;
@@ -4378,7 +4381,9 @@ mod tests {
             position_mm: (0.0, 0.0),
         };
         assert!(!super::wire_crosses_symbol_primitive(
-            wire, &primitive, &[pin]
+            wire,
+            &primitive,
+            &[pin]
         ));
     }
 
