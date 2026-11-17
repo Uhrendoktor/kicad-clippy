@@ -2,6 +2,7 @@
 
 use std::{
     fmt::Write as _,
+    fs,
     io::{self, Write},
     path::{Path, PathBuf},
     process::{Command, ExitCode},
@@ -39,6 +40,9 @@ enum Commands {
         /// Explicit path or command name for kicad-cli.
         #[arg(long, value_name = "PATH")]
         kicad_cli: Option<PathBuf>,
+        /// KiCad project file with netclass settings for SCH013 wire widths.
+        #[arg(long, value_name = "FILE")]
+        project: Option<PathBuf>,
         /// JSON project profile containing component-intent metadata.
         #[arg(long, value_name = "FILE")]
         profile: Option<PathBuf>,
@@ -138,9 +142,10 @@ fn execute(cli: Cli) -> Result<ExitCode, CliError> {
             format,
             skip_erc,
             kicad_cli,
+            project,
             profile,
             strict,
-        } => lint(&schematic, format, skip_erc, kicad_cli, profile, strict),
+        } => lint(&schematic, format, skip_erc, kicad_cli, project, profile, strict),
     }
 }
 
@@ -149,6 +154,7 @@ fn lint(
     format: OutputFormat,
     skip_erc: bool,
     explicit_cli: Option<PathBuf>,
+    project_path: Option<PathBuf>,
     profile_path: Option<PathBuf>,
     strict: bool,
 ) -> Result<ExitCode, CliError> {
@@ -156,6 +162,11 @@ fn lint(
         return Err(CliError::StrictNeedsProfile);
     }
     let schematic = SchematicDocument::from_path(schematic_path)?;
+    let default_wire_stroke_width_mm = project_path
+        .as_deref()
+        .map(default_wire_stroke_width_mm_from_project)
+        .transpose()?
+        .flatten();
     let needs_netlist = profile_path.is_some();
     let cli = if skip_erc && !needs_netlist {
         None
@@ -183,7 +194,11 @@ fn lint(
         Some(report) => (report.kicad_version, report.diagnostics),
         None => (None, Vec::new()),
     };
-    diagnostics.extend(RuleEngine::with_builtins().run(&schematic).diagnostics);
+    diagnostics.extend(
+        RuleEngine::with_builtins()
+            .run_with_default_wire_stroke_width(&schematic, default_wire_stroke_width_mm)
+            .diagnostics,
+    );
     if let Some(path) = profile_path {
         let mut profile = LintProfile::from_path(path)?;
         if strict {
@@ -216,6 +231,43 @@ fn lint(
     } else {
         Ok(ExitCode::SUCCESS)
     }
+}
+
+fn default_wire_stroke_width_mm_from_project(
+    project_path: &Path,
+) -> Result<Option<f64>, CliError> {
+    let contents = fs::read_to_string(project_path)?;
+    let project: serde_json::Value = serde_json::from_str(&contents)?;
+    Ok(project_default_wire_stroke_width_mm(&project))
+}
+
+fn project_default_wire_stroke_width_mm(project: &serde_json::Value) -> Option<f64> {
+    let settings = project.get("net_settings")?.as_object()?;
+
+    // A global Default width is safe only when no project-level net assignment
+    // mechanism can select a higher-priority class for an individual wire.
+    for key in ["netclass_assignments", "net_chain_classes", "net_chain_netclasses"] {
+        if settings
+            .get(key)
+            .is_some_and(|value| value.as_object().is_none_or(|entries| !entries.is_empty()))
+        {
+            return None;
+        }
+    }
+    if settings
+        .get("netclass_patterns")
+        .is_some_and(|value| value.as_array().is_none_or(|patterns| !patterns.is_empty()))
+    {
+        return None;
+    }
+
+    let classes = settings.get("classes")?.as_array()?;
+    let default_class = classes.iter().find(|class| {
+        class.get("name").and_then(serde_json::Value::as_str) == Some("Default")
+    })?;
+    let width_mils = default_class.get("wire_width")?.as_f64()?;
+    let width_mm = width_mils * 0.0254;
+    (width_mm.is_finite() && width_mm > 0.0).then_some(width_mm)
 }
 
 fn render_text(output: &LintOutput, source: &SourceFile) -> Result<(), io::Error> {
@@ -349,7 +401,40 @@ fn resolve_kicad_cli(explicit: Option<PathBuf>) -> Result<PathBuf, CliError> {
 mod tests {
     use kicad_clippy_core::{Diagnostic, Severity};
 
-    use super::Summary;
+    use super::{Summary, project_default_wire_stroke_width_mm};
+
+    #[test]
+    fn project_default_wire_width_reads_mils_only_without_assignments() {
+        let project = serde_json::json!({
+            "net_settings": {
+                "classes": [{"name": "Default", "wire_width": 10.0}],
+                "netclass_assignments": {},
+                "netclass_patterns": [],
+                "net_chain_classes": {},
+                "net_chain_netclasses": {}
+            }
+        });
+
+        assert_eq!(project_default_wire_stroke_width_mm(&project), Some(0.254));
+    }
+
+    #[test]
+    fn project_default_wire_width_stays_unknown_when_assignments_exist() {
+        let mut project = serde_json::json!({
+            "net_settings": {
+                "classes": [{"name": "Default", "wire_width": 10.0}],
+                "netclass_assignments": {},
+                "netclass_patterns": [],
+                "net_chain_classes": {},
+                "net_chain_netclasses": {}
+            }
+        });
+        project["net_settings"]["netclass_patterns"] = serde_json::json!([
+            {"pattern": "/USB*", "netclass": "HighSpeed"}
+        ]);
+
+        assert_eq!(project_default_wire_stroke_width_mm(&project), None);
+    }
 
     #[test]
     fn summary_counts_only_active_errors() {

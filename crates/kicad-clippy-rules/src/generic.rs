@@ -1460,13 +1460,43 @@ pub fn run_geometry_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
     diagnostics.extend(check_pin_orientation(root, context.segments));
     diagnostics.extend(check_no_connect_markers(root));
     let wire_stroke_widths = collect_explicit_wire_stroke_widths(root);
+    let default_wire_stroke_width_mm = if schematic_has_graphical_netclass_assignments(root) {
+        None
+    } else {
+        context.default_wire_stroke_width_mm
+    };
     diagnostics.extend(check_wire_obstacles(
         root,
         context.segments,
         context.facts(),
         &wire_stroke_widths,
+        default_wire_stroke_width_mm,
     ));
     diagnostics
+}
+
+fn schematic_has_graphical_netclass_assignments(root: &Node) -> bool {
+    let mut has_assignments = false;
+    walk(root, &mut |node| {
+        match head(node) {
+            Some("directive_label" | "rule_area") => {
+                has_assignments = true;
+                return;
+            }
+            Some("label" | "hierarchical_label" | "global_label") => {
+                if children(node, "property").any(|property| {
+                    list_items(property)
+                        .and_then(|items| items.get(1))
+                        .and_then(atom_value)
+                        == Some("Net Class")
+                }) {
+                    has_assignments = true;
+                }
+            }
+            _ => {}
+        }
+    });
+    has_assignments
 }
 
 #[must_use]
@@ -1554,6 +1584,7 @@ fn check_wire_obstacles(
     segments: &[Segment],
     facts: &SchematicFacts,
     wire_stroke_widths: &BTreeMap<usize, f64>,
+    default_wire_stroke_width_mm: Option<f64>,
 ) -> Vec<Diagnostic> {
     let fields = collect_visible_field_bounds(root);
     let text_boxes: Vec<_> = children(root, "text_box")
@@ -1566,6 +1597,7 @@ fn check_wire_obstacles(
         let wire_stroke_width_mm = wire_stroke_widths
             .get(&segment.span.start)
             .copied()
+            .or(default_wire_stroke_width_mm)
             .unwrap_or(0.0);
         let mut reported_symbols = BTreeSet::new();
         for primitive in &facts.symbol_primitives {
@@ -5191,6 +5223,45 @@ mod tests {
         assert!(!run_builtin_rules(&clear).diagnostics.iter().any(|item| {
             item.code == "SCH013" && item.message.contains("sheet graphic polyline")
         }));
+    }
+
+    #[test]
+    fn sch013_uses_project_default_wire_width_when_no_assignment_override_exists() {
+        let schematic = document(
+            r"
+            (polyline (pts (xy 0 -1) (xy 0 1))
+              (stroke (width 0.2)) (fill (type none)))
+            (wire (pts (xy 0.19 -0.5) (xy 0.19 0.5)))
+            ",
+        );
+        let result = crate::RuleEngine::with_builtins()
+            .run_with_default_wire_stroke_width(&schematic, Some(0.2));
+        assert!(result.diagnostics.iter().any(|item| {
+            item.code == "SCH013" && item.message.contains("sheet graphic polyline")
+        }));
+    }
+
+    #[test]
+    fn sch013_does_not_apply_project_default_when_graphical_assignments_exist() {
+        for assignment in [
+            r#"(directive_label "HighSpeed" (property "Net Class" "HighSpeed"))"#,
+            r#"(rule_area (pts (xy 0 0) (xy 1 1)))"#,
+            r#"(label "NET" (at 0 0 0) (property "Net Class" "HighSpeed"))"#,
+        ] {
+            let schematic = document(&format!(
+                r"
+                (polyline (pts (xy 0 -1) (xy 0 1))
+                  (stroke (width 0.2)) (fill (type none)))
+                (wire (pts (xy 0.19 -0.5) (xy 0.19 0.5)))
+                {assignment}
+                "
+            ));
+            let result = crate::RuleEngine::with_builtins()
+                .run_with_default_wire_stroke_width(&schematic, Some(0.2));
+            assert!(!result.diagnostics.iter().any(|item| {
+                item.code == "SCH013" && item.message.contains("sheet graphic polyline")
+            }));
+        }
     }
 
     #[test]

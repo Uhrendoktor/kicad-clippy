@@ -4,6 +4,8 @@ Notable changes are documented here. This project is in early development and ha
 
 ## Unreleased
 
+- Added an explicit `--project` input for SCH013 to resolve zero/omitted wire widths from the KiCad Default netclass when no project or schematic netclass override mechanisms are present; mixed per-net assignments remain conservative.
+
 - Replaced handwritten segment intersection, wire-pair enumeration, point/segment distance, and polygon/rectangle predicates with GeoRust `geo` algorithms; retained KiCad-specific tolerances, pin exemptions and explicit-junction rules.
 - Replaced handwritten cubic Bézier subdivision and manual arc sampling with Kurbo adaptive path flattening and affine transforms.
 - Replaced the string-keyed wire adjacency graph and handwritten connected-component traversal with `petgraph::UnionFind`.

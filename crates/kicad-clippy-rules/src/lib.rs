@@ -30,6 +30,7 @@ pub struct RuleContext<'a> {
     facts: &'a SchematicFacts,
     segments: &'a [generic::Segment],
     junctions: &'a [generic::Point],
+    default_wire_stroke_width_mm: Option<f64>,
 }
 
 impl<'a> RuleContext<'a> {
@@ -111,6 +112,19 @@ impl RuleEngine {
     /// Executes all registered passes in stable name order.
     #[must_use]
     pub fn run(&self, document: &SchematicDocument) -> RuleRun {
+        self.run_with_default_wire_stroke_width(document, None)
+    }
+
+    /// Executes all passes with a project-derived default SCH013 wire stroke width.
+    ///
+    /// The caller must supply a value only when it can establish that the
+    /// project's effective Default netclass width applies to the schematic.
+    #[must_use]
+    pub fn run_with_default_wire_stroke_width(
+        &self,
+        document: &SchematicDocument,
+        default_wire_stroke_width_mm: Option<f64>,
+    ) -> RuleRun {
         let Some(root) = document.cst().nodes.first() else {
             return RuleRun::default();
         };
@@ -122,6 +136,8 @@ impl RuleEngine {
             facts: &facts,
             segments: &segments,
             junctions: &junctions,
+            default_wire_stroke_width_mm: default_wire_stroke_width_mm
+                .filter(|width| width.is_finite() && *width > 0.0),
         };
         let diagnostics = self
             .passes
