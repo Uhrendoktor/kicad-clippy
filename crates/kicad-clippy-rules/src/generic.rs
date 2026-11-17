@@ -131,6 +131,19 @@ pub struct SchematicPrimitiveFact {
     pub stroke_width_mm: f64,
 }
 
+/// A hierarchical sheet frame and its connection pins.
+#[derive(Clone, Debug)]
+pub struct SchematicSheetFact {
+    /// Stable UUID used to associate wire-endpoint exceptions with sheet pins.
+    pub uuid: String,
+    /// Sheet name shown in wire-obstacle diagnostics.
+    pub name: String,
+    /// Rectangular sheet-body outline and declared border stroke.
+    pub primitive: SchematicPrimitiveFact,
+    /// Connection anchors on the sheet border.
+    pub pins: Vec<SchematicPinFact>,
+}
+
 #[derive(Clone, Debug)]
 pub struct SchematicSymbolTextFact {
     /// Placed-symbol reference that owns the text.
@@ -230,6 +243,8 @@ pub struct SchematicFacts {
     pub visible_fields: Vec<SchematicFieldFact>,
     /// Transformed outlines from embedded symbol primitives.
     pub symbol_primitives: Vec<SchematicPrimitiveFact>,
+    /// Hierarchical sheet frames and their deliberate connection anchors.
+    pub sheets: Vec<SchematicSheetFact>,
     /// Embedded library-symbol text and text-box obstacles in sheet coordinates.
     pub symbol_texts: Vec<SchematicSymbolTextFact>,
     /// Label anchors used to ensure labels are not mistaken for physical wires.
@@ -275,6 +290,7 @@ impl SchematicFacts {
             pins: collect_pin_facts(root),
             visible_fields: collect_symbol_field_facts(root),
             symbol_primitives: collect_symbol_primitive_facts(root),
+            sheets: collect_sheet_facts(root),
             symbol_texts: collect_symbol_text_facts(root),
             labels: collect_label_facts(root),
             junctions: junctions.iter().map(|point| (point.x, point.y)).collect(),
@@ -1196,6 +1212,80 @@ fn collect_pin_facts(root: &Node) -> Vec<SchematicPinFact> {
     pins
 }
 
+fn collect_sheet_facts(root: &Node) -> Vec<SchematicSheetFact> {
+    children(root, "sheet")
+        .filter_map(|sheet| {
+            let uuid = child_list(sheet, "uuid")
+                .and_then(list_items)
+                .and_then(|items| items.get(1))
+                .and_then(atom_value)?
+                .to_owned();
+            let name = children(sheet, "property")
+                .find_map(|property| {
+                    let items = list_items(property)?;
+                    (atom_value(items.get(1)?)? == "Sheetname")
+                        .then(|| atom_value(items.get(2)?))
+                        .flatten()
+                })
+                .unwrap_or("unnamed")
+                .to_owned();
+            let at = child_list(sheet, "at").and_then(list_items)?;
+            let size = child_list(sheet, "size").and_then(list_items)?;
+            let origin = (number(at.get(1)?)?, number(at.get(2)?)?);
+            let width = number(size.get(1)?)?;
+            let height = number(size.get(2)?)?;
+            if !origin.0.is_finite()
+                || !origin.1.is_finite()
+                || !width.is_finite()
+                || !height.is_finite()
+                || width <= 0.0
+                || height <= 0.0
+            {
+                return None;
+            }
+
+            let reference = uuid.clone();
+            let primitive = SchematicPrimitiveFact {
+                reference: reference.clone(),
+                points_mm: vec![
+                    origin,
+                    (origin.0 + width, origin.1),
+                    (origin.0 + width, origin.1 + height),
+                    (origin.0, origin.1 + height),
+                ],
+                closed: true,
+                circle_mm: None,
+                arc_mm: None,
+                bezier_mm: None,
+                stroke_width_mm: symbol_primitive_stroke_width(sheet),
+            };
+            let pins = children(sheet, "pin")
+                .filter_map(|pin| {
+                    let name = list_items(pin)
+                        .and_then(|items| items.get(1))
+                        .and_then(atom_value)?;
+                    let at = child_list(pin, "at").and_then(list_items)?;
+                    let position_mm = (number(at.get(1)?)?, number(at.get(2)?)?);
+                    (position_mm.0.is_finite() && position_mm.1.is_finite()).then(|| {
+                        SchematicPinFact {
+                            reference: reference.clone(),
+                            number: name.to_owned(),
+                            position_mm,
+                        }
+                    })
+                })
+                .collect();
+
+            Some(SchematicSheetFact {
+                uuid,
+                name,
+                primitive,
+                pins,
+            })
+        })
+        .collect()
+}
+
 fn collect_symbol_field_facts(root: &Node) -> Vec<SchematicFieldFact> {
     let mut fields = Vec::new();
     for symbol in children(root, "symbol") {
@@ -1881,6 +1971,35 @@ fn embedded_symbol_text_obstacle_diagnostics(
         .collect()
 }
 
+fn sheet_frame_obstacle_diagnostics(
+    wire_index: usize,
+    segment: Segment,
+    sheets: &[SchematicSheetFact],
+    wire_stroke_width_mm: f64,
+) -> Vec<Diagnostic> {
+    sheets
+        .iter()
+        .filter(|sheet| {
+            wire_crosses_symbol_primitive_with_wire_stroke(
+                segment,
+                &sheet.primitive,
+                &sheet.pins,
+                wire_stroke_width_mm,
+            )
+        })
+        .map(|sheet| {
+            at_segment(
+                BuiltinRuleId::Sch013,
+                &format!(
+                    "wire {wire_index} penetrates hierarchical sheet {:?} ({})",
+                    sheet.name, sheet.uuid
+                ),
+                segment,
+            )
+        })
+        .collect()
+}
+
 fn table_stroke_obstacle_diagnostics(
     wire_index: usize,
     segment: Segment,
@@ -1960,6 +2079,12 @@ fn check_wire_obstacles(
                 ));
             }
         }
+        diagnostics.extend(sheet_frame_obstacle_diagnostics(
+            wire_index,
+            *segment,
+            &facts.sheets,
+            wire_stroke_width_mm,
+        ));
         diagnostics.extend(table_stroke_obstacle_diagnostics(
             wire_index,
             *segment,
@@ -4250,6 +4375,66 @@ mod tests {
     fn document(body: &str) -> SchematicDocument {
         SchematicDocument::from_text("fixture.kicad_sch", format!("(kicad_sch {body})"))
             .expect("fixture parses")
+    }
+
+    #[test]
+    fn sch013_checks_hierarchical_sheet_frame_away_from_sheet_pins() {
+        let document = document(
+            r#"
+            (wire (pts (xy -1 2) (xy 1 2)))
+            (sheet (at 0 0) (size 4 3)
+              (stroke (width 0.2))
+              (uuid "sheet-uuid")
+              (property "Sheetname" "Child")
+              (property "Sheetfile" "child.kicad_sch")
+              (pin "DATA" input (at 0 1 180) (effects (font (size 1 1)))
+                (uuid "sheet-pin-uuid")))
+            "#,
+        );
+
+        assert!(run_builtin_rules(&document).diagnostics.iter().any(|item| {
+            item.code == "SCH013" && item.message.contains("hierarchical sheet")
+        }));
+    }
+
+    #[test]
+    fn sch013_allows_wire_endpoint_at_matching_sheet_pin() {
+        let document = document(
+            r#"
+            (wire (pts (xy -1 1) (xy 0 1)))
+            (sheet (at 0 0) (size 4 3)
+              (stroke (width 0.2))
+              (uuid "sheet-uuid")
+              (property "Sheetname" "Child")
+              (property "Sheetfile" "child.kicad_sch")
+              (pin "DATA" input (at 0 1 180) (effects (font (size 1 1)))
+                (uuid "sheet-pin-uuid")))
+            "#,
+        );
+
+        assert!(!run_builtin_rules(&document).diagnostics.iter().any(|item| {
+            item.code == "SCH013" && item.message.contains("hierarchical sheet")
+        }));
+    }
+
+    #[test]
+    fn sch013_sheet_pin_exemption_does_not_allow_wire_to_continue_inside_sheet() {
+        let document = document(
+            r#"
+            (wire (pts (xy 0 1) (xy 1 1)))
+            (sheet (at 0 0) (size 4 3)
+              (stroke (width 0.2))
+              (uuid "sheet-uuid")
+              (property "Sheetname" "Child")
+              (property "Sheetfile" "child.kicad_sch")
+              (pin "DATA" input (at 0 1 180) (effects (font (size 1 1)))
+                (uuid "sheet-pin-uuid")))
+            "#,
+        );
+
+        assert!(run_builtin_rules(&document).diagnostics.iter().any(|item| {
+            item.code == "SCH013" && item.message.contains("hierarchical sheet")
+        }));
     }
 
     #[test]
