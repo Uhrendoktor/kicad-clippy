@@ -145,7 +145,9 @@ fn execute(cli: Cli) -> Result<ExitCode, CliError> {
             project,
             profile,
             strict,
-        } => lint(&schematic, format, skip_erc, kicad_cli, project, profile, strict),
+        } => lint(
+            &schematic, format, skip_erc, kicad_cli, project, profile, strict,
+        ),
     }
 }
 
@@ -233,9 +235,7 @@ fn lint(
     }
 }
 
-fn default_wire_stroke_width_mm_from_project(
-    project_path: &Path,
-) -> Result<Option<f64>, CliError> {
+fn default_wire_stroke_width_mm_from_project(project_path: &Path) -> Result<Option<f64>, CliError> {
     let contents = fs::read_to_string(project_path)?;
     let project: serde_json::Value = serde_json::from_str(&contents)?;
     Ok(project_default_wire_stroke_width_mm(&project))
@@ -246,7 +246,11 @@ fn project_default_wire_stroke_width_mm(project: &serde_json::Value) -> Option<f
 
     // A global Default width is safe only when no project-level net assignment
     // mechanism can select a higher-priority class for an individual wire.
-    for key in ["netclass_assignments", "net_chain_classes", "net_chain_netclasses"] {
+    for key in [
+        "netclass_assignments",
+        "net_chain_classes",
+        "net_chain_netclasses",
+    ] {
         if settings
             .get(key)
             .is_some_and(|value| value.as_object().is_none_or(|entries| !entries.is_empty()))
