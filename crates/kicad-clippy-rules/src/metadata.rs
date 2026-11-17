@@ -88,6 +88,18 @@ pub struct CommonPinNetGroup {
     pub single_label: bool,
 }
 
+/// A named set of pins that must all share one physical wire-only component.
+///
+/// Unlike `CommonPinNetGroup`, this contract does not require labels or an
+/// exported netlist; labels never create physical connectivity edges.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PhysicalWireGroup {
+    /// Stable identifier used in diagnostics.
+    pub name: String,
+    /// Placed pins in REF.PIN form.
+    pub pins: Vec<String>,
+}
+
 /// A pair of pins that must not share a physical wire-only component.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct SeparateWirePair {
@@ -211,6 +223,9 @@ pub struct LintProfile {
     /// Pin groups requiring a named common physical/logical net contract.
     #[serde(default)]
     pub common_pin_groups: Vec<CommonPinNetGroup>,
+    /// Named multi-pin groups that must share one physical wire-only component, independent of labels.
+    #[serde(default)]
+    pub physical_wire_groups: Vec<PhysicalWireGroup>,
     /// Pin pairs that must remain physically separate, with optional netlist separation.
     #[serde(default)]
     pub separate_wire_pairs: Vec<SeparateWirePair>,
@@ -278,6 +293,10 @@ impl LintProfile {
             &self.common_pin_groups,
             &facts,
             netlist,
+        ));
+        diagnostics.extend(validate_physical_wire_groups(
+            &self.physical_wire_groups,
+            &facts,
         ));
         diagnostics.extend(validate_separate_wire_pairs(
             &self.separate_wire_pairs,
@@ -566,6 +585,119 @@ fn validate_common_pin_group_netlist(
         ));
     }
     diagnostics
+}
+
+fn validate_physical_wire_groups(
+    groups: &[PhysicalWireGroup],
+    facts: &SchematicFacts,
+) -> Vec<Diagnostic> {
+    if groups.is_empty() {
+        return Vec::new();
+    }
+    let component_ids = physical_wire_component_ids(facts);
+    groups
+        .iter()
+        .flat_map(|group| validate_physical_wire_group(group, facts, &component_ids))
+        .collect()
+}
+
+fn validate_physical_wire_group(
+    group: &PhysicalWireGroup,
+    facts: &SchematicFacts,
+    component_ids: &BTreeMap<String, usize>,
+) -> Vec<Diagnostic> {
+    let unique_pins: BTreeSet<_> = group.pins.iter().collect();
+    if group.name.trim().is_empty() {
+        return vec![Diagnostic::for_builtin_rule(
+            BuiltinRuleId::Sch004,
+            Severity::Error,
+            "physical wire group must have a non-empty name",
+        )];
+    }
+    if group.pins.len() < 2 || unique_pins.len() != group.pins.len() {
+        return vec![Diagnostic::for_builtin_rule(
+            BuiltinRuleId::Sch004,
+            Severity::Error,
+            format!(
+                "physical wire group {:?} must list at least two distinct REF.PIN entries",
+                group.name
+            ),
+        )];
+    }
+
+    let mut roots = BTreeSet::new();
+    let mut diagnostics = Vec::new();
+    for pin_ref in &group.pins {
+        let Some((reference, pin_number)) = pin_ref.rsplit_once('.') else {
+            diagnostics.push(invalid_physical_wire_reference(&group.name, pin_ref));
+            continue;
+        };
+        if !valid_pin_ref(pin_ref) {
+            diagnostics.push(invalid_physical_wire_reference(&group.name, pin_ref));
+            continue;
+        }
+        let Some(pin) = facts
+            .pins
+            .iter()
+            .find(|pin| pin.reference == reference && pin.number == pin_number)
+        else {
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch004,
+                Severity::Error,
+                format!(
+                    "physical wire group {:?} references missing or unsupported pin {pin_ref}",
+                    group.name
+                ),
+            ));
+            continue;
+        };
+        if !point_is_on_wire(pin.position_mm, facts) {
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch004,
+                Severity::Error,
+                format!(
+                    "{pin_ref} in physical wire group {:?} is not attached to a physical wire",
+                    group.name
+                ),
+            ));
+            continue;
+        }
+        let key = format!("{:.3}:{:.3}", pin.position_mm.0, pin.position_mm.1);
+        if let Some(component) = component_ids.get(&key).copied() {
+            roots.insert(component);
+        } else {
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch004,
+                Severity::Error,
+                format!(
+                    "{pin_ref} in physical wire group {:?} has no resolved physical wire component",
+                    group.name
+                ),
+            ));
+        }
+    }
+
+    if roots.len() > 1 {
+        diagnostics.push(Diagnostic::for_builtin_rule(
+            BuiltinRuleId::Sch004,
+            Severity::Error,
+            format!(
+                "pins {:?} in physical wire group {:?} must share one physical wire-only network; matching labels do not establish this connection",
+                group.pins, group.name
+            ),
+        ));
+    }
+    diagnostics
+}
+
+fn invalid_physical_wire_reference(group_name: &str, pin_ref: &str) -> Diagnostic {
+    Diagnostic::for_builtin_rule(
+        BuiltinRuleId::Sch004,
+        Severity::Error,
+        format!(
+            "physical wire group {group_name:?} contains invalid pin reference {pin_ref:?}"
+        ),
+    )
 }
 
 fn validate_separate_wire_pairs(
@@ -2573,6 +2705,75 @@ mod tests {
             ),
         )
         .expect("fixture parses")
+    }
+
+    #[test]
+    fn physical_wire_group_accepts_connected_pins_without_labels() {
+        let schematic = direct_wire_schematic("(wire (pts (xy 10 10) (xy 20 10)))");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"physical_wire_groups":[{"name":"SPI_MISO","pins":["U1.1","R1.1"]}]}"#,
+        )
+        .expect("profile parses");
+        assert!(
+            !profile
+                .validate(&schematic)
+                .iter()
+                .any(|item| item.code == "SCH004")
+        );
+    }
+
+    #[test]
+    fn physical_wire_group_rejects_disconnected_islands_even_when_labels_match() {
+        let schematic = direct_wire_schematic(
+            r#"
+            (wire (pts (xy 10 10) (xy 12 10)))
+            (wire (pts (xy 20 10) (xy 18 10)))
+            (label "SPI_MISO" (at 10 10 0) (effects (font (size 1 1))))
+            (label "SPI_MISO" (at 20 10 0) (effects (font (size 1 1))))
+            "#,
+        );
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"physical_wire_groups":[{"name":"SPI_MISO","pins":["U1.1","R1.1"]}]}"#,
+        )
+        .expect("profile parses");
+        assert!(profile.validate(&schematic).iter().any(|item| {
+            item.code == "SCH004" && item.message.contains("matching labels do not establish")
+        }));
+    }
+
+    #[test]
+    fn physical_wire_group_rejects_invalid_missing_and_unwired_pins() {
+        let schematic = direct_wire_schematic("(wire (pts (xy 10 10) (xy 15 10)))");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"physical_wire_groups":[{"name":"INVALID","pins":["U1.1","bad"]},{"name":"MISSING","pins":["U1.99","R1.1"]},{"name":"UNWIRED","pins":["U1.1","R1.1"]}]}"#,
+        )
+        .expect("profile parses");
+        let messages: Vec<_> = profile
+            .validate(&schematic)
+            .into_iter()
+            .filter(|item| item.code == "SCH004")
+            .map(|item| item.message)
+            .collect();
+        assert!(messages.iter().any(|message| message.contains("invalid pin reference")));
+        assert!(messages.iter().any(|message| message.contains("missing or unsupported pin U1.99")));
+        assert!(messages.iter().any(|message| message.contains("R1.1") && message.contains("not attached")));
+    }
+
+    #[test]
+    fn physical_wire_group_rejects_duplicate_pins_and_empty_names() {
+        let schematic = direct_wire_schematic("(wire (pts (xy 10 10) (xy 20 10)))");
+        let profile: LintProfile = serde_json::from_str(
+            r#"{"schema_version":1,"physical_wire_groups":[{"name":"DUPLICATE","pins":["U1.1","U1.1"]},{"name":" ","pins":["U1.1","R1.1"]}]}"#,
+        )
+        .expect("profile parses");
+        let messages: Vec<_> = profile
+            .validate(&schematic)
+            .into_iter()
+            .filter(|item| item.code == "SCH004")
+            .map(|item| item.message)
+            .collect();
+        assert!(messages.iter().any(|message| message.contains("at least two distinct")));
+        assert!(messages.iter().any(|message| message.contains("non-empty name")));
     }
 
     #[test]
