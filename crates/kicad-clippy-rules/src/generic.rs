@@ -1639,11 +1639,8 @@ fn wire_text_annotation_obstacle_diagnostics(
     fields: &[(String, Bounds, ByteSpan)],
     text_boxes: &[(usize, Bounds)],
 ) -> Vec<Diagnostic> {
-    let mut diagnostics = embedded_symbol_text_obstacle_diagnostics(
-        wire_index,
-        segment,
-        &facts.symbol_texts,
-    );
+    let mut diagnostics =
+        embedded_symbol_text_obstacle_diagnostics(wire_index, segment, &facts.symbol_texts);
     for (text_index, text) in facts.texts.iter().enumerate() {
         let Some((left, top, right, bottom)) = text.bounds_mm else {
             continue;
