@@ -1680,17 +1680,13 @@ fn wire_within_path_stroke(
     if let Some((reference, pins)) = pin_owner {
         let closest_wire_point = wire_point_at_parameter(wire, wire_parameter);
         let closest_path_point = path.eval(path_parameter);
-        if distance <= 0.001
-            && wire_intersection_is_allowed_pin(closest_wire_point, wire, reference, pins)
-            && wire_intersection_is_allowed_pin(
-                Point {
-                    x: closest_path_point.x,
-                    y: closest_path_point.y,
-                },
-                wire,
-                reference,
-                pins,
-            )
+        let closest_path_point = Point {
+            x: closest_path_point.x,
+            y: closest_path_point.y,
+        };
+        if wire_intersection_is_allowed_pin(closest_wire_point, wire, reference, pins)
+            && distance(closest_wire_point, closest_path_point)
+                <= flatten_tolerance_mm.max(0.0) + 0.001
         {
             return false;
         }
