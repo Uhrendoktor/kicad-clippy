@@ -385,10 +385,13 @@ fn table_cell_text_rotation_is_supported(cell: &Node) -> bool {
     else {
         return false;
     };
-    angle.is_finite()
-        && [0.0, 90.0, 270.0, 360.0]
-            .iter()
-            .any(|supported| (angle - supported).abs() <= 0.001)
+    if !angle.is_finite() {
+        return false;
+    }
+    let normalized = angle.rem_euclid(360.0);
+    [0.0, 90.0, 180.0, 270.0]
+        .iter()
+        .any(|supported| (normalized - supported).abs() <= 0.001)
 }
 
 fn table_text_rotations_are_supported(table: &Node) -> bool {
@@ -3978,6 +3981,10 @@ fn text_visual_bounds(value: &str, node: &Node) -> Option<Bounds> {
     let height = (height_ratio * font_size).max(font_size);
     let anchor = Vec2::new(number(at.get(1)?)?, number(at.get(2)?)?);
     let angle = at.get(3).and_then(number).unwrap_or(0.0);
+    if !angle.is_finite() {
+        return None;
+    }
+    let normalized_angle = angle.rem_euclid(360.0);
 
     let justify = effects.and_then(|effects| child_list(effects, "justify"));
     let justify_items = justify.and_then(list_items);
@@ -3993,16 +4000,23 @@ fn text_visual_bounds(value: &str, node: &Node) -> Option<Bounds> {
 
     // KiCad's anchor and justification define a local text rectangle. Kurbo
     // applies the cardinal rotation and returns its world-space AABB.
-    let (top, rotation) = if (angle - 90.0).abs() < 0.001 {
-        (-height / 2.0, -std::f64::consts::FRAC_PI_2)
-    } else if (angle - 270.0).abs() < 0.001 {
-        (-height / 2.0, std::f64::consts::FRAC_PI_2)
+    let (left, top, rotation) = if (normalized_angle - 90.0).abs() < 0.001 {
+        (left, -height / 2.0, -std::f64::consts::FRAC_PI_2)
+    } else if (normalized_angle - 270.0).abs() < 0.001 {
+        (left, -height / 2.0, std::f64::consts::FRAC_PI_2)
     } else {
         let top_aligned = justify_items
             .and_then(|items| items.get(2))
             .and_then(atom_value)
             .is_some_and(|value| value == "top");
-        (if top_aligned { 0.0 } else { -height }, 0.0)
+        let top = if top_aligned { 0.0 } else { -height };
+        if (normalized_angle - 180.0).abs() < 0.001 {
+            // A 180-degree turn reflects the justified text rectangle around
+            // its anchor; its AABB stays axis-aligned but changes sides.
+            (-left - width, -top - height, 0.0)
+        } else {
+            (left, top, 0.0)
+        }
     };
 
     let local_bounds = CurveRect::new(left, top, left + width, top + height);
@@ -5206,6 +5220,48 @@ mod tests {
         assert!(run_builtin_rules(&document).diagnostics.iter().any(|item| {
             item.code == "SCH013" && item.message.contains("free-standing schematic text")
         }));
+    }
+
+    #[test]
+    fn sch013_uses_reflected_text_bounds_for_180_degree_table_cells() {
+        let rotated = document(
+            r#"
+            (wire (pts (xy 1 0.6) (xy 1 0.9)))
+            (table
+              (column_count 1)
+              (column_widths 4)
+              (row_heights 2)
+              (cells
+                (table_cell "R1" (at 1 0.5 180) (size 4 2)
+                  (effects (font (size 1 1)))))
+              (border (external no) (header no))
+              (separators (rows no) (cols no)))
+            "#,
+        );
+        assert!(run_builtin_rules(&rotated).diagnostics.iter().any(|item| {
+            item.code == "SCH013" && item.message.contains("free-standing schematic text")
+        }));
+
+        let unrotated = document(
+            r#"
+            (wire (pts (xy 1 0.6) (xy 1 0.9)))
+            (table
+              (column_count 1)
+              (column_widths 4)
+              (row_heights 2)
+              (cells
+                (table_cell "R1" (at 1 0.5 0) (size 4 2)
+                  (effects (font (size 1 1)))))
+              (border (external no) (header no))
+              (separators (rows no) (cols no)))
+            "#,
+        );
+        assert!(!run_builtin_rules(&unrotated)
+            .diagnostics
+            .iter()
+            .any(|item| {
+                item.code == "SCH013" && item.message.contains("free-standing schematic text")
+            }));
     }
 
     #[test]

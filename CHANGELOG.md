@@ -9,7 +9,7 @@ Notable changes are documented here. This project is in early development and ha
 - Corrected SCH013 embedded bitmap obstacles to use the serialized rotation and actual four-corner PNG/JPEG footprint instead of the axis-aligned bounding box; image dimensions still follow the existing version-aware PPI and scale rules.
 - Added SCH013 stroked bus-line and wire-to-bus entry obstacles; only wire endpoints matching a bus-entry anchor receive a local contact exception, and direct wire/bus crossings remain diagnosed.
 - Added SCH013 full ellipse and elliptical-arc stroke obstacles using adaptive rotated paths; closed ellipse bodies retain interior checks, while open elliptical arcs do not block their interiors.
-- Added SCH013 table border and enabled separator strokes as vector obstacles, respecting disabled strokes and merged-cell spans; table strokes support consistent cardinal rotations, while inconsistent/non-cardinal layouts and non-cardinal cell text are conservatively skipped.
+- Added SCH013 table border and enabled separator strokes as vector obstacles, respecting disabled strokes and merged-cell spans; table strokes support consistent cardinal rotations, while inconsistent/non-cardinal layouts and non-cardinal cell text are conservatively skipped; table-cell glyph bounds also support 180° text rotation.
 
 - Replaced handwritten segment intersection, wire-pair enumeration, point/segment distance, and polygon/rectangle predicates with GeoRust `geo` algorithms; retained KiCad-specific tolerances, pin exemptions and explicit-junction rules.
 - Replaced handwritten cubic Bézier subdivision and manual arc sampling with Kurbo adaptive path flattening and affine transforms.
