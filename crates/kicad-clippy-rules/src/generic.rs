@@ -4933,6 +4933,39 @@ mod tests {
     }
 
     #[test]
+    fn sch013_checks_cardinally_rotated_table_external_borders() {
+        let fixtures = [
+            (90, "0", "-1", "-0.5", "-0.5", "0.5", "-0.5"),
+            (180, "-1", "0", "-2.5", "-0.5", "-1.5", "-0.5"),
+            (270, "0", "1", "-0.5", "-0.5", "-0.5", "0.5"),
+        ];
+        for (angle, second_x, second_y, start_x, start_y, end_x, end_y) in fixtures {
+            let source = format!(
+                r#"
+                (wire (pts (xy {start_x} {start_y}) (xy {end_x} {end_y})))
+                (table
+                  (column_count 2)
+                  (column_widths 1 1)
+                  (row_heights 1)
+                  (cells
+                    (table_cell "" (at 0 0 {angle}) (size 1 1))
+                    (table_cell "" (at {second_x} {second_y} {angle}) (size 1 1)))
+                  (border (external yes) (header no) (stroke (width 0.2)))
+                  (separators (rows no) (cols no))
+                  (uuid "rotated-border-table"))
+                "#
+            );
+            let document = document(&source);
+            assert!(
+                run_builtin_rules(&document).diagnostics.iter().any(|item| {
+                    item.code == "SCH013" && item.message.contains("table border")
+                }),
+                "expected a rotated table external-border finding at {angle} degrees"
+            );
+        }
+    }
+
+    #[test]
     fn sch013_does_not_use_unrotated_table_coordinates_after_rotation() {
         let document = document(
             r#"
