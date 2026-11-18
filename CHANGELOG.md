@@ -8,6 +8,7 @@ Notable changes are documented here. This project is in early development and ha
 - Added SCH013 hierarchical sheet frame/body obstacles with local exceptions for wires terminating at matching sheet-pin anchors; wires continuing into the sheet body remain checked.
 - Added SCH013 stroked bus-line and wire-to-bus entry obstacles; only wire endpoints matching a bus-entry anchor receive a local contact exception, and direct wire/bus crossings remain diagnosed.
 - Added SCH013 full ellipse and elliptical-arc stroke obstacles using adaptive rotated paths; closed ellipse bodies retain interior checks, while open elliptical arcs do not block their interiors.
+- Extended SCH013 table borders and enabled row/column/header separators to consistent 0°/90°/180°/270° cardinal rotations, validating serialized cell origins against KiCad's rotated grid; inconsistent and non-cardinal layouts remain skipped.
 - Added SCH013 table border and enabled separator strokes as vector obstacles, respecting disabled strokes and merged-cell spans; table-cell text uses the existing estimated NewStroke glyph bounds for supported cardinal rotations, while non-cardinal cell text and rotated border geometry are conservatively skipped.
 
 - Replaced handwritten segment intersection, wire-pair enumeration, point/segment distance, and polygon/rectangle predicates with GeoRust `geo` algorithms; retained KiCad-specific tolerances, pin exemptions and explicit-junction rules.

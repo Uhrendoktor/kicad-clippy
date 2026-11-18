@@ -515,6 +515,7 @@ const DEFAULT_TABLE_STROKE_WIDTH_MM: f64 = 0.1524;
 struct SchematicTableLayout {
     uuid: Option<String>,
     origin_mm: (f64, f64),
+    rotation_quadrants: u8,
     column_widths_mm: Vec<f64>,
     row_heights_mm: Vec<f64>,
     cell_spans: Vec<(usize, usize)>,
@@ -549,6 +550,17 @@ fn table_cell_span(cell: &Node) -> Option<(usize, usize)> {
     ))
 }
 
+fn cardinal_table_rotation_quadrants(angle: f64) -> Option<u8> {
+    if !angle.is_finite() {
+        return None;
+    }
+    let normalized = angle.rem_euclid(360.0);
+    [0.0, 90.0, 180.0, 270.0, 360.0]
+        .iter()
+        .position(|supported| (normalized - supported).abs() <= 0.001)
+        .map(|index| (index % 4) as u8)
+}
+
 fn schematic_table_layout(table: &Node) -> Option<SchematicTableLayout> {
     let columns = child_list(table, "column_count")
         .and_then(list_items)
@@ -571,14 +583,7 @@ fn schematic_table_layout(table: &Node) -> Option<SchematicTableLayout> {
     }
 
     let at = child_list(cells[0], "at").and_then(list_items)?;
-    let angle = number(at.get(3)?)?;
-    // KiCad's table renderer rotates its cell-corner paths by the first cell's
-    // text angle. Defer nonzero rotations rather than substituting an AABB.
-    if !angle.is_finite()
-        || angle.abs() > 0.001 && (angle - 360.0).abs() > 0.001 && (angle + 360.0).abs() > 0.001
-    {
-        return None;
-    }
+    let rotation_quadrants = cardinal_table_rotation_quadrants(number(at.get(3)?)?)?;
     let origin_mm = (number(at.get(1)?)?, number(at.get(2)?)?);
     if !origin_mm.0.is_finite() || !origin_mm.1.is_finite() {
         return None;
@@ -602,13 +607,52 @@ fn schematic_table_layout(table: &Node) -> Option<SchematicTableLayout> {
         .and_then(atom_value)
         .map(str::to_owned);
 
-    Some(SchematicTableLayout {
+    let layout = SchematicTableLayout {
         uuid,
         origin_mm,
+        rotation_quadrants,
         column_widths_mm,
         row_heights_mm,
         cell_spans,
-    })
+    };
+    let column_offsets = cumulative_positions(0.0, &layout.column_widths_mm);
+    let row_offsets = cumulative_positions(0.0, &layout.row_heights_mm);
+    for (index, cell) in cells.iter().enumerate() {
+        let cell_at = child_list(cell, "at").and_then(list_items)?;
+        let cell_rotation = number(cell_at.get(3)?)?;
+        if cardinal_table_rotation_quadrants(cell_rotation) != Some(rotation_quadrants) {
+            return None;
+        }
+        let row = index / columns;
+        let column = index % columns;
+        let expected = table_grid_point(
+            &layout,
+            column_offsets[column],
+            row_offsets[row],
+        );
+        let actual = (number(cell_at.get(1)?)?, number(cell_at.get(2)?)?);
+        if (actual.0 - expected.0).abs() > 0.001
+            || (actual.1 - expected.1).abs() > 0.001
+        {
+            return None;
+        }
+    }
+
+    Some(layout)
+}
+
+fn table_grid_point(
+    layout: &SchematicTableLayout,
+    x_offset: f64,
+    y_offset: f64,
+) -> (f64, f64) {
+    let (x, y) = match layout.rotation_quadrants {
+        0 => (x_offset, y_offset),
+        1 => (y_offset, -x_offset),
+        2 => (-x_offset, -y_offset),
+        _ => (-y_offset, x_offset),
+    };
+    (layout.origin_mm.0 + x, layout.origin_mm.1 + y)
 }
 
 fn table_flag(group: Option<&Node>, name: &str, default: bool) -> bool {
@@ -671,11 +715,14 @@ fn append_table_outline(
     layout: &SchematicTableLayout,
     stroke_width_mm: f64,
 ) {
-    let left = layout.origin_mm.0;
-    let top = layout.origin_mm.1;
-    let right = left + layout.column_widths_mm.iter().sum::<f64>();
-    let bottom = top + layout.row_heights_mm.iter().sum::<f64>();
-    let corners = [(left, top), (right, top), (right, bottom), (left, bottom)];
+    let right = layout.column_widths_mm.iter().sum::<f64>();
+    let bottom = layout.row_heights_mm.iter().sum::<f64>();
+    let corners = [
+        table_grid_point(layout, 0.0, 0.0),
+        table_grid_point(layout, right, 0.0),
+        table_grid_point(layout, right, bottom),
+        table_grid_point(layout, 0.0, bottom),
+    ];
     for index in 0..corners.len() {
         graphics.push(table_line_fact(
             "table border",
@@ -696,8 +743,8 @@ fn append_table_separators(
     border_width_mm: f64,
     separator_width_mm: f64,
 ) {
-    let column_positions = cumulative_positions(layout.origin_mm.0, &layout.column_widths_mm);
-    let row_positions = cumulative_positions(layout.origin_mm.1, &layout.row_heights_mm);
+    let column_positions = cumulative_positions(0.0, &layout.column_widths_mm);
+    let row_positions = cumulative_positions(0.0, &layout.row_heights_mm);
     let columns = layout.column_widths_mm.len();
     let rows = layout.row_heights_mm.len();
 
@@ -717,8 +764,13 @@ fn append_table_separators(
             graphics.push(table_line_fact(
                 "table separator",
                 layout.uuid.as_deref(),
-                (column_positions[column + column_span], row_positions[row]),
-                (
+                table_grid_point(
+                    layout,
+                    column_positions[column + column_span],
+                    row_positions[row],
+                ),
+                table_grid_point(
+                    layout,
                     column_positions[column + column_span],
                     row_positions[row + row_span],
                 ),
@@ -743,8 +795,13 @@ fn append_table_separators(
             graphics.push(table_line_fact(
                 "table separator",
                 layout.uuid.as_deref(),
-                (column_positions[column], row_positions[row + row_span]),
-                (
+                table_grid_point(
+                    layout,
+                    column_positions[column],
+                    row_positions[row + row_span],
+                ),
+                table_grid_point(
+                    layout,
                     column_positions[column + column_span],
                     row_positions[row + row_span],
                 ),
@@ -4843,6 +4900,105 @@ mod tests {
             diagnostics
                 .iter()
                 .any(|item| { item.code == "SCH013" && item.message.contains("table separator") })
+        );
+    }
+
+    #[test]
+    fn sch013_checks_cardinally_rotated_table_borders_and_separators() {
+        let fixtures = [
+            (90, "0", "-1", "0.5", "-1.5", "0.5", "-0.5"),
+            (180, "-1", "0", "-1.5", "-0.5", "-0.5", "-0.5"),
+            (270, "0", "1", "-0.5", "0.5", "-0.5", "1.5"),
+        ];
+        for (angle, second_x, second_y, start_x, start_y, end_x, end_y) in fixtures {
+            let source = format!(
+                r#"
+                (wire (pts (xy {start_x} {start_y}) (xy {end_x} {end_y})))
+                (table
+                  (column_count 2)
+                  (column_widths 1 1)
+                  (row_heights 1)
+                  (cells
+                    (table_cell "" (at 0 0 {angle}) (size 1 1))
+                    (table_cell "" (at {second_x} {second_y} {angle}) (size 1 1)))
+                  (border (external yes) (header no) (stroke (width 0.2)))
+                  (separators (rows no) (cols yes) (stroke (width 0.1)))
+                  (uuid "rotated-table"))
+                "#
+            );
+            let document = document(&source);
+            assert!(
+                run_builtin_rules(&document).diagnostics.iter().any(|item| {
+                    item.code == "SCH013" && item.message.contains("table separator")
+                }),
+                "expected a rotated table separator finding at {angle} degrees"
+            );
+        }
+    }
+
+    #[test]
+    fn sch013_does_not_use_unrotated_table_coordinates_after_rotation() {
+        let document = document(
+            r#"
+            (wire (pts (xy 1 0.2) (xy 1 0.8)))
+            (table
+              (column_count 2)
+              (column_widths 1 1)
+              (row_heights 1)
+              (cells
+                (table_cell "" (at 0 0 90) (size 1 1))
+                (table_cell "" (at 0 -1 90) (size 1 1)))
+              (border (external yes) (header no) (stroke (width 0.2)))
+              (separators (rows no) (cols yes) (stroke (width 0.1))))
+            "#,
+        );
+        assert!(
+            !run_builtin_rules(&document).diagnostics.iter().any(|item| {
+                item.code == "SCH013" && item.message.contains("table")
+            })
+        );
+    }
+
+    #[test]
+    fn sch013_skips_tables_with_inconsistent_cell_rotations_or_positions() {
+        let mixed_rotations = document(
+            r#"
+            (wire (pts (xy 0.5 -1.5) (xy 0.5 -0.5)))
+            (table
+              (column_count 2)
+              (column_widths 1 1)
+              (row_heights 1)
+              (cells
+                (table_cell "" (at 0 0 90) (size 1 1))
+                (table_cell "" (at 0 -1 0) (size 1 1)))
+              (border (external yes) (header no) (stroke (width 0.2)))
+              (separators (rows no) (cols yes) (stroke (width 0.1))))
+            "#,
+        );
+        assert!(
+            !run_builtin_rules(&mixed_rotations).diagnostics.iter().any(|item| {
+                item.code == "SCH013" && item.message.contains("table")
+            })
+        );
+
+        let inconsistent_positions = document(
+            r#"
+            (wire (pts (xy 0.5 -1.5) (xy 0.5 -0.5)))
+            (table
+              (column_count 2)
+              (column_widths 1 1)
+              (row_heights 1)
+              (cells
+                (table_cell "" (at 0 0 90) (size 1 1))
+                (table_cell "" (at 1 0 90) (size 1 1)))
+              (border (external yes) (header no) (stroke (width 0.2)))
+              (separators (rows no) (cols yes) (stroke (width 0.1))))
+            "#,
+        );
+        assert!(
+            !run_builtin_rules(&inconsistent_positions).diagnostics.iter().any(|item| {
+                item.code == "SCH013" && item.message.contains("table")
+            })
         );
     }
 
