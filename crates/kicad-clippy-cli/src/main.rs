@@ -381,7 +381,11 @@ fn project_netclass_definitions(
         let priority = class
             .get("priority")
             .and_then(serde_json::Value::as_i64)
-            .unwrap_or(if name == "Default" { i64::from(i32::MAX) } else { -1 });
+            .unwrap_or(if name == "Default" {
+                i64::from(i32::MAX)
+            } else {
+                -1
+            });
         let width_mils = class
             .get("wire_width")
             .and_then(serde_json::Value::as_f64)
