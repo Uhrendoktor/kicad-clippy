@@ -631,15 +631,9 @@ fn schematic_table_layout(table: &Node) -> Option<SchematicTableLayout> {
         }
         let row = index / columns;
         let column = index % columns;
-        let expected = table_grid_point(
-            &layout,
-            column_offsets[column],
-            row_offsets[row],
-        );
+        let expected = table_grid_point(&layout, column_offsets[column], row_offsets[row]);
         let actual = (number(cell_at.get(1)?)?, number(cell_at.get(2)?)?);
-        if (actual.0 - expected.0).abs() > 0.001
-            || (actual.1 - expected.1).abs() > 0.001
-        {
+        if (actual.0 - expected.0).abs() > 0.001 || (actual.1 - expected.1).abs() > 0.001 {
             return None;
         }
     }
@@ -647,11 +641,7 @@ fn schematic_table_layout(table: &Node) -> Option<SchematicTableLayout> {
     Some(layout)
 }
 
-fn table_grid_point(
-    layout: &SchematicTableLayout,
-    x_offset: f64,
-    y_offset: f64,
-) -> (f64, f64) {
+fn table_grid_point(layout: &SchematicTableLayout, x_offset: f64, y_offset: f64) -> (f64, f64) {
     let (x, y) = match layout.rotation_quadrants {
         0 => (x_offset, y_offset),
         1 => (y_offset, -x_offset),
@@ -4959,9 +4949,10 @@ mod tests {
             "#,
         );
         assert!(
-            !run_builtin_rules(&document).diagnostics.iter().any(|item| {
-                item.code == "SCH013" && item.message.contains("table")
-            })
+            !run_builtin_rules(&document)
+                .diagnostics
+                .iter()
+                .any(|item| { item.code == "SCH013" && item.message.contains("table") })
         );
     }
 
@@ -4982,9 +4973,10 @@ mod tests {
             "#,
         );
         assert!(
-            !run_builtin_rules(&mixed_rotations).diagnostics.iter().any(|item| {
-                item.code == "SCH013" && item.message.contains("table")
-            })
+            !run_builtin_rules(&mixed_rotations)
+                .diagnostics
+                .iter()
+                .any(|item| { item.code == "SCH013" && item.message.contains("table") })
         );
 
         let inconsistent_positions = document(
@@ -5002,9 +4994,10 @@ mod tests {
             "#,
         );
         assert!(
-            !run_builtin_rules(&inconsistent_positions).diagnostics.iter().any(|item| {
-                item.code == "SCH013" && item.message.contains("table")
-            })
+            !run_builtin_rules(&inconsistent_positions)
+                .diagnostics
+                .iter()
+                .any(|item| { item.code == "SCH013" && item.message.contains("table") })
         );
     }
 
