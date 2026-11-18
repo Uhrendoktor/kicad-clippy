@@ -4957,9 +4957,10 @@ mod tests {
             );
             let document = document(&source);
             assert!(
-                run_builtin_rules(&document).diagnostics.iter().any(|item| {
-                    item.code == "SCH013" && item.message.contains("table border")
-                }),
+                run_builtin_rules(&document)
+                    .diagnostics
+                    .iter()
+                    .any(|item| { item.code == "SCH013" && item.message.contains("table border") }),
                 "expected a rotated table external-border finding at {angle} degrees"
             );
         }
