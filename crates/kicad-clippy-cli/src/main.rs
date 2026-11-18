@@ -44,7 +44,7 @@ enum Commands {
         /// Explicit path or command name for kicad-cli.
         #[arg(long, value_name = "PATH")]
         kicad_cli: Option<PathBuf>,
-        /// `KiCad` project file with per-wire SCH013 netclass settings (requires KiCad CLI).
+        /// `KiCad` project file with per-wire SCH013 netclass settings (requires the `KiCad` CLI).
         #[arg(long, value_name = "FILE")]
         project: Option<PathBuf>,
         /// JSON project profile containing component-intent metadata.
@@ -377,7 +377,7 @@ fn project_netclass_definitions(
         let priority = class
             .get("priority")
             .and_then(serde_json::Value::as_i64)
-            .unwrap_or(if name == "Default" { i64::MAX } else { -1 });
+            .unwrap_or(if name == "Default" { i64::from(i32::MAX) } else { -1 });
         let width_mils = class
             .get("wire_width")
             .and_then(serde_json::Value::as_f64)
@@ -433,11 +433,12 @@ fn add_pattern_netclass_assignments(
                 let class_name = assignment.get("netclass")?.as_str()?;
                 // Regex and bus-member expansion remain unresolved until their
                 // KiCad matcher semantics are represented by this resolver.
-                if pattern.contains("^")
-                    || pattern.contains("$")
-                    || (pattern.starts_with("/") && pattern.ends_with("/"))
-                    || pattern.contains("[")
-                    || pattern.contains("{")
+                let pattern_bytes = pattern.as_bytes();
+                if pattern_bytes.contains(&b'^')
+                    || pattern_bytes.contains(&b'$')
+                    || (pattern.starts_with('/') && pattern.ends_with('/'))
+                    || pattern_bytes.contains(&b'[')
+                    || pattern_bytes.contains(&b'{')
                 {
                     return None;
                 }
@@ -515,9 +516,7 @@ fn wildcard_pattern_matches(pattern: &str, candidate: &str) -> bool {
                 }
             }
             '?' => {
-                for index in 1..=candidate.len() {
-                    current[index] = previous[index - 1];
-                }
+                current[1..].copy_from_slice(&previous[..candidate.len()]);
             }
             literal => {
                 for index in 1..=candidate.len() {
@@ -710,7 +709,7 @@ mod tests {
         serde_json::json!({
             "net_settings": {
                 "classes": [
-                    {"name": "Default", "priority": 2147483647, "wire_width": 8.0},
+                    {"name": "Default", "priority": 2_147_483_647, "wire_width": 8.0},
                     {"name": "HighSpeed", "priority": 5, "wire_width": 18.0},
                     {"name": "Critical", "priority": 1, "wire_width": 30.0},
                     {"name": "Inheriting", "priority": 0}
