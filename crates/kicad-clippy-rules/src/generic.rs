@@ -2546,6 +2546,12 @@ fn no_connect_marker_obstacle_diagnostics(
         .collect()
 }
 
+#[derive(Clone, Copy)]
+struct WireObstacleStrokeWidths {
+    wire_mm: f64,
+    no_connect_marker_pen_mm: Option<f64>,
+}
+
 fn sheet_table_bus_obstacle_diagnostics(
     wire_index: usize,
     segment: Segment,
@@ -2553,9 +2559,9 @@ fn sheet_table_bus_obstacle_diagnostics(
     table_strokes: &[SchematicGraphicFact],
     bus_obstacles: &[SchematicBusObstacleFact],
     no_connects: &[SchematicNoConnectFact],
-    wire_stroke_width_mm: f64,
-    default_marker_pen_width_mm: Option<f64>,
+    stroke_widths: WireObstacleStrokeWidths,
 ) -> Vec<Diagnostic> {
+    let wire_stroke_width_mm = stroke_widths.wire_mm;
     let mut diagnostics =
         sheet_frame_obstacle_diagnostics(wire_index, segment, sheets, wire_stroke_width_mm);
     diagnostics.extend(table_stroke_obstacle_diagnostics(
@@ -2575,7 +2581,7 @@ fn sheet_table_bus_obstacle_diagnostics(
         segment,
         no_connects,
         wire_stroke_width_mm,
-        default_marker_pen_width_mm,
+        stroke_widths.no_connect_marker_pen_mm,
     ));
     diagnostics
 }
@@ -2643,8 +2649,10 @@ fn check_wire_obstacles(
             &table_strokes,
             &facts.bus_obstacles,
             &facts.no_connects,
-            wire_stroke_width_mm,
-            default_marker_pen_width_mm,
+            WireObstacleStrokeWidths {
+                wire_mm: wire_stroke_width_mm,
+                no_connect_marker_pen_mm: default_marker_pen_width_mm,
+            },
         ));
         for image in &facts.images {
             if image
