@@ -147,7 +147,7 @@ pub struct SchematicSheetFact {
 /// A schematic bus line or wire-to-bus entry used as a wire obstacle.
 #[derive(Clone, Debug)]
 pub struct SchematicBusObstacleFact {
-    /// Existing fields for bus geometry.
+    /// Obstacle kind shown in SCH013 diagnostics.
     pub kind: String,
     /// Two-ended stroked path geometry.
     pub primitive: SchematicPrimitiveFact,
@@ -164,13 +164,6 @@ pub struct SchematicNoConnectFact {
     pub center_mm: (f64, f64),
     /// Half of KiCad's fixed 48-mil marker dimension.
     pub half_size_mm: f64,
-}
-    /// Obstacle kind shown in SCH013 diagnostics.
-    pub kind: String,
-    /// Two-ended stroked path geometry.
-    pub primitive: SchematicPrimitiveFact,
-    /// Matching endpoint anchors; empty for a bus line.
-    pub pins: Vec<SchematicPinFact>,
 }
 
 #[derive(Clone, Debug)]
@@ -4982,7 +4975,7 @@ mod tests {
     fn sch013_does_not_expand_no_connect_marker_with_an_assumed_pen_width() {
         let document = document(
             r#"
-            (wire (pts (xy -1 0.61) (xy 1 0.61)))
+            (wire (pts (xy -1 0.7) (xy 1 0.7)))
             (no_connect (at 0 0) (uuid "nc-near-miss"))
             "#,
         );
