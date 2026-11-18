@@ -433,8 +433,14 @@ fn add_pattern_netclass_assignments(
                 let class_name = assignment.get("netclass")?.as_str()?;
                 // Regex and bus-member expansion remain unresolved until their
                 // KiCad matcher semantics are represented by this resolver.
-                if pattern.contains('^')
-                    || pattern.contains('
+                if pattern.contains("^")
+                    || pattern.contains("$")
+                    || (pattern.starts_with("/") && pattern.ends_with("/"))
+                    || pattern.contains("[")
+                    || pattern.contains("{")
+                {
+                    return None;
+                }
                 if wildcard_pattern_matches(pattern, net_name) {
                     candidates.insert(class_name.to_owned());
                 }
