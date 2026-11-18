@@ -341,15 +341,37 @@ fn project_wire_stroke_widths_mm(
     widths_by_wire
 }
 
+type ProjectNetclassDefinitions = BTreeMap<String, (i64, Option<f64>)>;
+
 fn project_netclass_wire_width_mm(
     project: &serde_json::Value,
     netlist: &Netlist,
     net_name: &str,
 ) -> Option<f64> {
     let settings = project.get("net_settings")?.as_object()?;
-    let class_rows = settings.get("classes")?.as_array()?;
-    let mut classes: BTreeMap<String, (i64, Option<f64>)> = BTreeMap::new();
+    let classes = project_netclass_definitions(settings)?;
+    let default_width_mm = classes.get("Default").and_then(|(_, width)| *width)?;
+    let candidates = project_netclass_candidates(settings, netlist, net_name)?;
+    let exported_class = netlist.nets.get(net_name)?.class_name.as_deref()?;
+    if !exported_netclass_matches(exported_class, net_name, &candidates) {
+        return None;
+    }
 
+    let selected = candidates
+        .iter()
+        .filter_map(|name| {
+            let (priority, width_mm) = classes.get(name)?;
+            width_mm.map(|width| (*priority, name.as_str(), width))
+        })
+        .min_by(|first, second| first.0.cmp(&second.0).then_with(|| first.1.cmp(second.1)));
+    Some(selected.map_or(default_width_mm, |(_, _, width_mm)| width_mm))
+}
+
+fn project_netclass_definitions(
+    settings: &serde_json::Map<String, serde_json::Value>,
+) -> Option<ProjectNetclassDefinitions> {
+    let class_rows = settings.get("classes")?.as_array()?;
+    let mut classes = BTreeMap::new();
     for class in class_rows {
         let name = class.get("name")?.as_str()?.to_owned();
         let priority = class
@@ -364,9 +386,26 @@ fn project_netclass_wire_width_mm(
         let width_mm = width_mm.filter(|width| width.is_finite() && *width > 0.0);
         classes.insert(name, (priority, width_mm));
     }
-    let default_width_mm = classes.get("Default").and_then(|(_, width_mm)| *width_mm)?;
+    Some(classes)
+}
 
+fn project_netclass_candidates(
+    settings: &serde_json::Map<String, serde_json::Value>,
+    netlist: &Netlist,
+    net_name: &str,
+) -> Option<BTreeSet<String>> {
     let mut candidates = BTreeSet::new();
+    add_explicit_netclass_assignments(settings, net_name, &mut candidates)?;
+    add_pattern_netclass_assignments(settings, net_name, &mut candidates)?;
+    add_chain_netclass_assignments(settings, netlist, net_name, &mut candidates)?;
+    Some(candidates)
+}
+
+fn add_explicit_netclass_assignments(
+    settings: &serde_json::Map<String, serde_json::Value>,
+    net_name: &str,
+    candidates: &mut BTreeSet<String>,
+) -> Option<()> {
     match settings.get("netclass_assignments") {
         None | Some(serde_json::Value::Null) => {}
         Some(serde_json::Value::Object(assignments)) => {
@@ -378,7 +417,14 @@ fn project_netclass_wire_width_mm(
         }
         _ => return None,
     }
+    Some(())
+}
 
+fn add_pattern_netclass_assignments(
+    settings: &serde_json::Map<String, serde_json::Value>,
+    net_name: &str,
+    candidates: &mut BTreeSet<String>,
+) -> Option<()> {
     match settings.get("netclass_patterns") {
         None | Some(serde_json::Value::Null) => {}
         Some(serde_json::Value::Array(patterns)) => {
@@ -397,7 +443,15 @@ fn project_netclass_wire_width_mm(
         }
         _ => return None,
     }
+    Some(())
+}
 
+fn add_chain_netclass_assignments(
+    settings: &serde_json::Map<String, serde_json::Value>,
+    netlist: &Netlist,
+    net_name: &str,
+    candidates: &mut BTreeSet<String>,
+) -> Option<()> {
     let chain_classes = match settings.get("net_chain_netclasses") {
         None | Some(serde_json::Value::Null) => None,
         Some(serde_json::Value::Object(assignments)) => Some(assignments),
@@ -423,29 +477,22 @@ fn project_netclass_wire_width_mm(
             candidates.insert(class_name.to_owned());
         }
     }
+    Some(())
+}
 
-    let exported_class = netlist.nets.get(net_name)?.class_name.as_deref()?;
-    let aggregate_name = format!("Effective for net: {net_name}");
+fn exported_netclass_matches(
+    exported_class: &str,
+    net_name: &str,
+    candidates: &BTreeSet<String>,
+) -> bool {
     if exported_class == "Default" {
-        if !candidates.is_empty() && !(candidates.len() == 1 && candidates.contains("Default")) {
-            return None;
-        }
-    } else if exported_class == aggregate_name {
-        if candidates.is_empty() {
-            return None;
-        }
-    } else if candidates.len() != 1 || !candidates.contains(exported_class) {
-        return None;
+        candidates.is_empty()
+            || (candidates.len() == 1 && candidates.contains("Default"))
+    } else if exported_class.strip_prefix("Effective for net: ") == Some(net_name) {
+        !candidates.is_empty()
+    } else {
+        candidates.len() == 1 && candidates.contains(exported_class)
     }
-
-    let selected = candidates
-        .iter()
-        .filter_map(|name| {
-            let (priority, width_mm) = classes.get(name)?;
-            width_mm.map(|width| (*priority, name.as_str(), width))
-        })
-        .min_by(|first, second| first.0.cmp(&second.0).then_with(|| first.1.cmp(second.1)));
-    Some(selected.map_or(default_width_mm, |(_, _, width_mm)| width_mm))
 }
 
 fn wildcard_pattern_matches(pattern: &str, candidate: &str) -> bool {
