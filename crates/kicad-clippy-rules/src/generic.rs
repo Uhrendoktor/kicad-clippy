@@ -147,6 +147,24 @@ pub struct SchematicSheetFact {
 /// A schematic bus line or wire-to-bus entry used as a wire obstacle.
 #[derive(Clone, Debug)]
 pub struct SchematicBusObstacleFact {
+    /// Existing fields for bus geometry.
+    pub kind: String,
+    /// Two-ended stroked path geometry.
+    pub primitive: SchematicPrimitiveFact,
+    /// Matching endpoint anchors; empty for a bus line.
+    pub pins: Vec<SchematicPinFact>,
+}
+
+/// A fixed-size X-shaped schematic no-connect marker.
+#[derive(Clone, Debug)]
+pub struct SchematicNoConnectFact {
+    /// Stable UUID or parser-node fallback identifier.
+    pub reference: String,
+    /// Marker centre in sheet coordinates.
+    pub center_mm: (f64, f64),
+    /// Half of KiCad's fixed 48-mil marker dimension.
+    pub half_size_mm: f64,
+}
     /// Obstacle kind shown in SCH013 diagnostics.
     pub kind: String,
     /// Two-ended stroked path geometry.
@@ -267,6 +285,8 @@ pub struct SchematicFacts {
     pub sheets: Vec<SchematicSheetFact>,
     /// Bus lines and bus-entry strokes, with local wire-entry endpoint anchors.
     pub bus_obstacles: Vec<SchematicBusObstacleFact>,
+    /// Top-level no-connect X marker centreline strokes (without guessed pen width).
+    pub no_connects: Vec<SchematicNoConnectFact>,
     /// Embedded library-symbol text and text-box obstacles in sheet coordinates.
     pub symbol_texts: Vec<SchematicSymbolTextFact>,
     /// Label anchors used to ensure labels are not mistaken for physical wires.
@@ -314,6 +334,7 @@ impl SchematicFacts {
             symbol_primitives: collect_symbol_primitive_facts(root),
             sheets: collect_sheet_facts(root),
             bus_obstacles: collect_bus_obstacle_facts(root),
+            no_connects: collect_no_connect_facts(root),
             symbol_texts: collect_symbol_text_facts(root),
             labels: collect_label_facts(root),
             junctions: junctions.iter().map(|point| (point.x, point.y)).collect(),
@@ -1446,6 +1467,26 @@ fn object_reference(node: &Node, prefix: &str) -> String {
         )
 }
 
+const NO_CONNECT_MARKER_HALF_SIZE_MM: f64 = 48.0 * 0.0254 / 2.0;
+
+/// Collects KiCad's fixed-size no-connect marker strokes without assuming the
+/// schematic-settings-dependent pen width, which is not serialized per marker.
+fn collect_no_connect_facts(root: &Node) -> Vec<SchematicNoConnectFact> {
+    children(root, "no_connect")
+        .filter_map(|node| {
+            let at = child_list(node, "at").and_then(list_items)?;
+            let center_mm = (number(at.get(1)?)?, number(at.get(2)?)?);
+            (center_mm.0.is_finite() && center_mm.1.is_finite()).then(|| {
+                SchematicNoConnectFact {
+                    reference: object_reference(node, "no-connect"),
+                    center_mm,
+                    half_size_mm: NO_CONNECT_MARKER_HALF_SIZE_MM,
+                }
+            })
+        })
+        .collect()
+}
+
 fn collect_bus_obstacle_facts(root: &Node) -> Vec<SchematicBusObstacleFact> {
     let mut obstacles = Vec::new();
     for bus in children(root, "bus") {
@@ -2434,12 +2475,62 @@ fn table_stroke_obstacle_diagnostics(
         .collect()
 }
 
+fn no_connect_marker_obstacle_diagnostics(
+    wire_index: usize,
+    segment: Segment,
+    markers: &[SchematicNoConnectFact],
+    wire_stroke_width_mm: f64,
+) -> Vec<Diagnostic> {
+    if !wire_stroke_width_mm.is_finite() || wire_stroke_width_mm < 0.0 {
+        return Vec::new();
+    }
+    markers
+        .iter()
+        .filter(|marker| {
+            let (center_x, center_y) = marker.center_mm;
+            let half = marker.half_size_mm;
+            let first_diagonal = [
+                (center_x - half, center_y - half),
+                (center_x + half, center_y + half),
+            ];
+            let second_diagonal = [
+                (center_x + half, center_y - half),
+                (center_x - half, center_y + half),
+            ];
+            wire_within_sampled_path_stroke(
+                segment,
+                &first_diagonal,
+                false,
+                wire_stroke_width_mm,
+                0.0,
+            ) || wire_within_sampled_path_stroke(
+                segment,
+                &second_diagonal,
+                false,
+                wire_stroke_width_mm,
+                0.0,
+            )
+        })
+        .map(|marker| {
+            at_segment(
+                BuiltinRuleId::Sch013,
+                &format!(
+                    "wire {wire_index} crosses no-connect marker {}",
+                    marker.reference
+                ),
+                segment,
+            )
+        })
+        .collect()
+}
+
 fn sheet_table_bus_obstacle_diagnostics(
     wire_index: usize,
     segment: Segment,
     sheets: &[SchematicSheetFact],
     table_strokes: &[SchematicGraphicFact],
     bus_obstacles: &[SchematicBusObstacleFact],
+    no_connects: &[SchematicNoConnectFact],
     wire_stroke_width_mm: f64,
 ) -> Vec<Diagnostic> {
     let mut diagnostics =
@@ -2454,6 +2545,12 @@ fn sheet_table_bus_obstacle_diagnostics(
         wire_index,
         segment,
         bus_obstacles,
+        wire_stroke_width_mm,
+    ));
+    diagnostics.extend(no_connect_marker_obstacle_diagnostics(
+        wire_index,
+        segment,
+        no_connects,
         wire_stroke_width_mm,
     ));
     diagnostics
@@ -2520,6 +2617,7 @@ fn check_wire_obstacles(
             &facts.sheets,
             &table_strokes,
             &facts.bus_obstacles,
+            &facts.no_connects,
             wire_stroke_width_mm,
         ));
         for image in &facts.images {
@@ -4864,6 +4962,34 @@ mod tests {
     fn document(body: &str) -> SchematicDocument {
         SchematicDocument::from_text("fixture.kicad_sch", format!("(kicad_sch {body})"))
             .expect("fixture parses")
+    }
+
+    #[test]
+    fn sch013_checks_both_no_connect_marker_diagonals() {
+        let document = document(
+            r#"
+            (wire (pts (xy -1 0) (xy 1 0)))
+            (no_connect (at 0 0) (uuid "nc-center"))
+            "#,
+        );
+
+        assert!(run_builtin_rules(&document).diagnostics.iter().any(|item| {
+            item.code == "SCH013" && item.message.contains("no-connect marker nc-center")
+        }));
+    }
+
+    #[test]
+    fn sch013_does_not_expand_no_connect_marker_with_an_assumed_pen_width() {
+        let document = document(
+            r#"
+            (wire (pts (xy -1 0.61) (xy 1 0.61)))
+            (no_connect (at 0 0) (uuid "nc-near-miss"))
+            "#,
+        );
+
+        assert!(!run_builtin_rules(&document).diagnostics.iter().any(|item| {
+            item.code == "SCH013" && item.message.contains("no-connect marker")
+        }));
     }
 
     #[test]

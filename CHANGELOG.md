@@ -4,6 +4,8 @@ Notable changes are documented here. This project is in early development and ha
 
 ## Unreleased
 
+- Added SCH013 crossings of both no-connect marker X centerlines using KiCad's fixed 48-mil marker size; no settings-derived marker pen width is guessed.
+
 - Added an explicit `--project` input for SCH013 to resolve zero/omitted wire widths from the KiCad Default netclass when project assignment maps/patterns are absent, null, empty or Default-only and no schematic netclass overrides are present; non-Default mappings remain conservative.
 - Added SCH013 hierarchical sheet frame/body obstacles with local exceptions for wires terminating at matching sheet-pin anchors; wires continuing into the sheet body remain checked.
 - Corrected SCH013 embedded bitmap obstacles to use the serialized rotation and actual four-corner PNG/JPEG footprint instead of the axis-aligned bounding box; image dimensions still follow the existing version-aware PPI and scale rules.
