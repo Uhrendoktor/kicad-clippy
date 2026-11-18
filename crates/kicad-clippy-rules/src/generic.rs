@@ -920,10 +920,7 @@ fn rotated_bitmap_image_geometry(
             y.mul_add(cos, (-x).mul_add(sin, center.y)),
         )
     });
-    if !corners
-        .iter()
-        .all(|(x, y)| x.is_finite() && y.is_finite())
-    {
+    if !corners.iter().all(|(x, y)| x.is_finite() && y.is_finite()) {
         return None;
     }
 
