@@ -289,6 +289,10 @@ fn project_wire_stroke_widths_mm(
     let mut components_with_unmapped_pins = BTreeSet::new();
 
     for pin in &facts.pins {
+        // `KiCad` excludes virtual and power-symbol references from flattened netlist nodes.
+        if pin.reference.starts_with('#') {
+            continue;
+        }
         let key = physical_wire_component_key(pin.position_mm.0, pin.position_mm.1);
         let Some(component) = component_ids.get(&key).copied() else {
             continue;
@@ -855,11 +859,18 @@ mod tests {
                 end_mm: (10.0, 0.0),
                 span_start: 42,
             }],
-            pins: vec![SchematicPinFact {
-                reference: "J1".to_owned(),
-                number: "1".to_owned(),
-                position_mm: (0.0, 0.0),
-            }],
+            pins: vec![
+                SchematicPinFact {
+                    reference: "J1".to_owned(),
+                    number: "1".to_owned(),
+                    position_mm: (0.0, 0.0),
+                },
+                SchematicPinFact {
+                    reference: "#PWR01".to_owned(),
+                    number: "1".to_owned(),
+                    position_mm: (0.0, 0.0),
+                },
+            ],
             ..SchematicFacts::default()
         };
         let mut netlist = Netlist::default();
