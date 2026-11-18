@@ -888,15 +888,9 @@ fn rotated_bitmap_image_geometry(
     height_mm: f64,
     orientation_degrees: f64,
 ) -> Option<((f64, f64, f64, f64), [(f64, f64); 4])> {
-    if ![
-        center.x,
-        center.y,
-        width_mm,
-        height_mm,
-        orientation_degrees,
-    ]
-    .iter()
-    .all(|value| value.is_finite())
+    if ![center.x, center.y, width_mm, height_mm, orientation_degrees]
+        .iter()
+        .all(|value| value.is_finite())
         || width_mm <= 0.0
         || height_mm <= 0.0
     {
@@ -913,12 +907,7 @@ fn rotated_bitmap_image_geometry(
         (half_width, half_height),
         (-half_width, half_height),
     ]
-    .map(|(x, y)| {
-        (
-            center.x + x * cos + y * sin,
-            center.y - x * sin + y * cos,
-        )
-    });
+    .map(|(x, y)| (center.x + x * cos + y * sin, center.y - x * sin + y * cos));
     if !corners
         .iter()
         .flat_map(|point| [point.0, point.1])
@@ -2985,8 +2974,7 @@ fn wire_crosses_polygon_interior(wire: Segment, polygon: &Polygon<f64>) -> bool 
             parameter.mul_add(direction_x, wire.start.x),
             parameter.mul_add(direction_y, wire.start.y),
         );
-        polygon.contains(&midpoint)
-            && Euclidean.distance(&midpoint, polygon.exterior()) > 0.001
+        polygon.contains(&midpoint) && Euclidean.distance(&midpoint, polygon.exterior()) > 0.001
     })
 }
 
@@ -5871,17 +5859,13 @@ mod tests {
               (data iVBORw0KGgoAAAANSUhEUgAAAHgAAAA8CAYAAACtrX6oAAAACXBIWXMAAC4jAAAuIwF4pT92AAAAoklEQVR4nO3RAQkAMAzAsPk3vak4h5IoKHSWtPkdwFsGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcd1OAFhGyMXxbAAAAAElFTkSuQmCC))
         "#;
 
-        let outside_footprint = document(&format!(
-            "{IMAGE} (wire (pts (xy 0 0.1) (xy 1 0.1)))"
-        ));
+        let outside_footprint = document(&format!("{IMAGE} (wire (pts (xy 0 0.1) (xy 1 0.1)))"));
         assert!(!run_builtin_rules(&outside_footprint)
             .diagnostics
             .iter()
             .any(|item| item.code == "SCH013" && item.message.contains("embedded bitmap image")));
 
-        let crossing_footprint = document(&format!(
-            "{IMAGE} (wire (pts (xy 0 5) (xy 10 5)))"
-        ));
+        let crossing_footprint = document(&format!("{IMAGE} (wire (pts (xy 0 5) (xy 10 5)))"));
         assert!(run_builtin_rules(&crossing_footprint)
             .diagnostics
             .iter()
