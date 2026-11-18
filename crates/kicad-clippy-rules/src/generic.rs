@@ -1469,12 +1469,10 @@ fn collect_no_connect_facts(root: &Node) -> Vec<SchematicNoConnectFact> {
         .filter_map(|node| {
             let at = child_list(node, "at").and_then(list_items)?;
             let center_mm = (number(at.get(1)?)?, number(at.get(2)?)?);
-            (center_mm.0.is_finite() && center_mm.1.is_finite()).then(|| {
-                SchematicNoConnectFact {
-                    reference: object_reference(node, "no-connect"),
-                    center_mm,
-                    half_size_mm: NO_CONNECT_MARKER_HALF_SIZE_MM,
-                }
+            (center_mm.0.is_finite() && center_mm.1.is_finite()).then(|| SchematicNoConnectFact {
+                reference: object_reference(node, "no-connect"),
+                center_mm,
+                half_size_mm: NO_CONNECT_MARKER_HALF_SIZE_MM,
             })
         })
         .collect()
@@ -4980,9 +4978,11 @@ mod tests {
             "#,
         );
 
-        assert!(!run_builtin_rules(&document).diagnostics.iter().any(|item| {
-            item.code == "SCH013" && item.message.contains("no-connect marker")
-        }));
+        assert!(
+            !run_builtin_rules(&document).diagnostics.iter().any(|item| {
+                item.code == "SCH013" && item.message.contains("no-connect marker")
+            })
+        );
     }
 
     #[test]
