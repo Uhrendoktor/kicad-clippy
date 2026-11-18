@@ -480,9 +480,15 @@ mod tests {
             "schematic": {"drawing": {"default_line_thickness": -6.0}}
         });
 
-        assert_eq!(project_default_schematic_line_stroke_width_mm(&missing), None);
+        assert_eq!(
+            project_default_schematic_line_stroke_width_mm(&missing),
+            None
+        );
         assert_eq!(project_default_schematic_line_stroke_width_mm(&zero), None);
-        assert_eq!(project_default_schematic_line_stroke_width_mm(&negative), None);
+        assert_eq!(
+            project_default_schematic_line_stroke_width_mm(&negative),
+            None
+        );
     }
 
     #[test]

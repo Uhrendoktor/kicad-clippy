@@ -2527,7 +2527,11 @@ fn no_connect_marker_obstacle_diagnostics(
                 (center_x - half, center_y + half),
             ];
             wire_crosses_no_connect_diagonal(segment, first_diagonal, combined_stroke_width_mm)
-                || wire_crosses_no_connect_diagonal(segment, second_diagonal, combined_stroke_width_mm)
+                || wire_crosses_no_connect_diagonal(
+                    segment,
+                    second_diagonal,
+                    combined_stroke_width_mm,
+                )
         })
         .map(|marker| {
             at_segment(
