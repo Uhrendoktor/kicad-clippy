@@ -2586,6 +2586,32 @@ fn sheet_table_bus_obstacle_diagnostics(
     diagnostics
 }
 
+fn intermediate_pin_obstacle_diagnostics(
+    wire_index: usize,
+    segment: Segment,
+    pins: &[SchematicPinFact],
+) -> Vec<Diagnostic> {
+    pins.iter()
+        .filter(|pin| {
+            let point = Point {
+                x: pin.position_mm.0,
+                y: pin.position_mm.1,
+            };
+            point_on_segment_any(point, segment.start, segment.end) && !is_endpoint(point, segment)
+        })
+        .map(|pin| {
+            at_segment(
+                BuiltinRuleId::Sch013,
+                &format!(
+                    "wire {wire_index} passes through intermediate pin {}.{}",
+                    pin.reference, pin.number
+                ),
+                segment,
+            )
+        })
+        .collect()
+}
+
 fn check_wire_obstacles(
     root: &Node,
     segments: &[Segment],
@@ -2676,24 +2702,11 @@ fn check_wire_obstacles(
             &fields,
             &text_boxes,
         ));
-        for pin in &facts.pins {
-            let point = Point {
-                x: pin.position_mm.0,
-                y: pin.position_mm.1,
-            };
-            if point_on_segment_any(point, segment.start, segment.end)
-                && !is_endpoint(point, *segment)
-            {
-                diagnostics.push(at_segment(
-                    BuiltinRuleId::Sch013,
-                    &format!(
-                        "wire {wire_index} passes through intermediate pin {}.{}",
-                        pin.reference, pin.number
-                    ),
-                    *segment,
-                ));
-            }
-        }
+        diagnostics.extend(intermediate_pin_obstacle_diagnostics(
+            wire_index,
+            *segment,
+            &facts.pins,
+        ));
     }
     diagnostics
 }
