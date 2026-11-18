@@ -4,7 +4,7 @@ Notable changes are documented here. This project is in early development and ha
 
 ## Unreleased
 
-- Added SCH013 crossings of both no-connect marker X centerlines using KiCad's fixed 48-mil marker size; no settings-derived marker pen width is guessed.
+- Added SCH013 no-connect marker X strokes using KiCad's fixed 48-mil marker size; when `--project` supplies a positive `schematic.drawing.default_line_thickness`, its mil-to-mm pen width is combined with the wire width. Without project settings, checking remains centerline-only.
 
 - Added an explicit `--project` input for SCH013 to resolve zero/omitted wire widths from the KiCad Default netclass when project assignment maps/patterns are absent, null, empty or Default-only and no schematic netclass overrides are present; non-Default mappings remain conservative.
 - Added SCH013 hierarchical sheet frame/body obstacles with local exceptions for wires terminating at matching sheet-pin anchors; wires continuing into the sheet body remain checked.

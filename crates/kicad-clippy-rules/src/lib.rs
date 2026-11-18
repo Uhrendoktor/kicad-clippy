@@ -31,6 +31,7 @@ pub struct RuleContext<'a> {
     segments: &'a [generic::Segment],
     junctions: &'a [generic::Point],
     default_wire_stroke_width_mm: Option<f64>,
+    default_schematic_line_stroke_width_mm: Option<f64>,
 }
 
 impl<'a> RuleContext<'a> {
@@ -125,6 +126,20 @@ impl RuleEngine {
         document: &SchematicDocument,
         default_wire_stroke_width_mm: Option<f64>,
     ) -> RuleRun {
+        self.run_with_project_stroke_widths(document, default_wire_stroke_width_mm, None)
+    }
+
+    /// Executes all passes with authoritative project-derived SCH013 stroke widths.
+    ///
+    /// The schematic line width supplies the pen around fixed-size no-connect markers.
+    /// It remains unknown when the project settings do not provide a positive value.
+    #[must_use]
+    pub fn run_with_project_stroke_widths(
+        &self,
+        document: &SchematicDocument,
+        default_wire_stroke_width_mm: Option<f64>,
+        default_schematic_line_stroke_width_mm: Option<f64>,
+    ) -> RuleRun {
         let Some(root) = document.cst().nodes.first() else {
             return RuleRun::default();
         };
@@ -137,6 +152,8 @@ impl RuleEngine {
             segments: &segments,
             junctions: &junctions,
             default_wire_stroke_width_mm: default_wire_stroke_width_mm
+                .filter(|width| width.is_finite() && *width > 0.0),
+            default_schematic_line_stroke_width_mm: default_schematic_line_stroke_width_mm
                 .filter(|width| width.is_finite() && *width > 0.0),
         };
         let diagnostics = self

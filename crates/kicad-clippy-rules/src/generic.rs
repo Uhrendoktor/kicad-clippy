@@ -2281,6 +2281,7 @@ pub fn run_geometry_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
         context.facts(),
         &wire_stroke_widths,
         default_wire_stroke_width_mm,
+        context.default_schematic_line_stroke_width_mm,
     ));
     diagnostics
 }
@@ -2500,8 +2501,16 @@ fn no_connect_marker_obstacle_diagnostics(
     segment: Segment,
     markers: &[SchematicNoConnectFact],
     wire_stroke_width_mm: f64,
+    default_marker_pen_width_mm: Option<f64>,
 ) -> Vec<Diagnostic> {
     if !wire_stroke_width_mm.is_finite() || wire_stroke_width_mm < 0.0 {
+        return Vec::new();
+    }
+    let marker_pen_width_mm = default_marker_pen_width_mm
+        .filter(|width| width.is_finite() && *width > 0.0)
+        .unwrap_or(0.0);
+    let combined_stroke_width_mm = wire_stroke_width_mm + marker_pen_width_mm;
+    if !combined_stroke_width_mm.is_finite() {
         return Vec::new();
     }
     markers
@@ -2517,8 +2526,8 @@ fn no_connect_marker_obstacle_diagnostics(
                 (center_x + half, center_y - half),
                 (center_x - half, center_y + half),
             ];
-            wire_crosses_no_connect_diagonal(segment, first_diagonal, wire_stroke_width_mm)
-                || wire_crosses_no_connect_diagonal(segment, second_diagonal, wire_stroke_width_mm)
+            wire_crosses_no_connect_diagonal(segment, first_diagonal, combined_stroke_width_mm)
+                || wire_crosses_no_connect_diagonal(segment, second_diagonal, combined_stroke_width_mm)
         })
         .map(|marker| {
             at_segment(
@@ -2541,6 +2550,7 @@ fn sheet_table_bus_obstacle_diagnostics(
     bus_obstacles: &[SchematicBusObstacleFact],
     no_connects: &[SchematicNoConnectFact],
     wire_stroke_width_mm: f64,
+    default_marker_pen_width_mm: Option<f64>,
 ) -> Vec<Diagnostic> {
     let mut diagnostics =
         sheet_frame_obstacle_diagnostics(wire_index, segment, sheets, wire_stroke_width_mm);
@@ -2561,6 +2571,7 @@ fn sheet_table_bus_obstacle_diagnostics(
         segment,
         no_connects,
         wire_stroke_width_mm,
+        default_marker_pen_width_mm,
     ));
     diagnostics
 }
@@ -2571,6 +2582,7 @@ fn check_wire_obstacles(
     facts: &SchematicFacts,
     wire_stroke_widths: &BTreeMap<usize, f64>,
     default_wire_stroke_width_mm: Option<f64>,
+    default_marker_pen_width_mm: Option<f64>,
 ) -> Vec<Diagnostic> {
     let fields = collect_visible_field_bounds(root);
     let text_boxes: Vec<_> = children(root, "text_box")
@@ -2628,6 +2640,7 @@ fn check_wire_obstacles(
             &facts.bus_obstacles,
             &facts.no_connects,
             wire_stroke_width_mm,
+            default_marker_pen_width_mm,
         ));
         for image in &facts.images {
             if image
@@ -4985,6 +4998,34 @@ mod tests {
         assert!(run_builtin_rules(&document).diagnostics.iter().any(|item| {
             item.code == "SCH013" && item.message.contains("no-connect marker nc-center")
         }));
+    }
+
+    #[test]
+    fn sch013_uses_project_default_line_width_for_no_connect_marker_pen() {
+        let schematic = document(
+            r#"
+            (wire (pts (xy 0.35 0.55) (xy 0.55 0.75))
+              (stroke (width 0.2)))
+            (no_connect (at 0 0) (uuid "nc-near-stroke"))
+            "#,
+        );
+        let engine = crate::RuleEngine::with_builtins();
+
+        assert!(
+            !engine.run(&schematic).diagnostics.iter().any(|item| {
+                item.code == "SCH013" && item.message.contains("no-connect marker")
+            })
+        );
+        assert!(
+            engine
+                .run_with_project_stroke_widths(&schematic, None, Some(0.1524))
+                .diagnostics
+                .iter()
+                .any(|item| {
+                    item.code == "SCH013"
+                        && item.message.contains("no-connect marker nc-near-stroke")
+                })
+        );
     }
 
     #[test]

@@ -170,10 +170,10 @@ fn lint(
         return Err(CliError::StrictNeedsProfile);
     }
     let schematic = SchematicDocument::from_path(schematic_path)?;
-    let default_wire_stroke_width_mm = project_path
-        .map(default_wire_stroke_width_mm_from_project)
+    let (default_wire_stroke_width_mm, default_schematic_line_stroke_width_mm) = project_path
+        .map(project_stroke_widths_from_project)
         .transpose()?
-        .flatten();
+        .unwrap_or_default();
     let needs_netlist = profile_path.is_some();
     let cli = if skip_erc && !needs_netlist {
         None
@@ -203,7 +203,11 @@ fn lint(
     };
     diagnostics.extend(
         RuleEngine::with_builtins()
-            .run_with_default_wire_stroke_width(&schematic, default_wire_stroke_width_mm)
+            .run_with_project_stroke_widths(
+                &schematic,
+                default_wire_stroke_width_mm,
+                default_schematic_line_stroke_width_mm,
+            )
             .diagnostics,
     );
     if let Some(path) = profile_path {
@@ -240,10 +244,15 @@ fn lint(
     }
 }
 
-fn default_wire_stroke_width_mm_from_project(project_path: &Path) -> Result<Option<f64>, CliError> {
+fn project_stroke_widths_from_project(
+    project_path: &Path,
+) -> Result<(Option<f64>, Option<f64>), CliError> {
     let contents = fs::read_to_string(project_path)?;
     let project: serde_json::Value = serde_json::from_str(&contents)?;
-    Ok(project_default_wire_stroke_width_mm(&project))
+    Ok((
+        project_default_wire_stroke_width_mm(&project),
+        project_default_schematic_line_stroke_width_mm(&project),
+    ))
 }
 
 fn project_default_wire_stroke_width_mm(project: &serde_json::Value) -> Option<f64> {
@@ -264,6 +273,16 @@ fn project_default_wire_stroke_width_mm(project: &serde_json::Value) -> Option<f
         .iter()
         .find(|class| class.get("name").and_then(serde_json::Value::as_str) == Some("Default"))?;
     let width_mils = default_class.get("wire_width")?.as_f64()?;
+    let width_mm = width_mils * 0.0254;
+    (width_mm.is_finite() && width_mm > 0.0).then_some(width_mm)
+}
+
+fn project_default_schematic_line_stroke_width_mm(project: &serde_json::Value) -> Option<f64> {
+    let width_mils = project
+        .get("schematic")?
+        .get("drawing")?
+        .get("default_line_thickness")?
+        .as_f64()?;
     let width_mm = width_mils * 0.0254;
     (width_mm.is_finite() && width_mm > 0.0).then_some(width_mm)
 }
@@ -431,7 +450,40 @@ fn resolve_kicad_cli(explicit: Option<PathBuf>) -> Result<PathBuf, CliError> {
 mod tests {
     use kicad_clippy_core::{Diagnostic, Severity};
 
-    use super::{Summary, project_default_wire_stroke_width_mm};
+    use super::{
+        Summary, project_default_schematic_line_stroke_width_mm,
+        project_default_wire_stroke_width_mm,
+    };
+
+    #[test]
+    fn project_default_schematic_line_width_reads_mils() {
+        let project = serde_json::json!({
+            "schematic": {
+                "drawing": {
+                    "default_line_thickness": 6.0
+                }
+            }
+        });
+
+        let width = project_default_schematic_line_stroke_width_mm(&project)
+            .expect("a positive project line width is authoritative");
+        assert!((width - 0.1524).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn project_default_schematic_line_width_stays_unknown_when_missing_or_invalid() {
+        let missing = serde_json::json!({"schematic": {"drawing": {}}});
+        let zero = serde_json::json!({
+            "schematic": {"drawing": {"default_line_thickness": 0.0}}
+        });
+        let negative = serde_json::json!({
+            "schematic": {"drawing": {"default_line_thickness": -6.0}}
+        });
+
+        assert_eq!(project_default_schematic_line_stroke_width_mm(&missing), None);
+        assert_eq!(project_default_schematic_line_stroke_width_mm(&zero), None);
+        assert_eq!(project_default_schematic_line_stroke_width_mm(&negative), None);
+    }
 
     #[test]
     fn project_default_wire_width_reads_mils_only_without_assignments() {
