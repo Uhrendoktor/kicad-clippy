@@ -465,9 +465,10 @@ mod tests {
             }
         });
 
-        let width = project_default_schematic_line_stroke_width_mm(&project)
-            .expect("a positive project line width is authoritative");
-        assert!((width - 0.1524).abs() < 1.0e-12);
+        assert!(
+            project_default_schematic_line_stroke_width_mm(&project)
+                .is_some_and(|width| (width - 0.1524).abs() < 1.0e-12)
+        );
     }
 
     #[test]
