@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs, io,
     path::{Path, PathBuf},
     process::Command,
@@ -43,8 +43,21 @@ pub struct NetlistNode {
 pub struct NetlistNet {
     /// `KiCad` net name.
     pub name: String,
+    /// Resolved effective netclass name exported by `KiCad`, when present.
+    pub class_name: Option<String>,
     /// Pins assigned to this net.
     pub nodes: Vec<NetlistNode>,
+}
+
+/// A committed net chain exported by `KiCad`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NetlistChain {
+    /// Stable chain name.
+    pub name: String,
+    /// Netclass directly assigned to the chain, when present.
+    pub netclass: Option<String>,
+    /// Resolved member-net names.
+    pub members: BTreeSet<String>,
 }
 
 /// Flattened netlist exported by `KiCad`.
@@ -56,6 +69,8 @@ pub struct Netlist {
     pub nets: BTreeMap<String, NetlistNet>,
     /// Reverse lookup from component pin to net name.
     pub pin_nets: BTreeMap<PinRef, String>,
+    /// Committed net chains and their resolved member nets.
+    pub chains: Vec<NetlistChain>,
 }
 
 impl Netlist {
@@ -228,9 +243,38 @@ pub fn parse_netlist_sexpr(contents: &str) -> Result<Netlist, NetlistError> {
                 }
                 nodes.push(NetlistNode { reference, pin });
             }
-            netlist
-                .nets
-                .insert(name.clone(), NetlistNet { name, nodes });
+            let class_name = child_value(net, "class", contents)
+                .filter(|class_name| !class_name.is_empty());
+            netlist.nets.insert(
+                name.clone(),
+                NetlistNet {
+                    name,
+                    class_name,
+                    nodes,
+                },
+            );
+        }
+    }
+
+    if let Some(chains) = child_list(root, "net_chains") {
+        for chain in children(chains, "net_chain") {
+            let Some(name) = child_value(chain, "name", contents) else {
+                continue;
+            };
+            let netclass = child_value(chain, "net_class", contents)
+                .filter(|netclass| !netclass.is_empty());
+            let members = if let Some(member_list) = child_list(chain, "members") {
+                children(member_list, "member")
+                    .filter_map(|member| child_value(member, "net", contents))
+                    .collect()
+            } else {
+                BTreeSet::new()
+            };
+            netlist.chains.push(NetlistChain {
+                name,
+                netclass,
+                members,
+            });
         }
     }
     Ok(netlist)
@@ -306,6 +350,7 @@ fn atom_value(node: &Node, source: &str) -> Option<String> {
 mod tests {
     #![allow(clippy::expect_used)]
     use super::parse_netlist_sexpr;
+    use std::collections::BTreeSet;
 
     const NETLIST: &str = r#"(export
       (components
@@ -313,12 +358,17 @@ mod tests {
         (comp (ref "U1") (value "Controller") (libsource (lib "MyLib") (part "U")))
       )
       (nets
-        (net (code "1") (name "VREG_1V2")
+        (net (code "1") (name "VREG_1V2") (class "HighSpeed")
           (node (ref "U1") (pin "21"))
           (node (ref "C1") (pin "1"))
         )
         (net (code "2") (name "GND")
           (node (ref "C1") (pin "2"))
+        )
+      )
+      (net_chains
+        (net_chain (name "Core") (net_class "HighSpeed")
+          (members (member (net "VREG_1V2")) (member (net "GND")))
         )
       )
     )"#;
@@ -329,6 +379,16 @@ mod tests {
         assert_eq!(netlist.net_for_pin("U1", "21"), Some("VREG_1V2"));
         assert_eq!(netlist.net_for_pin("C1", "1"), Some("VREG_1V2"));
         assert_eq!(netlist.net_for_pin("C1", "2"), Some("GND"));
+        assert_eq!(
+            netlist.nets["VREG_1V2"].class_name.as_deref(),
+            Some("HighSpeed")
+        );
+        assert_eq!(netlist.chains[0].name, "Core");
+        assert_eq!(netlist.chains[0].netclass.as_deref(), Some("HighSpeed"));
+        assert_eq!(
+            netlist.chains[0].members,
+            BTreeSet::from(["VREG_1V2".to_owned(), "GND".to_owned()])
+        );
         assert_eq!(netlist.components["C1"].value.as_deref(), Some("100n"));
         assert_eq!(netlist.components["U1"].lib_id.as_deref(), Some("MyLib:U"));
     }

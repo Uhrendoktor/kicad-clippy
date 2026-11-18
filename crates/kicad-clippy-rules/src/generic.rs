@@ -91,6 +91,8 @@ pub struct SchematicWireFact {
     pub start_mm: (f64, f64),
     /// Second endpoint of the wire segment in millimetres.
     pub end_mm: (f64, f64),
+    /// Byte offset identifying this wire in the source schematic.
+    pub span_start: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -286,6 +288,8 @@ pub struct SchematicFacts {
     pub labels: Vec<SchematicLabelFact>,
     /// Explicit junction marker coordinates.
     pub junctions: Vec<(f64, f64)>,
+    /// Whether schematic directives, rule areas or label properties can assign netclasses.
+    pub has_netclass_assignments: bool,
 }
 
 impl SchematicFacts {
@@ -320,6 +324,7 @@ impl SchematicFacts {
                 .map(|segment| SchematicWireFact {
                     start_mm: (segment.start.x, segment.start.y),
                     end_mm: (segment.end.x, segment.end.y),
+                    span_start: segment.span.start,
                 })
                 .collect(),
             pins: collect_pin_facts(root),
@@ -331,6 +336,7 @@ impl SchematicFacts {
             symbol_texts: collect_symbol_text_facts(root),
             labels: collect_label_facts(root),
             junctions: junctions.iter().map(|point| (point.x, point.y)).collect(),
+            has_netclass_assignments: schematic_has_graphical_netclass_assignments(root),
         }
     }
 }
@@ -2269,7 +2275,10 @@ pub fn run_geometry_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
     let mut diagnostics = check_wire_geometry(root, context.segments, context.junctions);
     diagnostics.extend(check_pin_orientation(root, context.segments));
     diagnostics.extend(check_no_connect_markers(root));
-    let wire_stroke_widths = collect_explicit_wire_stroke_widths(root);
+    let mut wire_stroke_widths = collect_explicit_wire_stroke_widths(root);
+    for (span_start, width_mm) in context.project_wire_stroke_widths_mm {
+        wire_stroke_widths.entry(*span_start).or_insert(*width_mm);
+    }
     let default_wire_stroke_width_mm = if schematic_has_graphical_netclass_assignments(root) {
         None
     } else {
@@ -2295,7 +2304,7 @@ fn schematic_has_graphical_netclass_assignments(root: &Node) -> bool {
                 list_items(property)
                     .and_then(|items| items.get(1))
                     .and_then(atom_value)
-                    == Some("Net Class")
+                    .is_some_and(|name| matches!(name, "Net Class" | "Netclass"))
             }) =>
         {
             has_assignments = true;
@@ -4453,6 +4462,12 @@ fn wire_components(
 
 fn point_key(point: Point) -> String {
     format!("{:.3}:{:.3}", point.x, point.y)
+}
+
+/// Returns the stable coordinate key used by physical wire-component lookup.
+#[must_use]
+pub fn physical_wire_component_key(x_mm: f64, y_mm: f64) -> String {
+    point_key(Point { x: x_mm, y: y_mm })
 }
 
 fn has_unmarked_wire_endpoint(point: Point, segments: &[Segment], junctions: &[Point]) -> bool {

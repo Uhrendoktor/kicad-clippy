@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 use std::{
+    collections::{BTreeMap, BTreeSet},
     fmt::Write as _,
     fs,
     io::{self, Write},
@@ -10,9 +11,12 @@ use std::{
 
 use clap::{Parser, Subcommand, ValueEnum};
 use kicad_clippy_core::{Diagnostic, Severity, SourceFile};
-use kicad_clippy_erc::{NetlistError, export_netlist, run_native_erc};
+use kicad_clippy_erc::{Netlist, NetlistError, export_netlist, run_native_erc};
 use kicad_clippy_parser::SchematicDocument;
-use kicad_clippy_rules::{LintProfile, ProfileMode, RuleEngine};
+use kicad_clippy_rules::{
+    LintProfile, ProfileMode, RuleEngine, SchematicFacts, physical_wire_component_ids,
+    physical_wire_component_key,
+};
 use miette::{LabeledSpan, MietteDiagnostic, NamedSource, Report, Severity as RenderSeverity};
 use serde::Serialize;
 use thiserror::Error;
@@ -34,13 +38,13 @@ enum Commands {
         /// Output format.
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
-        /// Skip ERC (profile checks may still invoke `KiCad` to export a netlist).
+        /// Skip ERC (profile and project checks may still export a netlist).
         #[arg(long)]
         skip_erc: bool,
         /// Explicit path or command name for kicad-cli.
         #[arg(long, value_name = "PATH")]
         kicad_cli: Option<PathBuf>,
-        /// `KiCad` project file with netclass settings for SCH013 wire widths.
+        /// `KiCad` project file with per-wire SCH013 netclass settings (requires KiCad CLI).
         #[arg(long, value_name = "FILE")]
         project: Option<PathBuf>,
         /// JSON project profile containing component-intent metadata.
@@ -170,17 +174,19 @@ fn lint(
         return Err(CliError::StrictNeedsProfile);
     }
     let schematic = SchematicDocument::from_path(schematic_path)?;
-    let (default_wire_stroke_width_mm, default_schematic_line_stroke_width_mm) = project_path
-        .map(project_stroke_widths_from_project)
-        .transpose()?
-        .unwrap_or_default();
-    let needs_netlist = profile_path.is_some();
+    let project = project_path
+        .map(project_settings_from_project)
+        .transpose()?;
+    let default_schematic_line_stroke_width_mm = project
+        .as_ref()
+        .and_then(project_default_schematic_line_stroke_width_mm);
+    let needs_netlist = profile_path.is_some() || project_path.is_some();
     let cli = if skip_erc && !needs_netlist {
         None
     } else {
         Some(resolve_kicad_cli(explicit_cli)?)
     };
-    let erc_report = if skip_erc {
+    let erc_report = if skip_erc {    let erc_report = if skip_erc {
         None
     } else {
         let Some(cli_path) = cli.as_deref() else {
@@ -201,11 +207,19 @@ fn lint(
         Some(report) => (report.kicad_version, report.diagnostics),
         None => (None, Vec::new()),
     };
+    let project_wire_stroke_widths = project
+        .as_ref()
+        .zip(netlist.as_ref())
+        .map(|(project, netlist)| {
+            let facts = SchematicFacts::from_document(&schematic);
+            project_wire_stroke_widths_mm(project, &facts, netlist)
+        })
+        .unwrap_or_default();
     diagnostics.extend(
         RuleEngine::with_builtins()
-            .run_with_project_stroke_widths(
+            .run_with_wire_stroke_widths(
                 &schematic,
-                default_wire_stroke_width_mm,
+                &project_wire_stroke_widths,
                 default_schematic_line_stroke_width_mm,
             )
             .diagnostics,
@@ -244,40 +258,14 @@ fn lint(
     }
 }
 
-fn project_stroke_widths_from_project(
-    project_path: &Path,
-) -> Result<(Option<f64>, Option<f64>), CliError> {
+fn project_settings_from_project(project_path: &Path) -> Result<serde_json::Value, CliError> {
     let contents = fs::read_to_string(project_path)?;
-    let project: serde_json::Value = serde_json::from_str(&contents)?;
-    Ok((
-        project_default_wire_stroke_width_mm(&project),
-        project_default_schematic_line_stroke_width_mm(&project),
-    ))
+    Ok(serde_json::from_str(&contents)?)
 }
 
-fn project_default_wire_stroke_width_mm(project: &serde_json::Value) -> Option<f64> {
-    let settings = project.get("net_settings")?.as_object()?;
-
-    // Explicit Default-only mappings do not change the effective width. Reject
-    // malformed maps and any assignment that can select a different netclass.
-    if !project_netclass_assignments_are_default_only(settings.get("netclass_assignments"))
-        || !project_netclass_class_map_is_default_only(settings.get("net_chain_classes"))
-        || !project_netclass_class_map_is_default_only(settings.get("net_chain_netclasses"))
-        || !project_netclass_patterns_are_default_only(settings.get("netclass_patterns"))
-    {
-        return None;
-    }
-
-    let classes = settings.get("classes")?.as_array()?;
-    let default_class = classes
-        .iter()
-        .find(|class| class.get("name").and_then(serde_json::Value::as_str) == Some("Default"))?;
-    let width_mils = default_class.get("wire_width")?.as_f64()?;
-    let width_mm = width_mils * 0.0254;
-    (width_mm.is_finite() && width_mm > 0.0).then_some(width_mm)
-}
-
-fn project_default_schematic_line_stroke_width_mm(project: &serde_json::Value) -> Option<f64> {
+fn project_default_schematic_line_stroke_width_mm(
+    project: &serde_json::Value,
+) -> Option<f64> {
     let width_mils = project
         .get("schematic")?
         .get("drawing")?
@@ -287,36 +275,218 @@ fn project_default_schematic_line_stroke_width_mm(project: &serde_json::Value) -
     (width_mm.is_finite() && width_mm > 0.0).then_some(width_mm)
 }
 
-fn project_netclass_assignments_are_default_only(value: Option<&serde_json::Value>) -> bool {
-    match value {
-        None | Some(serde_json::Value::Null) => true,
-        Some(serde_json::Value::Object(assignments)) => assignments.values().all(|classes| {
-            classes
-                .as_array()
-                .is_some_and(|names| names.iter().all(|name| name.as_str() == Some("Default")))
-        }),
-        _ => false,
+fn project_wire_stroke_widths_mm(
+    project: &serde_json::Value,
+    facts: &SchematicFacts,
+    netlist: &Netlist,
+) -> BTreeMap<usize, f64> {
+    // Directive labels and rule areas contribute runtime netclass assignments
+    // that are not represented by the project-only resolver below.
+    if facts.has_netclass_assignments {
+        return BTreeMap::new();
     }
+
+    let component_ids = physical_wire_component_ids(facts);
+    let mut component_nets: BTreeMap<usize, BTreeSet<String>> = BTreeMap::new();
+    let mut components_with_unmapped_pins = BTreeSet::new();
+
+    for pin in &facts.pins {
+        let key = physical_wire_component_key(pin.position_mm.0, pin.position_mm.1);
+        let Some(component) = component_ids.get(&key).copied() else {
+            continue;
+        };
+        if let Some(net_name) = netlist.net_for_pin(&pin.reference, &pin.number) {
+            component_nets
+                .entry(component)
+                .or_default()
+                .insert(net_name.to_owned());
+        } else {
+            components_with_unmapped_pins.insert(component);
+        }
+    }
+
+    let mut net_widths = BTreeMap::new();
+    for net_name in netlist.nets.keys() {
+        if let Some(width_mm) = project_netclass_wire_width_mm(project, netlist, net_name) {
+            net_widths.insert(net_name.as_str(), width_mm);
+        }
+    }
+
+    let mut widths_by_wire = BTreeMap::new();
+    for wire in &facts.wires {
+        let start_key = physical_wire_component_key(wire.start_mm.0, wire.start_mm.1);
+        let end_key = physical_wire_component_key(wire.end_mm.0, wire.end_mm.1);
+        let Some(start_component) = component_ids.get(&start_key).copied() else {
+            continue;
+        };
+        let Some(end_component) = component_ids.get(&end_key).copied() else {
+            continue;
+        };
+        if start_component != end_component
+            || components_with_unmapped_pins.contains(&start_component)
+        {
+            continue;
+        }
+        let Some(names) = component_nets.get(&start_component) else {
+            continue;
+        };
+        if names.len() != 1 {
+            continue;
+        }
+        let Some(net_name) = names.first() else {
+            continue;
+        };
+        if let Some(width_mm) = net_widths.get(net_name.as_str()) {
+            widths_by_wire.insert(wire.span_start, *width_mm);
+        }
+    }
+    widths_by_wire
 }
 
-fn project_netclass_class_map_is_default_only(value: Option<&serde_json::Value>) -> bool {
-    match value {
-        None | Some(serde_json::Value::Null) => true,
-        Some(serde_json::Value::Object(assignments)) => assignments
-            .values()
-            .all(|class_name| class_name.as_str() == Some("Default")),
-        _ => false,
+fn project_netclass_wire_width_mm(
+    project: &serde_json::Value,
+    netlist: &Netlist,
+    net_name: &str,
+) -> Option<f64> {
+    let settings = project.get("net_settings")?.as_object()?;
+    let class_rows = settings.get("classes")?.as_array()?;
+    let mut classes: BTreeMap<String, (i64, Option<f64>)> = BTreeMap::new();
+
+    for class in class_rows {
+        let name = class.get("name")?.as_str()?.to_owned();
+        let priority = class
+            .get("priority")
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or(if name == "Default" { i64::MAX } else { -1 });
+        let width_mils = class
+            .get("wire_width")
+            .and_then(serde_json::Value::as_f64)
+            .or_else(|| (name == "Default").then_some(6.0));
+        let width_mm = width_mils.map(|width| width * 0.0254);
+        let width_mm = width_mm.filter(|width| width.is_finite() && *width > 0.0);
+        classes.insert(name, (priority, width_mm));
     }
+    let default_width_mm = classes
+        .get("Default")
+        .and_then(|(_, width_mm)| *width_mm)?;
+
+    let mut candidates = BTreeSet::new();
+    match settings.get("netclass_assignments") {
+        None | Some(serde_json::Value::Null) => {}
+        Some(serde_json::Value::Object(assignments)) => {
+            if let Some(values) = assignments.get(net_name) {
+                for value in values.as_array()? {
+                    candidates.insert(value.as_str()?.to_owned());
+                }
+            }
+        }
+        _ => return None,
+    }
+
+    match settings.get("netclass_patterns") {
+        None | Some(serde_json::Value::Null) => {}
+        Some(serde_json::Value::Array(patterns)) => {
+            for assignment in patterns {
+                let pattern = assignment.get("pattern")?.as_str()?;
+                let class_name = assignment.get("netclass")?.as_str()?;
+                // Regex and bus-member expansion remain unresolved until their
+                // KiCad matcher semantics are represented by this resolver.
+                if pattern.contains('^') || pattern.contains('$') {
+                    return None;
+                }
+                if wildcard_pattern_matches(pattern, net_name) {
+                    candidates.insert(class_name.to_owned());
+                }
+            }
+        }
+        _ => return None,
+    }
+
+    let chain_classes = match settings.get("net_chain_netclasses") {
+        None | Some(serde_json::Value::Null) => None,
+        Some(serde_json::Value::Object(assignments)) => Some(assignments),
+        _ => return None,
+    };
+    for chain in &netlist.chains {
+        if !chain.members.contains(net_name) {
+            continue;
+        }
+        let configured_class = match chain_classes.and_then(|assignments| assignments.get(&chain.name)) {
+            Some(value) => Some(value.as_str()?),
+            None => None,
+        };
+        let exported_class = chain.netclass.as_deref();
+        let class_name = match (configured_class, exported_class) {
+            (Some(configured), Some(exported)) if configured != exported => return None,
+            (Some(configured), _) => Some(configured),
+            (None, Some(exported)) => Some(exported),
+            (None, None) => None,
+        };
+        if let Some(class_name) = class_name {
+            candidates.insert(class_name.to_owned());
+        }
+    }
+
+    let exported_class = netlist.nets.get(net_name)?.class_name.as_deref()?;
+    let aggregate_name = format!("Effective for net: {net_name}");
+    if exported_class == "Default" {
+        if !candidates.is_empty()
+            && !(candidates.len() == 1 && candidates.contains("Default"))
+        {
+            return None;
+        }
+    } else if exported_class == aggregate_name {
+        if candidates.is_empty() {
+            return None;
+        }
+    } else if candidates.len() != 1 || !candidates.contains(exported_class) {
+        return None;
+    }
+
+    let selected = candidates
+        .iter()
+        .filter_map(|name| {
+            let (priority, width_mm) = classes.get(name)?;
+            width_mm.map(|width| (*priority, name.as_str(), width))
+        })
+        .min_by(|first, second| {
+            first
+                .0
+                .cmp(&second.0)
+                .then_with(|| first.1.cmp(second.1))
+        });
+    Some(selected.map_or(default_width_mm, |(_, _, width_mm)| width_mm))
 }
 
-fn project_netclass_patterns_are_default_only(value: Option<&serde_json::Value>) -> bool {
-    match value {
-        None | Some(serde_json::Value::Null) => true,
-        Some(serde_json::Value::Array(patterns)) => patterns.iter().all(|pattern| {
-            pattern.get("netclass").and_then(serde_json::Value::as_str) == Some("Default")
-        }),
-        _ => false,
+fn wildcard_pattern_matches(pattern: &str, candidate: &str) -> bool {
+    let pattern: Vec<char> = pattern.chars().collect();
+    let candidate: Vec<char> = candidate.chars().collect();
+    let mut previous = vec![false; candidate.len() + 1];
+    previous[0] = true;
+
+    for pattern_char in pattern {
+        let mut current = vec![false; candidate.len() + 1];
+        match pattern_char {
+            '*' => {
+                current[0] = previous[0];
+                for index in 1..=candidate.len() {
+                    current[index] = previous[index] || current[index - 1];
+                }
+            }
+            '?' => {
+                for index in 1..=candidate.len() {
+                    current[index] = previous[index - 1];
+                }
+            }
+            literal => {
+                for index in 1..=candidate.len() {
+                    current[index] = previous[index - 1] && candidate[index - 1] == literal;
+                }
+            }
+        }
+        previous = current;
     }
+    previous[candidate.len()]
 }
 
 fn render_text(output: &LintOutput, source: &SourceFile) -> Result<(), io::Error> {
@@ -451,9 +621,12 @@ mod tests {
     use kicad_clippy_core::{Diagnostic, Severity};
 
     use super::{
-        Summary, project_default_schematic_line_stroke_width_mm,
-        project_default_wire_stroke_width_mm,
+        Summary, project_default_schematic_line_stroke_width_mm, project_netclass_wire_width_mm,
+        project_wire_stroke_widths_mm, wildcard_pattern_matches,
     };
+    use kicad_clippy_erc::Netlist;
+    use kicad_clippy_rules::SchematicFacts;
+    use std::collections::{BTreeMap, BTreeSet};
 
     #[test]
     fn project_default_schematic_line_width_reads_mils() {
@@ -492,70 +665,208 @@ mod tests {
         );
     }
 
-    #[test]
-    fn project_default_wire_width_reads_mils_only_without_assignments() {
-        let project = serde_json::json!({
+    fn project_fixture() -> serde_json::Value {
+        serde_json::json!({
             "net_settings": {
-                "classes": [{"name": "Default", "wire_width": 10.0}],
-                "netclass_assignments": {},
-                "netclass_patterns": [],
-                "net_chain_classes": {},
-                "net_chain_netclasses": {}
-            }
-        });
-
-        assert_eq!(project_default_wire_stroke_width_mm(&project), Some(0.254));
-    }
-
-    #[test]
-    fn project_default_wire_width_accepts_null_maps_and_default_only_patterns() {
-        let project = serde_json::json!({
-            "net_settings": {
-                "classes": [{"name": "Default", "wire_width": 10.0}],
-                "netclass_assignments": null,
-                "netclass_patterns": [
-                    {"pattern": "GND", "netclass": "Default"},
-                    {"pattern": "/Power*", "netclass": "Default"}
+                "classes": [
+                    {"name": "Default", "priority": 2147483647, "wire_width": 8.0},
+                    {"name": "HighSpeed", "priority": 5, "wire_width": 18.0},
+                    {"name": "Critical", "priority": 1, "wire_width": 30.0},
+                    {"name": "Inheriting", "priority": 0}
                 ],
-                "net_chain_classes": null,
-                "net_chain_netclasses": null
-            }
-        });
-
-        assert_eq!(project_default_wire_stroke_width_mm(&project), Some(0.254));
-    }
-
-    #[test]
-    fn project_default_wire_width_rejects_non_default_named_assignments() {
-        let project = serde_json::json!({
-            "net_settings": {
-                "classes": [{"name": "Default", "wire_width": 10.0}],
-                "netclass_assignments": {"/USB": ["HighSpeed"]},
+                "netclass_assignments": {},
                 "netclass_patterns": [],
-                "net_chain_classes": {},
                 "net_chain_netclasses": {}
             }
-        });
-
-        assert_eq!(project_default_wire_stroke_width_mm(&project), None);
+        })
     }
 
     #[test]
-    fn project_default_wire_width_stays_unknown_when_assignments_exist() {
-        let mut project = serde_json::json!({
+    fn overlapping_patterns_and_explicit_assignments_use_class_priority() {
+        let mut project = project_fixture();
+        project["net_settings"]["netclass_assignments"] =
+            serde_json::json!({"/USB-C": ["HighSpeed"]});
+        project["net_settings"]["netclass_patterns"] = serde_json::json!([
+            {"pattern": "/USB*", "netclass": "HighSpeed"},
+            {"pattern": "/USB-C", "netclass": "Critical"}
+        ]);
+        let netlist = Netlist {
+            nets: BTreeMap::from([(
+                "/USB-C".to_owned(),
+                kicad_clippy_erc::NetlistNet {
+                    name: "/USB-C".to_owned(),
+                    class_name: Some("Effective for net: /USB-C".to_owned()),
+                    nodes: Vec::new(),
+                },
+            )]),
+            ..Netlist::default()
+        };
+
+        assert_eq!(
+            project_netclass_wire_width_mm(&project, &netlist, "/USB-C"),
+            Some(0.762)
+        );
+        assert!(wildcard_pattern_matches("/USB?", "/USB1"));
+        assert!(!wildcard_pattern_matches("/USB?", "/USB12"));
+    }
+
+    #[test]
+    fn class_without_wire_width_inherits_the_project_default() {
+        let mut project = project_fixture();
+        project["net_settings"]["netclass_assignments"] =
+            serde_json::json!({"/PWR": ["Inheriting"]});
+        let netlist = Netlist {
+            nets: BTreeMap::from([(
+                "/PWR".to_owned(),
+                kicad_clippy_erc::NetlistNet {
+                    name: "/PWR".to_owned(),
+                    class_name: Some("Effective for net: /PWR".to_owned()),
+                    nodes: Vec::new(),
+                },
+            )]),
+            ..Netlist::default()
+        };
+
+        assert_eq!(
+            project_netclass_wire_width_mm(&project, &netlist, "/PWR"),
+            Some(0.2032)
+        );
+    }
+
+    #[test]
+    fn committed_chain_netclass_is_applied_to_member_nets() {
+        let mut project = project_fixture();
+        project["net_settings"]["net_chain_netclasses"] =
+            serde_json::json!({"DDR": "HighSpeed"});
+        let netlist = Netlist {
+            nets: BTreeMap::from([(
+                "/DDR_DQ0".to_owned(),
+                kicad_clippy_erc::NetlistNet {
+                    name: "/DDR_DQ0".to_owned(),
+                    class_name: Some("Effective for net: /DDR_DQ0".to_owned()),
+                    nodes: Vec::new(),
+                },
+            )]),
+            chains: vec![kicad_clippy_erc::NetlistChain {
+                name: "DDR".to_owned(),
+                netclass: Some("HighSpeed".to_owned()),
+                members: BTreeSet::from(["/DDR_DQ0".to_owned()]),
+            }],
+            ..Netlist::default()
+        };
+
+        assert_eq!(
+            project_netclass_wire_width_mm(&project, &netlist, "/DDR_DQ0"),
+            Some(0.4572)
+        );
+    }
+
+    #[test]
+    fn inconsistent_or_unmodeled_assignments_remain_unknown() {
+        let mut project = project_fixture();
+        project["net_settings"]["netclass_patterns"] =
+            serde_json::json!([{"pattern": "^/USB.*$", "netclass": "HighSpeed"}]);
+        let netlist = Netlist {
+            nets: BTreeMap::from([(
+                "/USB1".to_owned(),
+                kicad_clippy_erc::NetlistNet {
+                    name: "/USB1".to_owned(),
+                    class_name: Some("HighSpeed".to_owned()),
+                    nodes: Vec::new(),
+                },
+            )]),
+            ..Netlist::default()
+        };
+        assert_eq!(project_netclass_wire_width_mm(&project, &netlist, "/USB1"), None);
+
+        project["net_settings"]["netclass_patterns"] = serde_json::json!([]);
+        assert_eq!(project_netclass_wire_width_mm(&project, &netlist, "/USB1"), None);
+    }
+
+    #[test]
+    fn per_wire_width_requires_one_unambiguous_physical_component_net() {
+        use kicad_clippy_erc::{NetlistNode, PinRef};
+        use kicad_clippy_rules::{SchematicPinFact, SchematicWireFact};
+
+        let project = serde_json::json!({
             "net_settings": {
                 "classes": [{"name": "Default", "wire_width": 10.0}],
                 "netclass_assignments": {},
                 "netclass_patterns": [],
-                "net_chain_classes": {},
                 "net_chain_netclasses": {}
             }
         });
-        project["net_settings"]["netclass_patterns"] = serde_json::json!([
-            {"pattern": "/USB*", "netclass": "HighSpeed"}
-        ]);
+        let facts = SchematicFacts {
+            wires: vec![SchematicWireFact {
+                start_mm: (0.0, 0.0),
+                end_mm: (10.0, 0.0),
+                span_start: 42,
+            }],
+            pins: vec![SchematicPinFact {
+                reference: "J1".to_owned(),
+                number: "1".to_owned(),
+                position_mm: (0.0, 0.0),
+            }],
+            ..SchematicFacts::default()
+        };
+        let mut netlist = Netlist::default();
+        netlist.pin_nets.insert(
+            PinRef {
+                reference: "J1".to_owned(),
+                pin: "1".to_owned(),
+            },
+            "N1".to_owned(),
+        );
+        netlist.nets.insert(
+            "N1".to_owned(),
+            kicad_clippy_erc::NetlistNet {
+                name: "N1".to_owned(),
+                class_name: Some("Default".to_owned()),
+                nodes: vec![NetlistNode {
+                    reference: "J1".to_owned(),
+                    pin: "1".to_owned(),
+                }],
+            },
+        );
 
-        assert_eq!(project_default_wire_stroke_width_mm(&project), None);
+        let widths = project_wire_stroke_widths_mm(&project, &facts, &netlist);
+        assert_eq!(widths.get(&42), Some(&0.254));
+
+        let conflicting_facts = SchematicFacts {
+            pins: vec![
+                SchematicPinFact {
+                    reference: "J1".to_owned(),
+                    number: "1".to_owned(),
+                    position_mm: (0.0, 0.0),
+                },
+                SchematicPinFact {
+                    reference: "J2".to_owned(),
+                    number: "1".to_owned(),
+                    position_mm: (10.0, 0.0),
+                },
+            ],
+            ..facts
+        };
+        netlist.pin_nets.insert(
+            PinRef {
+                reference: "J2".to_owned(),
+                pin: "1".to_owned(),
+            },
+            "N2".to_owned(),
+        );
+        assert!(
+            project_wire_stroke_widths_mm(&project, &conflicting_facts, &netlist).is_empty()
+        );
+    }
+
+    #[test]
+    fn schematic_netclass_directives_suppress_project_only_width_inference() {
+        let project = project_fixture();
+        let facts = SchematicFacts {
+            has_netclass_assignments: true,
+            ..SchematicFacts::default()
+        };
+        assert!(project_wire_stroke_widths_mm(&project, &facts, &Netlist::default()).is_empty());
     }
 
     #[test]

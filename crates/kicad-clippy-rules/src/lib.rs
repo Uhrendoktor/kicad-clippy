@@ -16,7 +16,7 @@ pub use generic::{
     SchematicFrameFact, SchematicGraphicFact, SchematicGroupFact, SchematicImageFact,
     SchematicLabelFact, SchematicPinFact, SchematicPrimitiveFact, SchematicSymbolTextFact,
     SchematicTextFact, SchematicWireFact, TextBoxFact, physical_wire_component_ids,
-    run_builtin_rules,
+    physical_wire_component_key, run_builtin_rules,
 };
 pub use metadata::{
     CommonPinNetGroup, ComponentIntent, ComponentKind, ComponentPurpose, ComponentRole,
@@ -31,6 +31,7 @@ pub struct RuleContext<'a> {
     segments: &'a [generic::Segment],
     junctions: &'a [generic::Point],
     default_wire_stroke_width_mm: Option<f64>,
+    project_wire_stroke_widths_mm: &'a BTreeMap<usize, f64>,
     default_schematic_line_stroke_width_mm: Option<f64>,
 }
 
@@ -129,6 +130,24 @@ impl RuleEngine {
         self.run_with_project_stroke_widths(document, default_wire_stroke_width_mm, None)
     }
 
+    /// Executes all passes with per-wire netclass stroke widths from a resolved project/netlist.
+    ///
+    /// Only wire source offsets present in the map receive a project-derived width.
+    #[must_use]
+    pub fn run_with_wire_stroke_widths(
+        &self,
+        document: &SchematicDocument,
+        project_wire_stroke_widths_mm: &BTreeMap<usize, f64>,
+        default_schematic_line_stroke_width_mm: Option<f64>,
+    ) -> RuleRun {
+        self.run_with_project_and_wire_stroke_widths(
+            document,
+            None,
+            project_wire_stroke_widths_mm,
+            default_schematic_line_stroke_width_mm,
+        )
+    }
+
     /// Executes all passes with authoritative project-derived SCH013 stroke widths.
     ///
     /// The schematic line width supplies the pen around fixed-size no-connect markers.
@@ -138,6 +157,21 @@ impl RuleEngine {
         &self,
         document: &SchematicDocument,
         default_wire_stroke_width_mm: Option<f64>,
+        default_schematic_line_stroke_width_mm: Option<f64>,
+    ) -> RuleRun {
+        self.run_with_project_and_wire_stroke_widths(
+            document,
+            default_wire_stroke_width_mm,
+            &BTreeMap::new(),
+            default_schematic_line_stroke_width_mm,
+        )
+    }
+
+    fn run_with_project_and_wire_stroke_widths(
+        &self,
+        document: &SchematicDocument,
+        default_wire_stroke_width_mm: Option<f64>,
+        project_wire_stroke_widths_mm: &BTreeMap<usize, f64>,
         default_schematic_line_stroke_width_mm: Option<f64>,
     ) -> RuleRun {
         let Some(root) = document.cst().nodes.first() else {
@@ -153,6 +187,7 @@ impl RuleEngine {
             junctions: &junctions,
             default_wire_stroke_width_mm: default_wire_stroke_width_mm
                 .filter(|width| width.is_finite() && *width > 0.0),
+            project_wire_stroke_widths_mm,
             default_schematic_line_stroke_width_mm: default_schematic_line_stroke_width_mm
                 .filter(|width| width.is_finite() && *width > 0.0),
         };
