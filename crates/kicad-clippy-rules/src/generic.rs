@@ -5256,12 +5256,14 @@ mod tests {
               (separators (rows no) (cols no)))
             "#,
         );
-        assert!(!run_builtin_rules(&unrotated)
-            .diagnostics
-            .iter()
-            .any(|item| {
-                item.code == "SCH013" && item.message.contains("free-standing schematic text")
-            }));
+        assert!(
+            !run_builtin_rules(&unrotated)
+                .diagnostics
+                .iter()
+                .any(|item| {
+                    item.code == "SCH013" && item.message.contains("free-standing schematic text")
+                })
+        );
     }
 
     #[test]
