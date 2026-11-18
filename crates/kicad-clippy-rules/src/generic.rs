@@ -2466,6 +2466,35 @@ fn table_stroke_obstacle_diagnostics(
         .collect()
 }
 
+fn wire_crosses_no_connect_diagonal(
+    wire: Segment,
+    diagonal: [(f64, f64); 2],
+    wire_stroke_width_mm: f64,
+) -> bool {
+    let start = Point {
+        x: diagonal[0].0,
+        y: diagonal[0].1,
+    };
+    let end = Point {
+        x: diagonal[1].0,
+        y: diagonal[1].1,
+    };
+    let finite = [
+        wire.start.x,
+        wire.start.y,
+        wire.end.x,
+        wire.end.y,
+        start.x,
+        start.y,
+        end.x,
+        end.y,
+    ]
+    .iter()
+    .all(|value| value.is_finite());
+    (finite && !segment_intersection_points(wire, start, end).is_empty())
+        || wire_within_sampled_path_stroke(wire, &diagonal, false, wire_stroke_width_mm, 0.0)
+}
+
 fn no_connect_marker_obstacle_diagnostics(
     wire_index: usize,
     segment: Segment,
@@ -2488,19 +2517,8 @@ fn no_connect_marker_obstacle_diagnostics(
                 (center_x + half, center_y - half),
                 (center_x - half, center_y + half),
             ];
-            wire_within_sampled_path_stroke(
-                segment,
-                &first_diagonal,
-                false,
-                wire_stroke_width_mm,
-                0.0,
-            ) || wire_within_sampled_path_stroke(
-                segment,
-                &second_diagonal,
-                false,
-                wire_stroke_width_mm,
-                0.0,
-            )
+            wire_crosses_no_connect_diagonal(segment, first_diagonal, wire_stroke_width_mm)
+                || wire_crosses_no_connect_diagonal(segment, second_diagonal, wire_stroke_width_mm)
         })
         .map(|marker| {
             at_segment(
