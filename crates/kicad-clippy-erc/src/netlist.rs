@@ -263,13 +263,11 @@ pub fn parse_netlist_sexpr(contents: &str) -> Result<Netlist, NetlistError> {
             };
             let netclass =
                 child_value(chain, "net_class", contents).filter(|netclass| !netclass.is_empty());
-            let members = if let Some(member_list) = child_list(chain, "members") {
+            let members = child_list(chain, "members").map_or_else(BTreeSet::new, |member_list| {
                 children(member_list, "member")
                     .filter_map(|member| child_value(member, "net", contents))
                     .collect()
-            } else {
-                BTreeSet::new()
-            };
+            });
             netlist.chains.push(NetlistChain {
                 name,
                 netclass,
