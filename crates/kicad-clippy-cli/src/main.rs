@@ -486,8 +486,7 @@ fn exported_netclass_matches(
     candidates: &BTreeSet<String>,
 ) -> bool {
     if exported_class == "Default" {
-        candidates.is_empty()
-            || (candidates.len() == 1 && candidates.contains("Default"))
+        candidates.is_empty() || (candidates.len() == 1 && candidates.contains("Default"))
     } else if exported_class.strip_prefix("Effective for net: ") == Some(net_name) {
         !candidates.is_empty()
     } else {
