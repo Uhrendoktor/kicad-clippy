@@ -221,6 +221,13 @@ pub struct SchematicGraphicFact {
     pub stroke_width_mm: f64,
 }
 
+/// A bitmap's centre-derived envelope and orientation-aware rectangular footprint.
+#[derive(Clone, Copy, Debug)]
+struct BitmapImageGeometry {
+    bounds_mm: (f64, f64, f64, f64),
+    corners_mm: [(f64, f64); 4],
+}
+
 /// An embedded bitmap image with bounds derived from its pixel size, PPI and scale.
 #[derive(Clone, Debug)]
 pub struct SchematicImageFact {
@@ -887,7 +894,7 @@ fn rotated_bitmap_image_geometry(
     width_mm: f64,
     height_mm: f64,
     orientation_degrees: f64,
-) -> Option<((f64, f64, f64, f64), [(f64, f64); 4])> {
+) -> Option<BitmapImageGeometry> {
     if ![center.x, center.y, width_mm, height_mm, orientation_degrees]
         .iter()
         .all(|value| value.is_finite())
@@ -907,11 +914,15 @@ fn rotated_bitmap_image_geometry(
         (half_width, half_height),
         (-half_width, half_height),
     ]
-    .map(|(x, y)| (center.x + x * cos + y * sin, center.y - x * sin + y * cos));
+    .map(|(x, y)| {
+        (
+            y.mul_add(sin, x.mul_add(cos, center.x)),
+            y.mul_add(cos, (-x).mul_add(sin, center.y)),
+        )
+    });
     if !corners
         .iter()
-        .flat_map(|point| [point.0, point.1])
-        .all(f64::is_finite)
+        .all(|(x, y)| x.is_finite() && y.is_finite())
     {
         return None;
     }
@@ -932,7 +943,10 @@ fn rotated_bitmap_image_geometry(
         .iter()
         .map(|point| point.1)
         .fold(f64::NEG_INFINITY, f64::max);
-    Some(((left, top, right, bottom), corners))
+    Some(BitmapImageGeometry {
+        bounds_mm: (left, top, right, bottom),
+        corners_mm: corners,
+    })
 }
 
 fn collect_sheet_image_facts(root: &Node) -> Vec<SchematicImageFact> {
@@ -983,8 +997,8 @@ fn collect_sheet_image_facts(root: &Node) -> Vec<SchematicImageFact> {
                     let height = f64::from(metadata.height_pixels) * 25.4 / ppi * scale;
                     rotated_bitmap_image_geometry(position, width, height, orientation)
                 });
-            let bounds_mm = geometry.map(|(bounds, _)| bounds);
-            let corners_mm = geometry.map(|(_, corners)| corners);
+            let bounds_mm = geometry.map(|geometry| geometry.bounds_mm);
+            let corners_mm = geometry.map(|geometry| geometry.corners_mm);
             SchematicImageFact {
                 uuid,
                 bounds_mm,
@@ -2969,7 +2983,7 @@ fn wire_crosses_polygon_interior(wire: Segment, polygon: &Polygon<f64>) -> bool 
         if interval[1] - interval[0] <= 1.0e-9 {
             return false;
         }
-        let parameter = (interval[0] + interval[1]) / 2.0;
+        let parameter = f64::midpoint(interval[0], interval[1]);
         let midpoint = GeoPoint::new(
             parameter.mul_add(direction_x, wire.start.x),
             parameter.mul_add(direction_y, wire.start.y),
@@ -5854,10 +5868,10 @@ mod tests {
 
     #[test]
     fn sch013_uses_rotated_bitmap_footprint_instead_of_its_axis_aligned_bounds() {
-        const IMAGE: &str = r#"
+        const IMAGE: &str = r"
             (image (at 5 5) (rotate 45) (scale 1)
               (data iVBORw0KGgoAAAANSUhEUgAAAHgAAAA8CAYAAACtrX6oAAAACXBIWXMAAC4jAAAuIwF4pT92AAAAoklEQVR4nO3RAQkAMAzAsPk3vak4h5IoKHSWtPkdwFsGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcd1OAFhGyMXxbAAAAAElFTkSuQmCC))
-        "#;
+        ";
 
         let outside_footprint = document(&format!("{IMAGE} (wire (pts (xy 0 0.1) (xy 1 0.1)))"));
         assert!(!run_builtin_rules(&outside_footprint)
