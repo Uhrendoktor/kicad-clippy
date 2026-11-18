@@ -162,7 +162,7 @@ pub struct SchematicNoConnectFact {
     pub reference: String,
     /// Marker centre in sheet coordinates.
     pub center_mm: (f64, f64),
-    /// Half of KiCad's fixed 48-mil marker dimension.
+    /// Half of `KiCad`'s fixed 48-mil marker dimension.
     pub half_size_mm: f64,
 }
 
@@ -1462,7 +1462,7 @@ fn object_reference(node: &Node, prefix: &str) -> String {
 
 const NO_CONNECT_MARKER_HALF_SIZE_MM: f64 = 48.0 * 0.0254 / 2.0;
 
-/// Collects KiCad's fixed-size no-connect marker strokes without assuming the
+/// Collects `KiCad`'s fixed-size no-connect marker strokes without assuming the
 /// schematic-settings-dependent pen width, which is not serialized per marker.
 fn collect_no_connect_facts(root: &Node) -> Vec<SchematicNoConnectFact> {
     children(root, "no_connect")
