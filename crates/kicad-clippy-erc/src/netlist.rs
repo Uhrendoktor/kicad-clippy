@@ -243,8 +243,8 @@ pub fn parse_netlist_sexpr(contents: &str) -> Result<Netlist, NetlistError> {
                 }
                 nodes.push(NetlistNode { reference, pin });
             }
-            let class_name = child_value(net, "class", contents)
-                .filter(|class_name| !class_name.is_empty());
+            let class_name =
+                child_value(net, "class", contents).filter(|class_name| !class_name.is_empty());
             netlist.nets.insert(
                 name.clone(),
                 NetlistNet {
@@ -261,8 +261,8 @@ pub fn parse_netlist_sexpr(contents: &str) -> Result<Netlist, NetlistError> {
             let Some(name) = child_value(chain, "name", contents) else {
                 continue;
             };
-            let netclass = child_value(chain, "net_class", contents)
-                .filter(|netclass| !netclass.is_empty());
+            let netclass =
+                child_value(chain, "net_class", contents).filter(|netclass| !netclass.is_empty());
             let members = if let Some(member_list) = child_list(chain, "members") {
                 children(member_list, "member")
                     .filter_map(|member| child_value(member, "net", contents))
