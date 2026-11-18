@@ -555,10 +555,16 @@ fn cardinal_table_rotation_quadrants(angle: f64) -> Option<u8> {
         return None;
     }
     let normalized = angle.rem_euclid(360.0);
-    [0.0, 90.0, 180.0, 270.0, 360.0]
+    match [0.0, 90.0, 180.0, 270.0, 360.0]
         .iter()
-        .position(|supported| (normalized - supported).abs() <= 0.001)
-        .map(|index| (index % 4) as u8)
+        .position(|supported| (normalized - supported).abs() <= 0.001)?
+    {
+        0 | 4 => Some(0),
+        1 => Some(1),
+        2 => Some(2),
+        3 => Some(3),
+        _ => None,
+    }
 }
 
 fn schematic_table_layout(table: &Node) -> Option<SchematicTableLayout> {
