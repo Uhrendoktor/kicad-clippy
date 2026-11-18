@@ -6,6 +6,7 @@ Notable changes are documented here. This project is in early development and ha
 
 - Added an explicit `--project` input for SCH013 to resolve zero/omitted wire widths from the KiCad Default netclass when project assignment maps/patterns are absent, null, empty or Default-only and no schematic netclass overrides are present; non-Default mappings remain conservative.
 - Added SCH013 hierarchical sheet frame/body obstacles with local exceptions for wires terminating at matching sheet-pin anchors; wires continuing into the sheet body remain checked.
+- Corrected SCH013 embedded bitmap obstacles to use the serialized rotation and actual four-corner PNG/JPEG footprint instead of the axis-aligned bounding box; image dimensions still follow the existing version-aware PPI and scale rules.
 - Added SCH013 stroked bus-line and wire-to-bus entry obstacles; only wire endpoints matching a bus-entry anchor receive a local contact exception, and direct wire/bus crossings remain diagnosed.
 - Added SCH013 full ellipse and elliptical-arc stroke obstacles using adaptive rotated paths; closed ellipse bodies retain interior checks, while open elliptical arcs do not block their interiors.
 - Added SCH013 table border and enabled separator strokes as vector obstacles, respecting disabled strokes and merged-cell spans; table strokes support consistent cardinal rotations, while inconsistent/non-cardinal layouts and non-cardinal cell text are conservatively skipped.

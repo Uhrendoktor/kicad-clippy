@@ -226,8 +226,10 @@ pub struct SchematicGraphicFact {
 pub struct SchematicImageFact {
     /// Stable image UUID, when present in the schematic.
     pub uuid: Option<String>,
-    /// Centre-derived bounds in millimetres, when PNG/JPEG metadata resolves.
+    /// Axis-aligned bounds in millimetres, when PNG/JPEG metadata resolves.
     pub bounds_mm: Option<(f64, f64, f64, f64)>,
+    /// Exact orientation-aware rectangular footprint in millimetres.
+    pub corners_mm: Option<[(f64, f64); 4]>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -880,6 +882,70 @@ fn sheet_graphic_bounds(node: &Node, kind: &str) -> Option<(f64, f64, f64, f64)>
     ))
 }
 
+fn rotated_bitmap_image_geometry(
+    center: Point,
+    width_mm: f64,
+    height_mm: f64,
+    orientation_degrees: f64,
+) -> Option<((f64, f64, f64, f64), [(f64, f64); 4])> {
+    if ![
+        center.x,
+        center.y,
+        width_mm,
+        height_mm,
+        orientation_degrees,
+    ]
+    .iter()
+    .all(|value| value.is_finite())
+        || width_mm <= 0.0
+        || height_mm <= 0.0
+    {
+        return None;
+    }
+
+    let radians = orientation_degrees.rem_euclid(360.0).to_radians();
+    let (sin, cos) = radians.sin_cos();
+    let half_width = width_mm / 2.0;
+    let half_height = height_mm / 2.0;
+    let corners = [
+        (-half_width, -half_height),
+        (half_width, -half_height),
+        (half_width, half_height),
+        (-half_width, half_height),
+    ]
+    .map(|(x, y)| {
+        (
+            center.x + x * cos + y * sin,
+            center.y - x * sin + y * cos,
+        )
+    });
+    if !corners
+        .iter()
+        .flat_map(|point| [point.0, point.1])
+        .all(f64::is_finite)
+    {
+        return None;
+    }
+
+    let left = corners
+        .iter()
+        .map(|point| point.0)
+        .fold(f64::INFINITY, f64::min);
+    let top = corners
+        .iter()
+        .map(|point| point.1)
+        .fold(f64::INFINITY, f64::min);
+    let right = corners
+        .iter()
+        .map(|point| point.0)
+        .fold(f64::NEG_INFINITY, f64::max);
+    let bottom = corners
+        .iter()
+        .map(|point| point.1)
+        .fold(f64::NEG_INFINITY, f64::max);
+    Some(((left, top, right, bottom), corners))
+}
+
 fn collect_sheet_image_facts(root: &Node) -> Vec<SchematicImageFact> {
     let format_version = child_list(root, "version")
         .and_then(list_items)
@@ -895,7 +961,7 @@ fn collect_sheet_image_facts(root: &Node) -> Vec<SchematicImageFact> {
                 .and_then(|items| items.get(1))
                 .and_then(atom_value)
                 .map(str::to_owned);
-            let bounds_mm = child_list(node, "data")
+            let geometry = child_list(node, "data")
                 .and_then(list_items)
                 .map(|items| {
                     items
@@ -907,6 +973,10 @@ fn collect_sheet_image_facts(root: &Node) -> Vec<SchematicImageFact> {
                 .and_then(|encoded| parse_bitmap_image_metadata(&encoded))
                 .and_then(|metadata| {
                     let position = point_from_at(node)?;
+                    let orientation = match child_list(node, "rotate") {
+                        Some(rotate) => number(list_items(rotate)?.get(1)?)?,
+                        None => 0.0,
+                    };
                     let scale = child_list(node, "scale")
                         .and_then(list_items)
                         .and_then(|items| items.get(1))
@@ -922,15 +992,15 @@ fn collect_sheet_image_facts(root: &Node) -> Vec<SchematicImageFact> {
                     };
                     let width = f64::from(metadata.width_pixels) * 25.4 / ppi * scale;
                     let height = f64::from(metadata.height_pixels) * 25.4 / ppi * scale;
-                    (width.is_finite() && height.is_finite() && width > 0.0 && height > 0.0)
-                        .then_some((
-                            position.x - width / 2.0,
-                            position.y - height / 2.0,
-                            position.x + width / 2.0,
-                            position.y + height / 2.0,
-                        ))
+                    rotated_bitmap_image_geometry(position, width, height, orientation)
                 });
-            SchematicImageFact { uuid, bounds_mm }
+            let bounds_mm = geometry.map(|(bounds, _)| bounds);
+            let corners_mm = geometry.map(|(_, corners)| corners);
+            SchematicImageFact {
+                uuid,
+                bounds_mm,
+                corners_mm,
+            }
         })
         .collect()
 }
@@ -2451,8 +2521,8 @@ fn check_wire_obstacles(
         ));
         for image in &facts.images {
             if image
-                .bounds_mm
-                .is_some_and(|bounds| wire_crosses_bitmap_image(*segment, bounds))
+                .corners_mm
+                .is_some_and(|corners| wire_crosses_bitmap_image(*segment, &corners))
             {
                 diagnostics.push(at_segment(
                     BuiltinRuleId::Sch013,
@@ -2879,17 +2949,55 @@ fn wire_crosses_sheet_graphic_with_wire_stroke(
     false
 }
 
-fn wire_crosses_bitmap_image(wire: Segment, bounds: (f64, f64, f64, f64)) -> bool {
-    let (left, top, right, bottom) = bounds;
-    strict_line_hits_bounds(
-        wire,
-        Bounds {
-            x: left,
-            y: top,
-            width: right - left,
-            height: bottom - top,
-        },
-    )
+fn wire_crosses_polygon_interior(wire: Segment, polygon: &Polygon<f64>) -> bool {
+    let direction_x = wire.end.x - wire.start.x;
+    let direction_y = wire.end.y - wire.start.y;
+    let wire_length = distance(wire.start, wire.end);
+    if !wire_length.is_finite() || wire_length <= 0.001 {
+        return false;
+    }
+
+    let parameter_for = |point: Point| {
+        if direction_x.abs() >= direction_y.abs() {
+            (point.x - wire.start.x) / direction_x
+        } else {
+            (point.y - wire.start.y) / direction_y
+        }
+    };
+    let mut parameters = vec![0.0, 1.0];
+    for edge in polygon.exterior().lines() {
+        for intersection in segment_intersection_points(wire, edge.start, edge.end) {
+            let parameter = parameter_for(intersection);
+            if (-1.0e-9..=1.0 + 1.0e-9).contains(&parameter) {
+                parameters.push(parameter.clamp(0.0, 1.0));
+            }
+        }
+    }
+    parameters.sort_by(f64::total_cmp);
+    parameters.dedup_by(|first, second| (*first - *second).abs() <= 1.0e-9);
+
+    parameters.windows(2).any(|interval| {
+        if interval[1] - interval[0] <= 1.0e-9 {
+            return false;
+        }
+        let parameter = (interval[0] + interval[1]) / 2.0;
+        let midpoint = GeoPoint::new(
+            parameter.mul_add(direction_x, wire.start.x),
+            parameter.mul_add(direction_y, wire.start.y),
+        );
+        polygon.contains(&midpoint)
+            && Euclidean.distance(&midpoint, polygon.exterior()) > 0.001
+    })
+}
+
+fn wire_crosses_bitmap_image(wire: Segment, corners: &[(f64, f64); 4]) -> bool {
+    let mut ring: Vec<_> = corners
+        .iter()
+        .map(|(x, y)| Coord { x: *x, y: *y })
+        .collect();
+    ring.push(ring[0]);
+    let polygon = Polygon::new(LineString::new(ring), Vec::new());
+    wire_crosses_polygon_interior(wire, &polygon)
 }
 
 /// Excludes only the local stroke-clearance neighbourhood at matching pin endpoints.
@@ -5754,6 +5862,30 @@ mod tests {
         assert!(run_builtin_rules(&doc).diagnostics.iter().any(|item| {
             item.code == "SCH013" && item.message.contains("embedded bitmap image")
         }));
+    }
+
+    #[test]
+    fn sch013_uses_rotated_bitmap_footprint_instead_of_its_axis_aligned_bounds() {
+        const IMAGE: &str = r#"
+            (image (at 5 5) (rotate 45) (scale 1)
+              (data iVBORw0KGgoAAAANSUhEUgAAAHgAAAA8CAYAAACtrX6oAAAACXBIWXMAAC4jAAAuIwF4pT92AAAAoklEQVR4nO3RAQkAMAzAsPk3vak4h5IoKHSWtPkdwFsGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcd1OAFhGyMXxbAAAAAElFTkSuQmCC))
+        "#;
+
+        let outside_footprint = document(&format!(
+            "{IMAGE} (wire (pts (xy 0 0.1) (xy 1 0.1)))"
+        ));
+        assert!(!run_builtin_rules(&outside_footprint)
+            .diagnostics
+            .iter()
+            .any(|item| item.code == "SCH013" && item.message.contains("embedded bitmap image")));
+
+        let crossing_footprint = document(&format!(
+            "{IMAGE} (wire (pts (xy 0 5) (xy 10 5)))"
+        ));
+        assert!(run_builtin_rules(&crossing_footprint)
+            .diagnostics
+            .iter()
+            .any(|item| item.code == "SCH013" && item.message.contains("embedded bitmap image")));
     }
 
     #[test]
