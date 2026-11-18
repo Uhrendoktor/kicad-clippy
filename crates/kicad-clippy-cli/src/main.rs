@@ -186,7 +186,7 @@ fn lint(
     } else {
         Some(resolve_kicad_cli(explicit_cli)?)
     };
-    let erc_report = if skip_erc {    let erc_report = if skip_erc {
+    let erc_report = if skip_erc {
         None
     } else {
         let Some(cli_path) = cli.as_deref() else {
