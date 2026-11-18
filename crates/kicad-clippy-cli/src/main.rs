@@ -263,9 +263,7 @@ fn project_settings_from_project(project_path: &Path) -> Result<serde_json::Valu
     Ok(serde_json::from_str(&contents)?)
 }
 
-fn project_default_schematic_line_stroke_width_mm(
-    project: &serde_json::Value,
-) -> Option<f64> {
+fn project_default_schematic_line_stroke_width_mm(project: &serde_json::Value) -> Option<f64> {
     let width_mils = project
         .get("schematic")?
         .get("drawing")?
@@ -366,9 +364,7 @@ fn project_netclass_wire_width_mm(
         let width_mm = width_mm.filter(|width| width.is_finite() && *width > 0.0);
         classes.insert(name, (priority, width_mm));
     }
-    let default_width_mm = classes
-        .get("Default")
-        .and_then(|(_, width_mm)| *width_mm)?;
+    let default_width_mm = classes.get("Default").and_then(|(_, width_mm)| *width_mm)?;
 
     let mut candidates = BTreeSet::new();
     match settings.get("netclass_assignments") {
@@ -411,10 +407,11 @@ fn project_netclass_wire_width_mm(
         if !chain.members.contains(net_name) {
             continue;
         }
-        let configured_class = match chain_classes.and_then(|assignments| assignments.get(&chain.name)) {
-            Some(value) => Some(value.as_str()?),
-            None => None,
-        };
+        let configured_class =
+            match chain_classes.and_then(|assignments| assignments.get(&chain.name)) {
+                Some(value) => Some(value.as_str()?),
+                None => None,
+            };
         let exported_class = chain.netclass.as_deref();
         let class_name = match (configured_class, exported_class) {
             (Some(configured), Some(exported)) if configured != exported => return None,
@@ -430,9 +427,7 @@ fn project_netclass_wire_width_mm(
     let exported_class = netlist.nets.get(net_name)?.class_name.as_deref()?;
     let aggregate_name = format!("Effective for net: {net_name}");
     if exported_class == "Default" {
-        if !candidates.is_empty()
-            && !(candidates.len() == 1 && candidates.contains("Default"))
-        {
+        if !candidates.is_empty() && !(candidates.len() == 1 && candidates.contains("Default")) {
             return None;
         }
     } else if exported_class == aggregate_name {
@@ -449,12 +444,7 @@ fn project_netclass_wire_width_mm(
             let (priority, width_mm) = classes.get(name)?;
             width_mm.map(|width| (*priority, name.as_str(), width))
         })
-        .min_by(|first, second| {
-            first
-                .0
-                .cmp(&second.0)
-                .then_with(|| first.1.cmp(second.1))
-        });
+        .min_by(|first, second| first.0.cmp(&second.0).then_with(|| first.1.cmp(second.1)));
     Some(selected.map_or(default_width_mm, |(_, _, width_mm)| width_mm))
 }
 
@@ -736,8 +726,7 @@ mod tests {
     #[test]
     fn committed_chain_netclass_is_applied_to_member_nets() {
         let mut project = project_fixture();
-        project["net_settings"]["net_chain_netclasses"] =
-            serde_json::json!({"DDR": "HighSpeed"});
+        project["net_settings"]["net_chain_netclasses"] = serde_json::json!({"DDR": "HighSpeed"});
         let netlist = Netlist {
             nets: BTreeMap::from([(
                 "/DDR_DQ0".to_owned(),
@@ -777,10 +766,16 @@ mod tests {
             )]),
             ..Netlist::default()
         };
-        assert_eq!(project_netclass_wire_width_mm(&project, &netlist, "/USB1"), None);
+        assert_eq!(
+            project_netclass_wire_width_mm(&project, &netlist, "/USB1"),
+            None
+        );
 
         project["net_settings"]["netclass_patterns"] = serde_json::json!([]);
-        assert_eq!(project_netclass_wire_width_mm(&project, &netlist, "/USB1"), None);
+        assert_eq!(
+            project_netclass_wire_width_mm(&project, &netlist, "/USB1"),
+            None
+        );
     }
 
     #[test]
@@ -854,9 +849,7 @@ mod tests {
             },
             "N2".to_owned(),
         );
-        assert!(
-            project_wire_stroke_widths_mm(&project, &conflicting_facts, &netlist).is_empty()
-        );
+        assert!(project_wire_stroke_widths_mm(&project, &conflicting_facts, &netlist).is_empty());
     }
 
     #[test]

@@ -5,8 +5,8 @@
 mod netlist;
 
 pub use netlist::{
-    Netlist, NetlistComponent, NetlistError, NetlistNet, NetlistNode, PinRef, export_netlist,
-    parse_netlist_sexpr,
+    Netlist, NetlistChain, NetlistComponent, NetlistError, NetlistNet, NetlistNode, PinRef,
+    export_netlist, parse_netlist_sexpr,
 };
 
 use std::{
