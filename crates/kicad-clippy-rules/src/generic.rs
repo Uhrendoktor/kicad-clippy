@@ -150,11 +150,11 @@ pub(super) const HALF_FACTOR: f64 = 0.5;
 pub(super) const TWO_SIDED_FACTOR: f64 = 2.0;
 /// Default stroke width for embedded symbol primitives, in millimetres.
 const DEFAULT_SYMBOL_PRIMITIVE_STROKE_WIDTH_MM: f64 = 0.254;
-/// Full fixed X-marker dimension specified by KiCad, in mils.
+/// Full fixed X-marker dimension specified by `KiCad`, in mils.
 const NO_CONNECT_MARKER_SIZE_MILS: f64 = 48.0;
 /// Minimum extra width required by an unbordered single-line annotation, in millimetres.
 const UNBORDERED_TEXT_BOX_EXTRA_WIDTH_MM: f64 = 10.16;
-/// Required equal inset on each side of a serialized KiCad text box, in millimetres.
+/// Required equal inset on each side of a serialized `KiCad` text box, in millimetres.
 const TEXT_BOX_EQUAL_PADDING_MM: f64 = 1.27;
 /// Width factor used to leave room for rendered glyph overhang.
 const TEXT_GLYPH_WIDTH_SAFETY_FACTOR: f64 = 1.30;
@@ -208,22 +208,22 @@ struct Bounds {
 pub struct ComponentFact {
     /// Placed component reference designator.
     pub reference: String,
-    /// KiCad UUID of the placed symbol, when available.
+    /// `KiCad` UUID of the placed symbol, when available.
     pub uuid: Option<String>,
     /// Symbol origin in millimetres, or `None` when no origin could be resolved.
     pub position_mm: Option<(f64, f64)>,
 }
-/// Native KiCad group name, UUID, and member UUIDs.
+/// Native `KiCad` group name, UUID, and member UUIDs.
 #[derive(Clone, Debug)]
 pub struct SchematicGroupFact {
-    /// Native KiCad group name.
+    /// Native `KiCad` group name.
     pub name: String,
     /// UUID identifying the native group.
     pub uuid: String,
     /// UUIDs of the schematic items declared as group members.
     pub member_uuids: BTreeSet<String>,
 }
-/// Rectangular sheet frame identified by its KiCad UUID.
+/// Rectangular sheet frame identified by its `KiCad` UUID.
 #[derive(Clone, Debug)]
 pub struct SchematicFrameFact {
     /// UUID identifying the rectangular frame object.
@@ -363,7 +363,7 @@ pub struct SchematicTextFact {
 pub struct SchematicGraphicFact {
     /// Graphic primitive kind.
     pub kind: String,
-    /// KiCad UUID of the graphic, when present.
+    /// `KiCad` UUID of the graphic, when present.
     pub uuid: Option<String>,
     /// Stroke-expanded axis-aligned bounds, when calculable.
     pub bounds_mm: Option<(f64, f64, f64, f64)>,
@@ -393,7 +393,7 @@ struct BitmapImageGeometry {
 /// An embedded bitmap image with bounds derived from its pixel size, PPI and scale.
 #[derive(Clone, Debug)]
 pub struct SchematicImageFact {
-    /// KiCad UUID of the embedded image, when present.
+    /// `KiCad` UUID of the embedded image, when present.
     pub uuid: Option<String>,
     /// Resolved image bounds in millimetres, or `None` when its encoding is unsupported.
     pub bounds_mm: Option<(f64, f64, f64, f64)>,
@@ -413,7 +413,7 @@ pub struct SchematicFacts {
     pub graphics: Vec<SchematicGraphicFact>,
     /// Embedded bitmap image geometry.
     pub images: Vec<SchematicImageFact>,
-    /// Native KiCad group declarations and member UUIDs.
+    /// Native `KiCad` group declarations and member UUIDs.
     pub groups: Vec<SchematicGroupFact>,
     /// Rectangular sheet frames.
     pub frames: Vec<SchematicFrameFact>,
@@ -763,7 +763,7 @@ const DEFAULT_TABLE_STROKE_WIDTH_MM: f64 = 0.1524;
 /// Resolved table origin, rotation, row/column sizes, and cell spans.
 #[derive(Clone, Debug)]
 struct SchematicTableLayout {
-    /// Table UUID, when KiCad serializes one.
+    /// Table UUID, when `KiCad` serializes one.
     uuid: Option<String>,
     /// Table insertion point in schematic millimetres.
     origin_mm: (f64, f64),
@@ -842,7 +842,7 @@ fn table_cell_span(cell: &Node) -> Option<(usize, usize)> {
 ///
 /// # Arguments
 ///
-/// * `angle` — Rotation angle in degrees as serialized by KiCad.
+/// * `angle` — Rotation angle in degrees as serialized by `KiCad`.
 ///
 /// # Returns
 ///
@@ -1028,7 +1028,7 @@ fn cumulative_positions(origin: f64, sizes: &[f64]) -> Vec<f64> {
 /// # Arguments
 ///
 /// * `kind` — Schematic object kind used to select parsing behavior or identify the resulting fact.
-/// * `uuid` — Optional KiCad UUID associated with the source object.
+/// * `uuid` — Optional `KiCad` UUID associated with the source object.
 /// * `start` — Starting coordinate of the segment or curve, in millimetres.
 /// * `end` — Ending coordinate of the segment or curve, in millimetres.
 /// * `stroke_width_mm` — Declared primitive stroke width, in millimetres.
@@ -1417,7 +1417,7 @@ struct BitmapImageMetadata {
     height_pixels: u32,
     /// Current bitmap resolution in pixels per inch.
     ppi: u32,
-    /// Legacy resolution value used by older KiCad file versions.
+    /// Legacy resolution value used by older `KiCad` file versions.
     legacy_ppi: u32,
 }
 /// Decodes the supported bitmap header fields needed to determine image dimensions and PPI.
@@ -1732,7 +1732,7 @@ fn parse_jpeg_image_metadata(bytes: &[u8]) -> Option<BitmapImageMetadata> {
         legacy_ppi: ppi.max(1),
     })
 }
-/// Extracts native KiCad schematic groups, their UUIDs, names, and member UUIDs.
+/// Extracts native `KiCad` schematic groups, their UUIDs, names, and member UUIDs.
 ///
 /// # Arguments
 ///
@@ -1995,7 +1995,7 @@ fn object_reference(node: &Node, prefix: &str) -> String {
             str::to_owned,
         )
 }
-/// Half-width of KiCad's fixed-size no-connect X marker, in millimetres.
+/// Half-width of `KiCad`'s fixed-size no-connect X marker, in millimetres.
 const NO_CONNECT_MARKER_HALF_SIZE_MM: f64 =
     NO_CONNECT_MARKER_SIZE_MILS * MILLIMETRES_PER_MIL * HALF_FACTOR;
 
@@ -3205,7 +3205,7 @@ struct SymbolTransform {
     origin: Point,
     /// Placed-symbol rotation in degrees.
     rotation: f64,
-    /// Optional mirror mode applied by KiCad.
+    /// Optional mirror mode applied by `KiCad`.
     mirror: Option<String>,
     /// Selected library symbol unit number.
     unit: u32,
@@ -4946,7 +4946,7 @@ fn sub_symbol_unit_convert(name: &str) -> Option<(u32, u32)> {
 ///
 /// # Arguments
 ///
-/// * `angle` — Rotation angle in degrees as serialized by KiCad.
+/// * `angle` — Rotation angle in degrees as serialized by `KiCad`.
 ///
 /// # Returns
 ///
@@ -4970,7 +4970,7 @@ fn cardinal_rotation(angle: f64) -> Option<i32> {
 /// # Arguments
 ///
 /// * `rotation_degrees` — Placed symbol rotation in degrees.
-/// * `mirror` — Optional KiCad mirror mode for the placed symbol.
+/// * `mirror` — Optional `KiCad` mirror mode for the placed symbol.
 ///
 /// # Returns
 ///
@@ -4998,7 +4998,7 @@ fn symbol_transform_affine(rotation_degrees: f64, mirror: Option<&str>) -> Optio
 /// * `x` — x to be used in this geometry or parsing operation.
 /// * `y` — y to be used in this geometry or parsing operation.
 /// * `rotation_degrees` — Placed symbol rotation in degrees.
-/// * `mirror` — Optional KiCad mirror mode for the placed symbol.
+/// * `mirror` — Optional `KiCad` mirror mode for the placed symbol.
 ///
 /// # Returns
 ///
@@ -6430,7 +6430,7 @@ fn symbol_primitive_contains_bounds(bounds: Bounds, primitive: &SchematicPrimiti
 
     schematic_polygon(primitive).is_some_and(|polygon| polygon.contains(&geo_rect(bounds)))
 }
-/// Checks whether a symbol property has its KiCad hide flag enabled.
+/// Checks whether a symbol property has its `KiCad` hide flag enabled.
 ///
 /// # Arguments
 ///
@@ -6438,7 +6438,7 @@ fn symbol_primitive_contains_bounds(bounds: Bounds, primitive: &SchematicPrimiti
 ///
 /// # Returns
 ///
-/// `true` when the property's `effects` list contains KiCad's `hide` flag.
+/// `true` when the property's `effects` list contains `KiCad`'s `hide` flag.
 fn property_is_hidden(property: &Node) -> bool {
     child_list(property, "effects").is_some_and(|effects| child_list(effects, "hide").is_some())
 }
@@ -7611,7 +7611,7 @@ mod tests {
         let collinear = super::sample_arc_through_three_points((0.0, 0.0), (1.0, 0.0), (2.0, 0.0));
         assert_eq!(collinear, [(0.0, 0.0), (1.0, 0.0), (2.0, 0.0)]);
     }
-    /// Confirms the affine transform matches KiCad's rotation and mirror coordinates for cardinal symbol orientations.
+    /// Confirms the affine transform matches `KiCad`'s rotation and mirror coordinates for cardinal symbol orientations.
     #[test]
     fn kurbo_affine_matches_kicad_cardinal_symbol_transforms() {
         let cases = [
@@ -7906,7 +7906,7 @@ mod tests {
             assert!((bounds.height - expected_height).abs() < 0.001);
         }
     }
-    /// Confirms text width is calculated from KiCad NewStroke glyph advances.
+    /// Confirms text width is calculated from `KiCad` NewStroke glyph advances.
     #[test]
     fn text_widths_use_kicad_newstroke_glyph_advances() {
         let cap_height = 21.0;

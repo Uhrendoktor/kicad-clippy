@@ -92,11 +92,11 @@ pub enum ErcError {
 /// # Arguments
 ///
 /// * `program` — Path or command name of the `kicad-cli` executable to run.
-/// * `schematic_path` — Schematic file to pass to the KiCad command.
+/// * `schematic_path` — Schematic file to pass to the `KiCad` command.
 ///
 /// # Returns
 ///
-/// The normalized ERC report, or an error when KiCad cannot run or its output cannot be read or decoded.
+/// The normalized ERC report, or an error when `KiCad` cannot run or its output cannot be read or decoded.
 ///
 /// # Errors
 ///
@@ -154,16 +154,16 @@ pub fn run_native_erc(
     parse_erc_json(&contents, schematic_path)
 }
 
-/// Decodes KiCad's per-sheet ERC JSON structure and converts its violations and ignored checks into the shared report model.
+/// Decodes `KiCad`'s per-sheet ERC JSON structure and converts its violations and ignored checks into the shared report model.
 ///
 /// # Arguments
 ///
-/// * `contents` — UTF-8 JSON or S-expression source text returned by KiCad.
-/// * `schematic_path` — Schematic file to pass to the KiCad command.
+/// * `contents` — UTF-8 JSON or S-expression source text returned by `KiCad`.
+/// * `schematic_path` — Schematic file to pass to the `KiCad` command.
 ///
 /// # Returns
 ///
-/// A report containing KiCad version/date metadata, disabled checks, and normalized diagnostics.
+/// A report containing `KiCad` version/date metadata, disabled checks, and normalized diagnostics.
 ///
 /// # Errors
 ///
@@ -213,7 +213,7 @@ pub fn parse_erc_json(
         diagnostics,
     })
 }
-/// Converts one KiCad violation object into a normalized diagnostic, retaining its sheet path, source path, and affected-item context.
+/// Converts one `KiCad` violation object into a normalized diagnostic, retaining its sheet path, source path, and affected-item context.
 ///
 /// # Arguments
 ///

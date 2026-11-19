@@ -79,11 +79,11 @@ impl Netlist {
     /// # Arguments
     ///
     /// * `reference` — Component reference designator from the flattened netlist.
-    /// * `pin` — Pin number exactly as exported by KiCad.
+    /// * `pin` — Pin number exactly as exported by `KiCad`.
     ///
     /// # Returns
     ///
-    /// The associated net name, or `None` when KiCad did not assign the pin to an exported net.
+    /// The associated net name, or `None` when `KiCad` did not assign the pin to an exported net.
     #[must_use]
     pub fn net_for_pin(&self, reference: &str, pin: &str) -> Option<&str> {
         self.pin_nets
@@ -156,12 +156,12 @@ pub enum NetlistError {
     },
 }
 
-/// Invokes KiCad's native netlist exporter and parses the resulting S-expression document.
+/// Invokes `KiCad`'s native netlist exporter and parses the resulting S-expression document.
 ///
 /// # Arguments
 ///
 /// * `program` — Path or command name of the `kicad-cli` executable to run.
-/// * `schematic_path` — Schematic file to pass to the KiCad command.
+/// * `schematic_path` — Schematic file to pass to the `KiCad` command.
 ///
 /// # Returns
 ///
@@ -169,7 +169,7 @@ pub enum NetlistError {
 ///
 /// # Errors
 ///
-/// Returns `Spawn` or `CliFailed` for KiCad process failures, `Io` for netlist-file errors, and parsing errors when exported S-expression data is malformed or pin assignments are inconsistent.
+/// Returns `Spawn` or `CliFailed` for `KiCad` process failures, `Io` for netlist-file errors, and parsing errors when exported S-expression data is malformed or pin assignments are inconsistent.
 pub fn export_netlist(
     program: impl AsRef<Path>,
     schematic_path: impl AsRef<Path>,
@@ -212,11 +212,11 @@ pub fn export_netlist(
     parse_netlist_sexpr(&contents)
 }
 
-/// Parses a KiCad `export` S-expression into component, net, chain, and reverse pin-to-net indexes.
+/// Parses a `KiCad` `export` S-expression into component, net, chain, and reverse pin-to-net indexes.
 ///
 /// # Arguments
 ///
-/// * `contents` — UTF-8 `export` S-expression text produced by KiCad's native netlist exporter.
+/// * `contents` — UTF-8 `export` S-expression text produced by `KiCad`'s native netlist exporter.
 ///
 /// # Returns
 ///
@@ -474,7 +474,7 @@ mod tests {
         )
       )
     )"#;
-    /// Checks that each component reference/pin pair is indexed to the logical net exported by KiCad.
+    /// Checks that each component reference/pin pair is indexed to the logical net exported by `KiCad`.
     #[test]
     fn maps_component_pins_to_exported_net_names() {
         let netlist = parse_netlist_sexpr(NETLIST).expect("valid fixture");

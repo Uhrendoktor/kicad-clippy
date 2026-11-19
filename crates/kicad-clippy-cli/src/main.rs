@@ -79,10 +79,10 @@ enum CliError {
     /// Schematic file reading or parsing failed.
     #[error(transparent)]
     Schematic(#[from] kicad_clippy_parser::SchematicParseError),
-    /// Native KiCad ERC invocation or report decoding failed.
+    /// Native `KiCad` ERC invocation or report decoding failed.
     #[error(transparent)]
     Erc(#[from] kicad_clippy_erc::ErcError),
-    /// No KiCad CLI executable could be resolved.
+    /// No `KiCad` CLI executable could be resolved.
     #[error("KiCad CLI was not found; install KiCad or pass --kicad-cli PATH")]
     KiCadCliNotFound,
     /// The component-intent profile could not be loaded or validated.
@@ -114,7 +114,7 @@ struct LintOutput {
     syntax_valid: bool,
     /// Whether native ERC was intentionally skipped for this invocation.
     erc_skipped: bool,
-    /// KiCad CLI version reported by native ERC, or `None` when ERC was skipped.
+    /// `KiCad` CLI version reported by native ERC, or `None` when ERC was skipped.
     kicad_version: Option<String>,
     /// Normalized ERC and Rust-rule findings for the schematic.
     diagnostics: Vec<Diagnostic>,
@@ -130,7 +130,7 @@ struct Summary {
     warnings: usize,
     /// Number of non-excluded informational diagnostics.
     notes: usize,
-    /// Number of diagnostics marked excluded by KiCad or project configuration.
+    /// Number of diagnostics marked excluded by `KiCad` or project configuration.
     excluded: usize,
 }
 
@@ -193,7 +193,7 @@ fn main() -> ExitCode {
 ///
 /// # Errors
 ///
-/// Returns `CliError` when input loading, KiCad execution, profile validation, or report output fails.
+/// Returns `CliError` when input loading, `KiCad` execution, profile validation, or report output fails.
 fn execute(cli: Cli) -> Result<ExitCode, CliError> {
     match cli.command {
         Commands::Lint {
@@ -223,7 +223,7 @@ fn execute(cli: Cli) -> Result<ExitCode, CliError> {
 /// * `format` — Requested diagnostic output format (`text` or `json`).
 /// * `skip_erc` — Whether native ERC should be skipped; project/netlist processing may still require the CLI.
 /// * `explicit_cli` — Optional explicit path to `kicad-cli`; it takes precedence over PATH lookup.
-/// * `project_path` — Optional KiCad project file providing netclass and schematic drawing settings.
+/// * `project_path` — Optional `KiCad` project file providing netclass and schematic drawing settings.
 /// * `profile_path` — Optional component-intent profile JSON file.
 /// * `strict` — Whether the profile must provide all required component-intent metadata.
 ///
@@ -330,11 +330,11 @@ fn lint(
         Ok(ExitCode::SUCCESS)
     }
 }
-/// Reads and decodes a KiCad project JSON file.
+/// Reads and decodes a `KiCad` project JSON file.
 ///
 /// # Arguments
 ///
-/// * `project_path` — Optional KiCad project file providing netclass and schematic drawing settings.
+/// * `project_path` — Optional `KiCad` project file providing netclass and schematic drawing settings.
 ///
 /// # Returns
 ///
@@ -351,7 +351,7 @@ fn project_settings_from_project(project_path: &Path) -> Result<serde_json::Valu
 ///
 /// # Arguments
 ///
-/// * `project` — Decoded KiCad project JSON object.
+/// * `project` — Decoded `KiCad` project JSON object.
 ///
 /// # Returns
 ///
@@ -369,9 +369,9 @@ fn project_default_schematic_line_stroke_width_mm(project: &serde_json::Value) -
 ///
 /// # Arguments
 ///
-/// * `project` — Decoded KiCad project JSON object.
+/// * `project` — Decoded `KiCad` project JSON object.
 /// * `facts` — Schematic facts containing placed pins and the topology of physical wire components.
-/// * `netlist` — Flattened netlist exported by KiCad, including pin-to-net and effective netclass data.
+/// * `netlist` — Flattened netlist exported by `KiCad`, including pin-to-net and effective netclass data.
 ///
 /// # Returns
 ///
@@ -452,7 +452,7 @@ fn project_wire_stroke_widths_mm(
 /// # Arguments
 ///
 /// * `facts` — Schematic facts containing placed pins and the topology of physical wire components.
-/// * `netlist` — Flattened netlist exported by KiCad, including pin-to-net and effective netclass data.
+/// * `netlist` — Flattened netlist exported by `KiCad`, including pin-to-net and effective netclass data.
 ///
 /// # Returns
 ///
@@ -476,8 +476,8 @@ type ProjectNetclassDefinitions = BTreeMap<String, (i64, Option<f64>)>;
 ///
 /// # Arguments
 ///
-/// * `project` — Decoded KiCad project JSON object.
-/// * `netlist` — Flattened netlist exported by KiCad, including pin-to-net and effective netclass data.
+/// * `project` — Decoded `KiCad` project JSON object.
+/// * `netlist` — Flattened netlist exported by `KiCad`, including pin-to-net and effective netclass data.
 /// * `net_name` — Exact logical net name whose project netclass assignments are being resolved.
 ///
 /// # Returns
@@ -510,7 +510,7 @@ fn project_netclass_wire_width_mm(
 ///
 /// # Arguments
 ///
-/// * `settings` — The `net_settings` JSON object from the KiCad project.
+/// * `settings` — The `net_settings` JSON object from the `KiCad` project.
 ///
 /// # Returns
 ///
@@ -546,8 +546,8 @@ fn project_netclass_definitions(
 ///
 /// # Arguments
 ///
-/// * `settings` — The `net_settings` JSON object from the KiCad project.
-/// * `netlist` — Flattened netlist exported by KiCad, including pin-to-net and effective netclass data.
+/// * `settings` — The `net_settings` JSON object from the `KiCad` project.
+/// * `netlist` — Flattened netlist exported by `KiCad`, including pin-to-net and effective netclass data.
 /// * `net_name` — Exact logical net name whose project netclass assignments are being resolved.
 ///
 /// # Returns
@@ -568,7 +568,7 @@ fn project_netclass_candidates(
 ///
 /// # Arguments
 ///
-/// * `settings` — The `net_settings` JSON object from the KiCad project.
+/// * `settings` — The `net_settings` JSON object from the `KiCad` project.
 /// * `net_name` — Exact logical net name whose project netclass assignments are being resolved.
 /// * `candidates` — Set to extend with each supported class assignment that applies to the net.
 ///
@@ -597,7 +597,7 @@ fn add_explicit_netclass_assignments(
 ///
 /// # Arguments
 ///
-/// * `settings` — The `net_settings` JSON object from the KiCad project.
+/// * `settings` — The `net_settings` JSON object from the `KiCad` project.
 /// * `net_name` — Exact logical net name whose project netclass assignments are being resolved.
 /// * `candidates` — Set to extend with each supported class assignment that applies to the net.
 ///
@@ -639,8 +639,8 @@ fn add_pattern_netclass_assignments(
 ///
 /// # Arguments
 ///
-/// * `settings` — The `net_settings` JSON object from the KiCad project.
-/// * `netlist` — Flattened netlist exported by KiCad, including pin-to-net and effective netclass data.
+/// * `settings` — The `net_settings` JSON object from the `KiCad` project.
+/// * `netlist` — Flattened netlist exported by `KiCad`, including pin-to-net and effective netclass data.
 /// * `net_name` — Exact logical net name whose project netclass assignments are being resolved.
 /// * `candidates` — Set to extend with each supported class assignment that applies to the net.
 ///
@@ -680,17 +680,17 @@ fn add_chain_netclass_assignments(
     }
     Some(())
 }
-/// Checks that the project-derived candidate set is consistent with the effective class name exported by KiCad.
+/// Checks that the project-derived candidate set is consistent with the effective class name exported by `KiCad`.
 ///
 /// # Arguments
 ///
-/// * `exported_class` — Effective class name reported by KiCad's netlist exporter.
+/// * `exported_class` — Effective class name reported by `KiCad`'s netlist exporter.
 /// * `net_name` — Exact logical net name whose project netclass assignments are being resolved.
 /// * `candidates` — Set to extend with each supported class assignment that applies to the net.
 ///
 /// # Returns
 ///
-/// `true` when KiCad's exported effective class is compatible with the project-derived candidate set.
+/// `true` when `KiCad`'s exported effective class is compatible with the project-derived candidate set.
 fn exported_netclass_matches(
     exported_class: &str,
     net_name: &str,
@@ -878,7 +878,7 @@ fn render_diagnostic(
     writeln!(stdout, "{report:?}")?;
     Ok(())
 }
-/// Resolves the KiCad CLI executable, preferring an explicit path before searching the environment.
+/// Resolves the `KiCad` CLI executable, preferring an explicit path before searching the environment.
 ///
 /// # Arguments
 ///
@@ -886,11 +886,11 @@ fn render_diagnostic(
 ///
 /// # Returns
 ///
-/// The explicit executable path or the first KiCad CLI executable found on PATH.
+/// The explicit executable path or the first `KiCad` CLI executable found on PATH.
 ///
 /// # Errors
 ///
-/// Returns `CliError::KiCadCliNotFound` when neither an explicit path, `KICAD_CLI`, nor a callable `kicad-cli` executable can be resolved.
+/// Returns `CliError::`KiCad`CliNotFound` when neither an explicit path, `KICAD_CLI`, nor a callable `kicad-cli` executable can be resolved.
 fn resolve_kicad_cli(explicit: Option<PathBuf>) -> Result<PathBuf, CliError> {
     if let Some(path) = explicit {
         return Ok(path);
@@ -977,7 +977,7 @@ mod tests {
             }
         })
     }
-    /// Checks that overlapping netclass patterns and exact assignments are resolved using KiCad class priority.
+    /// Checks that overlapping netclass patterns and exact assignments are resolved using `KiCad` class priority.
     #[test]
     fn overlapping_patterns_and_explicit_assignments_use_class_priority() {
         let mut project = project_fixture();

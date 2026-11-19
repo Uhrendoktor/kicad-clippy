@@ -297,12 +297,12 @@ impl LintProfile {
         self.validate_with_netlist(document, None)
     }
 
-    /// Validates all declared component, group, and connectivity intent against the schematic and, when available, KiCad's exported netlist.
+    /// Validates all declared component, group, and connectivity intent against the schematic and, when available, `KiCad`'s exported netlist.
     ///
     /// # Arguments
     ///
     /// * `document` — Parsed schematic whose symbols, geometry, labels, and group declarations are being checked.
-    /// * `netlist` — Optional KiCad-exported flattened netlist; supplies logical pin-to-net assignments when present.
+    /// * `netlist` — Optional `KiCad`-exported flattened netlist; supplies logical pin-to-net assignments when present.
     ///
     /// # Returns
     ///
@@ -626,7 +626,7 @@ fn validate_forbidden_direct_wire_labels(
 ///
 /// * `groups` — Map of profile group identifiers to their associated group-intent records.
 /// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
-/// * `netlist` — Optional KiCad-exported flattened netlist; supplies logical pin-to-net assignments when present.
+/// * `netlist` — Optional `KiCad`-exported flattened netlist; supplies logical pin-to-net assignments when present.
 ///
 /// # Returns
 ///
@@ -697,7 +697,7 @@ fn validate_common_pin_group(
 /// # Arguments
 ///
 /// * `group` — The group-intent record containing its members and declared constraints.
-/// * `netlist` — Optional KiCad-exported flattened netlist; supplies logical pin-to-net assignments when present.
+/// * `netlist` — Optional `KiCad`-exported flattened netlist; supplies logical pin-to-net assignments when present.
 ///
 /// # Returns
 ///
@@ -907,7 +907,7 @@ fn invalid_physical_wire_reference(group_name: &str, pin_ref: &str) -> Diagnosti
 ///
 /// * `pairs` — Declared physical-wire pin pairs, each expressed as two REF.PIN references.
 /// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
-/// * `netlist` — Optional KiCad-exported flattened netlist; supplies logical pin-to-net assignments when present.
+/// * `netlist` — Optional `KiCad`-exported flattened netlist; supplies logical pin-to-net assignments when present.
 ///
 /// # Returns
 ///
@@ -939,7 +939,7 @@ fn validate_separate_wire_pairs(
 /// * `pair` — The direct-wire or separate-wire pair contract being validated.
 /// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
 /// * `component_ids` — Map from tolerance-normalized schematic coordinates to physical wire-component identifiers.
-/// * `netlist` — Optional KiCad-exported flattened netlist; supplies logical pin-to-net assignments when present.
+/// * `netlist` — Optional `KiCad`-exported flattened netlist; supplies logical pin-to-net assignments when present.
 ///
 /// # Returns
 ///
@@ -1320,7 +1320,7 @@ fn validate_groups(
 ///
 /// # Returns
 ///
-/// Diagnostics for the group's invalid evidence, members, KiCad membership, containment, frame clearance, spacing, or wiring contract.
+/// Diagnostics for the group's invalid evidence, members, `KiCad` membership, containment, frame clearance, spacing, or wiring contract.
 fn validate_group(
     group_id: &str,
     group: &GroupIntent,
@@ -2842,7 +2842,7 @@ fn validate_group_spacing(
     }
     diagnostics
 }
-/// Checks that the profile's member references match the schematic's explicit KiCad group membership.
+/// Checks that the profile's member references match the schematic's explicit `KiCad` group membership.
 ///
 /// # Arguments
 ///
@@ -2852,7 +2852,7 @@ fn validate_group_spacing(
 ///
 /// # Returns
 ///
-/// Diagnostics when the schematic's native KiCad group is missing or its member UUIDs do not match the profile references.
+/// Diagnostics when the schematic's native `KiCad` group is missing or its member UUIDs do not match the profile references.
 fn validate_kicad_group_membership(
     group_id: &str,
     group: &GroupIntent,
@@ -3085,7 +3085,7 @@ fn validate_group_phrase(
 ///
 /// * `reference` — Reference designator of the component whose intent is being checked.
 /// * `intent` — Component-intent record declaring the electrical role and connection contract.
-/// * `netlist` — Optional KiCad-exported flattened netlist; supplies logical pin-to-net assignments when present.
+/// * `netlist` — Optional `KiCad`-exported flattened netlist; supplies logical pin-to-net assignments when present.
 ///
 /// # Returns
 ///
@@ -3144,7 +3144,7 @@ fn validate_component_intent(
 ///
 /// * `reference` — Reference designator of the component whose intent is being checked.
 /// * `intent` — Component-intent record declaring the electrical role and connection contract.
-/// * `netlist` — Optional KiCad-exported flattened netlist; supplies logical pin-to-net assignments when present.
+/// * `netlist` — Optional `KiCad`-exported flattened netlist; supplies logical pin-to-net assignments when present.
 ///
 /// # Returns
 ///
@@ -3290,7 +3290,7 @@ fn validate_role_contract(reference: &str, intent: &ComponentIntent) -> Vec<Diag
 ///
 /// * `reference` — Reference designator of the component whose intent is being checked.
 /// * `contract` — Optional decoupling contract declared for this component.
-/// * `netlist` — Optional KiCad-exported flattened netlist; supplies logical pin-to-net assignments when present.
+/// * `netlist` — Optional `KiCad`-exported flattened netlist; supplies logical pin-to-net assignments when present.
 ///
 /// # Returns
 ///
@@ -3351,7 +3351,7 @@ fn validate_decoupling_intent(
 ///
 /// * `reference` — Reference designator of the component whose intent is being checked.
 /// * `contract` — Optional decoupling contract declared for this component.
-/// * `netlist` — Optional KiCad-exported flattened netlist; supplies logical pin-to-net assignments when present.
+/// * `netlist` — Optional `KiCad`-exported flattened netlist; supplies logical pin-to-net assignments when present.
 ///
 /// # Returns
 ///
@@ -3516,7 +3516,7 @@ mod tests {
     ///
     /// # Arguments
     ///
-    /// * `wire_and_label_items` — KiCad S-expression fragments inserted into the fixture to define wires, junctions, and labels.
+    /// * `wire_and_label_items` — `KiCad` S-expression fragments inserted into the fixture to define wires, junctions, and labels.
     ///
     /// # Returns
     ///
@@ -3902,7 +3902,7 @@ mod tests {
             ..Netlist::default()
         }
     }
-    /// Regression test: verifies that common pin group can require one exported KiCad net.
+    /// Regression test: verifies that common pin group can require one exported `KiCad` net.
     #[test]
     fn common_pin_group_can_require_one_exported_kicad_net() {
         let schematic = direct_wire_schematic(
@@ -3923,7 +3923,7 @@ mod tests {
             item.code == "SCH004" && item.message.contains("different exported KiCad nets")
         }));
     }
-    /// Regression test: verifies that common pin group rejects different exported KiCad nets.
+    /// Regression test: verifies that common pin group rejects different exported `KiCad` nets.
     #[test]
     fn common_pin_group_rejects_different_exported_kicad_nets() {
         let schematic = direct_wire_schematic(
@@ -4684,7 +4684,7 @@ mod tests {
                 .any(|item| item.code == "SCH006" && item.message.contains("finite positive"))
         );
     }
-    /// Regression test: verifies that profile group can be bound to native KiCad group membership.
+    /// Regression test: verifies that profile group can be bound to native `KiCad` group membership.
     #[test]
     fn profile_group_can_be_bound_to_native_kicad_group_membership() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4708,7 +4708,7 @@ mod tests {
                 .any(|item| item.code == "SCH007")
         );
     }
-    /// Regression test: verifies that native KiCad group must include profile component members.
+    /// Regression test: verifies that native `KiCad` group must include profile component members.
     #[test]
     fn native_kicad_group_must_include_profile_component_members() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4733,7 +4733,7 @@ mod tests {
                     && item.message.contains("does not contain symbol UUID"))
         );
     }
-    /// Regression test: verifies that missing native KiCad group uuid is reported.
+    /// Regression test: verifies that missing native `KiCad` group uuid is reported.
     #[test]
     fn missing_native_kicad_group_uuid_is_reported() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
