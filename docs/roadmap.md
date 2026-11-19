@@ -7,7 +7,7 @@ This page separates implemented functionality from the remaining migration work.
 - Four-crate Rust workspace with a strict inherited lint policy and locked dependencies.
 - Lossless KiCad S-expression parser integration, UTF-8 byte spans, and terminal line/column rendering delegated to `miette`.
 - Shared diagnostic model with severity, source spans, and schematic coordinates.
-- Typed built-in rule IDs, rule descriptor metadata, deterministic registry, and a deterministic `RulePass` engine with shared immutable analysis facts.
+- Typed built-in rule IDs, a complete 22-entry built-in descriptor catalogue, deterministic registry, and a deterministic `RulePass` engine with shared immutable analysis facts. The descriptor default levels are descriptive until the rule-policy layer is implemented.
 - KiCad CLI native ERC adapter, per-sheet JSON normalization, and flattened netlist export with component-pin-to-net lookup.
 - Text and JSON CLI output.
 - CI for formatting, strict Clippy, workspace tests, documentation tests, release build, and a native KiCad ERC/netlist smoke test.
