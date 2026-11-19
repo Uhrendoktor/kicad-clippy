@@ -1247,12 +1247,14 @@ SCH019 = "allow"
                 SchematicPinFact {
                     reference: "J1".to_owned(),
                     number: "1".to_owned(),
-                    position_mm: (0.0, 0.0),
+                    position_mm: (0.0, 0.0),,
+                    electrical_type: None
                 },
                 SchematicPinFact {
                     reference: "#PWR01".to_owned(),
                     number: "1".to_owned(),
-                    position_mm: (0.0, 0.0),
+                    position_mm: (0.0, 0.0),,
+                    electrical_type: None
                 },
             ],
             ..SchematicFacts::default()
@@ -1300,7 +1302,8 @@ SCH019 = "allow"
                 SchematicPinFact {
                     reference: "J2".to_owned(),
                     number: "1".to_owned(),
-                    position_mm: (10.0, 0.0),
+                    position_mm: (10.0, 0.0),,
+                    electrical_type: None
                 },
             ],
             ..facts
