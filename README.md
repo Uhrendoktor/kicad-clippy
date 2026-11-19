@@ -12,6 +12,7 @@ A Rust-based linter for KiCad schematic files. `kicad-clippy` combines repositor
 - Runs native ERC using `kicad-cli sch erc --format json --severity-all`.
 - Exports the flattened netlist for profile-declared pin/net contracts.
 - Runs built-in schematic rules and optional project-profile checks.
+- Applies an optional TOML rule policy with `default`, `strict`, or `advisory` presets and per-rule `allow`, `warn`, or `deny` overrides.
 - Checks overlaps between independently declared functional-group frames and enforces profile-declared no-connect pin markers.
 - Preserves source byte spans, physical coordinates, sheet paths and affected item UUIDs where available.
 - Emits human-readable or JSON diagnostics with an exit code based on active errors.
@@ -39,6 +40,7 @@ kicad-clippy lint path/to/design.kicad_sch
 kicad-clippy lint path/to/design.kicad_sch --format json
 kicad-clippy lint path/to/design.kicad_sch --skip-erc
 kicad-clippy lint path/to/design.kicad_sch --profile project-profile.json
+kicad-clippy lint path/to/design.kicad_sch --policy kicad-clippy.toml
 ```
 
 Select the KiCad CLI executable explicitly with `--kicad-cli PATH` or the `KICAD_CLI` environment variable. Without an explicit path, the CLI searches for `kicad-cli-nightly` and then `kicad-cli` on `PATH`.
@@ -53,7 +55,7 @@ Select the KiCad CLI executable explicitly with `--kicad-cli PATH` or the `KICAD
 | `kicad-clippy-rules` | Built-in schematic rules and project-profile contracts. |
 | `kicad-clippy` | Command-line interface and output formatting. |
 
-See [architecture](docs/architecture.md), [architecture research](docs/architecture-research.md), [rule development](docs/rule-development.md), and [rule coverage](docs/rules.md).
+See [architecture](docs/architecture.md), [architecture research](docs/architecture-research.md), [rule development](docs/rule-development.md), [rule policy](docs/rule-policy.md), and [rule coverage](docs/rules.md).
 
 ## Development quality gates
 
