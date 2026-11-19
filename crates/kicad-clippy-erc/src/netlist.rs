@@ -170,7 +170,6 @@ pub enum NetlistError {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
 pub fn export_netlist(
     program: impl AsRef<Path>,
     schematic_path: impl AsRef<Path>,
@@ -226,7 +225,6 @@ pub fn export_netlist(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
 pub fn parse_netlist_sexpr(contents: &str) -> Result<Netlist, NetlistError> {
     let document = parse_one(contents)?;
     let root = document
@@ -322,8 +320,6 @@ pub fn parse_netlist_sexpr(contents: &str) -> Result<Netlist, NetlistError> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn process_details(stdout: &[u8], stderr: &[u8], fallback: &str) -> String {
     let stdout = String::from_utf8_lossy(stdout);
     let stderr = String::from_utf8_lossy(stderr);
@@ -343,8 +339,6 @@ fn process_details(stdout: &[u8], stderr: &[u8], fallback: &str) -> String {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn missing_field(field: &str, context: &str) -> NetlistError {
     NetlistError::MissingField {
         field: field.to_owned(),
@@ -360,8 +354,6 @@ fn missing_field(field: &str, context: &str) -> NetlistError {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn list_items(node: &Node) -> Option<&[Node]> {
     if let Node::List { items, .. } = node {
         Some(items)
@@ -378,8 +370,6 @@ fn list_items(node: &Node) -> Option<&[Node]> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn head(node: &Node) -> Option<&str> {
     let Node::List { items, .. } = node else {
         return None;
@@ -403,8 +393,6 @@ fn head(node: &Node) -> Option<&str> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn children<'a>(node: &'a Node, name: &str) -> impl Iterator<Item = &'a Node> + 'a {
     let name = name.to_owned();
     list_items(node)
@@ -422,8 +410,6 @@ fn children<'a>(node: &'a Node, name: &str) -> impl Iterator<Item = &'a Node> + 
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn child_list<'a>(node: &'a Node, name: &str) -> Option<&'a Node> {
     children(node, name).next()
 }
@@ -438,8 +424,6 @@ fn child_list<'a>(node: &'a Node, name: &str) -> Option<&'a Node> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn child_value(node: &Node, name: &str, source: &str) -> Option<String> {
     let child = child_list(node, name)?;
     let items = list_items(child)?;
@@ -455,8 +439,6 @@ fn child_value(node: &Node, name: &str, source: &str) -> Option<String> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn atom_value(node: &Node, source: &str) -> Option<String> {
     let Node::Atom { span, .. } = node else {
         return None;
@@ -473,7 +455,6 @@ mod tests {
     use super::parse_netlist_sexpr;
     use std::collections::BTreeSet;
     /// Defines the netlist constant.
-
     const NETLIST: &str = r#"(export
       (components
         (comp (ref "C1") (value "100n") (libsource (lib "Device") (part "C")))

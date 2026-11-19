@@ -138,7 +138,6 @@ impl fmt::Display for BuiltinRuleId {
     /// # Returns
     ///
     /// The value produced by this operation.
-    ///
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(self.as_str())
     }
@@ -154,7 +153,6 @@ impl From<BuiltinRuleId> for String {
     /// # Returns
     ///
     /// The value produced by this operation.
-    ///
     fn from(value: BuiltinRuleId) -> Self {
         value.as_str().to_owned()
     }
@@ -176,8 +174,6 @@ impl FromStr for BuiltinRuleId {
     /// # Errors
     ///
     /// Returns an error when the operation cannot complete with the supplied input.
-    ///
-
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         Self::parse(value).ok_or_else(|| UnknownBuiltinRuleId(value.to_owned()))
     }
@@ -200,7 +196,6 @@ impl fmt::Display for UnknownBuiltinRuleId {
     /// # Returns
     ///
     /// The value produced by this operation.
-    ///
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(formatter, "unknown built-in rule identifier {:?}", self.0)
     }

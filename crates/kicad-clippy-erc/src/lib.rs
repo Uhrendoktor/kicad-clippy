@@ -2,7 +2,6 @@
 
 //! Native `KiCad` Electrical Rules Checker adapter.
 /// Contains the netlist implementation and supporting types.
-
 mod netlist;
 
 pub use netlist::{
@@ -105,7 +104,6 @@ pub enum ErcError {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
 pub fn run_native_erc(
     program: impl AsRef<Path>,
     schematic_path: impl AsRef<Path>,
@@ -173,7 +171,6 @@ pub fn run_native_erc(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
 pub fn parse_erc_json(
     contents: &[u8],
     schematic_path: impl AsRef<Path>,
@@ -230,8 +227,6 @@ pub fn parse_erc_json(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn parse_violation(
     violation: &Value,
     sheet_path: Option<String>,
@@ -276,8 +271,6 @@ fn parse_violation(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn parse_related_location(item: &Value) -> RelatedLocation {
     RelatedLocation {
         description: string_member(item, "description").unwrap_or_default(),
@@ -294,8 +287,6 @@ fn parse_related_location(item: &Value) -> RelatedLocation {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn parse_schematic_location(item: &Value) -> Option<SchematicLocation> {
     let position = item.get("pos")?;
     Some(SchematicLocation {
@@ -313,8 +304,6 @@ fn parse_schematic_location(item: &Value) -> Option<SchematicLocation> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn string_member(value: &Value, key: &str) -> Option<String> {
     value.get(key)?.as_str().map(ToOwned::to_owned)
 }
@@ -328,7 +317,6 @@ mod tests {
 
     use super::parse_erc_json;
     /// Defines the erc report constant.
-
     const ERC_REPORT: &[u8] = br#"
     {
       "$schema": "https://schemas.kicad.org/erc.v1.json",

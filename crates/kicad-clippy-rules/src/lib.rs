@@ -8,7 +8,6 @@ use kicad_clippy_core::Diagnostic;
 use kicad_clippy_parser::SchematicDocument;
 use thiserror::Error;
 /// Contains the generic implementation and supporting types.
-
 mod generic;
 /// Contains the metadata implementation and supporting types.
 mod metadata;
@@ -75,7 +74,6 @@ pub trait RulePass: Send + Sync {
     /// # Returns
     ///
     /// The value produced by this operation.
-    ///
     fn name(&self) -> &'static str;
 
     /// Analyze an immutable context and return normalized findings.
@@ -86,7 +84,6 @@ pub trait RulePass: Send + Sync {
     /// # Returns
     ///
     /// The value produced by this operation.
-    ///
     fn run(&self, context: &RuleContext<'_>) -> Vec<Diagnostic>;
 }
 
@@ -150,7 +147,6 @@ impl RuleEngine {
     /// # Returns
     ///
     /// The value produced by this operation.
-    ///
     pub fn register_pass(&mut self, pass: impl RulePass + 'static) -> Result<(), RuleEngineError> {
         match self.passes.entry(pass.name()) {
             Entry::Vacant(entry) => {
@@ -265,8 +261,6 @@ impl RuleEngine {
     /// # Returns
     ///
     /// The value produced by this operation.
-    ///
-
     fn run_with_project_and_wire_stroke_widths(
         &self,
         document: &SchematicDocument,
@@ -335,7 +329,6 @@ mod tests {
 
     use super::{RuleContext, RuleEngine, RuleEngineError, RulePass};
     /// Stores externalexamplepass data used by this crate.
-
     struct ExternalExamplePass;
 
     impl RulePass for ExternalExamplePass {
@@ -344,7 +337,6 @@ mod tests {
         /// # Returns
         ///
         /// The value produced by this operation.
-        ///
         fn name(&self) -> &'static str {
             "example.external"
         }
@@ -357,8 +349,6 @@ mod tests {
         /// # Returns
         ///
         /// The value produced by this operation.
-        ///
-
         fn run(&self, context: &RuleContext<'_>) -> Vec<Diagnostic> {
             let message = format!("analyzed {} component(s)", context.facts().components.len());
             vec![Diagnostic::new("EXAMPLE/EXTERNAL", Severity::Note, message)]

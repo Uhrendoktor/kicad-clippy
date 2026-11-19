@@ -43,9 +43,20 @@ const HALF_ROTATION_DEGREES: f64 = 180.0;
 /// Number of degrees in a three-quarter turn.
 const THREE_QUARTER_ROTATION_DEGREES: f64 = 270.0;
 /// Supported cardinal rotation angles in degrees.
-const CARDINAL_ROTATION_DEGREES: [f64; 4] = [0.0, QUARTER_ROTATION_DEGREES, HALF_ROTATION_DEGREES, THREE_QUARTER_ROTATION_DEGREES];
+const CARDINAL_ROTATION_DEGREES: [f64; 4] = [
+    0.0,
+    QUARTER_ROTATION_DEGREES,
+    HALF_ROTATION_DEGREES,
+    THREE_QUARTER_ROTATION_DEGREES,
+];
 /// Supported cardinal angles including the equivalent full-turn endpoint.
-const CARDINAL_ROTATION_DEGREES_WITH_WRAP: [f64; 5] = [0.0, QUARTER_ROTATION_DEGREES, HALF_ROTATION_DEGREES, THREE_QUARTER_ROTATION_DEGREES, FULL_ROTATION_DEGREES];
+const CARDINAL_ROTATION_DEGREES_WITH_WRAP: [f64; 5] = [
+    0.0,
+    QUARTER_ROTATION_DEGREES,
+    HALF_ROTATION_DEGREES,
+    THREE_QUARTER_ROTATION_DEGREES,
+    FULL_ROTATION_DEGREES,
+];
 /// Default bitmap resolution when metadata does not declare a resolution, in pixels per inch.
 const DEFAULT_BITMAP_IMAGE_PPI: u32 = 300;
 /// Floating-point form of the default bitmap resolution, in pixels per inch.
@@ -75,7 +86,6 @@ const COORDINATE_KEY_DECIMAL_PLACES: usize = 3;
 /// Minimum JPEG JFIF application-segment payload length, in bytes.
 const JPEG_JFIF_MINIMUM_SEGMENT_BYTES: usize = 12;
 /// Defines the point type used by this crate.
-
 pub type Point = Coord<f64>;
 /// Stores segment data used by this crate.
 
@@ -394,8 +404,6 @@ impl SchematicFacts {
     /// # Returns
     ///
     /// The value produced by this operation.
-    ///
-
     pub(crate) fn from_document_with_geometry(
         document: &SchematicDocument,
         segments: &[Segment],
@@ -442,8 +450,6 @@ impl SchematicFacts {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn collect_component_facts(root: &Node) -> Vec<ComponentFact> {
     children(root, "symbol")
         .filter_map(|node| {
@@ -482,8 +488,6 @@ fn collect_component_facts(root: &Node) -> Vec<ComponentFact> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn collect_text_box_facts(root: &Node) -> Vec<TextBoxFact> {
     children(root, "text_box")
         .filter_map(|node| {
@@ -518,8 +522,6 @@ fn collect_text_box_facts(root: &Node) -> Vec<TextBoxFact> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn table_cell_text_rotation_is_supported(cell: &Node) -> bool {
     let Some(angle) = child_list(cell, "at")
         .and_then(list_items)
@@ -545,8 +547,6 @@ fn table_cell_text_rotation_is_supported(cell: &Node) -> bool {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn table_text_rotations_are_supported(table: &Node) -> bool {
     let Some(cells) = child_list(table, "cells") else {
         return false;
@@ -566,8 +566,6 @@ fn table_text_rotations_are_supported(table: &Node) -> bool {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn collect_plain_text_facts(root: &Node) -> Vec<SchematicTextFact> {
     let table_cells = children(root, "table")
         .filter(|table| table_text_rotations_are_supported(table))
@@ -609,8 +607,6 @@ fn collect_plain_text_facts(root: &Node) -> Vec<SchematicTextFact> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn collect_sheet_graphic_facts(root: &Node) -> Vec<SchematicGraphicFact> {
     let mut graphics = Vec::new();
     for kind in [
@@ -668,8 +664,10 @@ fn collect_sheet_graphic_facts(root: &Node) -> Vec<SchematicGraphicFact> {
                 .unwrap_or_default()
             };
             let repeated_endpoint = points_mm.len() > 2
-                && (points_mm[0].0 - points_mm[points_mm.len() - 1].0).abs() <= GEOMETRY_TOLERANCE_MM
-                && (points_mm[0].1 - points_mm[points_mm.len() - 1].1).abs() <= GEOMETRY_TOLERANCE_MM;
+                && (points_mm[0].0 - points_mm[points_mm.len() - 1].0).abs()
+                    <= GEOMETRY_TOLERANCE_MM
+                && (points_mm[0].1 - points_mm[points_mm.len() - 1].1).abs()
+                    <= GEOMETRY_TOLERANCE_MM;
             let closed = kind == "rectangle"
                 || kind == "polygon"
                 || kind == "ellipse"
@@ -694,7 +692,6 @@ fn collect_sheet_graphic_facts(root: &Node) -> Vec<SchematicGraphicFact> {
     graphics
 }
 /// Defines the default table stroke width mm constant.
-
 const DEFAULT_TABLE_STROKE_WIDTH_MM: f64 = 0.1524;
 /// Stores schematictablelayout data used by this crate.
 
@@ -722,8 +719,6 @@ struct SchematicTableLayout {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn nonnegative_integer(node: &Node) -> Option<usize> {
     atom_value(node)?.parse::<usize>().ok()
 }
@@ -736,8 +731,6 @@ fn nonnegative_integer(node: &Node) -> Option<usize> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn positive_integer(node: &Node) -> Option<usize> {
     nonnegative_integer(node).filter(|value| *value > 0)
 }
@@ -751,8 +744,6 @@ fn positive_integer(node: &Node) -> Option<usize> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn table_dimension_values(table: &Node, name: &str) -> Option<Vec<f64>> {
     let values = child_list(table, name).and_then(list_items)?;
     let values: Option<Vec<_>> = values.iter().skip(1).map(number).collect();
@@ -771,8 +762,6 @@ fn table_dimension_values(table: &Node, name: &str) -> Option<Vec<f64>> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn table_cell_span(cell: &Node) -> Option<(usize, usize)> {
     let Some(span) = child_list(cell, "span") else {
         return Some((1, 1));
@@ -792,8 +781,6 @@ fn table_cell_span(cell: &Node) -> Option<(usize, usize)> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn cardinal_table_rotation_quadrants(angle: f64) -> Option<u8> {
     if !angle.is_finite() {
         return None;
@@ -819,8 +806,6 @@ fn cardinal_table_rotation_quadrants(angle: f64) -> Option<u8> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn schematic_table_layout(table: &Node) -> Option<SchematicTableLayout> {
     let columns = child_list(table, "column_count")
         .and_then(list_items)
@@ -887,7 +872,9 @@ fn schematic_table_layout(table: &Node) -> Option<SchematicTableLayout> {
         let column = index % columns;
         let expected = table_grid_point(&layout, column_offsets[column], row_offsets[row]);
         let actual = (number(cell_at.get(1)?)?, number(cell_at.get(2)?)?);
-        if (actual.0 - expected.0).abs() > GEOMETRY_TOLERANCE_MM || (actual.1 - expected.1).abs() > GEOMETRY_TOLERANCE_MM {
+        if (actual.0 - expected.0).abs() > GEOMETRY_TOLERANCE_MM
+            || (actual.1 - expected.1).abs() > GEOMETRY_TOLERANCE_MM
+        {
             return None;
         }
     }
@@ -905,8 +892,6 @@ fn schematic_table_layout(table: &Node) -> Option<SchematicTableLayout> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn table_grid_point(layout: &SchematicTableLayout, x_offset: f64, y_offset: f64) -> (f64, f64) {
     let (x, y) = match layout.rotation_quadrants {
         0 => (x_offset, y_offset),
@@ -927,8 +912,6 @@ fn table_grid_point(layout: &SchematicTableLayout, x_offset: f64, y_offset: f64)
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn table_flag(group: Option<&Node>, name: &str, default: bool) -> bool {
     group
         .and_then(|group| child_list(group, name))
@@ -946,8 +929,6 @@ fn table_flag(group: Option<&Node>, name: &str, default: bool) -> bool {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn table_stroke_width_mm(group: Option<&Node>) -> f64 {
     group
         .and_then(|group| child_list(group, "stroke"))
@@ -968,8 +949,6 @@ fn table_stroke_width_mm(group: Option<&Node>) -> f64 {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn cumulative_positions(origin: f64, sizes: &[f64]) -> Vec<f64> {
     let mut positions = Vec::with_capacity(sizes.len() + 1);
     positions.push(origin);
@@ -991,8 +970,6 @@ fn cumulative_positions(origin: f64, sizes: &[f64]) -> Vec<f64> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn table_line_fact(
     kind: &str,
     uuid: Option<&str>,
@@ -1029,8 +1006,6 @@ fn table_line_fact(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn append_table_outline(
     graphics: &mut Vec<SchematicGraphicFact>,
     layout: &SchematicTableLayout,
@@ -1069,8 +1044,6 @@ fn append_table_outline(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn append_table_separators(
     graphics: &mut Vec<SchematicGraphicFact>,
     layout: &SchematicTableLayout,
@@ -1156,8 +1129,6 @@ fn append_table_separators(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn collect_sheet_table_stroke_facts(root: &Node) -> Vec<SchematicGraphicFact> {
     let mut graphics = Vec::new();
     for table in children(root, "table") {
@@ -1193,10 +1164,9 @@ fn collect_sheet_table_stroke_facts(root: &Node) -> Vec<SchematicGraphicFact> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn sheet_graphic_bounds(node: &Node, kind: &str) -> Option<(f64, f64, f64, f64)> {
-    let stroke_margin = symbol_primitive_stroke_width(node) * HALF_DIMENSION_FACTOR + STROKE_CLEARANCE_MARGIN_MM;
+    let stroke_margin =
+        symbol_primitive_stroke_width(node) * HALF_DIMENSION_FACTOR + STROKE_CLEARANCE_MARGIN_MM;
     if kind == "circle" {
         let center = child_list(node, "center").and_then(list_items)?;
         let radius = child_list(node, "radius")
@@ -1253,8 +1223,6 @@ fn sheet_graphic_bounds(node: &Node, kind: &str) -> Option<(f64, f64, f64, f64)>
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn rotated_bitmap_image_geometry(
     center: Point,
     width_mm: f64,
@@ -1270,7 +1238,9 @@ fn rotated_bitmap_image_geometry(
         return None;
     }
 
-    let radians = orientation_degrees.rem_euclid(FULL_ROTATION_DEGREES).to_radians();
+    let radians = orientation_degrees
+        .rem_euclid(FULL_ROTATION_DEGREES)
+        .to_radians();
     let (sin, cos) = radians.sin_cos();
     let half_width = width_mm / 2.0;
     let half_height = height_mm / 2.0;
@@ -1320,8 +1290,6 @@ fn rotated_bitmap_image_geometry(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn collect_sheet_image_facts(root: &Node) -> Vec<SchematicImageFact> {
     let format_version = child_list(root, "version")
         .and_then(list_items)
@@ -1366,8 +1334,12 @@ fn collect_sheet_image_facts(root: &Node) -> Vec<SchematicImageFact> {
                     } else {
                         f64::from(metadata.ppi)
                     };
-                    let width = f64::from(metadata.width_pixels) * MILLIMETRES_PER_INCH / f64::from(ppi) * scale;
-                    let height = f64::from(metadata.height_pixels) * MILLIMETRES_PER_INCH / f64::from(ppi) * scale;
+                    let width = f64::from(metadata.width_pixels) * MILLIMETRES_PER_INCH
+                        / f64::from(ppi)
+                        * scale;
+                    let height = f64::from(metadata.height_pixels) * MILLIMETRES_PER_INCH
+                        / f64::from(ppi)
+                        * scale;
                     rotated_bitmap_image_geometry(position, width, height, orientation)
                 });
             let bounds_mm = geometry.map(|geometry| geometry.bounds_mm);
@@ -1402,8 +1374,6 @@ struct BitmapImageMetadata {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn parse_bitmap_image_metadata(encoded: &str) -> Option<BitmapImageMetadata> {
     /// Defines the max header bytes constant.
     const MAX_BITMAP_HEADER_BYTES: usize = 256 * 1024;
@@ -1426,8 +1396,6 @@ fn parse_bitmap_image_metadata(encoded: &str) -> Option<BitmapImageMetadata> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn decode_base64_prefix(encoded: &str, max_bytes: usize) -> Vec<u8> {
     let mut decoded = Vec::with_capacity(max_bytes.min(encoded.len() * 3 / 4));
     let mut quartet = [0_u8; 4];
@@ -1480,8 +1448,6 @@ fn decode_base64_prefix(encoded: &str, max_bytes: usize) -> Vec<u8> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 const fn base64_digit(byte: u8) -> Option<u8> {
     match byte {
         b'A'..=b'Z' => Some(byte - b'A'),
@@ -1502,8 +1468,6 @@ const fn base64_digit(byte: u8) -> Option<u8> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn read_be_u32(bytes: &[u8], offset: usize) -> Option<u32> {
     Some(u32::from_be_bytes(
         bytes.get(offset..offset + 4)?.try_into().ok()?,
@@ -1519,8 +1483,6 @@ fn read_be_u32(bytes: &[u8], offset: usize) -> Option<u32> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn read_be_u16(bytes: &[u8], offset: usize) -> Option<u16> {
     Some(u16::from_be_bytes(
         bytes.get(offset..offset + 2)?.try_into().ok()?,
@@ -1535,8 +1497,6 @@ fn read_be_u16(bytes: &[u8], offset: usize) -> Option<u16> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn parse_png_image_metadata(bytes: &[u8]) -> Option<BitmapImageMetadata> {
     if !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
         return None;
@@ -1575,8 +1535,10 @@ fn parse_png_image_metadata(bytes: &[u8]) -> Option<BitmapImageMetadata> {
         offset = data_end + 4;
     }
 
-    let width_pixels = width_pixels.filter(|value| *value > 0 && *value <= MAX_BITMAP_DIMENSION_PIXELS)?;
-    let height_pixels = height_pixels.filter(|value| *value > 0 && *value <= MAX_BITMAP_DIMENSION_PIXELS)?;
+    let width_pixels =
+        width_pixels.filter(|value| *value > 0 && *value <= MAX_BITMAP_DIMENSION_PIXELS)?;
+    let height_pixels =
+        height_pixels.filter(|value| *value > 0 && *value <= MAX_BITMAP_DIMENSION_PIXELS)?;
     Some(BitmapImageMetadata {
         width_pixels,
         height_pixels,
@@ -1593,11 +1555,12 @@ fn parse_png_image_metadata(bytes: &[u8]) -> Option<BitmapImageMetadata> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn pixels_per_meter_to_ppi(pixels_per_meter: u32) -> u32 {
     // Round pixels/metre * 2.54 / 100 to the nearest integer without a float cast.
-    rounded_ratio_to_u32(u64::from(pixels_per_meter) * TENTHS_OF_MILLIMETRE_PER_INCH, 10_000)
+    rounded_ratio_to_u32(
+        u64::from(pixels_per_meter) * TENTHS_OF_MILLIMETRE_PER_INCH,
+        10_000,
+    )
 }
 /// Processes pixels per cm to ppi using the supplied values and schematic data.
 ///
@@ -1608,11 +1571,12 @@ fn pixels_per_meter_to_ppi(pixels_per_meter: u32) -> u32 {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn pixels_per_cm_to_ppi(pixels_per_cm: u32) -> u32 {
     // Legacy KiCad first truncated pixels/metre to integer pixels/cm.
-    rounded_ratio_to_u32(u64::from(pixels_per_cm) * TENTHS_OF_MILLIMETRE_PER_INCH, u64::from(CENTIMETRES_PER_METRE))
+    rounded_ratio_to_u32(
+        u64::from(pixels_per_cm) * TENTHS_OF_MILLIMETRE_PER_INCH,
+        u64::from(CENTIMETRES_PER_METRE),
+    )
 }
 /// Processes rounded ratio to u32 using the supplied values and schematic data.
 ///
@@ -1624,8 +1588,6 @@ fn pixels_per_cm_to_ppi(pixels_per_cm: u32) -> u32 {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn rounded_ratio_to_u32(numerator: u64, denominator: u64) -> u32 {
     let rounded = numerator.saturating_add(denominator / 2) / denominator;
     u32::try_from(rounded).unwrap_or(u32::MAX).max(1)
@@ -1639,8 +1601,6 @@ fn rounded_ratio_to_u32(numerator: u64, denominator: u64) -> u32 {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn parse_jpeg_image_metadata(bytes: &[u8]) -> Option<BitmapImageMetadata> {
     if !bytes.starts_with(&[0xff, 0xd8]) {
         return None;
@@ -1674,7 +1634,10 @@ fn parse_jpeg_image_metadata(bytes: &[u8]) -> Option<BitmapImageMetadata> {
         let data_end = offset.checked_add(segment_length)?;
         let segment = bytes.get(data_start..data_end)?;
 
-        if marker == 0xe0 && segment.len() >= JPEG_JFIF_MINIMUM_SEGMENT_BYTES && segment.starts_with(b"JFIF\0") {
+        if marker == 0xe0
+            && segment.len() >= JPEG_JFIF_MINIMUM_SEGMENT_BYTES
+            && segment.starts_with(b"JFIF\0")
+        {
             let units = segment[7];
             let density_x = u32::from(u16::from_be_bytes([segment[8], segment[9]]));
             ppi = match units {
@@ -1723,8 +1686,6 @@ fn parse_jpeg_image_metadata(bytes: &[u8]) -> Option<BitmapImageMetadata> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn collect_group_facts(root: &Node) -> Vec<SchematicGroupFact> {
     children(root, "group")
         .filter_map(|node| {
@@ -1759,8 +1720,6 @@ fn collect_group_facts(root: &Node) -> Vec<SchematicGroupFact> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn collect_frame_facts(root: &Node) -> Vec<SchematicFrameFact> {
     children(root, "rectangle")
         .filter_map(|node| {
@@ -1795,8 +1754,6 @@ fn collect_frame_facts(root: &Node) -> Vec<SchematicFrameFact> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn collect_label_facts(root: &Node) -> Vec<SchematicLabelFact> {
     collect_label_nodes(root)
         .into_iter()
@@ -1824,8 +1781,6 @@ fn collect_label_facts(root: &Node) -> Vec<SchematicLabelFact> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn collect_pin_facts(root: &Node) -> Vec<SchematicPinFact> {
     let Some(library_symbols) = child_list(root, "lib_symbols") else {
         return Vec::new();
@@ -1892,8 +1847,6 @@ fn collect_pin_facts(root: &Node) -> Vec<SchematicPinFact> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn collect_sheet_facts(root: &Node) -> Vec<SchematicSheetFact> {
     children(root, "sheet")
         .filter_map(|sheet| {
@@ -1977,8 +1930,6 @@ fn collect_sheet_facts(root: &Node) -> Vec<SchematicSheetFact> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn object_reference(node: &Node, prefix: &str) -> String {
     child_list(node, "uuid")
         .and_then(list_items)
@@ -1990,7 +1941,6 @@ fn object_reference(node: &Node, prefix: &str) -> String {
         )
 }
 /// Defines the no connect marker half size mm constant.
-
 const NO_CONNECT_MARKER_HALF_SIZE_MM: f64 = 48.0 * 0.0254 / 2.0;
 
 /// Collects `KiCad`'s fixed-size no-connect marker strokes without assuming the
@@ -2002,7 +1952,6 @@ const NO_CONNECT_MARKER_HALF_SIZE_MM: f64 = 48.0 * 0.0254 / 2.0;
 /// # Returns
 ///
 /// The value produced by this operation.
-///
 fn collect_no_connect_facts(root: &Node) -> Vec<SchematicNoConnectFact> {
     children(root, "no_connect")
         .filter_map(|node| {
@@ -2025,8 +1974,6 @@ fn collect_no_connect_facts(root: &Node) -> Vec<SchematicNoConnectFact> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn collect_bus_obstacle_facts(root: &Node) -> Vec<SchematicBusObstacleFact> {
     let mut obstacles = Vec::new();
     for bus in children(root, "bus") {
@@ -2126,8 +2073,6 @@ fn collect_bus_obstacle_facts(root: &Node) -> Vec<SchematicBusObstacleFact> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn collect_symbol_field_facts(root: &Node) -> Vec<SchematicFieldFact> {
     let mut fields = Vec::new();
     for symbol in children(root, "symbol") {
@@ -2184,8 +2129,6 @@ fn collect_symbol_field_facts(root: &Node) -> Vec<SchematicFieldFact> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn collect_symbol_primitive_facts(root: &Node) -> Vec<SchematicPrimitiveFact> {
     let Some(library_symbols) = child_list(root, "lib_symbols") else {
         return Vec::new();
@@ -2205,8 +2148,6 @@ fn collect_symbol_primitive_facts(root: &Node) -> Vec<SchematicPrimitiveFact> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn collect_instance_primitives(
     instance: &Node,
     definitions: &[&Node],
@@ -2243,8 +2184,6 @@ fn collect_instance_primitives(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn collect_symbol_text_facts(root: &Node) -> Vec<SchematicSymbolTextFact> {
     let Some(library_symbols) = child_list(root, "lib_symbols") else {
         return Vec::new();
@@ -2289,8 +2228,6 @@ fn collect_symbol_text_facts(root: &Node) -> Vec<SchematicSymbolTextFact> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn collect_symbol_text_from_unit(
     unit: &Node,
     transform: &SymbolTransform,
@@ -2345,8 +2282,6 @@ fn collect_symbol_text_from_unit(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn transform_symbol_bounds(bounds: Bounds, transform: &SymbolTransform) -> Option<Bounds> {
     let points = [
         (bounds.x, bounds.y),
@@ -2395,8 +2330,6 @@ fn transform_symbol_bounds(bounds: Bounds, transform: &SymbolTransform) -> Optio
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn selected_symbol_units(definition: &Node, unit: u32, convert: u32) -> Vec<&Node> {
     let sub_symbols: Vec<_> = children(definition, "symbol").collect();
     if sub_symbols.is_empty() {
@@ -2425,8 +2358,6 @@ fn selected_symbol_units(definition: &Node, unit: u32, convert: u32) -> Vec<&Nod
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn collect_primitives_from_unit(
     unit: &Node,
     transform: &SymbolTransform,
@@ -2458,8 +2389,6 @@ fn collect_primitives_from_unit(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn parse_symbol_primitive(
     node: &Node,
     transform: &SymbolTransform,
@@ -2550,8 +2479,6 @@ fn parse_symbol_primitive(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn symbol_primitive_stroke_width(node: &Node) -> f64 {
     child_list(node, "stroke")
         .and_then(|stroke| child_list(stroke, "width"))
@@ -2570,8 +2497,6 @@ fn symbol_primitive_stroke_width(node: &Node) -> f64 {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn rectangle_primitive_points(node: &Node) -> Option<Vec<(f64, f64)>> {
     let start = child_list(node, "start").and_then(list_items)?;
     let end = child_list(node, "end").and_then(list_items)?;
@@ -2590,8 +2515,6 @@ fn rectangle_primitive_points(node: &Node) -> Option<Vec<(f64, f64)>> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn polyline_primitive_points(node: &Node) -> Option<Vec<(f64, f64)>> {
     let points = child_list(node, "pts")?;
     let points: Vec<_> = children(points, "xy")
@@ -2611,8 +2534,6 @@ fn polyline_primitive_points(node: &Node) -> Option<Vec<(f64, f64)>> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn arc_primitive_control_points(node: &Node) -> Option<[(f64, f64); 3]> {
     let point = |name| {
         let items = child_list(node, name).and_then(list_items)?;
@@ -2629,8 +2550,6 @@ fn arc_primitive_control_points(node: &Node) -> Option<[(f64, f64); 3]> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn arc_primitive_geometry(node: &Node) -> Option<SchematicArcFact> {
     let [start, mid, end] = arc_primitive_control_points(node)?;
     circular_arc_through_three_points(start, mid, end)
@@ -2644,14 +2563,11 @@ fn arc_primitive_geometry(node: &Node) -> Option<SchematicArcFact> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn arc_primitive_points(node: &Node) -> Option<Vec<(f64, f64)>> {
     let [start, mid, end] = arc_primitive_control_points(node)?;
     Some(sample_arc_through_three_points(start, mid, end))
 }
 /// Defines the curve flatten tolerance mm constant.
-
 const CURVE_FLATTEN_TOLERANCE_MM: f64 = 0.01;
 /// Processes flattened curve points using the supplied values and schematic data.
 ///
@@ -2664,8 +2580,6 @@ const CURVE_FLATTEN_TOLERANCE_MM: f64 = 0.01;
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn flattened_curve_points(
     path: impl IntoIterator<Item = PathEl>,
     start: (f64, f64),
@@ -2696,8 +2610,6 @@ fn flattened_curve_points(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn bezier_primitive_control_points(node: &Node) -> Option<[(f64, f64); 4]> {
     let points_node = child_list(node, "pts")?;
     let coordinates: Option<Vec<_>> = children(points_node, "xy")
@@ -2721,8 +2633,6 @@ fn bezier_primitive_control_points(node: &Node) -> Option<[(f64, f64); 4]> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn bezier_primitive_points(node: &Node) -> Option<Vec<(f64, f64)>> {
     let [start, control_one, control_two, end] = bezier_primitive_control_points(node)?;
     let path = [
@@ -2746,8 +2656,6 @@ fn bezier_primitive_points(node: &Node) -> Option<Vec<(f64, f64)>> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn sample_arc_through_three_points(
     start: (f64, f64),
     mid: (f64, f64),
@@ -2780,8 +2688,6 @@ fn sample_arc_through_three_points(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn subdivide_ellipse_arc(
     start_angle: f64,
     start: (f64, f64),
@@ -2837,8 +2743,6 @@ fn subdivide_ellipse_arc(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn ellipse_primitive_points(node: &Node, is_arc: bool) -> Option<Vec<(f64, f64)>> {
     let center = child_list(node, "center").and_then(list_items)?;
     let center = (number(center.get(1)?)?, number(center.get(2)?)?);
@@ -2933,8 +2837,6 @@ fn ellipse_primitive_points(node: &Node, is_arc: bool) -> Option<Vec<(f64, f64)>
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn circular_arc_through_three_points(
     start: (f64, f64),
     mid: (f64, f64),
@@ -2955,7 +2857,11 @@ fn circular_arc_through_three_points(
     let center_x = circle.center.x;
     let center_y = circle.center.y;
     let radius = circle.radius.abs();
-    if !center_x.is_finite() || !center_y.is_finite() || !radius.is_finite() || radius <= GEOMETRY_NUMERIC_EPSILON {
+    if !center_x.is_finite()
+        || !center_y.is_finite()
+        || !radius.is_finite()
+        || radius <= GEOMETRY_NUMERIC_EPSILON
+    {
         return None;
     }
 
@@ -2990,8 +2896,6 @@ fn circular_arc_through_three_points(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn transform_primitive_points(
     points: &[(f64, f64)],
     transform: &SymbolTransform,
@@ -3026,7 +2930,6 @@ impl RulePass for BuiltinGeometryPass {
     /// # Returns
     ///
     /// The value produced by this operation.
-    ///
     fn name(&self) -> &'static str {
         "01-kicad-clippy.geometry"
     }
@@ -3039,8 +2942,6 @@ impl RulePass for BuiltinGeometryPass {
     /// # Returns
     ///
     /// The value produced by this operation.
-    ///
-
     fn run(&self, context: &RuleContext<'_>) -> Vec<Diagnostic> {
         run_geometry_checks(context)
     }
@@ -3055,7 +2956,6 @@ impl RulePass for BuiltinLabelPass {
     /// # Returns
     ///
     /// The value produced by this operation.
-    ///
     fn name(&self) -> &'static str {
         "02-kicad-clippy.labels"
     }
@@ -3068,8 +2968,6 @@ impl RulePass for BuiltinLabelPass {
     /// # Returns
     ///
     /// The value produced by this operation.
-    ///
-
     fn run(&self, context: &RuleContext<'_>) -> Vec<Diagnostic> {
         run_label_checks(context)
     }
@@ -3084,7 +2982,6 @@ impl RulePass for BuiltinAnnotationPass {
     /// # Returns
     ///
     /// The value produced by this operation.
-    ///
     fn name(&self) -> &'static str {
         "03-kicad-clippy.annotations"
     }
@@ -3097,8 +2994,6 @@ impl RulePass for BuiltinAnnotationPass {
     /// # Returns
     ///
     /// The value produced by this operation.
-    ///
-
     fn run(&self, context: &RuleContext<'_>) -> Vec<Diagnostic> {
         run_annotation_checks(context)
     }
@@ -3164,8 +3059,6 @@ pub fn run_geometry_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn schematic_has_graphical_netclass_assignments(root: &Node) -> bool {
     let mut has_assignments = false;
     walk(root, &mut |node| match head(node) {
@@ -3246,7 +3139,6 @@ impl PinAxis {
     /// # Returns
     ///
     /// The value produced by this operation.
-    ///
     const fn as_str(self) -> &'static str {
         match self {
             Self::Horizontal => "horizontal",
@@ -3282,8 +3174,6 @@ struct SymbolTransform {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn embedded_symbol_text_obstacle_diagnostics(
     wire_index: usize,
     wire: Segment,
@@ -3324,8 +3214,6 @@ fn embedded_symbol_text_obstacle_diagnostics(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn bus_obstacle_diagnostics(
     wire_index: usize,
     segment: Segment,
@@ -3366,8 +3254,6 @@ fn bus_obstacle_diagnostics(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn sheet_frame_obstacle_diagnostics(
     wire_index: usize,
     segment: Segment,
@@ -3408,8 +3294,6 @@ fn sheet_frame_obstacle_diagnostics(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn table_stroke_obstacle_diagnostics(
     wire_index: usize,
     segment: Segment,
@@ -3444,8 +3328,6 @@ fn table_stroke_obstacle_diagnostics(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn wire_crosses_no_connect_diagonal(
     wire: Segment,
     diagonal: [(f64, f64); 2],
@@ -3487,8 +3369,6 @@ fn wire_crosses_no_connect_diagonal(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn no_connect_marker_obstacle_diagnostics(
     wire_index: usize,
     segment: Segment,
@@ -3562,8 +3442,6 @@ struct WireObstacleStrokeWidths {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn sheet_table_bus_obstacle_diagnostics(
     wire_index: usize,
     segment: Segment,
@@ -3608,8 +3486,6 @@ fn sheet_table_bus_obstacle_diagnostics(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn intermediate_pin_obstacle_diagnostics(
     wire_index: usize,
     segment: Segment,
@@ -3649,8 +3525,6 @@ fn intermediate_pin_obstacle_diagnostics(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn check_wire_obstacles(
     root: &Node,
     segments: &[Segment],
@@ -3762,8 +3636,6 @@ fn check_wire_obstacles(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn wire_text_annotation_obstacle_diagnostics(
     wire_index: usize,
     segment: Segment,
@@ -3823,8 +3695,6 @@ fn wire_text_annotation_obstacle_diagnostics(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn collect_visible_field_bounds(root: &Node) -> Vec<(String, Bounds, ByteSpan)> {
     let mut fields = Vec::new();
     for symbol in children(root, "symbol") {
@@ -3872,8 +3742,6 @@ fn collect_visible_field_bounds(root: &Node) -> Vec<(String, Bounds, ByteSpan)> 
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn segment_arc_intersection_points(wire: Segment, arc: SchematicArcFact) -> Vec<Point> {
     let direction_x = wire.end.x - wire.start.x;
     let direction_y = wire.end.y - wire.start.y;
@@ -3913,7 +3781,9 @@ fn segment_arc_intersection_points(wire: Segment, arc: SchematicArcFact) -> Vec<
     let mut intersections = Vec::with_capacity(root_count);
 
     for (index, parameter) in [first_root, second_root].into_iter().enumerate() {
-        if index >= root_count || !(-GEOMETRY_NUMERIC_EPSILON..=1.0 + GEOMETRY_NUMERIC_EPSILON).contains(&parameter) {
+        if index >= root_count
+            || !(-GEOMETRY_NUMERIC_EPSILON..=1.0 + GEOMETRY_NUMERIC_EPSILON).contains(&parameter)
+        {
             continue;
         }
         let parameter = parameter.clamp(0.0, 1.0);
@@ -3944,8 +3814,6 @@ fn segment_arc_intersection_points(wire: Segment, arc: SchematicArcFact) -> Vec<
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn segment_bezier_intersection_points(
     wire: Segment,
     control_points: [(f64, f64); 4],
@@ -3973,7 +3841,9 @@ fn segment_bezier_intersection_points(
         .intersect_line(line)
         .into_iter()
         .filter(|intersection| {
-            intersection.is_finite() && (-GEOMETRY_NUMERIC_EPSILON..=1.0 + GEOMETRY_NUMERIC_EPSILON).contains(&intersection.segment_t)
+            intersection.is_finite()
+                && (-GEOMETRY_NUMERIC_EPSILON..=1.0 + GEOMETRY_NUMERIC_EPSILON)
+                    .contains(&intersection.segment_t)
         })
         .map(|intersection| {
             let line_parameter = intersection.line_t.clamp(0.0, 1.0);
@@ -3993,8 +3863,6 @@ fn segment_bezier_intersection_points(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn cubic_bezier_path_segment(control_points: [(f64, f64); 4]) -> CurvePathSeg {
     CurvePathSeg::Cubic(CurveCubicBez::new(
         CurvePoint::new(control_points[0].0, control_points[0].1),
@@ -4004,7 +3872,6 @@ fn cubic_bezier_path_segment(control_points: [(f64, f64); 4]) -> CurvePathSeg {
     ))
 }
 /// Defines the sch013 stroke distance accuracy mm constant.
-
 const SCH013_STROKE_DISTANCE_ACCURACY_MM: f64 = 1.0e-6;
 /// Defines the sch013 stroke distance epsilon mm constant.
 const SCH013_STROKE_DISTANCE_EPSILON_MM: f64 = 1.0e-6;
@@ -4018,8 +3885,6 @@ const SCH013_STROKE_DISTANCE_EPSILON_MM: f64 = 1.0e-6;
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn wire_path_min_distance(wire: Segment, path: CurvePathSeg) -> Option<f64> {
     let line = CurveLine::new(
         CurvePoint::new(wire.start.x, wire.start.y),
@@ -4043,8 +3908,6 @@ fn wire_path_min_distance(wire: Segment, path: CurvePathSeg) -> Option<f64> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn wire_within_path_stroke(
     wire: Segment,
     path: CurvePathSeg,
@@ -4076,8 +3939,6 @@ fn wire_within_path_stroke(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn wire_within_sampled_path_stroke(
     wire: Segment,
     points: &[(f64, f64)],
@@ -4121,7 +3982,6 @@ fn wire_within_sampled_path_stroke(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
 fn wire_within_circle_stroke(
     wire: Segment,
     center: Point,
@@ -4174,8 +4034,6 @@ fn wire_within_circle_stroke(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn wire_crosses_sheet_graphic_with_wire_stroke(
     wire: Segment,
     graphic: &SchematicGraphicFact,
@@ -4265,8 +4123,6 @@ fn wire_crosses_sheet_graphic_with_wire_stroke(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn wire_crosses_polygon_interior(wire: Segment, polygon: &Polygon<f64>) -> bool {
     let direction_x = wire.end.x - wire.start.x;
     let direction_y = wire.end.y - wire.start.y;
@@ -4303,7 +4159,8 @@ fn wire_crosses_polygon_interior(wire: Segment, polygon: &Polygon<f64>) -> bool 
             parameter.mul_add(direction_x, wire.start.x),
             parameter.mul_add(direction_y, wire.start.y),
         );
-        polygon.contains(&midpoint) && Euclidean.distance(&midpoint, polygon.exterior()) > GEOMETRY_TOLERANCE_MM
+        polygon.contains(&midpoint)
+            && Euclidean.distance(&midpoint, polygon.exterior()) > GEOMETRY_TOLERANCE_MM
     })
 }
 /// Processes wire crosses bitmap image using the supplied values and schematic data.
@@ -4316,8 +4173,6 @@ fn wire_crosses_polygon_interior(wire: Segment, polygon: &Polygon<f64>) -> bool 
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn wire_crosses_bitmap_image(wire: Segment, corners: &[(f64, f64); 4]) -> bool {
     let mut ring: Vec<_> = corners
         .iter()
@@ -4339,7 +4194,6 @@ fn wire_crosses_bitmap_image(wire: Segment, corners: &[(f64, f64); 4]) -> bool {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
 fn wire_without_pin_contact_region(
     wire: Segment,
     reference: &str,
@@ -4397,8 +4251,6 @@ fn wire_without_pin_contact_region(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn symbol_primitive_has_centerline_collision(
     wire: Segment,
     primitive: &SchematicPrimitiveFact,
@@ -4455,8 +4307,6 @@ fn symbol_primitive_has_centerline_collision(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn symbol_primitive_wire_stroke_collision(
     wire: Segment,
     primitive: &SchematicPrimitiveFact,
@@ -4515,8 +4365,6 @@ fn symbol_primitive_wire_stroke_collision(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn wire_crosses_symbol_primitive_with_wire_stroke(
     wire: Segment,
     primitive: &SchematicPrimitiveFact,
@@ -4575,16 +4423,16 @@ fn wire_crosses_symbol_primitive_with_wire_stroke(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn wire_intersection_is_allowed_pin(
     point: Point,
     wire: Segment,
     reference: &str,
     pins: &[SchematicPinFact],
 ) -> bool {
-    (distance(point, wire.start) <= GEOMETRY_TOLERANCE_MM && wire_endpoint_is_pin(wire.start, reference, pins))
-        || (distance(point, wire.end) <= GEOMETRY_TOLERANCE_MM && wire_endpoint_is_pin(wire.end, reference, pins))
+    (distance(point, wire.start) <= GEOMETRY_TOLERANCE_MM
+        && wire_endpoint_is_pin(wire.start, reference, pins))
+        || (distance(point, wire.end) <= GEOMETRY_TOLERANCE_MM
+            && wire_endpoint_is_pin(wire.end, reference, pins))
 }
 /// Processes wire endpoint is pin using the supplied values and schematic data.
 ///
@@ -4597,8 +4445,6 @@ fn wire_intersection_is_allowed_pin(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn wire_endpoint_is_pin(endpoint: Point, reference: &str, pins: &[SchematicPinFact]) -> bool {
     pins.iter().any(|pin| {
         pin.reference == reference
@@ -4621,8 +4467,6 @@ fn wire_endpoint_is_pin(endpoint: Point, reference: &str, pins: &[SchematicPinFa
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn geo_line(start: Point, end: Point) -> Line<f64> {
     Line::new(start, end)
 }
@@ -4639,7 +4483,6 @@ fn geo_line(start: Point, end: Point) -> Line<f64> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
 fn segment_intersection_points(
     first: Segment,
     second_start: Point,
@@ -4674,10 +4517,9 @@ fn segment_intersection_points(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn point_on_segment_any(point: Point, start: Point, end: Point) -> bool {
-    Euclidean.distance(&GeoPoint::new(point.x, point.y), &geo_line(start, end)) <= GEOMETRY_TOLERANCE_MM
+    Euclidean.distance(&GeoPoint::new(point.x, point.y), &geo_line(start, end))
+        <= GEOMETRY_TOLERANCE_MM
 }
 /// Processes point segment distance using the supplied values and schematic data.
 ///
@@ -4690,8 +4532,6 @@ fn point_on_segment_any(point: Point, start: Point, end: Point) -> bool {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn point_segment_distance(point: Point, start: Point, end: Point) -> f64 {
     Euclidean.distance(&GeoPoint::new(point.x, point.y), &geo_line(start, end))
 }
@@ -4705,8 +4545,6 @@ fn point_segment_distance(point: Point, start: Point, end: Point) -> f64 {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn point_in_polygon(point: Point, polygon: &[(f64, f64)]) -> bool {
     if polygon.len() < 3 {
         return false;
@@ -4724,7 +4562,8 @@ fn point_in_polygon(point: Point, polygon: &[(f64, f64)]) -> bool {
 
     let geometry = Polygon::new(LineString::new(ring), Vec::new());
     let query = GeoPoint::new(point.x, point.y);
-    geometry.contains(&query) || Euclidean.distance(&query, geometry.exterior()) <= GEOMETRY_TOLERANCE_MM
+    geometry.contains(&query)
+        || Euclidean.distance(&query, geometry.exterior()) <= GEOMETRY_TOLERANCE_MM
 }
 /// Processes check pin orientation using the supplied values and schematic data.
 ///
@@ -4736,8 +4575,6 @@ fn point_in_polygon(point: Point, polygon: &[(f64, f64)]) -> bool {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn check_pin_orientation(root: &Node, segments: &[Segment]) -> Vec<Diagnostic> {
     let Some(library_symbols) = child_list(root, "lib_symbols") else {
         return Vec::new();
@@ -4757,8 +4594,6 @@ fn check_pin_orientation(root: &Node, segments: &[Segment]) -> Vec<Diagnostic> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn check_instance_pin_orientation(
     instance: &Node,
     library_symbols: &Node,
@@ -4800,8 +4635,6 @@ fn check_instance_pin_orientation(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn check_no_connect_markers(root: &Node) -> Vec<Diagnostic> {
     let markers = collect_nodes(root, "no_connect");
     if markers.is_empty() {
@@ -4839,8 +4672,6 @@ fn check_no_connect_markers(root: &Node) -> Vec<Diagnostic> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn collect_placed_pin_positions(root: &Node) -> Option<Vec<Point>> {
     let mut positions = Vec::new();
     let Some(library_symbols) = child_list(root, "lib_symbols") else {
@@ -4892,8 +4723,6 @@ fn collect_placed_pin_positions(root: &Node) -> Option<Vec<Point>> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn read_symbol_transform(instance: &Node) -> Option<SymbolTransform> {
     let reference = children(instance, "property").find_map(|property| {
         let items = list_items(property)?;
@@ -4940,8 +4769,6 @@ fn read_symbol_transform(instance: &Node) -> Option<SymbolTransform> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn instance_integer(instance: &Node, name: &str) -> Option<u32> {
     child_list(instance, name)
         .and_then(list_items)
@@ -4960,8 +4787,6 @@ fn instance_integer(instance: &Node, name: &str) -> Option<u32> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn embedded_symbol_pins(library_symbol: &Node, unit: u32, convert: u32) -> Vec<&Node> {
     let mut pin_nodes = Vec::new();
     for sub_symbol in children(library_symbol, "symbol") {
@@ -4995,8 +4820,6 @@ fn embedded_symbol_pins(library_symbol: &Node, unit: u32, convert: u32) -> Vec<&
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn pin_orientation_diagnostic(
     instance: &Node,
     pin: &Node,
@@ -5063,8 +4886,6 @@ fn pin_orientation_diagnostic(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn sub_symbol_unit_convert(name: &str) -> Option<(u32, u32)> {
     let (prefix, convert) = name.rsplit_once('_')?;
     let (_, unit) = prefix.rsplit_once('_')?;
@@ -5079,13 +4900,18 @@ fn sub_symbol_unit_convert(name: &str) -> Option<(u32, u32)> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn cardinal_rotation(angle: f64) -> Option<i32> {
     let normalized = angle.rem_euclid(FULL_ROTATION_DEGREES);
-    [(0.0, 0), (QUARTER_ROTATION_DEGREES, 90), (HALF_ROTATION_DEGREES, 180), (THREE_QUARTER_ROTATION_DEGREES, 270)]
-        .into_iter()
-        .find_map(|(degrees, rotation)| ((normalized - degrees).abs() <= GEOMETRY_TOLERANCE_MM).then_some(rotation))
+    [
+        (0.0, 0),
+        (QUARTER_ROTATION_DEGREES, 90),
+        (HALF_ROTATION_DEGREES, 180),
+        (THREE_QUARTER_ROTATION_DEGREES, 270),
+    ]
+    .into_iter()
+    .find_map(|(degrees, rotation)| {
+        ((normalized - degrees).abs() <= GEOMETRY_TOLERANCE_MM).then_some(rotation)
+    })
 }
 
 /// Builds the common `KiCad` symbol-local to schematic-space linear transform.
@@ -5102,7 +4928,6 @@ fn cardinal_rotation(angle: f64) -> Option<i32> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
 fn symbol_transform_affine(rotation_degrees: f64, mirror: Option<&str>) -> Option<Affine> {
     if !rotation_degrees.is_finite() {
         return None;
@@ -5129,8 +4954,6 @@ fn symbol_transform_affine(rotation_degrees: f64, mirror: Option<&str>) -> Optio
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn transform_symbol_point(
     x: f64,
     y: f64,
@@ -5158,8 +4981,6 @@ impl Cross for IndexedSegment {
     /// # Returns
     ///
     /// The value produced by this operation.
-    ///
-
     fn line(&self) -> Line<f64> {
         geo_line(self.segment.start, self.segment.end)
     }
@@ -5175,8 +4996,6 @@ impl Cross for IndexedSegment {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn check_wire_geometry(root: &Node, segments: &[Segment], junctions: &[Point]) -> Vec<Diagnostic> {
     let mut diagnostics = collect_invalid_wire_diagnostics(root);
     for segment in segments {
@@ -5282,8 +5101,6 @@ fn check_wire_geometry(root: &Node, segments: &[Segment], junctions: &[Point]) -
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn collect_invalid_wire_diagnostics(root: &Node) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     walk(root, &mut |node| {
@@ -5313,8 +5130,6 @@ fn collect_invalid_wire_diagnostics(root: &Node) -> Vec<Diagnostic> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn check_label_wire_clearance(root: &Node, segments: &[Segment]) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     for (kind, label, _point, span, node) in collect_label_nodes(root) {
@@ -5347,8 +5162,6 @@ fn check_label_wire_clearance(root: &Node, segments: &[Segment]) -> Vec<Diagnost
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn check_text_box_layout(root: &Node, segments: &[Segment]) -> Vec<Diagnostic> {
     let mut diagnostics: Vec<_> = collect_nodes(root, "text")
         .into_iter()
@@ -5392,8 +5205,6 @@ struct TextBoxRecord {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn inspect_text_box(node: &Node, index: usize) -> (Option<TextBoxRecord>, Vec<Diagnostic>) {
     let (metrics, error) = read_text_box_metrics(node, index);
     let Some(metrics) = metrics else {
@@ -5413,7 +5224,9 @@ fn inspect_text_box(node: &Node, index: usize) -> (Option<TextBoxRecord>, Vec<Di
             metrics.span,
         ));
     }
-    if metrics.stroke_width <= 0.0 && metrics.bounds.width + GEOMETRY_TOLERANCE_MM < required_width + 10.16 {
+    if metrics.stroke_width <= 0.0
+        && metrics.bounds.width + GEOMETRY_TOLERANCE_MM < required_width + 10.16
+    {
         diagnostics.push(at_span(BuiltinRuleId::Sch008,
             format!(
                 "unbordered text_box {index} needs at least {:.2} mm width for reliable single-line rendering",
@@ -5458,8 +5271,6 @@ struct TextBoxMetrics {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn read_text_box_metrics(
     node: &Node,
     index: usize,
@@ -5507,7 +5318,11 @@ fn read_text_box_metrics(
             )),
         );
     };
-    if pads.len() != 4 || pads.iter().any(|pad| (pad - 1.27).abs() > GEOMETRY_TOLERANCE_MM) {
+    if pads.len() != 4
+        || pads
+            .iter()
+            .any(|pad| (pad - 1.27).abs() > GEOMETRY_TOLERANCE_MM)
+    {
         return (
             None,
             Some(at_span(
@@ -5566,8 +5381,6 @@ fn read_text_box_metrics(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn check_text_box_interactions(boxes: &[TextBoxRecord], segments: &[Segment]) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     for (index, first) in boxes.iter().enumerate() {
@@ -5602,8 +5415,6 @@ fn check_text_box_interactions(boxes: &[TextBoxRecord], segments: &[Segment]) ->
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn check_block_annotation_structure(root: &Node) -> Vec<Diagnostic> {
     collect_nodes(root, "text_box")
         .into_iter()
@@ -5636,8 +5447,6 @@ fn check_block_annotation_structure(root: &Node) -> Vec<Diagnostic> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn collect_nodes<'a>(root: &'a Node, name: &'a str) -> Vec<&'a Node> {
     children(root, name).collect()
 }
@@ -5650,8 +5459,6 @@ fn collect_nodes<'a>(root: &'a Node, name: &'a str) -> Vec<&'a Node> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn collect_label_nodes(root: &Node) -> Vec<(String, String, Point, ByteSpan, &Node)> {
     let mut labels = Vec::new();
     for node in collect_nodes(root, "label")
@@ -5691,8 +5498,6 @@ fn collect_label_nodes(root: &Node) -> Vec<(String, String, Point, ByteSpan, &No
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn text_visual_bounds(value: &str, node: &Node) -> Option<Bounds> {
     let at = child_list(node, "at").and_then(list_items)?;
     let effects = child_list(node, "effects");
@@ -5727,7 +5532,9 @@ fn text_visual_bounds(value: &str, node: &Node) -> Option<Bounds> {
 
     // KiCad's anchor and justification define a local text rectangle. Kurbo
     // applies the cardinal rotation and returns its world-space AABB.
-    let (left, top, rotation) = if (normalized_angle - QUARTER_ROTATION_DEGREES).abs() < GEOMETRY_TOLERANCE_MM {
+    let (left, top, rotation) = if (normalized_angle - QUARTER_ROTATION_DEGREES).abs()
+        < GEOMETRY_TOLERANCE_MM
+    {
         (left, -height / 2.0, -std::f64::consts::FRAC_PI_2)
     } else if (normalized_angle - THREE_QUARTER_ROTATION_DEGREES).abs() < GEOMETRY_TOLERANCE_MM {
         (left, -height / 2.0, std::f64::consts::FRAC_PI_2)
@@ -5758,7 +5565,6 @@ fn text_visual_bounds(value: &str, node: &Node) -> Option<Bounds> {
     })
 }
 /// Defines the newstroke glyph limit constant.
-
 const NEWSTROKE_GLYPH_LIMIT: u32 = 0x27ff;
 /// Defines the newstroke measure glyph constant.
 const NEWSTROKE_MEASURE_GLYPH: &str = "H";
@@ -5767,8 +5573,6 @@ const NEWSTROKE_MEASURE_GLYPH: &str = "H";
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn newstroke_sentinel() -> &'static (Vec<VectorPoint>, f64) {
     /// Defines the sentinel static value.
     static SENTINEL: OnceLock<(Vec<VectorPoint>, f64)> = OnceLock::new();
@@ -5792,7 +5596,6 @@ fn newstroke_sentinel() -> &'static (Vec<VectorPoint>, f64) {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
 fn newstroke_text_metrics_ratio(value: &str) -> (f64, f64) {
     let (sentinel, cap_height) = newstroke_sentinel();
     let Some(sentinel_first) = sentinel.first() else {
@@ -5846,8 +5649,6 @@ fn newstroke_text_metrics_ratio(value: &str) -> (f64, f64) {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn required_text_box_size(value: &str, font_size: f64, padding: f64) -> (f64, f64) {
     let lines: Vec<_> = value.lines().collect();
     let line_count = u32::try_from(lines.len().max(1)).unwrap_or(u32::MAX);
@@ -5870,11 +5671,11 @@ fn required_text_box_size(value: &str, font_size: f64, padding: f64) -> (f64, f6
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn bounds_overlap(first: Bounds, second: Bounds) -> bool {
-    (first.x + first.width).min(second.x + second.width) - first.x.max(second.x) > GEOMETRY_TOLERANCE_MM
-        && (first.y + first.height).min(second.y + second.height) - first.y.max(second.y) > GEOMETRY_TOLERANCE_MM
+    (first.x + first.width).min(second.x + second.width) - first.x.max(second.x)
+        > GEOMETRY_TOLERANCE_MM
+        && (first.y + first.height).min(second.y + second.height) - first.y.max(second.y)
+            > GEOMETRY_TOLERANCE_MM
 }
 /// Processes wire overlaps bounds using the supplied values and schematic data.
 ///
@@ -5887,8 +5688,6 @@ fn bounds_overlap(first: Bounds, second: Bounds) -> bool {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn wire_overlaps_bounds(segment: Segment, bounds: Bounds, strict: bool) -> bool {
     /// Defines the tolerance constant.
     const TOLERANCE: f64 = GEOMETRY_TOLERANCE_MM;
@@ -5948,8 +5747,6 @@ fn wire_overlaps_bounds(segment: Segment, bounds: Bounds, strict: bool) -> bool 
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn line_hits_bounds(segment: Segment, bounds: Bounds) -> bool {
     wire_overlaps_bounds(segment, bounds, false)
 }
@@ -5963,8 +5760,6 @@ fn line_hits_bounds(segment: Segment, bounds: Bounds) -> bool {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn strict_line_hits_bounds(segment: Segment, bounds: Bounds) -> bool {
     wire_overlaps_bounds(segment, bounds, true)
 }
@@ -5979,8 +5774,6 @@ fn strict_line_hits_bounds(segment: Segment, bounds: Bounds) -> bool {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn at_span(code: BuiltinRuleId, message: impl Into<String>, span: ByteSpan) -> Diagnostic {
     let mut diagnostic = Diagnostic::for_builtin_rule(code, Severity::Error, message);
     diagnostic.span = Some(span);
@@ -5996,8 +5789,6 @@ fn at_span(code: BuiltinRuleId, message: impl Into<String>, span: ByteSpan) -> D
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn check_label_topology(root: &Node, segments: &[Segment]) -> Vec<Diagnostic> {
     let labels = collect_labels(root);
     let junctions = collect_points(root, "junction");
@@ -6082,8 +5873,6 @@ fn check_label_topology(root: &Node, segments: &[Segment]) -> Vec<Diagnostic> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn wire_components(
     segments: &[Segment],
     points: &[Point],
@@ -6151,8 +5940,6 @@ fn wire_components(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn point_key(point: Point) -> String {
     format!("{:.3}:{:.3}", point.x, point.y)
 }
@@ -6182,8 +5969,6 @@ pub fn physical_wire_component_key(x_mm: f64, y_mm: f64) -> String {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn has_unmarked_wire_endpoint(point: Point, segments: &[Segment], junctions: &[Point]) -> bool {
     let terminates_another_wire = segments.iter().any(|other| is_endpoint(point, *other));
     terminates_another_wire
@@ -6260,8 +6045,6 @@ pub fn physical_wire_component_ids(facts: &SchematicFacts) -> BTreeMap<String, u
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn check_label_text_collisions(root: &Node) -> Vec<Diagnostic> {
     let mut labels = Vec::new();
     for (kind, label, _point, span, node) in collect_label_nodes(root) {
@@ -6326,8 +6109,6 @@ fn check_label_text_collisions(root: &Node) -> Vec<Diagnostic> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn check_symbol_field_clearance(
     root: &Node,
     segments: &[Segment],
@@ -6438,8 +6219,6 @@ fn check_symbol_field_clearance(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn geo_rect(bounds: Bounds) -> GeoRect<f64> {
     let opposite_x = bounds.x + bounds.width;
     let opposite_y = bounds.y + bounds.height;
@@ -6464,8 +6243,6 @@ fn geo_rect(bounds: Bounds) -> GeoRect<f64> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn point_in_bounds(point: Point, bounds: Bounds) -> bool {
     let expanded = Bounds {
         x: bounds.x - GEOMETRY_TOLERANCE_MM,
@@ -6485,8 +6262,6 @@ fn point_in_bounds(point: Point, bounds: Bounds) -> bool {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn point_bounds_distance(point: Point, bounds: Bounds) -> f64 {
     Euclidean.distance(&GeoPoint::new(point.x, point.y), &geo_rect(bounds))
 }
@@ -6499,8 +6274,6 @@ fn point_bounds_distance(point: Point, bounds: Bounds) -> f64 {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn schematic_polygon(primitive: &SchematicPrimitiveFact) -> Option<Polygon<f64>> {
     if !primitive.closed || primitive.points_mm.len() < 3 {
         return None;
@@ -6526,8 +6299,6 @@ fn schematic_polygon(primitive: &SchematicPrimitiveFact) -> Option<Polygon<f64>>
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn schematic_path(primitive: &SchematicPrimitiveFact) -> LineString<f64> {
     LineString::new(
         primitive
@@ -6547,8 +6318,6 @@ fn schematic_path(primitive: &SchematicPrimitiveFact) -> LineString<f64> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn symbol_primitive_intersects_bounds(bounds: Bounds, primitive: &SchematicPrimitiveFact) -> bool {
     if let Some((center_x, center_y, radius)) = primitive.circle_mm {
         let center = Point {
@@ -6575,8 +6344,6 @@ fn symbol_primitive_intersects_bounds(bounds: Bounds, primitive: &SchematicPrimi
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn symbol_primitive_contains_bounds(bounds: Bounds, primitive: &SchematicPrimitiveFact) -> bool {
     if let Some((center_x, center_y, radius)) = primitive.circle_mm {
         let inner_radius = radius - primitive.stroke_width_mm / 2.0;
@@ -6624,8 +6391,6 @@ fn symbol_primitive_contains_bounds(bounds: Bounds, primitive: &SchematicPrimiti
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn property_is_hidden(property: &Node) -> bool {
     child_list(property, "effects").is_some_and(|effects| child_list(effects, "hide").is_some())
 }
@@ -6638,8 +6403,6 @@ fn property_is_hidden(property: &Node) -> bool {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn text_box_bounds(node: &Node) -> Option<Bounds> {
     let at = child_list(node, "at").and_then(list_items)?;
     let size = child_list(node, "size").and_then(list_items)?;
@@ -6659,8 +6422,6 @@ fn text_box_bounds(node: &Node) -> Option<Bounds> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn check_label_kind_consistency(root: &Node) -> Vec<Diagnostic> {
     let mut label_kinds: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for (kind, label, _point, _span) in collect_labels(root) {
@@ -6692,8 +6453,6 @@ fn check_label_kind_consistency(root: &Node) -> Vec<Diagnostic> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn walk<'a>(node: &'a Node, visit: &mut impl FnMut(&'a Node)) {
     visit(node);
     if let Node::List { items, .. } = node {
@@ -6711,8 +6470,6 @@ fn walk<'a>(node: &'a Node, visit: &mut impl FnMut(&'a Node)) {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn list_items(node: &Node) -> Option<&[Node]> {
     if let Node::List { items, .. } = node {
         Some(items)
@@ -6729,8 +6486,6 @@ fn list_items(node: &Node) -> Option<&[Node]> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn head(node: &Node) -> Option<&str> {
     let Node::List { items, .. } = node else {
         return None;
@@ -6754,8 +6509,6 @@ fn head(node: &Node) -> Option<&str> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn children<'a>(node: &'a Node, name: &'a str) -> impl Iterator<Item = &'a Node> + 'a {
     list_items(node)
         .into_iter()
@@ -6771,8 +6524,6 @@ fn children<'a>(node: &'a Node, name: &'a str) -> impl Iterator<Item = &'a Node>
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn atom_value(node: &Node) -> Option<&str> {
     let Node::Atom { atom, .. } = node else {
         return None;
@@ -6790,8 +6541,6 @@ fn atom_value(node: &Node) -> Option<&str> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn number(node: &Node) -> Option<f64> {
     atom_value(node)?.parse().ok()
 }
@@ -6805,8 +6554,6 @@ fn number(node: &Node) -> Option<f64> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn child_list<'a>(node: &'a Node, name: &'a str) -> Option<&'a Node> {
     children(node, name).next()
 }
@@ -6819,8 +6566,6 @@ fn child_list<'a>(node: &'a Node, name: &'a str) -> Option<&'a Node> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn point_from_at(node: &Node) -> Option<Point> {
     let at = child_list(node, "at")?;
     let items = list_items(at)?;
@@ -6838,8 +6583,6 @@ fn point_from_at(node: &Node) -> Option<Point> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 const fn span_of(node: &Node) -> ByteSpan {
     match node {
         Node::List { span, .. } | Node::Atom { span, .. } => ByteSpan::new(span.start, span.end),
@@ -6854,8 +6597,6 @@ const fn span_of(node: &Node) -> ByteSpan {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn collect_explicit_wire_stroke_widths(root: &Node) -> BTreeMap<usize, f64> {
     let mut widths = BTreeMap::new();
     walk(root, &mut |node| {
@@ -6946,8 +6687,6 @@ pub fn collect_points(root: &Node, name: &str) -> Vec<Point> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn collect_labels(root: &Node) -> Vec<(String, String, Point, ByteSpan)> {
     let mut labels = Vec::new();
     walk(root, &mut |node| {
@@ -6979,8 +6718,6 @@ fn collect_labels(root: &Node) -> Vec<(String, String, Point, ByteSpan)> {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn point_on_segment(point: Point, segment: &Segment) -> bool {
     point_on_segment_any(point, segment.start, segment.end)
 }
@@ -6994,10 +6731,9 @@ fn point_on_segment(point: Point, segment: &Segment) -> bool {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn is_endpoint(point: Point, segment: Segment) -> bool {
-    distance(point, segment.start) < GEOMETRY_TOLERANCE_MM || distance(point, segment.end) < GEOMETRY_TOLERANCE_MM
+    distance(point, segment.start) < GEOMETRY_TOLERANCE_MM
+        || distance(point, segment.end) < GEOMETRY_TOLERANCE_MM
 }
 /// Processes distance using the supplied values and schematic data.
 ///
@@ -7009,8 +6745,6 @@ fn is_endpoint(point: Point, segment: Segment) -> bool {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn distance(first: Point, second: Point) -> f64 {
     (first.x - second.x).hypot(first.y - second.y)
 }
@@ -7025,8 +6759,6 @@ fn distance(first: Point, second: Point) -> f64 {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn at_segment(code: BuiltinRuleId, message: &str, segment: Segment) -> Diagnostic {
     let mut diagnostic = Diagnostic::new(code, Severity::Error, message);
     diagnostic.span = Some(segment.span);
@@ -7044,8 +6776,6 @@ fn at_segment(code: BuiltinRuleId, message: &str, segment: Segment) -> Diagnosti
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn at_point(code: BuiltinRuleId, message: String, point: Point, span: ByteSpan) -> Diagnostic {
     let mut diagnostic = Diagnostic::new(code, Severity::Error, message);
     diagnostic.span = Some(span);
@@ -7072,8 +6802,6 @@ mod tests {
     /// # Returns
     ///
     /// The value produced by this operation.
-    ///
-
     fn document(body: &str) -> SchematicDocument {
         SchematicDocument::from_text("fixture.kicad_sch", format!("(kicad_sch {body})"))
             .expect("fixture parses")
@@ -7921,7 +7649,6 @@ mod tests {
         assert!(super::transform_symbol_point(2.0, 3.0, f64::NAN, None).is_none());
     }
     /// Defines the embedded pin constant.
-
     const EMBEDDED_PIN: &str = r#"
         (lib_symbols
           (symbol "Device:Test"
@@ -8347,7 +8074,6 @@ mod tests {
         );
     }
     /// Defines the triangle symbol constant.
-
     const TRIANGLE_SYMBOL: &str = r#"
         (lib_symbols
           (symbol "Test:Triangle"

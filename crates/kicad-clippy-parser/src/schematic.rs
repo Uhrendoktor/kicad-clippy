@@ -29,7 +29,6 @@ impl SchematicDocument {
     /// # Returns
     ///
     /// The value produced by this operation.
-    ///
     pub fn from_path(path: impl AsRef<Path>) -> Result<Self, SchematicParseError> {
         let path = path.as_ref().to_path_buf();
         let text = fs::read_to_string(&path).map_err(|source| SchematicParseError::Io {
@@ -53,7 +52,6 @@ impl SchematicDocument {
     /// # Returns
     ///
     /// The value produced by this operation.
-    ///
     pub fn from_text(
         path: impl Into<PathBuf>,
         text: impl Into<String>,
@@ -131,8 +129,6 @@ impl SchematicDocument {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn unescape_quoted_atoms(nodes: &mut [Node], source: &str) {
     for node in nodes {
         match node {
@@ -162,8 +158,6 @@ fn unescape_quoted_atoms(nodes: &mut [Node], source: &str) {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn root_name(document: &CstDocument) -> Option<&str> {
     let Node::List { items, .. } = document.nodes.first()? else {
         return None;
@@ -224,7 +218,6 @@ mod tests {
     use super::SchematicDocument;
     use kicad_clippy_core::ByteSpan;
     /// Defines the schematic constant.
-
     const SCHEMATIC: &str =
         "(kicad_sch (version 20250101) (generator eeschema) (uuid \"root-id\"))";
     /// Processes parses only a kicad schematic root using the supplied values and schematic data.

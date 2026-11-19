@@ -11,8 +11,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::generic::{
-    GEOMETRY_TOLERANCE_MM, STROKE_CLEARANCE_MARGIN_MM, SchematicFacts,
-    physical_wire_component_ids,
+    GEOMETRY_TOLERANCE_MM, STROKE_CLEARANCE_MARGIN_MM, SchematicFacts, physical_wire_component_ids,
 };
 
 /// Currently supported project-profile schema version.
@@ -274,7 +273,6 @@ impl LintProfile {
     /// # Returns
     ///
     /// The value produced by this operation.
-    ///
     pub fn from_path(path: impl AsRef<Path>) -> Result<Self, MetadataError> {
         let content = fs::read_to_string(path).map_err(MetadataError::Io)?;
         let profile: Self = serde_json::from_str(&content).map_err(MetadataError::Json)?;
@@ -370,8 +368,6 @@ impl LintProfile {
     /// # Returns
     ///
     /// The value produced by this operation.
-    ///
-
     fn validate_profile_references(&self, references: &BTreeSet<String>) -> Vec<Diagnostic> {
         self.components
             .keys()
@@ -397,8 +393,6 @@ impl LintProfile {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_direct_wire_connectivity(
     pairs: &[DirectWirePair],
     forbidden_labels: &BTreeSet<String>,
@@ -436,8 +430,6 @@ fn validate_direct_wire_connectivity(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_direct_wire_pair(
     pair: &DirectWirePair,
     facts: &SchematicFacts,
@@ -507,8 +499,20 @@ fn validate_direct_wire_pair(
         ));
     }
     if first_attached && second_attached {
-        let first_key = format!("{:.*}:{:.*}", COORDINATE_KEY_DECIMAL_PLACES, first_point.0, COORDINATE_KEY_DECIMAL_PLACES, first_point.1);
-        let second_key = format!("{:.*}:{:.*}", COORDINATE_KEY_DECIMAL_PLACES, second_point.0, COORDINATE_KEY_DECIMAL_PLACES, second_point.1);
+        let first_key = format!(
+            "{:.*}:{:.*}",
+            COORDINATE_KEY_DECIMAL_PLACES,
+            first_point.0,
+            COORDINATE_KEY_DECIMAL_PLACES,
+            first_point.1
+        );
+        let second_key = format!(
+            "{:.*}:{:.*}",
+            COORDINATE_KEY_DECIMAL_PLACES,
+            second_point.0,
+            COORDINATE_KEY_DECIMAL_PLACES,
+            second_point.1
+        );
         let first_component = component_ids.get(&first_key).copied();
         let second_component = component_ids.get(&second_key).copied();
         if first_component != second_component {
@@ -553,8 +557,6 @@ fn validate_direct_wire_pair(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_forbidden_direct_wire_labels(
     forbidden_labels: &BTreeSet<String>,
     protected_components: &BTreeSet<usize>,
@@ -566,7 +568,13 @@ fn validate_forbidden_direct_wire_labels(
         if label.kind != "label" || !forbidden_labels.contains(&label.name) {
             return false;
         }
-        let key = format!("{:.*}:{:.*}", COORDINATE_KEY_DECIMAL_PLACES, label.position_mm.0, COORDINATE_KEY_DECIMAL_PLACES, label.position_mm.1);
+        let key = format!(
+            "{:.*}:{:.*}",
+            COORDINATE_KEY_DECIMAL_PLACES,
+            label.position_mm.0,
+            COORDINATE_KEY_DECIMAL_PLACES,
+            label.position_mm.1
+        );
         component_ids
             .get(&key)
             .is_some_and(|component| protected_components.contains(component))
@@ -593,8 +601,6 @@ fn validate_forbidden_direct_wire_labels(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_common_pin_groups(
     groups: &[CommonPinNetGroup],
     facts: &SchematicFacts,
@@ -622,8 +628,6 @@ fn validate_common_pin_groups(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_common_pin_group(
     group: &CommonPinNetGroup,
     facts: &SchematicFacts,
@@ -668,8 +672,6 @@ fn validate_common_pin_group(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_common_pin_group_netlist(
     group: &CommonPinNetGroup,
     netlist: Option<&Netlist>,
@@ -734,8 +736,6 @@ fn validate_common_pin_group_netlist(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_physical_wire_groups(
     groups: &[PhysicalWireGroup],
     facts: &SchematicFacts,
@@ -760,8 +760,6 @@ fn validate_physical_wire_groups(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_physical_wire_group(
     group: &PhysicalWireGroup,
     facts: &SchematicFacts,
@@ -823,7 +821,13 @@ fn validate_physical_wire_group(
             ));
             continue;
         }
-        let key = format!("{:.*}:{:.*}", COORDINATE_KEY_DECIMAL_PLACES, pin.position_mm.0, COORDINATE_KEY_DECIMAL_PLACES, pin.position_mm.1);
+        let key = format!(
+            "{:.*}:{:.*}",
+            COORDINATE_KEY_DECIMAL_PLACES,
+            pin.position_mm.0,
+            COORDINATE_KEY_DECIMAL_PLACES,
+            pin.position_mm.1
+        );
         if let Some(component) = component_ids.get(&key).copied() {
             roots.insert(component);
         } else {
@@ -860,8 +864,6 @@ fn validate_physical_wire_group(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn invalid_physical_wire_reference(group_name: &str, pin_ref: &str) -> Diagnostic {
     Diagnostic::for_builtin_rule(
         BuiltinRuleId::Sch004,
@@ -880,8 +882,6 @@ fn invalid_physical_wire_reference(group_name: &str, pin_ref: &str) -> Diagnosti
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_separate_wire_pairs(
     pairs: &[SeparateWirePair],
     facts: &SchematicFacts,
@@ -914,8 +914,6 @@ fn validate_separate_wire_pairs(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_separate_wire_pair(
     pair: &SeparateWirePair,
     facts: &SchematicFacts,
@@ -965,7 +963,10 @@ fn validate_separate_wire_pair(
         if !point_is_on_wire(point, facts) {
             return None;
         }
-        let key = format!("{:.*}:{:.*}", COORDINATE_KEY_DECIMAL_PLACES, point.0, COORDINATE_KEY_DECIMAL_PLACES, point.1);
+        let key = format!(
+            "{:.*}:{:.*}",
+            COORDINATE_KEY_DECIMAL_PLACES, point.0, COORDINATE_KEY_DECIMAL_PLACES, point.1
+        );
         component_ids.get(&key).copied()
     };
     let first_component = physical_component(first_pin.position_mm);
@@ -1028,8 +1029,6 @@ fn validate_separate_wire_pair(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn common_pin_group_configuration_error(group: &CommonPinNetGroup) -> Option<Diagnostic> {
     let group_name = group.name.trim();
     let unique_pins: BTreeSet<_> = group.pins.iter().collect();
@@ -1057,8 +1056,6 @@ fn common_pin_group_configuration_error(group: &CommonPinNetGroup) -> Option<Dia
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn resolve_common_pin_group_components(
     group: &CommonPinNetGroup,
     facts: &SchematicFacts,
@@ -1101,7 +1098,13 @@ fn resolve_common_pin_group_components(
             ));
             continue;
         }
-        let key = format!("{:.*}:{:.*}", COORDINATE_KEY_DECIMAL_PLACES, pin.position_mm.0, COORDINATE_KEY_DECIMAL_PLACES, pin.position_mm.1);
+        let key = format!(
+            "{:.*}:{:.*}",
+            COORDINATE_KEY_DECIMAL_PLACES,
+            pin.position_mm.0,
+            COORDINATE_KEY_DECIMAL_PLACES,
+            pin.position_mm.1
+        );
         let Some(component) = component_ids.get(&key).copied() else {
             diagnostics.push(Diagnostic::for_builtin_rule(
                 BuiltinRuleId::Sch004,
@@ -1134,8 +1137,6 @@ fn resolve_common_pin_group_components(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn invalid_common_pin_reference(group_name: &str, pin_ref: &str) -> Diagnostic {
     Diagnostic::for_builtin_rule(
         BuiltinRuleId::Sch004,
@@ -1155,8 +1156,6 @@ fn invalid_common_pin_reference(group_name: &str, pin_ref: &str) -> Diagnostic {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn common_pin_group_label_count(
     group: &CommonPinNetGroup,
     roots: &BTreeSet<usize>,
@@ -1170,7 +1169,13 @@ fn common_pin_group_label_count(
             if label.name != group.name.trim() {
                 return false;
             }
-            let key = format!("{:.*}:{:.*}", COORDINATE_KEY_DECIMAL_PLACES, label.position_mm.0, COORDINATE_KEY_DECIMAL_PLACES, label.position_mm.1);
+            let key = format!(
+                "{:.*}:{:.*}",
+                COORDINATE_KEY_DECIMAL_PLACES,
+                label.position_mm.0,
+                COORDINATE_KEY_DECIMAL_PLACES,
+                label.position_mm.1
+            );
             component_ids
                 .get(&key)
                 .is_some_and(|component| roots.contains(component))
@@ -1189,8 +1194,6 @@ fn common_pin_group_label_count(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn component_has_label(
     component: usize,
     expected_name: &str,
@@ -1201,7 +1204,13 @@ fn component_has_label(
         if label.name != expected_name {
             return false;
         }
-        let key = format!("{:.*}:{:.*}", COORDINATE_KEY_DECIMAL_PLACES, label.position_mm.0, COORDINATE_KEY_DECIMAL_PLACES, label.position_mm.1);
+        let key = format!(
+            "{:.*}:{:.*}",
+            COORDINATE_KEY_DECIMAL_PLACES,
+            label.position_mm.0,
+            COORDINATE_KEY_DECIMAL_PLACES,
+            label.position_mm.1
+        );
         component_ids.get(&key) == Some(&component)
     })
 }
@@ -1215,8 +1224,6 @@ fn component_has_label(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn point_is_on_wire(point: (f64, f64), facts: &SchematicFacts) -> bool {
     facts.wires.iter().any(|wire| {
         let horizontal = (wire.start_mm.1 - wire.end_mm.1).abs() <= GEOMETRY_TOLERANCE_MM;
@@ -1243,10 +1250,9 @@ fn point_is_on_wire(point: (f64, f64), facts: &SchematicFacts) -> bool {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn same_wire_point(first: (f64, f64), second: (f64, f64)) -> bool {
-    (first.0 - second.0).abs() <= GEOMETRY_TOLERANCE_MM && (first.1 - second.1).abs() <= GEOMETRY_TOLERANCE_MM
+    (first.0 - second.0).abs() <= GEOMETRY_TOLERANCE_MM
+        && (first.1 - second.1).abs() <= GEOMETRY_TOLERANCE_MM
 }
 /// Processes validate groups using the supplied values and schematic data.
 ///
@@ -1258,8 +1264,6 @@ fn same_wire_point(first: (f64, f64), second: (f64, f64)) -> bool {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_groups(
     groups: &BTreeMap<String, GroupIntent>,
     facts: &SchematicFacts,
@@ -1287,8 +1291,6 @@ fn validate_groups(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_group(
     group_id: &str,
     group: &GroupIntent,
@@ -1336,8 +1338,6 @@ fn validate_group(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_group_containment(
     group_id: &str,
     group: &GroupIntent,
@@ -1437,8 +1437,6 @@ fn validate_group_containment(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_group_pin_containment(
     group_id: &str,
     group: &GroupIntent,
@@ -1476,8 +1474,6 @@ fn validate_group_pin_containment(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_group_field_containment(
     group_id: &str,
     group: &GroupIntent,
@@ -1515,8 +1511,6 @@ fn validate_group_field_containment(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_group_description_containment(
     group_id: &str,
     group: &GroupIntent,
@@ -1559,8 +1553,6 @@ fn validate_group_description_containment(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_group_symbol_primitive_containment(
     group_id: &str,
     group: &GroupIntent,
@@ -1596,8 +1588,6 @@ fn validate_group_symbol_primitive_containment(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn symbol_primitive_inside_frame(
     primitive: &crate::generic::SchematicPrimitiveFact,
     frame_bounds: (f64, f64, f64, f64),
@@ -1638,8 +1628,6 @@ fn symbol_primitive_inside_frame(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn group_wire_components(
     group: &GroupIntent,
     facts: &SchematicFacts,
@@ -1651,7 +1639,13 @@ fn group_wire_components(
         .filter(|pin| group.members.contains(&pin.reference))
         .filter(|pin| point_is_on_wire(pin.position_mm, facts))
         .filter_map(|pin| {
-            let key = format!("{:.*}:{:.*}", COORDINATE_KEY_DECIMAL_PLACES, pin.position_mm.0, COORDINATE_KEY_DECIMAL_PLACES, pin.position_mm.1);
+            let key = format!(
+                "{:.*}:{:.*}",
+                COORDINATE_KEY_DECIMAL_PLACES,
+                pin.position_mm.0,
+                COORDINATE_KEY_DECIMAL_PLACES,
+                pin.position_mm.1
+            );
             component_ids.get(&key).copied()
         })
         .collect();
@@ -1668,8 +1662,6 @@ fn group_wire_components(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn wire_belongs_to_group(
     wire: &crate::generic::SchematicWireFact,
     component_ids: &BTreeMap<String, usize>,
@@ -1696,8 +1688,6 @@ fn wire_belongs_to_group(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_group_wire_containment(
     group_id: &str,
     group: &GroupIntent,
@@ -1742,8 +1732,6 @@ fn validate_group_wire_containment(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_group_label_containment(
     group_id: &str,
     group: &GroupIntent,
@@ -1756,7 +1744,13 @@ fn validate_group_label_containment(
         .labels
         .iter()
         .filter(|label| {
-            let key = format!("{:.*}:{:.*}", COORDINATE_KEY_DECIMAL_PLACES, label.position_mm.0, COORDINATE_KEY_DECIMAL_PLACES, label.position_mm.1);
+            let key = format!(
+                "{:.*}:{:.*}",
+                COORDINATE_KEY_DECIMAL_PLACES,
+                label.position_mm.0,
+                COORDINATE_KEY_DECIMAL_PLACES,
+                label.position_mm.1
+            );
             let member_wire_label = component_ids
                 .get(&key)
                 .is_some_and(|component| member_components.contains(component));
@@ -1797,8 +1791,6 @@ fn validate_group_label_containment(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_group_annotation_box_containment(
     group_id: &str,
     group: &GroupIntent,
@@ -1839,8 +1831,6 @@ fn validate_group_annotation_box_containment(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_group_plain_text_containment(
     group_id: &str,
     facts: &SchematicFacts,
@@ -1879,8 +1869,6 @@ fn validate_group_plain_text_containment(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_group_graphic_containment(
     group_id: &str,
     facts: &SchematicFacts,
@@ -1920,8 +1908,6 @@ fn validate_group_graphic_containment(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_group_image_containment(
     group_id: &str,
     facts: &SchematicFacts,
@@ -1958,8 +1944,6 @@ fn validate_group_image_containment(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn wire_overlaps_frame(
     wire: &crate::generic::SchematicWireFact,
     frame_bounds: (f64, f64, f64, f64),
@@ -1994,8 +1978,6 @@ fn wire_overlaps_frame(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn rectangles_overlap(first: (f64, f64, f64, f64), second: (f64, f64, f64, f64)) -> bool {
     first.0 <= second.2 + GEOMETRY_TOLERANCE_MM
         && first.2 >= second.0 - GEOMETRY_TOLERANCE_MM
@@ -2011,8 +1993,6 @@ fn rectangles_overlap(first: (f64, f64, f64, f64), second: (f64, f64, f64, f64))
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn point_inside_frame_with_clearance(
     (left, top, right, bottom): (f64, f64, f64, f64),
     (x, y): (f64, f64),
@@ -2032,8 +2012,6 @@ fn point_inside_frame_with_clearance(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn rectangle_inside_frame_with_clearance(
     (rect_left, rect_top, rect_right, rect_bottom): (f64, f64, f64, f64),
     (left, top, right, bottom): (f64, f64, f64, f64),
@@ -2049,21 +2027,20 @@ fn rectangle_inside_frame_with_clearance(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn point_inside_frame(
     (left, top, right, bottom): (f64, f64, f64, f64),
     (x, y): (f64, f64),
 ) -> bool {
-    x >= left - GEOMETRY_TOLERANCE_MM && x <= right + GEOMETRY_TOLERANCE_MM && y >= top - GEOMETRY_TOLERANCE_MM && y <= bottom + GEOMETRY_TOLERANCE_MM
+    x >= left - GEOMETRY_TOLERANCE_MM
+        && x <= right + GEOMETRY_TOLERANCE_MM
+        && y >= top - GEOMETRY_TOLERANCE_MM
+        && y <= bottom + GEOMETRY_TOLERANCE_MM
 }
 /// Processes rectangle inside frame using the supplied values and schematic data.
 ///
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn rectangle_inside_frame(
     (rect_left, rect_top, rect_right, rect_bottom): (f64, f64, f64, f64),
     (left, top, right, bottom): (f64, f64, f64, f64),
@@ -2084,8 +2061,6 @@ fn rectangle_inside_frame(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_frame_clearance(
     group_id: &str,
     group: &GroupIntent,
@@ -2124,7 +2099,8 @@ fn validate_frame_clearance(
         )];
     }
     let (left, top, right, bottom) = bounds;
-    if right - left < BOTH_SIDES_FACTOR * clearance || bottom - top < BOTH_SIDES_FACTOR * clearance {
+    if right - left < BOTH_SIDES_FACTOR * clearance || bottom - top < BOTH_SIDES_FACTOR * clearance
+    {
         return vec![Diagnostic::for_builtin_rule(
             BuiltinRuleId::Sch012,
             Severity::Error,
@@ -2172,8 +2148,6 @@ fn validate_frame_clearance(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn valid_frame_bounds((left, top, right, bottom): (f64, f64, f64, f64)) -> bool {
     left < right
         && top < bottom
@@ -2195,8 +2169,6 @@ fn valid_frame_bounds((left, top, right, bottom): (f64, f64, f64, f64)) -> bool 
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_member_frame_clearance(
     group_id: &str,
     group: &GroupIntent,
@@ -2255,8 +2227,6 @@ fn validate_member_frame_clearance(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_member_pin_frame_clearance(
     group_id: &str,
     group: &GroupIntent,
@@ -2304,8 +2274,6 @@ fn validate_member_pin_frame_clearance(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_member_field_frame_clearance(
     group_id: &str,
     group: &GroupIntent,
@@ -2353,8 +2321,6 @@ fn validate_member_field_frame_clearance(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_group_symbol_primitive_clearance(
     group_id: &str,
     group: &GroupIntent,
@@ -2394,8 +2360,6 @@ fn validate_group_symbol_primitive_clearance(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_group_wire_clearance(
     group_id: &str,
     group: &GroupIntent,
@@ -2442,8 +2406,6 @@ fn validate_group_wire_clearance(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_group_label_clearance(
     group_id: &str,
     group: &GroupIntent,
@@ -2499,8 +2461,6 @@ fn validate_group_label_clearance(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_group_annotation_box_clearance(
     group_id: &str,
     group: &GroupIntent,
@@ -2543,8 +2503,6 @@ fn validate_group_annotation_box_clearance(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_group_plain_text_clearance(
     group_id: &str,
     facts: &SchematicFacts,
@@ -2585,8 +2543,6 @@ fn validate_group_plain_text_clearance(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_group_graphic_clearance(
     group_id: &str,
     facts: &SchematicFacts,
@@ -2628,8 +2584,6 @@ fn validate_group_graphic_clearance(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_group_image_clearance(
     group_id: &str,
     facts: &SchematicFacts,
@@ -2671,8 +2625,6 @@ fn validate_group_image_clearance(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_description_frame_clearance(
     group_id: &str,
     group: &GroupIntent,
@@ -2727,8 +2679,6 @@ fn validate_description_frame_clearance(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_wire_compactness(
     group_id: &str,
     group: &GroupIntent,
@@ -2805,8 +2755,6 @@ fn validate_wire_compactness(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_group_spacing(
     group_id: &str,
     group: &GroupIntent,
@@ -2876,8 +2824,6 @@ fn validate_group_spacing(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_kicad_group_membership(
     group_id: &str,
     group: &GroupIntent,
@@ -2953,8 +2899,6 @@ fn validate_kicad_group_membership(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_group_evidence(group_id: &str, group: &GroupIntent) -> Vec<Diagnostic> {
     let evidence = group.evidence.as_ref();
     let has_document_evidence = evidence.is_some_and(|item| {
@@ -2993,8 +2937,6 @@ fn validate_group_evidence(group_id: &str, group: &GroupIntent) -> Vec<Diagnosti
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_group_members(
     group_id: &str,
     group: &GroupIntent,
@@ -3034,8 +2976,6 @@ fn validate_group_members(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_group_component_purposes(
     group_id: &str,
     group: &GroupIntent,
@@ -3090,8 +3030,6 @@ fn validate_group_component_purposes(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_group_phrase(
     diagnostics: &mut Vec<Diagnostic>,
     group_id: &str,
@@ -3127,8 +3065,6 @@ fn validate_group_phrase(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_component_intent(
     reference: &str,
     intent: &ComponentIntent,
@@ -3188,8 +3124,6 @@ fn validate_component_intent(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_pin_net_contract(
     reference: &str,
     intent: &ComponentIntent,
@@ -3266,8 +3200,6 @@ fn validate_pin_net_contract(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_role_contract(reference: &str, intent: &ComponentIntent) -> Vec<Diagnostic> {
     let required_connections: &[&str] = match (intent.kind, intent.role.0.as_str()) {
         (ComponentKind::Capacitor, "bulk") => &["rail", "return"],
@@ -3338,8 +3270,6 @@ fn validate_role_contract(reference: &str, intent: &ComponentIntent) -> Vec<Diag
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_decoupling_intent(
     reference: &str,
     contract: Option<&DecouplingIntent>,
@@ -3401,8 +3331,6 @@ fn validate_decoupling_intent(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_decoupling_nets(
     reference: &str,
     contract: &DecouplingIntent,
@@ -3471,8 +3399,6 @@ fn validate_decoupling_nets(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn validate_decoupler_groups(components: &BTreeMap<String, ComponentIntent>) -> Vec<Diagnostic> {
     let mut by_target: BTreeMap<&str, Vec<&DecouplingIntent>> = BTreeMap::new();
     for intent in components.values() {
@@ -3527,8 +3453,6 @@ fn validate_decoupler_groups(components: &BTreeMap<String, ComponentIntent>) -> 
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn valid_pin_ref(value: &str) -> bool {
     let Some((reference, pin)) = value.rsplit_once('.') else {
         return false;
@@ -3573,8 +3497,6 @@ mod tests {
     /// # Returns
     ///
     /// The value produced by this operation.
-    ///
-
     fn direct_wire_schematic(wire_and_label_items: &str) -> kicad_clippy_parser::SchematicDocument {
         kicad_clippy_parser::SchematicDocument::from_text(
             "direct-wire-test.kicad_sch",
@@ -3896,8 +3818,6 @@ mod tests {
     /// # Returns
     ///
     /// The value produced by this operation.
-    ///
-
     fn direct_wire_t_junction_schematic(
         explicit_junction: bool,
     ) -> kicad_clippy_parser::SchematicDocument {
@@ -4011,8 +3931,6 @@ mod tests {
     /// # Returns
     ///
     /// The value produced by this operation.
-    ///
-
     fn common_pin_netlist(first_net: Option<&str>, second_net: Option<&str>) -> Netlist {
         let mut pin_nets = BTreeMap::new();
         if let Some(net) = first_net {
@@ -5757,8 +5675,6 @@ mod tests {
     /// # Returns
     ///
     /// The value produced by this operation.
-    ///
-
     fn decoupling_netlist(capacitor_target_net: &str) -> Netlist {
         Netlist {
             pin_nets: BTreeMap::from([
@@ -5797,8 +5713,6 @@ mod tests {
     /// # Returns
     ///
     /// The value produced by this operation.
-    ///
-
     fn pin_contract_netlist(pin_one_net: &str, pin_two_net: Option<&str>) -> Netlist {
         let mut pin_nets = BTreeMap::from([(
             PinRef {

@@ -109,7 +109,6 @@ impl RuleRegistry {
     /// # Returns
     ///
     /// The value produced by this operation.
-    ///
     pub fn register(&mut self, descriptor: RuleDescriptor) -> Result<(), RuleRegistryError> {
         match self.rules.entry(descriptor.id.clone()) {
             Entry::Vacant(entry) => {
@@ -138,7 +137,6 @@ impl RuleRegistry {
     /// # Returns
     ///
     /// The value produced by this operation.
-    ///
     pub fn iter(&self) -> impl Iterator<Item = &RuleDescriptor> {
         self.rules.values()
     }
@@ -173,8 +171,6 @@ mod tests {
     /// # Returns
     ///
     /// The value produced by this operation.
-    ///
-
     fn sample_rule() -> RuleDescriptor {
         RuleDescriptor::new(
             "SCH001",

@@ -145,7 +145,6 @@ impl Summary {
     /// # Returns
     ///
     /// The value produced by this operation.
-    ///
     fn from_diagnostics(diagnostics: &[Diagnostic]) -> Self {
         Self {
             errors: diagnostics
@@ -174,8 +173,6 @@ impl Summary {
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn main() -> ExitCode {
     match execute(Cli::parse()) {
         Ok(code) => code,
@@ -198,8 +195,6 @@ fn main() -> ExitCode {
 /// # Errors
 ///
 /// Returns an error when the operation cannot complete with the supplied input.
-///
-
 fn execute(cli: Cli) -> Result<ExitCode, CliError> {
     match cli.command {
         Commands::Lint {
@@ -240,8 +235,6 @@ fn execute(cli: Cli) -> Result<ExitCode, CliError> {
 /// # Errors
 ///
 /// Returns an error when the operation cannot complete with the supplied input.
-///
-
 fn lint(
     schematic_path: &Path,
     format: OutputFormat,
@@ -351,8 +344,6 @@ fn lint(
 /// # Errors
 ///
 /// Returns an error when the operation cannot complete with the supplied input.
-///
-
 fn project_settings_from_project(project_path: &Path) -> Result<serde_json::Value, CliError> {
     let contents = fs::read_to_string(project_path)?;
     Ok(serde_json::from_str(&contents)?)
@@ -366,8 +357,6 @@ fn project_settings_from_project(project_path: &Path) -> Result<serde_json::Valu
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn project_default_schematic_line_stroke_width_mm(project: &serde_json::Value) -> Option<f64> {
     let width_mils = project
         .get("schematic")?
@@ -388,8 +377,6 @@ fn project_default_schematic_line_stroke_width_mm(project: &serde_json::Value) -
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn project_wire_stroke_widths_mm(
     project: &serde_json::Value,
     facts: &SchematicFacts,
@@ -471,8 +458,6 @@ fn project_wire_stroke_widths_mm(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn netlist_pin_coordinates_are_complete(facts: &SchematicFacts, netlist: &Netlist) -> bool {
     let schematic_pin_refs = facts
         .pins
@@ -487,7 +472,6 @@ fn netlist_pin_coordinates_are_complete(facts: &SchematicFacts, netlist: &Netlis
     })
 }
 /// Defines the projectnetclassdefinitions type used by this crate.
-
 type ProjectNetclassDefinitions = BTreeMap<String, (i64, Option<f64>)>;
 /// Processes project netclass wire width mm using the supplied values and schematic data.
 ///
@@ -500,8 +484,6 @@ type ProjectNetclassDefinitions = BTreeMap<String, (i64, Option<f64>)>;
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn project_netclass_wire_width_mm(
     project: &serde_json::Value,
     netlist: &Netlist,
@@ -534,8 +516,6 @@ fn project_netclass_wire_width_mm(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn project_netclass_definitions(
     settings: &serde_json::Map<String, serde_json::Value>,
 ) -> Option<ProjectNetclassDefinitions> {
@@ -574,8 +554,6 @@ fn project_netclass_definitions(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn project_netclass_candidates(
     settings: &serde_json::Map<String, serde_json::Value>,
     netlist: &Netlist,
@@ -598,8 +576,6 @@ fn project_netclass_candidates(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn add_explicit_netclass_assignments(
     settings: &serde_json::Map<String, serde_json::Value>,
     net_name: &str,
@@ -629,8 +605,6 @@ fn add_explicit_netclass_assignments(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn add_pattern_netclass_assignments(
     settings: &serde_json::Map<String, serde_json::Value>,
     net_name: &str,
@@ -674,8 +648,6 @@ fn add_pattern_netclass_assignments(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn add_chain_netclass_assignments(
     settings: &serde_json::Map<String, serde_json::Value>,
     netlist: &Netlist,
@@ -720,8 +692,6 @@ fn add_chain_netclass_assignments(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn exported_netclass_matches(
     exported_class: &str,
     net_name: &str,
@@ -745,8 +715,6 @@ fn exported_netclass_matches(
 /// # Returns
 ///
 /// The value produced by this operation.
-///
-
 fn wildcard_pattern_matches(pattern: &str, candidate: &str) -> bool {
     let pattern: Vec<char> = pattern.chars().collect();
     let candidate: Vec<char> = candidate.chars().collect();
@@ -789,8 +757,6 @@ fn wildcard_pattern_matches(pattern: &str, candidate: &str) -> bool {
 /// # Errors
 ///
 /// Returns an error when the operation cannot complete with the supplied input.
-///
-
 fn render_text(output: &LintOutput, source: &SourceFile) -> Result<(), io::Error> {
     let mut stdout = io::stdout().lock();
     writeln!(stdout, "kicad-clippy {}", output.tool_version)?;
@@ -838,8 +804,6 @@ fn render_text(output: &LintOutput, source: &SourceFile) -> Result<(), io::Error
 /// # Errors
 ///
 /// Returns an error when the operation cannot complete with the supplied input.
-///
-
 fn render_diagnostic(
     stdout: &mut impl Write,
     diagnostic: &Diagnostic,
@@ -928,8 +892,6 @@ fn render_diagnostic(
 /// # Errors
 ///
 /// Returns an error when the operation cannot complete with the supplied input.
-///
-
 fn resolve_kicad_cli(explicit: Option<PathBuf>) -> Result<PathBuf, CliError> {
     if let Some(path) = explicit {
         return Ok(path);
@@ -1014,8 +976,6 @@ mod tests {
     /// # Returns
     ///
     /// The value produced by this operation.
-    ///
-
     fn project_fixture() -> serde_json::Value {
         serde_json::json!({
             "net_settings": {

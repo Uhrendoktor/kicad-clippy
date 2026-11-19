@@ -2,7 +2,6 @@
 
 //! Shared data contracts for the kicad-clippy schematic linter.
 /// Contains the diagnostic implementation and supporting types.
-
 pub mod diagnostic;
 /// Contains the rule id implementation and supporting types.
 pub mod rule_id;
