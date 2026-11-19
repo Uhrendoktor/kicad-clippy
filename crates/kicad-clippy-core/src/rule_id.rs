@@ -117,7 +117,7 @@ impl BuiltinRuleId {
     ///
     /// # Arguments
     ///
-    /// * `value` — Input value to parse or convert.
+    /// * `value` — Exact external rule code to look up; matching is case-sensitive (for example, `SCH013`).
     ///
     /// # Returns
     ///
@@ -137,7 +137,7 @@ impl fmt::Display for BuiltinRuleId {
     ///
     /// # Returns
     ///
-    /// A formatting result indicating whether the formatter accepted the code.
+    /// A formatting result indicating whether the formatter accepted the canonical rule code.
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(self.as_str())
     }
@@ -148,7 +148,7 @@ impl From<BuiltinRuleId> for String {
     ///
     /// # Arguments
     ///
-    /// * `value` — Input value to parse or convert.
+    /// * `value` — Typed built-in rule identifier whose canonical `SCHnnn` code is being converted to an owned string.
     ///
     /// # Returns
     ///
@@ -165,7 +165,7 @@ impl FromStr for BuiltinRuleId {
     ///
     /// # Arguments
     ///
-    /// * `value` — Input value to parse or convert.
+    /// * `value` — Exact external rule code to parse; an unrecognized code produces `UnknownBuiltinRuleId`.
     ///
     /// # Returns
     ///
@@ -187,7 +187,7 @@ pub struct UnknownBuiltinRuleId(
 );
 
 impl fmt::Display for UnknownBuiltinRuleId {
-    /// Writes this rule's canonical `SCHnnn` code to the supplied formatter.
+    /// Writes an error description containing the original unrecognized rule code to the supplied formatter.
     ///
     /// # Arguments
     ///
@@ -195,7 +195,7 @@ impl fmt::Display for UnknownBuiltinRuleId {
     ///
     /// # Returns
     ///
-    /// A formatting result indicating whether the formatter accepted the code.
+    /// A formatting result indicating whether the formatter accepted the unknown-code description.
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(formatter, "unknown built-in rule identifier {:?}", self.0)
     }
@@ -208,7 +208,7 @@ mod tests {
     use std::str::FromStr;
 
     use super::BuiltinRuleId;
-    /// Verifies that every builtin rule has a unique round trippable code behaves as required.
+    /// Checks that every built-in rule code is unique and parses back to the same enum variant.
     #[test]
     fn every_builtin_rule_has_a_unique_round_trippable_code() {
         let codes: std::collections::BTreeSet<_> = BuiltinRuleId::ALL
@@ -220,7 +220,7 @@ mod tests {
             assert_eq!(BuiltinRuleId::from_str(id.as_str()), Ok(id));
         }
     }
-    /// Verifies that unknown codes are not silently treated as builtin rules behaves as required.
+    /// Checks that unrecognized rule strings are rejected instead of being mapped to a built-in ID.
     #[test]
     fn unknown_codes_are_not_silently_treated_as_builtin_rules() {
         assert!(BuiltinRuleId::parse("SCH999").is_none());

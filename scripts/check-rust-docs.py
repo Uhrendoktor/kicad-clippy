@@ -7,6 +7,25 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOT = ROOT / "crates"
 
+PLACEHOLDER_DOC_PATTERNS = (
+    r"behaves as required",
+    r"using the supplied values and schematic data",
+    r"Calculates (?:name|run) from the supplied schematic geometry or S-expression data",
+    r"The name result derived from the schematic geometry",
+    r"Input `[^`]+` used by this operation",
+    r"Text value stored in the corresponding field",
+    r"default level supplied by the caller",
+    r"value to be used in this geometry or parsing operation",
+    r"Input value to parse or convert",
+    r"The value produced by this operation",
+    r"The requested geometry or parsed value when the source data is sufficient",
+    r"`true` when the geometry satisfies the condition checked by this helper",
+    r"Diagnostics for each contract violation found; an empty vector means the declaration passed this check",
+    r"Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted",
+    r"Contains the .* implementation and supporting types",
+    r"Represents the `[^`]+` case",
+)
+
 def split_top_level(value: str) -> list[str]:
     parts: list[str] = []
     start = 0
@@ -85,6 +104,13 @@ def argument_name(argument: str) -> str | None:
 def validate(path: Path) -> list[str]:
     lines = path.read_text(encoding="utf-8").splitlines()
     failures: list[str] = []
+    for index, line in enumerate(lines):
+        if line.lstrip().startswith(("///", "//!")):
+            comment = line.lstrip()[3:].strip()
+            if any(re.search(placeholder, comment) for placeholder in PLACEHOLDER_DOC_PATTERNS):
+                failures.append(
+                    f"{path.relative_to(ROOT)}:{index + 1}: placeholder documentation is not allowed"
+                )
     pattern = re.compile(r"^\s*(?:(?:pub(?:\([^)]*\))?)\s+)?(?:(?:async|const|unsafe|extern(?:\s+\"[^\"]+\")?)\s+)*fn\s+([A-Za-z_]\w*)\s*(?:<[^;{]*?>)?\s*\(")
     for index, line in enumerate(lines):
         match = pattern.match(line)
@@ -93,14 +119,6 @@ def validate(path: Path) -> list[str]:
         name = match.group(1)
         location = f"{path.relative_to(ROOT)}:{index + 1} ({name})"
         docs = preceding_docs(lines, index)
-        placeholder_patterns = (
-            r"Processes .* using the supplied values and schematic data",
-            r"Input `[^`]+` used by this operation",
-            r"The value produced by this operation",
-            r"Stores the `[^`]+` value",
-        )
-        if any(re.search(pattern, docs) for pattern in placeholder_patterns):
-            failures.append(f"{location}: placeholder documentation is not allowed")
         if not docs.strip():
             failures.append(f"{location}: missing doc comment")
             continue

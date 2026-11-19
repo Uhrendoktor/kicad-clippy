@@ -29,7 +29,7 @@ impl SchematicDocument {
     ///
     /// # Errors
     ///
-    /// Returns an error when the file cannot be read, the S-expression is invalid, the root is not `kicad_sch`, or the source text cannot be preserved losslessly.
+    /// Returns `Io` when the file cannot be read, `Syntax` for malformed S-expressions, `WrongRoot` for a non-`kicad_sch` root, or `LosslessInvariant` if exact source retention fails.
     pub fn from_path(path: impl AsRef<Path>) -> Result<Self, SchematicParseError> {
         let path = path.as_ref().to_path_buf();
         let text = fs::read_to_string(&path).map_err(|source| SchematicParseError::Io {
@@ -53,7 +53,7 @@ impl SchematicDocument {
     ///
     /// # Errors
     ///
-    /// Returns an error when the file cannot be read, the S-expression is invalid, the root is not `kicad_sch`, or the source text cannot be preserved losslessly.
+    /// Returns `Syntax` for malformed S-expressions, `WrongRoot` when the root is not `kicad_sch`, or `LosslessInvariant` if the parser does not retain the original source exactly.
     pub fn from_text(
         path: impl Into<PathBuf>,
         text: impl Into<String>,
@@ -221,15 +221,15 @@ mod tests {
     /// Minimal valid schematic S-expression used by the parser tests.
     const SCHEMATIC: &str =
         "(kicad_sch (version 20250101) (generator eeschema) (uuid \"root-id\"))";
-    /// Verifies that parses only a kicad schematic root behaves as required.
+    /// Checks that the parser accepts a `kicad_sch` root and retains the exact source text and root byte span.
     ///
     /// # Returns
     ///
-    /// The requested operation's result, or an error describing the failure.
+    /// Returns `Ok(())` when the valid schematic fixture parses and its root/source-span assertions pass.
     ///
     /// # Errors
     ///
-    /// Returns an error when the file cannot be read, the S-expression is invalid, the root is not `kicad_sch`, or the source text cannot be preserved losslessly.
+    /// Propagates a parser error if the fixture cannot be parsed as a valid `kicad_sch` document.
     #[test]
     fn parses_only_a_kicad_schematic_root() -> Result<(), Box<dyn Error>> {
         let document = SchematicDocument::from_text("fixture.kicad_sch", SCHEMATIC)?;
@@ -246,15 +246,15 @@ mod tests {
         }
         Ok(())
     }
-    /// Verifies that unescapes quoted atoms and preserves lossless source behaves as required.
+    /// Checks that quoted atom values are decoded while the original S-expression source remains byte-for-byte unchanged.
     ///
     /// # Returns
     ///
-    /// The requested operation's result, or an error describing the failure.
+    /// Returns `Ok(())` when quoted atom values are decoded and the original source is preserved exactly.
     ///
     /// # Errors
     ///
-    /// Returns an error when the file cannot be read, the S-expression is invalid, the root is not `kicad_sch`, or the source text cannot be preserved losslessly.
+    /// Propagates a parser error if the quoted-atom fixture is not a valid `kicad_sch` document.
     #[test]
     fn unescapes_quoted_atoms_and_preserves_lossless_source() -> Result<(), Box<dyn Error>> {
         use kiutils_sexpr::{Atom, Node};
@@ -285,7 +285,7 @@ mod tests {
         assert_eq!(quoted_value(3), Some("say \"ok\""));
         Ok(())
     }
-    /// Verifies that rejects non schematic roots behaves as required.
+    /// Checks that an S-expression with a non-`kicad_sch` root is rejected.
     #[test]
     fn rejects_non_schematic_roots() {
         let result =
@@ -293,7 +293,7 @@ mod tests {
 
         assert!(result.is_err());
     }
-    /// Verifies that rejects malformed sexpressions behaves as required.
+    /// Checks that incomplete or malformed S-expression input is rejected.
     #[test]
     fn rejects_malformed_sexpressions() {
         let result = SchematicDocument::from_text("broken.kicad_sch", "(kicad_sch (version");

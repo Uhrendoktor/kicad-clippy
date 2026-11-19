@@ -169,7 +169,7 @@ pub enum NetlistError {
 ///
 /// # Errors
 ///
-/// Returns an error when KiCad execution, file access, JSON/S-expression decoding, or netlist consistency checks fail.
+/// Returns `Spawn` or `CliFailed` for KiCad process failures, `Io` for netlist-file errors, and parsing errors when exported S-expression data is malformed or pin assignments are inconsistent.
 pub fn export_netlist(
     program: impl AsRef<Path>,
     schematic_path: impl AsRef<Path>,
@@ -216,7 +216,7 @@ pub fn export_netlist(
 ///
 /// # Arguments
 ///
-/// * `contents` — UTF-8 JSON or S-expression source text returned by KiCad.
+/// * `contents` — UTF-8 `export` S-expression text produced by KiCad's native netlist exporter.
 ///
 /// # Returns
 ///
@@ -224,7 +224,7 @@ pub fn export_netlist(
 ///
 /// # Errors
 ///
-/// Returns an error when KiCad execution, file access, JSON/S-expression decoding, or netlist consistency checks fail.
+/// Returns `Syntax` for malformed S-expressions, `WrongRoot` for a non-`export` root, `MissingField` for absent required component/net data, or `DuplicatePin` when one pin is assigned to multiple nets.
 pub fn parse_netlist_sexpr(contents: &str) -> Result<Netlist, NetlistError> {
     let document = parse_one(contents)?;
     let root = document
@@ -474,7 +474,7 @@ mod tests {
         )
       )
     )"#;
-    /// Verifies that maps component pins to exported net names behaves as required.
+    /// Checks that each component reference/pin pair is indexed to the logical net exported by KiCad.
     #[test]
     fn maps_component_pins_to_exported_net_names() {
         let netlist = parse_netlist_sexpr(NETLIST).expect("valid fixture");
@@ -494,7 +494,7 @@ mod tests {
         assert_eq!(netlist.components["C1"].value.as_deref(), Some("100n"));
         assert_eq!(netlist.components["U1"].lib_id.as_deref(), Some("MyLib:U"));
     }
-    /// Verifies that rejects a pin assigned to two nets behaves as required.
+    /// Checks that a component pin appearing on multiple exported nets is rejected as an inconsistent netlist.
     #[test]
     fn rejects_a_pin_assigned_to_two_nets() {
         let duplicate = r#"(export (nets

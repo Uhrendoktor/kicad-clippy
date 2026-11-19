@@ -15,7 +15,7 @@ pub struct ByteSpan {
 }
 
 impl ByteSpan {
-    /// Stores the caller's path and original text, sharing the text buffer through `Arc`.
+    /// Creates a half-open byte range; `start` is included and `end` is excluded.
     ///
     /// # Arguments
     ///
@@ -24,7 +24,7 @@ impl ByteSpan {
     ///
     /// # Returns
     ///
-    /// A byte span with the supplied start and end offsets.
+    /// A `ByteSpan` containing the supplied inclusive-start and exclusive-end offsets.
     #[must_use]
     pub const fn new(start: usize, end: usize) -> Self {
         Self { start, end }
@@ -55,7 +55,7 @@ pub struct SourceFile {
 }
 
 impl SourceFile {
-    /// Stores the caller's path and original text, sharing the text buffer through `Arc`.
+    /// Retains the source path and original UTF-8 text in a reference-counted buffer.
     ///
     /// # Arguments
     ///
@@ -64,7 +64,7 @@ impl SourceFile {
     ///
     /// # Returns
     ///
-    /// A byte span with the supplied start and end offsets.
+    /// A `SourceFile` retaining the supplied path and reference-counted source text.
     #[must_use]
     pub fn new(path: impl Into<PathBuf>, text: impl Into<String>) -> Self {
         Self {
@@ -121,7 +121,7 @@ impl SourceFile {
 /// Unit tests for half-open byte spans and UTF-8-safe source slicing.
 mod tests {
     use super::{ByteSpan, SourceFile};
-    /// Verifies that slices only valid half open utf8 ranges behaves as required.
+    /// Checks that source slicing accepts in-bounds UTF-8 boundaries and rejects reversed, out-of-range, or mid-character spans.
     #[test]
     fn slices_only_valid_half_open_utf8_ranges() {
         let source = SourceFile::new("slice.kicad_sch", "café schematic");

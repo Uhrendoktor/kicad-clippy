@@ -193,7 +193,7 @@ fn main() -> ExitCode {
 ///
 /// # Errors
 ///
-/// Returns an error when the requested input cannot be read, decoded, executed, or rendered.
+/// Returns `CliError` when input loading, KiCad execution, profile validation, or report output fails.
 fn execute(cli: Cli) -> Result<ExitCode, CliError> {
     match cli.command {
         Commands::Lint {
@@ -233,7 +233,7 @@ fn execute(cli: Cli) -> Result<ExitCode, CliError> {
 ///
 /// # Errors
 ///
-/// Returns an error when the requested input cannot be read, decoded, executed, or rendered.
+/// Returns `CliError` for schematic parsing, project/profile decoding, native ERC/netlist failures, or output serialization/writing.
 fn lint(
     schematic_path: &Path,
     format: OutputFormat,
@@ -342,7 +342,7 @@ fn lint(
 ///
 /// # Errors
 ///
-/// Returns an error when the requested input cannot be read, decoded, executed, or rendered.
+/// Returns an I/O error when the project file cannot be read, or a JSON error when its contents are malformed.
 fn project_settings_from_project(project_path: &Path) -> Result<serde_json::Value, CliError> {
     let contents = fs::read_to_string(project_path)?;
     Ok(serde_json::from_str(&contents)?)
@@ -755,7 +755,7 @@ fn wildcard_pattern_matches(pattern: &str, candidate: &str) -> bool {
 ///
 /// # Errors
 ///
-/// Returns an error when the requested input cannot be read, decoded, executed, or rendered.
+/// Returns an I/O error when writing the summary or any formatted diagnostic to standard output fails.
 fn render_text(output: &LintOutput, source: &SourceFile) -> Result<(), io::Error> {
     let mut stdout = io::stdout().lock();
     writeln!(stdout, "kicad-clippy {}", output.tool_version)?;
@@ -802,7 +802,7 @@ fn render_text(output: &LintOutput, source: &SourceFile) -> Result<(), io::Error
 ///
 /// # Errors
 ///
-/// Returns an error when the requested input cannot be read, decoded, executed, or rendered.
+/// Returns an I/O error when the formatted report for this diagnostic cannot be written to the supplied output stream.
 fn render_diagnostic(
     stdout: &mut impl Write,
     diagnostic: &Diagnostic,
@@ -890,7 +890,7 @@ fn render_diagnostic(
 ///
 /// # Errors
 ///
-/// Returns an error when the requested input cannot be read, decoded, executed, or rendered.
+/// Returns `CliError::KiCadCliNotFound` when neither an explicit path, `KICAD_CLI`, nor a callable `kicad-cli` executable can be resolved.
 fn resolve_kicad_cli(explicit: Option<PathBuf>) -> Result<PathBuf, CliError> {
     if let Some(path) = explicit {
         return Ok(path);
@@ -920,7 +920,7 @@ mod tests {
     use kicad_clippy_erc::Netlist;
     use kicad_clippy_rules::SchematicFacts;
     use std::collections::{BTreeMap, BTreeSet};
-    /// Verifies that project default schematic line width reads mils behaves as required.
+    /// Checks that the project's default schematic line width is interpreted in mils and converted to millimetres.
     #[test]
     fn project_default_schematic_line_width_reads_mils() {
         let project = serde_json::json!({
@@ -936,7 +936,7 @@ mod tests {
                 .is_some_and(|width| (width - 0.1524).abs() < 1.0e-12)
         );
     }
-    /// Verifies that project default schematic line width stays unknown when missing or invalid behaves as required.
+    /// Checks that an absent, nonnumeric, zero, or negative default line width remains unresolved rather than being guessed.
     #[test]
     fn project_default_schematic_line_width_stays_unknown_when_missing_or_invalid() {
         let missing = serde_json::json!({"schematic": {"drawing": {}}});
@@ -977,7 +977,7 @@ mod tests {
             }
         })
     }
-    /// Verifies that overlapping patterns and explicit assignments use class priority behaves as required.
+    /// Checks that overlapping netclass patterns and exact assignments are resolved using KiCad class priority.
     #[test]
     fn overlapping_patterns_and_explicit_assignments_use_class_priority() {
         let mut project = project_fixture();
@@ -1006,7 +1006,7 @@ mod tests {
         assert!(wildcard_pattern_matches("/USB?", "/USB1"));
         assert!(!wildcard_pattern_matches("/USB?", "/USB12"));
     }
-    /// Verifies that class without wire width inherits the project default behaves as required.
+    /// Checks that a selected class without its own wire width inherits the Default netclass width.
     #[test]
     fn class_without_wire_width_inherits_the_project_default() {
         let mut project = project_fixture();
@@ -1029,7 +1029,7 @@ mod tests {
             Some(0.2032)
         );
     }
-    /// Verifies that committed chain netclass is applied to member nets behaves as required.
+    /// Checks that a netclass assigned to a committed net chain is applied to each exported member net.
     #[test]
     fn committed_chain_netclass_is_applied_to_member_nets() {
         let mut project = project_fixture();
@@ -1056,7 +1056,7 @@ mod tests {
             Some(0.4572)
         );
     }
-    /// Verifies that inconsistent or unmodeled assignments remain unknown behaves as required.
+    /// Checks that conflicting or unsupported class-assignment syntax does not produce a guessed wire width.
     #[test]
     fn inconsistent_or_unmodeled_assignments_remain_unknown() {
         let mut project = project_fixture();
@@ -1092,7 +1092,7 @@ mod tests {
             None
         );
     }
-    /// Verifies that per wire width requires one unambiguous physical component net behaves as required.
+    /// Checks that a wire receives a project width only when its physical component maps unambiguously to one exported logical net.
     #[test]
     fn per_wire_width_requires_one_unambiguous_physical_component_net() {
         use kicad_clippy_erc::{NetlistNode, PinRef};
@@ -1183,7 +1183,7 @@ mod tests {
         );
         assert!(project_wire_stroke_widths_mm(&project, &conflicting_facts, &netlist).is_empty());
     }
-    /// Verifies that schematic netclass directives suppress project only width inference behaves as required.
+    /// Checks that schematic-local netclass directives prevent project-only settings from being treated as the effective wire width.
     #[test]
     fn schematic_netclass_directives_suppress_project_only_width_inference() {
         let project = project_fixture();
@@ -1193,7 +1193,7 @@ mod tests {
         };
         assert!(project_wire_stroke_widths_mm(&project, &facts, &Netlist::default()).is_empty());
     }
-    /// Verifies that summary counts only active errors behaves as required.
+    /// Checks that excluded error diagnostics remain visible but do not increase the summary's active-error count.
     #[test]
     fn summary_counts_only_active_errors() {
         let mut excluded = Diagnostic::new("ERC/EXCLUDED", Severity::Error, "ignored");

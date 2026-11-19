@@ -166,7 +166,7 @@ const FLOATING_POINT_ROUNDOFF_ULPS: f64 = 64.0;
 const TWO_SIDED_GEOMETRY_TOLERANCE_MM: f64 = TWO_SIDED_FACTOR * GEOMETRY_TOLERANCE_MM;
 /// Minimum JPEG JFIF application-segment payload length, in bytes.
 const JPEG_JFIF_MINIMUM_SEGMENT_BYTES: usize = 12;
-/// Defines the point type used by this crate.
+/// Two-dimensional point used for schematic geometry; its `x` and `y` coordinates are measured in millimetres.
 pub type Point = Coord<f64>;
 /// One schematic line segment with a source span for diagnostics.
 #[derive(Clone, Copy, Debug)]
@@ -588,7 +588,7 @@ fn collect_text_box_facts(root: &Node) -> Vec<TextBoxFact> {
 ///
 /// # Returns
 ///
-/// `true` when the geometry satisfies the condition checked by this helper.
+/// Whether the cell's serialized text angle is one of the supported cardinal rotations.
 fn table_cell_text_rotation_is_supported(cell: &Node) -> bool {
     let Some(angle) = child_list(cell, "at")
         .and_then(list_items)
@@ -613,7 +613,7 @@ fn table_cell_text_rotation_is_supported(cell: &Node) -> bool {
 ///
 /// # Returns
 ///
-/// `true` when the geometry satisfies the condition checked by this helper.
+/// Whether every cell in the table uses a supported cardinal text rotation.
 fn table_text_rotations_are_supported(table: &Node) -> bool {
     let Some(cells) = child_list(table, "cells") else {
         return false;
@@ -784,7 +784,7 @@ struct SchematicTableLayout {
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// The parsed non-negative `usize` value, or `None` when the atom is missing or is not an unsigned integer.
 fn nonnegative_integer(node: &Node) -> Option<usize> {
     atom_value(node)?.parse::<usize>().ok()
 }
@@ -796,7 +796,7 @@ fn nonnegative_integer(node: &Node) -> Option<usize> {
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// The parsed integer when it is greater than zero; zero, missing, or malformed values return `None`.
 fn positive_integer(node: &Node) -> Option<usize> {
     nonnegative_integer(node).filter(|value| *value > 0)
 }
@@ -809,7 +809,7 @@ fn positive_integer(node: &Node) -> Option<usize> {
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// The finite, strictly positive numeric entries from the named row-height or column-width list, in millimetres; `None` if the list is invalid.
 fn table_dimension_values(table: &Node, name: &str) -> Option<Vec<f64>> {
     let values = child_list(table, name).and_then(list_items)?;
     let values: Option<Vec<_>> = values.iter().skip(1).map(number).collect();
@@ -827,7 +827,7 @@ fn table_dimension_values(table: &Node, name: &str) -> Option<Vec<f64>> {
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// The `(row_span, column_span)` pair; `(1, 1)` is returned when the cell has no serialized span.
 fn table_cell_span(cell: &Node) -> Option<(usize, usize)> {
     let Some(span) = child_list(cell, "span") else {
         return Some((1, 1));
@@ -846,7 +846,7 @@ fn table_cell_span(cell: &Node) -> Option<(usize, usize)> {
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// The quarter-turn count for a supported cardinal angle, or `None` when the angle is non-finite or not a quarter-turn.
 fn cardinal_table_rotation_quadrants(angle: f64) -> Option<u8> {
     if !angle.is_finite() {
         return None;
@@ -871,7 +871,7 @@ fn cardinal_table_rotation_quadrants(angle: f64) -> Option<u8> {
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// A validated table layout containing its grid dimensions, row/column positions, and cell spans; `None` when the serialized layout is inconsistent.
 fn schematic_table_layout(table: &Node) -> Option<SchematicTableLayout> {
     let columns = child_list(table, "column_count")
         .and_then(list_items)
@@ -977,7 +977,7 @@ fn table_grid_point(layout: &SchematicTableLayout, x_offset: f64, y_offset: f64)
 ///
 /// # Returns
 ///
-/// `true` when the geometry satisfies the condition checked by this helper.
+/// The flag's `yes` state, or the supplied default when the property or group is absent.
 fn table_flag(group: Option<&Node>, name: &str, default: bool) -> bool {
     group
         .and_then(|group| child_list(group, name))
@@ -1221,7 +1221,7 @@ fn collect_sheet_table_stroke_facts(root: &Node) -> Vec<SchematicGraphicFact> {
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// The graphic's axis-aligned sheet bounds expanded by half its stroke width; `None` when the primitive geometry cannot be decoded.
 fn sheet_graphic_bounds(node: &Node, kind: &str) -> Option<(f64, f64, f64, f64)> {
     let stroke_margin = symbol_primitive_stroke_width(node)
         .mul_add(HALF_FACTOR, STROKE_CLEARANCE_MARGIN_MM);
@@ -1280,7 +1280,7 @@ fn sheet_graphic_bounds(node: &Node, kind: &str) -> Option<(f64, f64, f64, f64)>
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// The four rotated bitmap corners and their enclosing sheet-space bounds, or `None` for non-finite or non-positive dimensions.
 fn rotated_bitmap_image_geometry(
     center: Point,
     width_mm: f64,
@@ -1428,7 +1428,7 @@ struct BitmapImageMetadata {
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// Pixel dimensions and effective PPI parsed from a supported PNG or JPEG header, or `None` when the Base64 data has no supported image header.
 fn parse_bitmap_image_metadata(encoded: &str) -> Option<BitmapImageMetadata> {
     /// Maximum decoded header prefix retained when inspecting an embedded bitmap.
     const MAX_BITMAP_HEADER_BYTES: usize = 256 * 1024;
@@ -1502,7 +1502,7 @@ fn decode_base64_prefix(encoded: &str, max_bytes: usize) -> Vec<u8> {
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// The six-bit digit represented by an ASCII Base64 alphabet byte, or `None` for any other byte.
 const fn base64_digit(byte: u8) -> Option<u8> {
     match byte {
         b'A'..=b'Z' => Some(byte - b'A'),
@@ -1551,7 +1551,7 @@ fn read_be_u16(bytes: &[u8], offset: usize) -> Option<u16> {
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// PNG pixel width, pixel height, and resolution decoded from its header and supported physical-pixel-density chunk, or `None` when required metadata is invalid or absent.
 fn parse_png_image_metadata(bytes: &[u8]) -> Option<BitmapImageMetadata> {
     if !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
         return None;
@@ -1655,7 +1655,7 @@ fn rounded_ratio_to_u32(numerator: u64, denominator: u64) -> u32 {
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// JPEG pixel dimensions and JFIF density when the corresponding header markers are present and valid, or `None` when they cannot be decoded.
 fn parse_jpeg_image_metadata(bytes: &[u8]) -> Option<BitmapImageMetadata> {
     if !bytes.starts_with(&[0xff, 0xd8]) {
         return None;
@@ -2336,7 +2336,7 @@ fn collect_symbol_text_from_unit(
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// The axis-aligned sheet rectangle enclosing all four transformed corners of the library-space bounds, or `None` if a corner cannot be transformed.
 fn transform_symbol_bounds(bounds: Bounds, transform: &SymbolTransform) -> Option<Bounds> {
     let points = [
         (bounds.x, bounds.y),
@@ -2443,7 +2443,7 @@ fn collect_primitives_from_unit(
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// A transformed primitive fact containing its supported path/circle/arc/Bézier geometry and stroke width, or `None` for malformed or unsupported primitives.
 fn parse_symbol_primitive(
     node: &Node,
     transform: &SymbolTransform,
@@ -2551,7 +2551,7 @@ fn symbol_primitive_stroke_width(node: &Node) -> f64 {
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// The four rectangle vertices derived from its serialized start and end coordinates, or `None` when either corner is incomplete.
 fn rectangle_primitive_points(node: &Node) -> Option<Vec<(f64, f64)>> {
     let start = child_list(node, "start").and_then(list_items)?;
     let end = child_list(node, "end").and_then(list_items)?;
@@ -2569,7 +2569,7 @@ fn rectangle_primitive_points(node: &Node) -> Option<Vec<(f64, f64)>> {
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// The ordered vertices from the primitive's `pts/xy` list, or `None` when the list is missing or has too few valid points.
 fn polyline_primitive_points(node: &Node) -> Option<Vec<(f64, f64)>> {
     let points = child_list(node, "pts")?;
     let points: Vec<_> = children(points, "xy")
@@ -2588,7 +2588,7 @@ fn polyline_primitive_points(node: &Node) -> Option<Vec<(f64, f64)>> {
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// The `(start, midpoint, end)` coordinates defining the circular arc, or `None` when any coordinate is missing or invalid.
 fn arc_primitive_control_points(node: &Node) -> Option<[(f64, f64); 3]> {
     let point = |name| {
         let items = child_list(node, name).and_then(list_items)?;
@@ -2604,7 +2604,7 @@ fn arc_primitive_control_points(node: &Node) -> Option<[(f64, f64); 3]> {
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// A circular-arc fact containing its center, radius, start angle, and directed sweep, or `None` for collinear or degenerate control points.
 fn arc_primitive_geometry(node: &Node) -> Option<SchematicArcFact> {
     let [start, mid, end] = arc_primitive_control_points(node)?;
     circular_arc_through_three_points(start, mid, end)
@@ -2617,7 +2617,7 @@ fn arc_primitive_geometry(node: &Node) -> Option<SchematicArcFact> {
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// Sampled points along the circular arc for path-based geometry checks, or `None` when the three serialized points do not define a valid arc.
 fn arc_primitive_points(node: &Node) -> Option<Vec<(f64, f64)>> {
     let [start, mid, end] = arc_primitive_control_points(node)?;
     Some(sample_arc_through_three_points(start, mid, end))
@@ -2664,7 +2664,7 @@ fn flattened_curve_points(
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// The four control points of the cubic Bézier primitive, or `None` when its point list is missing or malformed.
 fn bezier_primitive_control_points(node: &Node) -> Option<[(f64, f64); 4]> {
     let points_node = child_list(node, "pts")?;
     let coordinates: Option<Vec<_>> = children(points_node, "xy")
@@ -2687,7 +2687,7 @@ fn bezier_primitive_control_points(node: &Node) -> Option<[(f64, f64); 4]> {
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// A flattened sequence of sheet-coordinate points approximating the cubic Bézier curve, or `None` when the control points cannot be evaluated.
 fn bezier_primitive_points(node: &Node) -> Option<Vec<(f64, f64)>> {
     let [start, control_one, control_two, end] = bezier_primitive_control_points(node)?;
     let path = [
@@ -2742,7 +2742,7 @@ fn sample_arc_through_three_points(
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// `Some(())` when subdivision completes and appends the required samples to the output vector; `None` when the evaluation closure cannot produce a midpoint.
 fn subdivide_ellipse_arc(
     start_angle: f64,
     start: (f64, f64),
@@ -2797,7 +2797,7 @@ fn subdivide_ellipse_arc(
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// Sampled vertices for the full ellipse or the declared elliptical arc, including its rotation; `None` when its center, radii, or sweep are invalid.
 fn ellipse_primitive_points(node: &Node, is_arc: bool) -> Option<Vec<(f64, f64)>> {
     let center = child_list(node, "center").and_then(list_items)?;
     let center = (number(center.get(1)?)?, number(center.get(2)?)?);
@@ -2891,7 +2891,7 @@ fn ellipse_primitive_points(node: &Node, is_arc: bool) -> Option<Vec<(f64, f64)>
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// A circular-arc fact reconstructed from the three points, or `None` when they are collinear or numerically degenerate.
 fn circular_arc_through_three_points(
     start: (f64, f64),
     mid: (f64, f64),
@@ -2950,7 +2950,7 @@ fn circular_arc_through_three_points(
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// Each input point transformed from library-local coordinates into sheet coordinates, or `None` when any point cannot be transformed.
 fn transform_primitive_points(
     points: &[(f64, f64)],
     transform: &SymbolTransform,
@@ -2980,15 +2980,15 @@ pub struct RuleRun {
 pub struct BuiltinGeometryPass;
 
 impl RulePass for BuiltinGeometryPass {
-    /// Calculates name from the supplied schematic geometry or S-expression data.
+    /// Returns the stable registry key for the built-in geometry and pin-placement analysis pass.
     ///
     /// # Returns
     ///
-    /// The name result derived from the schematic geometry.
+    /// The unique pass name `01-kicad-clippy.geometry`, used to order geometry checks before label and annotation checks.
     fn name(&self) -> &'static str {
         "01-kicad-clippy.geometry"
     }
-    /// Calculates run from the supplied schematic geometry or S-expression data.
+    /// Runs wire geometry, pin-orientation, no-connect-marker, and wire-obstacle checks for the current schematic.
     ///
     /// # Arguments
     ///
@@ -2996,7 +2996,7 @@ impl RulePass for BuiltinGeometryPass {
     ///
     /// # Returns
     ///
-    /// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
+    /// Diagnostics emitted by this pass's wire-geometry, pin-orientation, no-connect, and obstacle checks; empty when those checks find no violation.
     fn run(&self, context: &RuleContext<'_>) -> Vec<Diagnostic> {
         run_geometry_checks(context)
     }
@@ -3006,15 +3006,15 @@ impl RulePass for BuiltinGeometryPass {
 pub struct BuiltinLabelPass;
 
 impl RulePass for BuiltinLabelPass {
-    /// Calculates name from the supplied schematic geometry or S-expression data.
+    /// Returns the stable registry key for the built-in physical-wire and label analysis pass.
     ///
     /// # Returns
     ///
-    /// The name result derived from the schematic geometry.
+    /// The unique pass name `02-kicad-clippy.labels`, used to order label-topology checks after geometry checks.
     fn name(&self) -> &'static str {
         "02-kicad-clippy.labels"
     }
-    /// Calculates run from the supplied schematic geometry or S-expression data.
+    /// Runs physical wire-island, label identity, label/wire overlap, and label-kind checks for the current schematic.
     ///
     /// # Arguments
     ///
@@ -3022,7 +3022,7 @@ impl RulePass for BuiltinLabelPass {
     ///
     /// # Returns
     ///
-    /// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
+    /// Diagnostics emitted by physical label-topology and label-overlap checks; empty when labels are consistent with the wire geometry.
     fn run(&self, context: &RuleContext<'_>) -> Vec<Diagnostic> {
         run_label_checks(context)
     }
@@ -3032,15 +3032,15 @@ impl RulePass for BuiltinLabelPass {
 pub struct BuiltinAnnotationPass;
 
 impl RulePass for BuiltinAnnotationPass {
-    /// Calculates name from the supplied schematic geometry or S-expression data.
+    /// Returns the stable registry key for the built-in annotation and visible-field analysis pass.
     ///
     /// # Returns
     ///
-    /// The name result derived from the schematic geometry.
+    /// The unique pass name `03-kicad-clippy.annotations`, used to order annotation checks after geometry and label checks.
     fn name(&self) -> &'static str {
         "03-kicad-clippy.annotations"
     }
-    /// Calculates run from the supplied schematic geometry or S-expression data.
+    /// Runs text-box layout, multiline annotation-border, and visible symbol-field clearance checks for the current schematic.
     ///
     /// # Arguments
     ///
@@ -3048,7 +3048,7 @@ impl RulePass for BuiltinAnnotationPass {
     ///
     /// # Returns
     ///
-    /// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
+    /// Diagnostics emitted by text-box, block-annotation, and symbol-field layout checks; empty when the annotation layout is valid.
     fn run(&self, context: &RuleContext<'_>) -> Vec<Diagnostic> {
         run_annotation_checks(context)
     }
@@ -3075,7 +3075,7 @@ pub fn run_builtin_rules(document: &SchematicDocument) -> RuleRun {
 ///
 /// # Returns
 ///
-/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
+/// All diagnostics from wire geometry, pin orientation, no-connect marker, and wire-obstacle checks; an empty vector means those checks found no issue.
 #[must_use]
 pub fn run_geometry_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
     let Some(root) = context.document().cst().nodes.first() else {
@@ -3111,7 +3111,7 @@ pub fn run_geometry_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
 ///
 /// # Returns
 ///
-/// `true` when the geometry satisfies the condition checked by this helper.
+/// `true` when the schematic contains a directive, rule area, or label property assigning a netclass; such assignments make project-only width inference unsafe.
 fn schematic_has_graphical_netclass_assignments(root: &Node) -> bool {
     let mut has_assignments = false;
     walk(root, &mut |node| match head(node) {
@@ -3138,7 +3138,7 @@ fn schematic_has_graphical_netclass_assignments(root: &Node) -> bool {
 ///
 /// # Returns
 ///
-/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
+/// Diagnostics for physical label topology, label/wire glyph clearance, label text overlap, and inconsistent label kinds.
 #[must_use]
 pub fn run_label_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
     let Some(root) = context.document().cst().nodes.first() else {
@@ -3158,7 +3158,7 @@ pub fn run_label_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
 ///
 /// # Returns
 ///
-/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
+/// Diagnostics for text-box layout, multiline annotation borders, and visible symbol-field clearance.
 #[must_use]
 pub fn run_annotation_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
     let Some(root) = context.document().cst().nodes.first() else {
@@ -3221,7 +3221,7 @@ struct SymbolTransform {
 ///
 /// # Returns
 ///
-/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
+/// SCH013 diagnostics for wires whose stroke envelopes collide with visible text embedded in placed symbols.
 fn embedded_symbol_text_obstacle_diagnostics(
     wire_index: usize,
     wire: Segment,
@@ -3261,7 +3261,7 @@ fn embedded_symbol_text_obstacle_diagnostics(
 ///
 /// # Returns
 ///
-/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
+/// SCH013 diagnostics for wire collisions or insufficient stroke clearance around bus paths and their pins.
 fn bus_obstacle_diagnostics(
     wire_index: usize,
     segment: Segment,
@@ -3301,7 +3301,7 @@ fn bus_obstacle_diagnostics(
 ///
 /// # Returns
 ///
-/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
+/// SCH013 diagnostics for wire collisions with hierarchical sheet frames or their stroked edges.
 fn sheet_frame_obstacle_diagnostics(
     wire_index: usize,
     segment: Segment,
@@ -3341,7 +3341,7 @@ fn sheet_frame_obstacle_diagnostics(
 ///
 /// # Returns
 ///
-/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
+/// SCH013 diagnostics for wires that intersect enabled table borders or separator strokes.
 fn table_stroke_obstacle_diagnostics(
     wire_index: usize,
     segment: Segment,
@@ -3375,7 +3375,7 @@ fn table_stroke_obstacle_diagnostics(
 ///
 /// # Returns
 ///
-/// `true` when the geometry satisfies the condition checked by this helper.
+/// `true` when the wire's stroke envelope intersects either diagonal stroke of the no-connect marker.
 fn wire_crosses_no_connect_diagonal(
     wire: Segment,
     diagonal: [(f64, f64); 2],
@@ -3416,7 +3416,7 @@ fn wire_crosses_no_connect_diagonal(
 ///
 /// # Returns
 ///
-/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
+/// SCH013 diagnostics for wire strokes that collide with a no-connect marker after applying its fixed marker geometry.
 fn no_connect_marker_obstacle_diagnostics(
     wire_index: usize,
     segment: Segment,
@@ -3488,7 +3488,7 @@ struct WireObstacleStrokeWidths {
 ///
 /// # Returns
 ///
-/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
+/// Combined SCH013 diagnostics for sheet frames, table strokes, buses, and no-connect markers near the wire.
 fn sheet_table_bus_obstacle_diagnostics(
     wire_index: usize,
     segment: Segment,
@@ -3532,7 +3532,7 @@ fn sheet_table_bus_obstacle_diagnostics(
 ///
 /// # Returns
 ///
-/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
+/// SCH013 diagnostics for wires passing through placed pins that are not permitted wire endpoints.
 fn intermediate_pin_obstacle_diagnostics(
     wire_index: usize,
     segment: Segment,
@@ -3571,7 +3571,7 @@ fn intermediate_pin_obstacle_diagnostics(
 ///
 /// # Returns
 ///
-/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
+/// SCH013 diagnostics for collisions with symbol primitives, text, buses, frames, tables, pins, images, and no-connect markers.
 fn check_wire_obstacles(
     root: &Node,
     segments: &[Segment],
@@ -3682,7 +3682,7 @@ fn check_wire_obstacles(
 ///
 /// # Returns
 ///
-/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
+/// SCH013 diagnostics for wire collisions with visible fields, labels, plain text, and annotation text boxes.
 fn wire_text_annotation_obstacle_diagnostics(
     wire_index: usize,
     segment: Segment,
@@ -3954,7 +3954,7 @@ fn wire_path_min_distance(wire: Segment, path: CurvePathSeg) -> Option<f64> {
 ///
 /// # Returns
 ///
-/// `true` when the geometry satisfies the condition checked by this helper.
+/// `true` when the distance between the wire and curve segment is within the combined wire/path stroke radius and flattening tolerance.
 fn wire_within_path_stroke(
     wire: Segment,
     path: CurvePathSeg,
@@ -3985,7 +3985,7 @@ fn wire_within_path_stroke(
 ///
 /// # Returns
 ///
-/// `true` when the geometry satisfies the condition checked by this helper.
+/// `true` when the wire's stroke envelope reaches any segment of the sampled path, including the closing segment when the path is closed.
 fn wire_within_sampled_path_stroke(
     wire: Segment,
     points: &[(f64, f64)],
@@ -4029,7 +4029,7 @@ fn wire_within_sampled_path_stroke(
 ///
 /// # Returns
 ///
-/// `true` when the geometry satisfies the condition checked by this helper.
+/// `true` when the wire's stroke envelope intersects the stroked circumference of the circle.
 fn wire_within_circle_stroke(
     wire: Segment,
     center: Point,
@@ -4081,7 +4081,7 @@ fn wire_within_circle_stroke(
 ///
 /// # Returns
 ///
-/// `true` when the geometry satisfies the condition checked by this helper.
+/// `true` when the wire and sheet-graphic stroke envelopes intersect.
 fn wire_crosses_sheet_graphic_with_wire_stroke(
     wire: Segment,
     graphic: &SchematicGraphicFact,
@@ -4170,7 +4170,7 @@ fn wire_crosses_sheet_graphic_with_wire_stroke(
 ///
 /// # Returns
 ///
-/// `true` when the geometry satisfies the condition checked by this helper.
+/// `true` when the finite wire segment passes through the polygon interior; boundary-only contact does not count.
 fn wire_crosses_polygon_interior(wire: Segment, polygon: &Polygon<f64>) -> bool {
     let direction_x = wire.end.x - wire.start.x;
     let direction_y = wire.end.y - wire.start.y;
@@ -4220,7 +4220,7 @@ fn wire_crosses_polygon_interior(wire: Segment, polygon: &Polygon<f64>) -> bool 
 ///
 /// # Returns
 ///
-/// `true` when the geometry satisfies the condition checked by this helper.
+/// `true` when the wire intersects the interior of the rotated bitmap's quadrilateral footprint.
 fn wire_crosses_bitmap_image(wire: Segment, corners: &[(f64, f64); 4]) -> bool {
     let mut ring: Vec<_> = corners
         .iter()
@@ -4242,7 +4242,7 @@ fn wire_crosses_bitmap_image(wire: Segment, corners: &[(f64, f64); 4]) -> bool {
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// The remaining segment after removing the permitted pin-contact region at either endpoint, or `None` when the remaining segment is too short or invalid.
 fn wire_without_pin_contact_region(
     wire: Segment,
     reference: &str,
@@ -4299,7 +4299,7 @@ fn wire_without_pin_contact_region(
 ///
 /// # Returns
 ///
-/// `true` when the geometry satisfies the condition checked by this helper.
+/// `true` when the wire centerline intersects the symbol primitive away from an allowed pin contact.
 fn symbol_primitive_has_centerline_collision(
     wire: Segment,
     primitive: &SchematicPrimitiveFact,
@@ -4355,7 +4355,7 @@ fn symbol_primitive_has_centerline_collision(
 ///
 /// # Returns
 ///
-/// `true` when the geometry satisfies the condition checked by this helper.
+/// `true` when the wire and symbol-primitive stroke envelopes overlap outside the permitted pin-contact region.
 fn symbol_primitive_wire_stroke_collision(
     wire: Segment,
     primitive: &SchematicPrimitiveFact,
@@ -4413,7 +4413,7 @@ fn symbol_primitive_wire_stroke_collision(
 ///
 /// # Returns
 ///
-/// `true` when the geometry satisfies the condition checked by this helper.
+/// `true` when the combined wire/primitive stroke geometry collides, excluding permitted contacts at placed pins.
 fn wire_crosses_symbol_primitive_with_wire_stroke(
     wire: Segment,
     primitive: &SchematicPrimitiveFact,
@@ -4471,7 +4471,7 @@ fn wire_crosses_symbol_primitive_with_wire_stroke(
 ///
 /// # Returns
 ///
-/// `true` when the geometry satisfies the condition checked by this helper.
+/// `true` when the candidate intersection is at a wire endpoint that coincides with a pin belonging to the component.
 fn wire_intersection_is_allowed_pin(
     point: Point,
     wire: Segment,
@@ -4493,7 +4493,7 @@ fn wire_intersection_is_allowed_pin(
 ///
 /// # Returns
 ///
-/// `true` when the geometry satisfies the condition checked by this helper.
+/// `true` when the endpoint lies within the geometry tolerance of a placed pin on the specified component.
 fn wire_endpoint_is_pin(endpoint: Point, reference: &str, pins: &[SchematicPinFact]) -> bool {
     pins.iter().any(|pin| {
         pin.reference == reference
@@ -4564,7 +4564,7 @@ fn segment_intersection_points(
 ///
 /// # Returns
 ///
-/// `true` when the geometry satisfies the condition checked by this helper.
+/// `true` when the point lies on the finite segment between the two supplied endpoints within the geometry tolerance.
 fn point_on_segment_any(point: Point, start: Point, end: Point) -> bool {
     Euclidean.distance(&GeoPoint::new(point.x, point.y), &geo_line(start, end))
         <= GEOMETRY_TOLERANCE_MM
@@ -4592,7 +4592,7 @@ fn point_segment_distance(point: Point, start: Point, end: Point) -> f64 {
 ///
 /// # Returns
 ///
-/// `true` when the geometry satisfies the condition checked by this helper.
+/// `true` when the point is inside the polygon or on its boundary.
 fn point_in_polygon(point: Point, polygon: &[(f64, f64)]) -> bool {
     if polygon.len() < 3 {
         return false;
@@ -4622,7 +4622,7 @@ fn point_in_polygon(point: Point, polygon: &[(f64, f64)]) -> bool {
 ///
 /// # Returns
 ///
-/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
+/// SCH005 diagnostics for connected wire axes that do not align with the transformed orientation of their symbol pins.
 fn check_pin_orientation(root: &Node, segments: &[Segment]) -> Vec<Diagnostic> {
     let Some(library_symbols) = child_list(root, "lib_symbols") else {
         return Vec::new();
@@ -4641,7 +4641,7 @@ fn check_pin_orientation(root: &Node, segments: &[Segment]) -> Vec<Diagnostic> {
 ///
 /// # Returns
 ///
-/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
+/// SCH005 diagnostics for pins on the selected placed symbol whose attached wire direction conflicts with the library pin orientation.
 fn check_instance_pin_orientation(
     instance: &Node,
     library_symbols: &Node,
@@ -4682,7 +4682,7 @@ fn check_instance_pin_orientation(
 ///
 /// # Returns
 ///
-/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
+/// SCH015 diagnostics for no-connect markers that do not coincide with a supported transformed symbol-pin anchor.
 fn check_no_connect_markers(root: &Node) -> Vec<Diagnostic> {
     let markers = collect_nodes(root, "no_connect");
     if markers.is_empty() {
@@ -4719,7 +4719,7 @@ fn check_no_connect_markers(root: &Node) -> Vec<Diagnostic> {
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// Resolved pin coordinates keyed by component reference and pin number, or `None` when required symbol-library geometry is unavailable.
 fn collect_placed_pin_positions(root: &Node) -> Option<Vec<Point>> {
     let mut positions = Vec::new();
     let Some(library_symbols) = child_list(root, "lib_symbols") else {
@@ -4770,7 +4770,7 @@ fn collect_placed_pin_positions(root: &Node) -> Option<Vec<Point>> {
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// The placed symbol's origin, rotation, mirror state, unit, and conversion metadata, or `None` when required instance data is missing.
 fn read_symbol_transform(instance: &Node) -> Option<SymbolTransform> {
     let reference = children(instance, "property").find_map(|property| {
         let items = list_items(property)?;
@@ -4816,7 +4816,7 @@ fn read_symbol_transform(instance: &Node) -> Option<SymbolTransform> {
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// The unsigned integer stored in the named instance property, or `None` when the property is absent or malformed.
 fn instance_integer(instance: &Node, name: &str) -> Option<u32> {
     child_list(instance, name)
         .and_then(list_items)
@@ -4933,7 +4933,7 @@ fn pin_orientation_diagnostic(
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// The unit number and conversion index encoded in the library sub-symbol name, or `None` when the suffix is not valid.
 fn sub_symbol_unit_convert(name: &str) -> Option<(u32, u32)> {
     let (prefix, convert) = name.rsplit_once('_')?;
     let (_, unit) = prefix.rsplit_once('_')?;
@@ -4947,7 +4947,7 @@ fn sub_symbol_unit_convert(name: &str) -> Option<(u32, u32)> {
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// The normalized angle for an exact quarter-turn orientation, or `None` when the supplied angle is not cardinal.
 fn cardinal_rotation(angle: f64) -> Option<i32> {
     let normalized = angle.rem_euclid(FULL_ROTATION_DEGREES);
     [
@@ -4971,7 +4971,7 @@ fn cardinal_rotation(angle: f64) -> Option<i32> {
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// The affine transform for the symbol's origin, rotation, and supported mirror state, or `None` for an unsupported transform.
 fn symbol_transform_affine(rotation_degrees: f64, mirror: Option<&str>) -> Option<Affine> {
     if !rotation_degrees.is_finite() {
         return None;
@@ -5017,7 +5017,7 @@ struct IndexedSegment {
 }
 
 impl Cross for IndexedSegment {
-    /// Defines the scalar type used by this crate.
+    /// Floating-point scalar used for geometric coordinates, distances, and stroke measurements.
     type Scalar = f64;
     /// Calculates line from the supplied schematic geometry or S-expression data.
     ///
@@ -5038,7 +5038,7 @@ impl Cross for IndexedSegment {
 ///
 /// # Returns
 ///
-/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
+/// SCH001 diagnostics for invalid endpoints, diagonal or zero-length segments, overlaps, crossings, and unmarked T-junctions.
 fn check_wire_geometry(root: &Node, segments: &[Segment], junctions: &[Point]) -> Vec<Diagnostic> {
     let mut diagnostics = collect_invalid_wire_diagnostics(root);
     for segment in segments {
@@ -5143,7 +5143,7 @@ fn check_wire_geometry(root: &Node, segments: &[Segment], junctions: &[Point]) -
 ///
 /// # Returns
 ///
-/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
+/// SCH001 diagnostics for wire paths with an invalid point count or zero-length segments.
 fn collect_invalid_wire_diagnostics(root: &Node) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     walk(root, &mut |node| {
@@ -5172,7 +5172,7 @@ fn collect_invalid_wire_diagnostics(root: &Node) -> Vec<Diagnostic> {
 ///
 /// # Returns
 ///
-/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
+/// SCH003 diagnostics for visible label glyph bounds that overlap wire interiors.
 fn check_label_wire_clearance(root: &Node, segments: &[Segment]) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     for (kind, label, _point, span, node) in collect_label_nodes(root) {
@@ -5204,7 +5204,7 @@ fn check_label_wire_clearance(root: &Node, segments: &[Segment]) -> Vec<Diagnost
 ///
 /// # Returns
 ///
-/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
+/// SCH008 diagnostics for invalid text-box dimensions/font settings, missing geometry, or overlap with wires and annotations.
 fn check_text_box_layout(root: &Node, segments: &[Segment]) -> Vec<Diagnostic> {
     let mut diagnostics: Vec<_> = collect_nodes(root, "text")
         .into_iter()
@@ -5421,7 +5421,7 @@ fn read_text_box_metrics(
 ///
 /// # Returns
 ///
-/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
+/// SCH008 diagnostics for text-box overlap or intersections between text-box bounds and wire segments.
 fn check_text_box_interactions(boxes: &[TextBoxRecord], segments: &[Segment]) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     for (index, first) in boxes.iter().enumerate() {
@@ -5455,7 +5455,7 @@ fn check_text_box_interactions(boxes: &[TextBoxRecord], segments: &[Segment]) ->
 ///
 /// # Returns
 ///
-/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
+/// SCH011 diagnostics for multiline block annotations that do not have a visible border.
 fn check_block_annotation_structure(root: &Node) -> Vec<Diagnostic> {
     collect_nodes(root, "text_box")
         .into_iter()
@@ -5533,12 +5533,12 @@ fn collect_label_nodes(root: &Node) -> Vec<(String, String, Point, ByteSpan, &No
 ///
 /// # Arguments
 ///
-/// * `value` — value to be used in this geometry or parsing operation.
-/// * `node` — S-expression node whose properties, coordinates, or geometry are being decoded.
+/// * `value` — Text whose rendered glyph bounds are being estimated.
+/// * `node` — S-expression text node supplying font size, angle, justification, and visibility effects.
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// Estimated axis-aligned bounds of the rendered text glyphs in schematic coordinates, or `None` when its position or font metrics are unavailable.
 fn text_visual_bounds(value: &str, node: &Node) -> Option<Bounds> {
     let at = child_list(node, "at").and_then(list_items)?;
     let effects = child_list(node, "effects");
@@ -5629,7 +5629,7 @@ fn newstroke_sentinel() -> &'static (Vec<VectorPoint>, f64) {
 ///
 /// # Arguments
 ///
-/// * `value` — value to be used in this geometry or parsing operation.
+/// * `value` — String whose Newstroke glyph widths and line heights are measured.
 ///
 /// # Returns
 ///
@@ -5680,9 +5680,9 @@ fn newstroke_text_metrics_ratio(value: &str) -> (f64, f64) {
 ///
 /// # Arguments
 ///
-/// * `value` — value to be used in this geometry or parsing operation.
-/// * `font_size` — font size to be used in this geometry or parsing operation.
-/// * `padding` — padding to be used in this geometry or parsing operation.
+/// * `value` — Text content that must fit inside the annotation box.
+/// * `font_size` — Requested font height in millimetres.
+/// * `padding` — Required internal padding around rendered glyph bounds, in millimetres.
 ///
 /// # Returns
 ///
@@ -5708,7 +5708,7 @@ fn required_text_box_size(value: &str, font_size: f64, padding: f64) -> (f64, f6
 ///
 /// # Returns
 ///
-/// `true` when the geometry satisfies the condition checked by this helper.
+/// `true` when the two rectangles overlap in both axes by more than the geometry tolerance; edge-only contact is not an overlap.
 fn bounds_overlap(first: Bounds, second: Bounds) -> bool {
     (first.x + first.width).min(second.x + second.width) - first.x.max(second.x)
         > GEOMETRY_TOLERANCE_MM
@@ -5725,7 +5725,7 @@ fn bounds_overlap(first: Bounds, second: Bounds) -> bool {
 ///
 /// # Returns
 ///
-/// `true` when the geometry satisfies the condition checked by this helper.
+/// `true` when the wire intersects the rectangle, with `strict` controlling whether boundary-only contact is excluded.
 fn wire_overlaps_bounds(segment: Segment, bounds: Bounds, strict: bool) -> bool {
     /// Geometric tolerance used by the wire-to-bounds intersection test.
     const TOLERANCE: f64 = GEOMETRY_TOLERANCE_MM;
@@ -5784,7 +5784,7 @@ fn wire_overlaps_bounds(segment: Segment, bounds: Bounds, strict: bool) -> bool 
 ///
 /// # Returns
 ///
-/// `true` when the geometry satisfies the condition checked by this helper.
+/// `true` when the segment intersects the rectangle, including contact with its boundary.
 fn line_hits_bounds(segment: Segment, bounds: Bounds) -> bool {
     wire_overlaps_bounds(segment, bounds, false)
 }
@@ -5797,7 +5797,7 @@ fn line_hits_bounds(segment: Segment, bounds: Bounds) -> bool {
 ///
 /// # Returns
 ///
-/// `true` when the geometry satisfies the condition checked by this helper.
+/// `true` only when the segment crosses the rectangle's interior rather than touching its boundary.
 fn strict_line_hits_bounds(segment: Segment, bounds: Bounds) -> bool {
     wire_overlaps_bounds(segment, bounds, true)
 }
@@ -5826,7 +5826,7 @@ fn at_span(code: BuiltinRuleId, message: impl Into<String>, span: ByteSpan) -> D
 ///
 /// # Returns
 ///
-/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
+/// SCH002 diagnostics for duplicate labels, inconsistent label connectivity, and hierarchical wire-twig termination.
 fn check_label_topology(root: &Node, segments: &[Segment]) -> Vec<Diagnostic> {
     let labels = collect_labels(root);
     let junctions = collect_points(root, "junction");
@@ -6006,7 +6006,7 @@ pub fn physical_wire_component_key(x_mm: f64, y_mm: f64) -> String {
 ///
 /// # Returns
 ///
-/// `true` when the geometry satisfies the condition checked by this helper.
+/// `true` when another wire terminates at this coordinate and no explicit junction marks the connection.
 fn has_unmarked_wire_endpoint(point: Point, segments: &[Segment], junctions: &[Point]) -> bool {
     let terminates_another_wire = segments.iter().any(|other| is_endpoint(point, *other));
     terminates_another_wire
@@ -6080,7 +6080,7 @@ pub fn physical_wire_component_ids(facts: &SchematicFacts) -> BTreeMap<String, u
 ///
 /// # Returns
 ///
-/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
+/// SCH018 diagnostics for overlapping label glyphs and collisions with visible fields or annotation boxes.
 fn check_label_text_collisions(root: &Node) -> Vec<Diagnostic> {
     let mut labels = Vec::new();
     for (kind, label, _point, span, node) in collect_label_nodes(root) {
@@ -6144,7 +6144,7 @@ fn check_label_text_collisions(root: &Node) -> Vec<Diagnostic> {
 ///
 /// # Returns
 ///
-/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
+/// SCH010 diagnostics for visible reference/value fields that collide with other fields, symbols, wires, pins, labels, or annotations.
 fn check_symbol_field_clearance(
     root: &Node,
     segments: &[Segment],
@@ -6278,7 +6278,7 @@ fn geo_rect(bounds: Bounds) -> GeoRect<f64> {
 ///
 /// # Returns
 ///
-/// `true` when the geometry satisfies the condition checked by this helper.
+/// `true` when the point lies inside the rectangle after expanding its edges by the schematic geometry tolerance.
 fn point_in_bounds(point: Point, bounds: Bounds) -> bool {
     let expanded = Bounds {
         x: bounds.x - GEOMETRY_TOLERANCE_MM,
@@ -6309,7 +6309,7 @@ fn point_bounds_distance(point: Point, bounds: Bounds) -> f64 {
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// A polygon built from a closed primitive with at least three points, or `None` for open or incomplete geometry.
 fn schematic_polygon(primitive: &SchematicPrimitiveFact) -> Option<Polygon<f64>> {
     if !primitive.closed || primitive.points_mm.len() < 3 {
         return None;
@@ -6353,7 +6353,7 @@ fn schematic_path(primitive: &SchematicPrimitiveFact) -> LineString<f64> {
 ///
 /// # Returns
 ///
-/// `true` when the geometry satisfies the condition checked by this helper.
+/// `true` when the primitive's stroked geometry intersects the supplied rectangle.
 fn symbol_primitive_intersects_bounds(bounds: Bounds, primitive: &SchematicPrimitiveFact) -> bool {
     if let Some((center_x, center_y, radius)) = primitive.circle_mm {
         let center = Point {
@@ -6379,7 +6379,7 @@ fn symbol_primitive_intersects_bounds(bounds: Bounds, primitive: &SchematicPrimi
 ///
 /// # Returns
 ///
-/// `true` when the geometry satisfies the condition checked by this helper.
+/// `true` when the entire supplied rectangle lies inside the closed primitive's interior after accounting for its stroke.
 fn symbol_primitive_contains_bounds(bounds: Bounds, primitive: &SchematicPrimitiveFact) -> bool {
     if let Some((center_x, center_y, radius)) = primitive.circle_mm {
         let inner_radius = radius - primitive.stroke_width_mm * HALF_FACTOR;
@@ -6426,7 +6426,7 @@ fn symbol_primitive_contains_bounds(bounds: Bounds, primitive: &SchematicPrimiti
 ///
 /// # Returns
 ///
-/// `true` when the geometry satisfies the condition checked by this helper.
+/// `true` when the property's `effects` list contains KiCad's `hide` flag.
 fn property_is_hidden(property: &Node) -> bool {
     child_list(property, "effects").is_some_and(|effects| child_list(effects, "hide").is_some())
 }
@@ -6438,7 +6438,7 @@ fn property_is_hidden(property: &Node) -> bool {
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// Axis-aligned bounds of the text box in schematic coordinates, or `None` when its anchor or dimensions are unavailable.
 fn text_box_bounds(node: &Node) -> Option<Bounds> {
     let at = child_list(node, "at").and_then(list_items)?;
     let size = child_list(node, "size").and_then(list_items)?;
@@ -6457,7 +6457,7 @@ fn text_box_bounds(node: &Node) -> Option<Bounds> {
 ///
 /// # Returns
 ///
-/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
+/// SCH019 diagnostics for identical label text reused with conflicting local, global, or hierarchical label kinds.
 fn check_label_kind_consistency(root: &Node) -> Vec<Diagnostic> {
     let mut label_kinds: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for (kind, label, _point, _span) in collect_labels(root) {
@@ -6501,7 +6501,7 @@ fn walk<'a>(node: &'a Node, visit: &mut impl FnMut(&'a Node)) {
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// The child-node slice when the node is an S-expression list, or `None` when it is an atom.
 fn list_items(node: &Node) -> Option<&[Node]> {
     if let Node::List { items, .. } = node {
         Some(items)
@@ -6517,7 +6517,7 @@ fn list_items(node: &Node) -> Option<&[Node]> {
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// The leading symbol of an S-expression list, or `None` when the node has no symbolic head.
 fn head(node: &Node) -> Option<&str> {
     let Node::List { items, .. } = node else {
         return None;
@@ -6555,7 +6555,7 @@ fn children<'a>(node: &'a Node, name: &'a str) -> impl Iterator<Item = &'a Node>
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// The decoded text of a plain or quoted S-expression atom, or `None` for a list node.
 fn atom_value(node: &Node) -> Option<&str> {
     let Node::Atom { atom, .. } = node else {
         return None;
@@ -6572,7 +6572,7 @@ fn atom_value(node: &Node) -> Option<&str> {
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// The finite `f64` value parsed from the atom, or `None` when parsing fails or produces a non-finite value.
 fn number(node: &Node) -> Option<f64> {
     atom_value(node)?.parse().ok()
 }
@@ -6585,7 +6585,7 @@ fn number(node: &Node) -> Option<f64> {
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// The first direct child list whose head matches `name`, or `None` when no such child exists.
 fn child_list<'a>(node: &'a Node, name: &'a str) -> Option<&'a Node> {
     children(node, name).next()
 }
@@ -6597,7 +6597,7 @@ fn child_list<'a>(node: &'a Node, name: &'a str) -> Option<&'a Node> {
 ///
 /// # Returns
 ///
-/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
+/// The `(x, y)` coordinate decoded from an S-expression `at` node, or `None` when either coordinate is missing or invalid.
 fn point_from_at(node: &Node) -> Option<Point> {
     let at = child_list(node, "at")?;
     let items = list_items(at)?;
@@ -6745,7 +6745,7 @@ fn collect_labels(root: &Node) -> Vec<(String, String, Point, ByteSpan)> {
 ///
 /// # Returns
 ///
-/// `true` when the geometry satisfies the condition checked by this helper.
+/// `true` when the point lies on the supplied finite wire segment within the schematic geometry tolerance.
 fn point_on_segment(point: Point, segment: &Segment) -> bool {
     point_on_segment_any(point, segment.start, segment.end)
 }
@@ -6758,7 +6758,7 @@ fn point_on_segment(point: Point, segment: &Segment) -> bool {
 ///
 /// # Returns
 ///
-/// `true` when the geometry satisfies the condition checked by this helper.
+/// `true` when the point matches either endpoint of the supplied wire segment within the geometry tolerance.
 fn is_endpoint(point: Point, segment: Segment) -> bool {
     distance(point, segment.start) < GEOMETRY_TOLERANCE_MM
         || distance(point, segment.end) < GEOMETRY_TOLERANCE_MM

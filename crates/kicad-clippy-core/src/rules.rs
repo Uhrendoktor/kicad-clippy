@@ -37,20 +37,20 @@ pub struct RuleDescriptor {
 }
 
 impl RuleDescriptor {
-    /// Creates a rule descriptor with the supplied identifying text and default level; documentation URL and tags are initially empty.
+    /// Creates a rule descriptor from the supplied ID, display text, explanation, and default severity.
     ///
     /// # Arguments
     ///
     /// * `id` — Stable rule identifier used as the registry lookup key.
-    /// * `name` — Text value stored in the corresponding field.
-    /// * `category` — Text value stored in the corresponding field.
-    /// * `summary` — Text value stored in the corresponding field.
-    /// * `explanation` — Text value stored in the corresponding field.
-    /// * `default_level` — default level supplied by the caller.
+    /// * `name` — Short display name shown to users when the rule is listed.
+    /// * `category` — Rule family used to group related checks, such as electrical, layout, or documentation.
+    /// * `summary` — Concise statement of the condition that the rule checks.
+    /// * `explanation` — Longer rationale describing why the check exists and what design intent it protects.
+    /// * `default_level` — Severity level applied when no user configuration overrides this rule.
     ///
     /// # Returns
     ///
-    /// An empty rule registry ready to accept descriptors.
+    /// A `RuleDescriptor` populated with the supplied metadata and with no documentation URL or tags.
     #[must_use]
     pub fn new(
         id: impl Into<String>,
@@ -76,7 +76,10 @@ impl RuleDescriptor {
 /// Error raised when a rule identifier is registered more than once.
 #[derive(Debug, Error, Eq, PartialEq)]
 #[error("rule identifier {0:?} is already registered")]
-pub struct RuleRegistryError(pub String);
+pub struct RuleRegistryError(
+    /// Stable identifier of the descriptor rejected because that ID was already registered.
+    pub String,
+);
 
 /// Deterministic catalogue of rule metadata.
 #[derive(Clone, Debug, Default)]
@@ -86,11 +89,11 @@ pub struct RuleRegistry {
 }
 
 impl RuleRegistry {
-    /// Creates a rule descriptor with the supplied identifying text and default level; documentation URL and tags are initially empty.
+    /// Creates an empty deterministic catalogue for rule descriptors.
     ///
     /// # Returns
     ///
-    /// An empty rule registry ready to accept descriptors.
+    /// A registry with no descriptors registered.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -181,7 +184,7 @@ mod tests {
             RuleLevel::Deny,
         )
     }
-    /// Verifies that registry is deterministic and rejects duplicate ids behaves as required.
+    /// Checks that registry iteration is ordered by rule ID and duplicate identifiers are rejected.
     #[test]
     fn registry_is_deterministic_and_rejects_duplicate_ids() {
         let mut registry = RuleRegistry::new();

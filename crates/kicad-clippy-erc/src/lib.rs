@@ -100,7 +100,7 @@ pub enum ErcError {
 ///
 /// # Errors
 ///
-/// Returns an error when KiCad execution, file access, JSON/S-expression decoding, or netlist consistency checks fail.
+/// Returns `Spawn` when the process cannot start, `CliFailed` when a failed invocation produces no report, `Io` for report-file errors, or `Json`/`InvalidReport` for malformed report data.
 pub fn run_native_erc(
     program: impl AsRef<Path>,
     schematic_path: impl AsRef<Path>,
@@ -167,7 +167,7 @@ pub fn run_native_erc(
 ///
 /// # Errors
 ///
-/// Returns an error when KiCad execution, file access, JSON/S-expression decoding, or netlist consistency checks fail.
+/// Returns `Json` when the input is malformed JSON, or `InvalidReport` when the required top-level `sheets` array is absent or has the wrong type.
 pub fn parse_erc_json(
     contents: &[u8],
     schematic_path: impl AsRef<Path>,
@@ -343,7 +343,7 @@ mod tests {
       "ignored_checks": [{"key": "pin_to_pin", "description": "Pin-to-pin conflict"}]
     }
     "#;
-    /// Verifies that reads sheet nested violations and preserves item context behaves as required.
+    /// Checks that nested per-sheet ERC violations are parsed and their item locations are retained as related diagnostics.
     ///
     /// # Returns
     ///
@@ -373,14 +373,14 @@ mod tests {
         assert!(report.has_errors());
         Ok(())
     }
-    /// Verifies that rejects a drc shaped top level violations array behaves as required.
+    /// Checks that an unrelated top-level DRC violations array is rejected when the required ERC `sheets` array is absent.
     #[test]
     fn rejects_a_drc_shaped_top_level_violations_array() {
         let drc_shaped = br#"{"violations":[{"severity":"error"}]}"#;
 
         assert!(parse_erc_json(drc_shaped, "fixture.kicad_sch").is_err());
     }
-    /// Verifies that excluded errors are retained but do not fail the report behaves as required.
+    /// Checks that excluded native ERC errors are preserved in the report but are not counted as active errors.
     ///
     /// # Returns
     ///

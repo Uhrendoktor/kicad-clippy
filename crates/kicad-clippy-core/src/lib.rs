@@ -1,13 +1,13 @@
 #![forbid(unsafe_code)]
 
 //! Shared data contracts for the kicad-clippy schematic linter.
-/// Contains the diagnostic implementation and supporting types.
+/// Defines the normalized severity, source location, and related-item structures shared by ERC and schematic rule findings.
 pub mod diagnostic;
-/// Contains the rule id implementation and supporting types.
+/// Defines stable `SCHnnn` identifiers and their canonical string conversion for built-in schematic checks.
 pub mod rule_id;
-/// Contains the rules implementation and supporting types.
+/// Defines configurable rule metadata, severity levels, and the deterministic registry used by rule integrations.
 pub mod rules;
-/// Contains the source implementation and supporting types.
+/// Defines half-open source byte spans and the reference-counted original text buffer used to render diagnostics.
 pub mod source;
 
 pub use diagnostic::{Diagnostic, RelatedLocation, SchematicLocation, Severity};

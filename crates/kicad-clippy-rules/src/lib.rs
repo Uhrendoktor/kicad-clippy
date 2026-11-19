@@ -7,9 +7,9 @@ use std::collections::{BTreeMap, btree_map::Entry};
 use kicad_clippy_core::Diagnostic;
 use kicad_clippy_parser::SchematicDocument;
 use thiserror::Error;
-/// Contains the generic implementation and supporting types.
+/// Extracts normalized schematic facts and implements geometry, pin-orientation, label-topology, text-layout, and wire-obstacle rule passes.
 mod generic;
-/// Contains the metadata implementation and supporting types.
+/// Loads and validates component-intent profiles, including physical connectivity, group containment, clearance, and decoupling contracts.
 mod metadata;
 
 pub use generic::{
@@ -310,7 +310,7 @@ impl RuleEngine {
     }
 }
 #[cfg(test)]
-/// Contains the tests implementation and supporting types.
+/// Exercises shared rule-context accessors, deterministic pass registration, and integration with externally supplied rule passes.
 mod tests {
     use std::error::Error;
 

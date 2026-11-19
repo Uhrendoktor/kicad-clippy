@@ -21,7 +21,6 @@ const SUPPORTED_PROFILE_SCHEMA_VERSION: u32 = 1;
 const MINIMUM_PIN_GROUP_SIZE: usize = 2;
 /// Decimal precision used in stable coordinate keys.
 const COORDINATE_KEY_DECIMAL_PLACES: usize = 3;
-/// Multiplier converting half-clearance to clearance on both sides.
 /// Maximum normalized wire-compactness score.
 const MAX_COMPACTNESS_SCORE: f64 = 1.0;
 /// Dimensionless tolerance for comparing normalized scores.
@@ -42,29 +41,29 @@ pub enum ProfileMode {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ComponentKind {
-    /// Represents the `Capacitor` case.
+    /// Two-terminal passive component that stores energy in an electric field and is used for filtering, coupling, timing, or decoupling.
     Capacitor,
-    /// Represents the `Resistor` case.
+    /// Passive component that provides resistance for current limiting, sensing, biasing, pull-up/pull-down, or voltage division.
     Resistor,
-    /// Represents the `Diode` case.
+    /// Semiconductor device with directional conduction, including rectifiers, signal diodes, LEDs, and protection diodes.
     Diode,
-    /// Represents the `Inductor` case.
+    /// Passive magnetic component used for energy storage, filtering, impedance, or conversion-stage inductors.
     Inductor,
-    /// Represents the `Transistor` case.
+    /// Semiconductor device used for switching, amplification, or controlled power delivery.
     Transistor,
-    /// Represents the `Connector` case.
+    /// Electrical interconnect that exposes circuit signals or power to another board, cable, or assembly.
     Connector,
-    /// Represents the `IntegratedCircuit` case.
+    /// Multi-function semiconductor device containing an integrated circuit, such as a controller, regulator, interface, or logic device.
     IntegratedCircuit,
-    /// Represents the `Fuse` case.
+    /// Overcurrent protection element designed to interrupt the circuit when current exceeds its rated limit.
     Fuse,
-    /// Represents the `FerriteBead` case.
+    /// Passive EMI-suppression component that presents frequency-dependent impedance to attenuate high-frequency noise.
     FerriteBead,
-    /// Represents the `Crystal` case.
+    /// Piezoelectric frequency reference used to establish or stabilize an oscillator clock.
     Crystal,
-    /// Represents the `Switch` case.
+    /// Mechanical or electronic device that opens, closes, or selects one or more circuit paths.
     Switch,
-    /// Represents the `Other` case.
+    /// Component family that does not fit any of the specific built-in classifications.
     Other,
 }
 
@@ -292,7 +291,7 @@ impl LintProfile {
     ///
     /// # Returns
     ///
-    /// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+    /// Diagnostics identifying profile declarations that do not match placed schematic components, physical connections, or group geometry.
     #[must_use]
     pub fn validate(&self, document: &SchematicDocument) -> Vec<Diagnostic> {
         self.validate_with_netlist(document, None)
@@ -307,7 +306,7 @@ impl LintProfile {
     ///
     /// # Returns
     ///
-    /// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+    /// Diagnostics identifying profile mismatches found in the schematic or in the exported logical pin-to-net assignments.
     #[must_use]
     pub fn validate_with_netlist(
         &self,
@@ -369,7 +368,7 @@ impl LintProfile {
     ///
     /// # Returns
     ///
-    /// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+    /// Diagnostics for profile component references that do not resolve to placed symbols in the schematic.
     fn validate_profile_references(&self, references: &BTreeSet<String>) -> Vec<Diagnostic> {
         self.components
             .keys()
@@ -394,7 +393,7 @@ impl LintProfile {
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics for declared direct-wire pairs that are not physically connected, or for forbidden labels attached to those wire components.
 fn validate_direct_wire_connectivity(
     pairs: &[DirectWirePair],
     forbidden_labels: &BTreeSet<String>,
@@ -587,7 +586,7 @@ fn append_direct_wire_pair_label_diagnostics(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics for forbidden label kinds or names found on physical wire components protected by a direct-wire contract.
 fn validate_forbidden_direct_wire_labels(
     forbidden_labels: &BTreeSet<String>,
     protected_components: &BTreeSet<usize>,
@@ -631,7 +630,7 @@ fn validate_forbidden_direct_wire_labels(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics for common-pin groups whose members fail physical-wire, label, or exported-netlist connectivity requirements.
 fn validate_common_pin_groups(
     groups: &[CommonPinNetGroup],
     facts: &SchematicFacts,
@@ -658,7 +657,7 @@ fn validate_common_pin_groups(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics for missing group pins, disconnected wire components, or an absent/mismatched label on the common physical net.
 fn validate_common_pin_group(
     group: &CommonPinNetGroup,
     facts: &SchematicFacts,
@@ -702,7 +701,7 @@ fn validate_common_pin_group(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics when the exported netlist assigns group pins to different logical nets or to a net name other than the declared name.
 fn validate_common_pin_group_netlist(
     group: &CommonPinNetGroup,
     netlist: Option<&Netlist>,
@@ -766,7 +765,7 @@ fn validate_common_pin_group_netlist(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics for physical-wire groups whose declared pin members do not share the required wire-only component.
 fn validate_physical_wire_groups(
     groups: &[PhysicalWireGroup],
     facts: &SchematicFacts,
@@ -790,7 +789,7 @@ fn validate_physical_wire_groups(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics for pins that are missing, unattached, or split across more than one physical wire component.
 fn validate_physical_wire_group(
     group: &PhysicalWireGroup,
     facts: &SchematicFacts,
@@ -912,7 +911,7 @@ fn invalid_physical_wire_reference(group_name: &str, pin_ref: &str) -> Diagnosti
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics for separate-wire pairs that share a physical wire component or an exported logical net.
 fn validate_separate_wire_pairs(
     pairs: &[SeparateWirePair],
     facts: &SchematicFacts,
@@ -944,7 +943,7 @@ fn validate_separate_wire_pairs(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics when either pin is missing or the two pins share a physical wire component or logical net.
 fn validate_separate_wire_pair(
     pair: &SeparateWirePair,
     facts: &SchematicFacts,
@@ -1294,7 +1293,7 @@ fn same_wire_point(first: (f64, f64), second: (f64, f64)) -> bool {
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics for every invalid group declaration, including membership, evidence, containment, clearance, spacing, and wire-length constraints.
 fn validate_groups(
     groups: &BTreeMap<String, GroupIntent>,
     facts: &SchematicFacts,
@@ -1321,7 +1320,7 @@ fn validate_groups(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics for the group's invalid evidence, members, KiCad membership, containment, frame clearance, spacing, or wiring contract.
 fn validate_group(
     group_id: &str,
     group: &GroupIntent,
@@ -1368,7 +1367,7 @@ fn validate_group(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics for group members or attached schematic objects that extend outside the frame assigned to the group.
 fn validate_group_containment(
     group_id: &str,
     group: &GroupIntent,
@@ -1467,7 +1466,7 @@ fn validate_group_containment(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics for pins belonging to group members whose anchors lie outside the referenced frame.
 fn validate_group_pin_containment(
     group_id: &str,
     group: &GroupIntent,
@@ -1504,7 +1503,7 @@ fn validate_group_pin_containment(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics for visible reference or value fields belonging to group members that extend outside the frame.
 fn validate_group_field_containment(
     group_id: &str,
     group: &GroupIntent,
@@ -1541,7 +1540,7 @@ fn validate_group_field_containment(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics when the group's referenced description text box extends beyond the frame bounds.
 fn validate_group_description_containment(
     group_id: &str,
     group: &GroupIntent,
@@ -1583,7 +1582,7 @@ fn validate_group_description_containment(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics for embedded symbol primitives whose transformed geometry extends outside the group frame.
 fn validate_group_symbol_primitive_containment(
     group_id: &str,
     group: &GroupIntent,
@@ -1718,7 +1717,7 @@ fn wire_belongs_to_group(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics for wire segments in the group's physical components that extend outside the referenced frame.
 fn validate_group_wire_containment(
     group_id: &str,
     group: &GroupIntent,
@@ -1762,7 +1761,7 @@ fn validate_group_wire_containment(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics for labels attached to the group's physical wire components when their anchors lie outside the frame.
 fn validate_group_label_containment(
     group_id: &str,
     group: &GroupIntent,
@@ -1821,7 +1820,7 @@ fn validate_group_label_containment(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics for associated annotation text boxes that overlap the frame but are not fully contained by it.
 fn validate_group_annotation_box_containment(
     group_id: &str,
     group: &GroupIntent,
@@ -1861,7 +1860,7 @@ fn validate_group_annotation_box_containment(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics for standalone schematic text that overlaps the frame but extends beyond its edges.
 fn validate_group_plain_text_containment(
     group_id: &str,
     facts: &SchematicFacts,
@@ -1899,7 +1898,7 @@ fn validate_group_plain_text_containment(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics for sheet-level graphic bounds that overlap the frame but are not fully contained.
 fn validate_group_graphic_containment(
     group_id: &str,
     facts: &SchematicFacts,
@@ -1938,7 +1937,7 @@ fn validate_group_graphic_containment(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics for bitmap image bounds that overlap the frame but extend beyond its edges.
 fn validate_group_image_containment(
     group_id: &str,
     facts: &SchematicFacts,
@@ -2091,7 +2090,7 @@ fn rectangle_inside_frame(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics for group members or associated schematic objects that do not maintain the configured inset from the frame edges.
 fn validate_frame_clearance(
     group_id: &str,
     group: &GroupIntent,
@@ -2199,7 +2198,7 @@ fn valid_frame_bounds((left, top, right, bottom): (f64, f64, f64, f64)) -> bool 
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics when a group member's symbol origin is closer to a frame edge than the declared minimum clearance.
 fn validate_member_frame_clearance(
     group_id: &str,
     group: &GroupIntent,
@@ -2257,7 +2256,7 @@ fn validate_member_frame_clearance(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics when a placed pin belonging to a group member lies inside the required frame-edge clearance zone.
 fn validate_member_pin_frame_clearance(
     group_id: &str,
     group: &GroupIntent,
@@ -2304,7 +2303,7 @@ fn validate_member_pin_frame_clearance(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics when a visible reference or value field lies inside the required frame-edge clearance zone.
 fn validate_member_field_frame_clearance(
     group_id: &str,
     group: &GroupIntent,
@@ -2351,7 +2350,7 @@ fn validate_member_field_frame_clearance(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics for stroked symbol primitives that approach the frame edges more closely than the declared clearance.
 fn validate_group_symbol_primitive_clearance(
     group_id: &str,
     group: &GroupIntent,
@@ -2390,7 +2389,7 @@ fn validate_group_symbol_primitive_clearance(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics for group wire segments that enter the required frame-edge clearance zone.
 fn validate_group_wire_clearance(
     group_id: &str,
     group: &GroupIntent,
@@ -2436,7 +2435,7 @@ fn validate_group_wire_clearance(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics for labels attached to the group's wire components that violate the frame-edge clearance.
 fn validate_group_label_clearance(
     group_id: &str,
     group: &GroupIntent,
@@ -2491,7 +2490,7 @@ fn validate_group_label_clearance(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics for annotation text boxes that do not preserve the configured distance from frame edges.
 fn validate_group_annotation_box_clearance(
     group_id: &str,
     group: &GroupIntent,
@@ -2533,7 +2532,7 @@ fn validate_group_annotation_box_clearance(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics for standalone text whose bounds do not preserve the configured distance from frame edges.
 fn validate_group_plain_text_clearance(
     group_id: &str,
     facts: &SchematicFacts,
@@ -2573,7 +2572,7 @@ fn validate_group_plain_text_clearance(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics for sheet-level graphics whose stroked bounds enter the configured frame-edge clearance zone.
 fn validate_group_graphic_clearance(
     group_id: &str,
     facts: &SchematicFacts,
@@ -2614,7 +2613,7 @@ fn validate_group_graphic_clearance(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics for bitmap image bounds that do not preserve the configured distance from frame edges.
 fn validate_group_image_clearance(
     group_id: &str,
     facts: &SchematicFacts,
@@ -2655,7 +2654,7 @@ fn validate_group_image_clearance(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// SCH012 diagnostics when the referenced description box lacks usable bounds or fails the required inset on any frame edge.
 fn validate_description_frame_clearance(
     group_id: &str,
     group: &GroupIntent,
@@ -2709,7 +2708,7 @@ fn validate_description_frame_clearance(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics when the wire-length budget is invalid, the frame cannot be resolved, or the group's physical wire length exceeds its budget.
 fn validate_wire_compactness(
     group_id: &str,
     group: &GroupIntent,
@@ -2785,7 +2784,7 @@ fn validate_wire_compactness(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics when the requested minimum spacing is invalid or placed group-member origins are closer than that spacing.
 fn validate_group_spacing(
     group_id: &str,
     group: &GroupIntent,
@@ -2854,7 +2853,7 @@ fn validate_group_spacing(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics when the schematic's native KiCad group is missing or its member UUIDs do not match the profile references.
 fn validate_kicad_group_membership(
     group_id: &str,
     group: &GroupIntent,
@@ -2929,7 +2928,7 @@ fn validate_kicad_group_membership(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics when the group's evidence does not satisfy the required document, page, or reference fields for its evidence level.
 fn validate_group_evidence(group_id: &str, group: &GroupIntent) -> Vec<Diagnostic> {
     let evidence = group.evidence.as_ref();
     let has_document_evidence = evidence.is_some_and(|item| {
@@ -2967,7 +2966,7 @@ fn validate_group_evidence(group_id: &str, group: &GroupIntent) -> Vec<Diagnosti
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics for group member references that are not present among the placed schematic components.
 fn validate_group_members(
     group_id: &str,
     group: &GroupIntent,
@@ -3006,7 +3005,7 @@ fn validate_group_members(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics when a purpose refers to a non-member component or its function text is missing from the group description.
 fn validate_group_component_purposes(
     group_id: &str,
     group: &GroupIntent,
@@ -3091,7 +3090,7 @@ fn validate_group_phrase(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics for missing component function/rationale, mismatched pin nets, invalid role connections, or incomplete decoupling intent.
 fn validate_component_intent(
     reference: &str,
     intent: &ComponentIntent,
@@ -3150,7 +3149,7 @@ fn validate_component_intent(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics when a declared pin-to-net mapping is missing from or disagrees with the exported netlist.
 fn validate_pin_net_contract(
     reference: &str,
     intent: &ComponentIntent,
@@ -3226,7 +3225,7 @@ fn validate_pin_net_contract(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics when the declared component role does not include the electrical connections required for that role.
 fn validate_role_contract(reference: &str, intent: &ComponentIntent) -> Vec<Diagnostic> {
     let required_connections: &[&str] = match (intent.kind, intent.role.0.as_str()) {
         (ComponentKind::Capacitor, "bulk") => &["rail", "return"],
@@ -3296,7 +3295,7 @@ fn validate_role_contract(reference: &str, intent: &ComponentIntent) -> Vec<Diag
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics when a decoupling capacitor lacks a target pin, target terminal, return terminal, or declared return net.
 fn validate_decoupling_intent(
     reference: &str,
     contract: Option<&DecouplingIntent>,
@@ -3357,7 +3356,7 @@ fn validate_decoupling_intent(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics when the capacitor's exported target or return pin resolves to a different net than its decoupling contract declares.
 fn validate_decoupling_nets(
     reference: &str,
     contract: &DecouplingIntent,
@@ -3425,7 +3424,7 @@ fn validate_decoupling_nets(
 ///
 /// # Returns
 ///
-/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
+/// Diagnostics when capacitors assigned to one decoupling target are not grouped consistently or declare conflicting target/return nets.
 fn validate_decoupler_groups(components: &BTreeMap<String, ComponentIntent>) -> Vec<Diagnostic> {
     let mut by_target: BTreeMap<&str, Vec<&DecouplingIntent>> = BTreeMap::new();
     for intent in components.values() {
@@ -3505,7 +3504,7 @@ pub enum MetadataError {
     UnsupportedVersion(u32),
 }
 #[cfg(test)]
-/// Contains the tests implementation and supporting types.
+/// Exercises profile deserialization and validation for physical connectivity, group geometry, component intent, and decoupling contracts.
 mod tests {
     #![allow(clippy::expect_used)]
     use std::collections::BTreeMap;
