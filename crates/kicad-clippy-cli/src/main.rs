@@ -383,7 +383,7 @@ fn load_rule_policy(policy_path: &Path) -> Result<RulePolicy, CliError> {
 ///
 /// # Returns
 ///
-/// The decoded `RulePolicy`.
+/// The policy configuration parsed from the supplied TOML source text.
 ///
 /// # Errors
 ///
