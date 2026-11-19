@@ -9,6 +9,7 @@ use super::collect_placed_pin_positions;
 use super::distance;
 use super::GEOMETRY_TOLERANCE_MM;
 use super::point_from_at;
+use super::span_of;
 
 /// Checks that explicit no-connect markers coincide with supported transformed pins.
 ///
@@ -46,4 +47,28 @@ pub(super) fn check_no_connect_markers(root: &Node) -> Vec<Diagnostic> {
             })
         })
         .collect()
+}
+
+/// Concrete implementation of built-in rule 015.
+pub(super) struct Sch015;
+impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch015 {
+    /// Returns the stable 015 identifier.
+    ///
+    /// # Returns
+    ///
+    /// The stable 015 identifier.
+    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch015 }
+    /// Evaluates explicit no-connect marker placement on transformed symbol pins.
+    ///
+    /// # Arguments
+    ///
+    /// * context — the parsed schematic containing symbols and no-connect markers.
+    ///
+    /// # Returns
+    ///
+    /// Diagnostics for explicit no-connect marker placement on transformed symbol pins.
+    fn check(&self, context: &crate::RuleContext<'a>) -> Vec<Diagnostic> {
+        let Some(root) = context.document().cst().nodes.first() else { return Vec::new(); };
+        check_no_connect_markers(root)
+    }
 }

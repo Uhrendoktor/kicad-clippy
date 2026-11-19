@@ -14,12 +14,12 @@ use super::at_span;
 use super::child_list;
 use super::children;
 use super::distance;
-use super::geo_line;
 use super::GEOMETRY_TOLERANCE_MM;
-use super::IndexedSegment;
 use super::is_endpoint;
 use super::Point;
 use super::sch013::geo_line;
+use super::{head, span_of, walk};
+pub(super) use super::line_hits_bounds;
 use super::Segment;
 
 /// Wire segment paired with its stable index in the current analysis run.
@@ -177,4 +177,28 @@ fn collect_invalid_wire_diagnostics(root: &Node) -> Vec<Diagnostic> {
         }
     });
     diagnostics
+}
+
+/// Concrete implementation of built-in rule 001.
+pub(super) struct Sch001;
+impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch001 {
+    /// Returns the stable 001 identifier.
+    ///
+    /// # Returns
+    ///
+    /// The stable 001 identifier.
+    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch001 }
+    /// Evaluates wire endpoint counts, direction, crossings, overlaps, and unmarked junctions.
+    ///
+    /// # Arguments
+    ///
+    /// * context — the parsed schematic, straight wire segments, and explicit junction coordinates.
+    ///
+    /// # Returns
+    ///
+    /// Diagnostics for wire endpoint counts, direction, crossings, overlaps, and unmarked junctions.
+    fn check(&self, context: &crate::RuleContext<'a>) -> Vec<Diagnostic> {
+        let Some(root) = context.document().cst().nodes.first() else { return Vec::new(); };
+        check_wire_geometry(root, context.segments, context.junctions)
+    }
 }

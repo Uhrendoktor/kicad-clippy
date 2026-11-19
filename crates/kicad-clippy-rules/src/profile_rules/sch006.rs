@@ -76,3 +76,27 @@ pub(super) fn validate_group_spacing(
     }
     diagnostics
 }
+
+
+/// Concrete implementation of built-in rule SCH006.
+pub(super) struct Sch006;
+impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch006 {
+    /// Returns the stable SCH006 identifier.
+    ///
+    /// # Returns
+    ///
+    /// The stable SCH006 identifier.
+    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch006 }
+    /// Evaluates minimum member-origin spacing for each declared group.
+    ///
+    /// # Arguments
+    ///
+    /// * context — Project group declarations and normalized schematic component positions.
+    ///
+    /// # Returns
+    ///
+    /// Diagnostics for invalid minimum-spacing contracts or member origins that are too close.
+    fn check(&self, context: &super::ProfileRuleContext<'a>) -> Vec<Diagnostic> {
+        context.profile.groups.iter().flat_map(|(id, group)| validate_group_spacing(id, group, context.facts)).collect()
+    }
+}

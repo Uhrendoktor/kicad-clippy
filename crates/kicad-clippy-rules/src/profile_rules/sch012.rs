@@ -111,7 +111,7 @@ pub(super) fn validate_frame_clearance(
 /// # Returns
 ///
 /// `true` when all coordinates are finite and the frame has positive width and height.
-fn valid_frame_bounds((left, top, right, bottom): (f64, f64, f64, f64)) -> bool {
+pub(super) fn valid_frame_bounds((left, top, right, bottom): (f64, f64, f64, f64)) -> bool {
     left < right
         && top < bottom
         && [left, top, right, bottom]
@@ -630,4 +630,28 @@ fn validate_description_frame_clearance(
         }
     }
     diagnostics
+}
+
+
+/// Concrete implementation of built-in rule SCH012.
+pub(super) struct Sch012;
+impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch012 {
+    /// Returns the stable SCH012 identifier.
+    ///
+    /// # Returns
+    ///
+    /// The stable SCH012 identifier.
+    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch012 }
+    /// Checks minimum inset clearance for group members and associated schematic content.
+    ///
+    /// # Arguments
+    ///
+    /// * context — Project group declarations and normalized schematic geometry.
+    ///
+    /// # Returns
+    ///
+    /// Diagnostics for group content that does not maintain its configured frame inset.
+    fn check(&self, context: &super::ProfileRuleContext<'a>) -> Vec<Diagnostic> {
+        context.profile.groups.iter().flat_map(|(id, group)| validate_frame_clearance(id, group, context.facts)).collect()
+    }
 }

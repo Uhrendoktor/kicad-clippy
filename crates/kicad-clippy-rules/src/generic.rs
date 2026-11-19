@@ -1,7 +1,8 @@
-use crate::HALF_FACTOR;
+pub(crate) use crate::HALF_FACTOR;
 use crate::RuleContext;
+use crate::Rule;
 use crate::RulePass;
-use crate::TWO_SIDED_FACTOR;
+pub(crate) use crate::TWO_SIDED_FACTOR;
 use geo::algorithm::line_measures::Length;
 use geo::Contains;
 use geo::Coord;
@@ -76,6 +77,9 @@ mod sch018;
 mod sch019;
 
 pub use sch002::{physical_wire_component_ids, physical_wire_component_key};
+
+/// Shared geometric and annotation helpers consumed by more than one rule.
+pub(super) use sch010::{geo_rect, property_is_hidden, text_box_bounds};
 
 /// Disjoint-set forest used to resolve connected physical wire components.
 #[derive(Debug)]
@@ -3125,29 +3129,10 @@ pub fn run_builtin_rules(document: &SchematicDocument) -> RuleRun {
 /// All diagnostics from wire geometry, pin orientation, no-connect marker, and wire-obstacle checks; an empty vector means those checks found no issue.
 #[must_use]
 pub fn run_geometry_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
-    let Some(root) = context.document().cst().nodes.first() else {
-        return Vec::new();
-    };
-    let mut diagnostics = sch001::check_wire_geometry(root, context.segments, context.junctions);
-    diagnostics.extend(sch005::check_pin_orientation(root, context.segments));
-    diagnostics.extend(sch015::check_no_connect_markers(root));
-    let mut wire_stroke_widths = collect_explicit_wire_stroke_widths(root);
-    for (span_start, width_mm) in context.project_wire_stroke_widths_mm {
-        wire_stroke_widths.entry(*span_start).or_insert(*width_mm);
-    }
-    let default_wire_stroke_width_mm = if schematic_has_graphical_netclass_assignments(root) {
-        None
-    } else {
-        context.default_wire_stroke_width_mm
-    };
-    diagnostics.extend(sch013::check_wire_obstacles(
-        root,
-        context.segments,
-        context.facts(),
-        &wire_stroke_widths,
-        default_wire_stroke_width_mm,
-        context.default_schematic_line_stroke_width_mm,
-    ));
+    let mut diagnostics = sch001::Sch001.check(context);
+    diagnostics.extend(sch005::Sch005.check(context));
+    diagnostics.extend(sch015::Sch015.check(context));
+    diagnostics.extend(sch013::Sch013.check(context));
     diagnostics
 }
 /// Detects schematic-local netclass assignments that make project-only width inference unsafe.
@@ -3188,13 +3173,10 @@ fn schematic_has_graphical_netclass_assignments(root: &Node) -> bool {
 /// Diagnostics for physical label topology, label/wire glyph clearance, label text overlap, and inconsistent label kinds.
 #[must_use]
 pub fn run_label_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
-    let Some(root) = context.document().cst().nodes.first() else {
-        return Vec::new();
-    };
-    let mut diagnostics = sch002::check_label_topology(root, context.segments);
-    diagnostics.extend(sch003::check_label_wire_clearance(root, context.segments));
-    diagnostics.extend(sch018::check_label_text_collisions(root));
-    diagnostics.extend(sch019::check_label_kind_consistency(root));
+    let mut diagnostics = sch002::Sch002.check(context);
+    diagnostics.extend(sch003::Sch003.check(context));
+    diagnostics.extend(sch018::Sch018.check(context));
+    diagnostics.extend(sch019::Sch019.check(context));
     diagnostics
 }
 /// Runs annotation text-box geometry and multiline block-annotation checks.
@@ -3208,16 +3190,9 @@ pub fn run_label_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
 /// Diagnostics for text-box layout, multiline annotation borders, and visible symbol-field clearance.
 #[must_use]
 pub fn run_annotation_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
-    let Some(root) = context.document().cst().nodes.first() else {
-        return Vec::new();
-    };
-    let mut diagnostics = sch008::check_text_box_layout(root, context.segments);
-    diagnostics.extend(sch011::check_block_annotation_structure(root));
-    diagnostics.extend(sch010::check_symbol_field_clearance(
-        root,
-        context.segments,
-        context.facts(),
-    ));
+    let mut diagnostics = sch008::Sch008.check(context);
+    diagnostics.extend(sch011::Sch011.check(context));
+    diagnostics.extend(sch010::Sch010.check(context));
     diagnostics
 }
 /// Placed-symbol identity and transform parameters used to map library geometry to the sheet.

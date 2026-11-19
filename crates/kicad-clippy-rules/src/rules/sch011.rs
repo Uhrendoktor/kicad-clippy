@@ -10,6 +10,7 @@ use super::child_list;
 use super::collect_nodes;
 use super::list_items;
 use super::number;
+use super::span_of;
 
 /// Checks that multiline text boxes have a visible border.
 ///
@@ -41,4 +42,28 @@ pub(super) fn check_block_annotation_structure(root: &Node) -> Vec<Diagnostic> {
             })
         })
         .collect()
+}
+
+/// Concrete implementation of built-in rule 011.
+pub(super) struct Sch011;
+impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch011 {
+    /// Returns the stable 011 identifier.
+    ///
+    /// # Returns
+    ///
+    /// The stable 011 identifier.
+    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch011 }
+    /// Evaluates multiline annotation border and structure requirements.
+    ///
+    /// # Arguments
+    ///
+    /// * context — the parsed schematic containing annotation nodes.
+    ///
+    /// # Returns
+    ///
+    /// Diagnostics for multiline annotation border and structure requirements.
+    fn check(&self, context: &crate::RuleContext<'a>) -> Vec<Diagnostic> {
+        let Some(root) = context.document().cst().nodes.first() else { return Vec::new(); };
+        check_block_annotation_structure(root)
+    }
 }

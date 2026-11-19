@@ -3,6 +3,7 @@
 use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::Diagnostic;
 use kicad_clippy_core::Severity;
+use super::ComponentKind;
 use super::GroupIntent;
 
 /// Checks that member component roles and purposes are consistent with the group's description.
@@ -88,5 +89,59 @@ fn validate_group_phrase(
             Severity::Error,
             format!("group {group_id} description must include {reference} {field}"),
         ));
+    }
+}
+
+/// Concrete implementation of built-in rule SCH020.
+pub(super) struct Sch020;
+impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch020 {
+    /// Returns the stable SCH020 identifier.
+    ///
+    /// # Returns
+    ///
+    /// The stable SCH020 identifier.
+    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch020 }
+    /// Evaluates component function/rationale and functional-group purpose documentation.
+    ///
+    /// # Arguments
+    ///
+    /// * context — Component intent, group descriptions, and normalized schematic text-box facts.
+    ///
+    /// # Returns
+    ///
+    /// Diagnostics for incomplete component descriptions or group-purpose statements that do not match the documented text.
+    fn check(&self, context: &super::ProfileRuleContext<'a>) -> Vec<Diagnostic> {
+        let mut diagnostics = Vec::new();
+        for component in &context.facts.components {
+            if let Some(intent) = context.profile.components.get(&component.reference) {
+                if intent.function.as_deref().is_none_or(str::is_empty)
+                    || intent.rationale.as_deref().is_none_or(str::is_empty)
+                {
+                    diagnostics.push(Diagnostic::for_builtin_rule(
+                        BuiltinRuleId::Sch020,
+                        Severity::Error,
+                        format!("{} must document both its circuit function and design rationale", component.reference),
+                    ));
+                }
+            }
+        }
+        for (group_id, group) in &context.profile.groups {
+            for reference in &group.documentation_members {
+                if !group.members.contains(reference) {
+                    diagnostics.push(Diagnostic::for_builtin_rule(
+                        BuiltinRuleId::Sch020,
+                        Severity::Error,
+                        format!("group {group_id} lists {reference} as a documentation member but not as a group member"),
+                    ));
+                }
+            }
+            if let Some(description) = context.facts.text_boxes.iter()
+                .find(|item| item.uuid == group.description_uuid)
+                .map(|item| item.text.as_str())
+            {
+                diagnostics.extend(validate_group_component_purposes(group_id, group, description));
+            }
+        }
+        diagnostics
     }
 }

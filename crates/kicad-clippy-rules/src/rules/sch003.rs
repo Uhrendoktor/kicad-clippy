@@ -41,3 +41,27 @@ pub(super) fn check_label_wire_clearance(root: &Node, segments: &[Segment]) -> V
     }
     diagnostics
 }
+
+/// Concrete implementation of built-in rule 003.
+pub(super) struct Sch003;
+impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch003 {
+    /// Returns the stable 003 identifier.
+    ///
+    /// # Returns
+    ///
+    /// The stable 003 identifier.
+    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch003 }
+    /// Evaluates visible label-glyph clearance from connected wire geometry.
+    ///
+    /// # Arguments
+    ///
+    /// * context — the parsed schematic and normalized wire segments.
+    ///
+    /// # Returns
+    ///
+    /// Diagnostics for visible label-glyph clearance from connected wire geometry.
+    fn check(&self, context: &crate::RuleContext<'a>) -> Vec<Diagnostic> {
+        let Some(root) = context.document().cst().nodes.first() else { return Vec::new(); };
+        check_label_wire_clearance(root, context.segments)
+    }
+}

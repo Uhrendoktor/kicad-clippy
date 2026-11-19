@@ -82,3 +82,27 @@ pub(super) fn validate_kicad_group_membership(
     }
     diagnostics
 }
+
+
+/// Concrete implementation of built-in rule SCH007.
+pub(super) struct Sch007;
+impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch007 {
+    /// Returns the stable SCH007 identifier.
+    ///
+    /// # Returns
+    ///
+    /// The stable SCH007 identifier.
+    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch007 }
+    /// Compares profile group membership with native KiCad group membership.
+    ///
+    /// # Arguments
+    ///
+    /// * context — Project group declarations and normalized native group facts.
+    ///
+    /// # Returns
+    ///
+    /// Diagnostics for missing native groups or mismatched native member UUIDs.
+    fn check(&self, context: &super::ProfileRuleContext<'a>) -> Vec<Diagnostic> {
+        context.profile.groups.iter().flat_map(|(id, group)| validate_kicad_group_membership(id, group, context.facts)).collect()
+    }
+}

@@ -1,6 +1,5 @@
 //! Checks `SCH013` wire clearance from transformed schematic obstacles and effective stroke widths.
 
-use geo::{Contains, Distance, Euclidean, Intersects};
 use geo::algorithm::line_intersection::line_intersection;
 use geo::Contains;
 use geo::Coord;
@@ -34,8 +33,6 @@ use super::HALF_FACTOR;
 use super::is_endpoint;
 use super::number;
 use super::Point;
-use super::SCH013_STROKE_DISTANCE_ACCURACY_MM;
-use super::SCH013_STROKE_DISTANCE_EPSILON_MM;
 use super::SchematicArcFact;
 use super::SchematicBusObstacleFact;
 use super::SchematicFacts;
@@ -47,9 +44,9 @@ use super::SchematicSheetFact;
 use super::SchematicSymbolTextFact;
 use super::Segment;
 use super::strict_line_hits_bounds;
-use super::text_box_bounds;
+use super::collect_sheet_table_stroke_facts;
+use super::sch010::text_box_bounds;
 use super::TWO_SIDED_FACTOR;
-use super::WireObstacleStrokeWidths;
 
 /// Finds wire crossings or clearance violations against transformed embedded-symbol text.
 ///
@@ -1409,4 +1406,37 @@ fn point_in_polygon(point: Point, polygon: &[(f64, f64)]) -> bool {
     let query = GeoPoint::new(point.x, point.y);
     geometry.contains(&query)
         || Euclidean.distance(&query, geometry.exterior()) <= GEOMETRY_TOLERANCE_MM
+}
+
+/// Concrete implementation of built-in rule SCH013.
+pub(super) struct Sch013;
+impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch013 {
+    /// Returns the stable SCH013 identifier.
+    ///
+    /// # Returns
+    ///
+    /// The stable SCH013 identifier.
+    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch013 }
+    /// Evaluates physical wire clearance against transformed schematic obstacles.
+    ///
+    /// # Arguments
+    ///
+    /// * context — Shared schematic facts and project-resolved per-wire/default stroke widths.
+    ///
+    /// # Returns
+    ///
+    /// Diagnostics for wire-obstacle intersections or insufficient stroke clearance.
+    fn check(&self, context: &crate::RuleContext<'a>) -> Vec<Diagnostic> {
+        let Some(root) = context.document().cst().nodes.first() else { return Vec::new(); };
+        let mut widths = super::collect_explicit_wire_stroke_widths(root);
+        for (span_start, width_mm) in context.project_wire_stroke_widths_mm {
+            widths.entry(*span_start).or_insert(*width_mm);
+        }
+        let default_wire_width = if super::schematic_has_graphical_netclass_assignments(root) {
+            None
+        } else {
+            context.default_wire_stroke_width_mm
+        };
+        check_wire_obstacles(root, context.segments, context.facts(), &widths, default_wire_width, context.default_schematic_line_stroke_width_mm)
+    }
 }

@@ -69,16 +69,41 @@ pub(super) fn validate_group_members(
             ));
         }
     }
-    for reference in &group.documentation_members {
-        if !group.members.contains(reference) {
-            diagnostics.push(Diagnostic::for_builtin_rule(
-                    BuiltinRuleId::Sch020,
-                Severity::Error,
-                format!(
-                    "group {group_id} lists {reference} as a documentation member but not as a group member"
-                ),
-            ));
-        }
-    }
     diagnostics
+}
+
+/// Concrete implementation of built-in rule SCH017.
+pub(super) struct Sch017;
+impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch017 {
+    /// Returns the stable SCH017 identifier.
+    ///
+    /// # Returns
+    ///
+    /// The stable SCH017 identifier.
+    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch017 }
+    /// Evaluates group evidence, component membership, and description-box references.
+    ///
+    /// # Arguments
+    ///
+    /// * context — Project group declarations and normalized schematic facts.
+    ///
+    /// # Returns
+    ///
+    /// Diagnostics for missing members, incomplete evidence, or missing group description boxes.
+    fn check(&self, context: &super::ProfileRuleContext<'a>) -> Vec<Diagnostic> {
+        let references: BTreeSet<_> = context.facts.components.iter().map(|item| item.reference.as_str()).collect();
+        let mut diagnostics = Vec::new();
+        for (group_id, group) in &context.profile.groups {
+            diagnostics.extend(validate_group_evidence(group_id, group));
+            diagnostics.extend(validate_group_members(group_id, group, &references));
+            if !context.facts.text_boxes.iter().any(|item| item.uuid == group.description_uuid) {
+                diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch017,
+                    Severity::Error,
+                    format!("group {group_id} description text box UUID {} is missing", group.description_uuid),
+                ));
+            }
+        }
+        diagnostics
+    }
 }

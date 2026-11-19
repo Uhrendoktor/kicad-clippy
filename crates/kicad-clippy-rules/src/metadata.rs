@@ -1,5 +1,6 @@
 use crate::generic::GEOMETRY_TOLERANCE_MM;
 use crate::generic::SchematicFacts;
+use crate::Rule;
 use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::Diagnostic;
 use kicad_clippy_core::Severity;
@@ -302,6 +303,16 @@ pub struct LintProfile {
     pub separate_wire_pairs: Vec<SeparateWirePair>,
 }
 
+/// Immutable data shared by all project-profile rule implementations.
+pub(super) struct ProfileRuleContext<'a> {
+    /// Profile declarations evaluated by the rule set.
+    profile: &'a LintProfile,
+    /// Normalized facts extracted from the parsed schematic.
+    facts: &'a SchematicFacts,
+    /// Optional flattened netlist used by logical pin-to-net contracts.
+    netlist: Option<&'a Netlist>,
+}
+
 impl LintProfile {
     /// Loads a component-intent profile, validates its schema version, and returns the decoded profile.
     ///
@@ -356,127 +367,23 @@ impl LintProfile {
         netlist: Option<&Netlist>,
     ) -> Vec<Diagnostic> {
         let facts = SchematicFacts::from_document(document);
-        let references: BTreeSet<_> = facts
-            .components
-            .iter()
-            .map(|item| item.reference.clone())
-            .collect();
-        let mut diagnostics = sch021::validate_profile_references(self, &references);
-        for component in &facts.components {
-            if let Some(intent) = self.components.get(&component.reference) {
-                diagnostics.extend(sch021::validate_component_intent(
-                    &component.reference,
-                    intent,
-                    netlist,
-                ));
-            } else if self.mode == ProfileMode::Strict
-                && !self.ignore_components.contains(&component.reference)
-            {
-                diagnostics.push(Diagnostic::for_builtin_rule(
-                    BuiltinRuleId::Sch021,
-                    Severity::Error,
-                    format!("{} has no component-intent metadata", component.reference),
-                ));
-            }
-        }
-        diagnostics.extend(sch022::validate_decoupler_groups(&self.components));
-        diagnostics.extend(validate_groups(&self.groups, &facts));
-        diagnostics.extend(sch004::validate_direct_wire_connectivity(
-            &self.direct_wire_pairs,
-            &self.forbidden_direct_wire_labels,
-            &facts,
-        ));
-        diagnostics.extend(sch004::validate_common_pin_groups(
-            &self.common_pin_groups,
-            &facts,
-            netlist,
-        ));
-        diagnostics.extend(sch004::validate_physical_wire_groups(
-            &self.physical_wire_groups,
-            &facts,
-        ));
-        diagnostics.extend(sch004::validate_separate_wire_pairs(
-            &self.separate_wire_pairs,
-            &facts,
-            netlist,
-        ));
+        let context = ProfileRuleContext { profile: self, facts: &facts, netlist };
+        let mut diagnostics = Vec::new();
+        diagnostics.extend(sch021::Sch021.check(&context));
+        diagnostics.extend(sch020::Sch020.check(&context));
+        diagnostics.extend(sch022::Sch022.check(&context));
+        diagnostics.extend(sch014::Sch014.check(&context));
+        diagnostics.extend(sch017::Sch017.check(&context));
+        diagnostics.extend(sch007::Sch007.check(&context));
+        diagnostics.extend(sch009::Sch009.check(&context));
+        diagnostics.extend(sch012::Sch012.check(&context));
+        diagnostics.extend(sch006::Sch006.check(&context));
+        diagnostics.extend(sch016::Sch016.check(&context));
+        diagnostics.extend(sch004::Sch004.check(&context));
         diagnostics
     }
 }
 
-/// Validates every group-intent declaration in the profile.
-///
-/// # Arguments
-///
-/// * `groups` — Map of profile group identifiers to their associated group-intent records.
-/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
-///
-/// # Returns
-///
-/// Diagnostics for every invalid group declaration, including membership, evidence, containment, clearance, spacing, and wire-length constraints.
-fn validate_groups(
-    groups: &BTreeMap<String, GroupIntent>,
-    facts: &SchematicFacts,
-) -> Vec<Diagnostic> {
-    let references: BTreeSet<_> = facts
-        .components
-        .iter()
-        .map(|component| component.reference.as_str())
-        .collect();
-    let mut diagnostics = Vec::new();
-    for (group_id, group) in groups {
-        diagnostics.extend(validate_group(group_id, group, facts, &references));
-    }
-    diagnostics
-}
-/// Validates one group declaration, including membership, evidence, containment, frame clearance, spacing, and wiring contracts.
-///
-/// # Arguments
-///
-/// * `group_id` — Stable profile identifier for the group; it is included in any diagnostic produced by this check.
-/// * `group` — The group-intent record containing its members and declared constraints.
-/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
-/// * `references` — Set of schematic reference designators used to verify profile membership.
-///
-/// # Returns
-///
-/// Diagnostics for the group's invalid evidence, members, `KiCad` membership, containment, frame clearance, spacing, or wiring contract.
-fn validate_group(
-    group_id: &str,
-    group: &GroupIntent,
-    facts: &SchematicFacts,
-    references: &BTreeSet<&str>,
-) -> Vec<Diagnostic> {
-    let mut diagnostics = sch017::validate_group_evidence(group_id, group);
-    diagnostics.extend(sch017::validate_group_members(group_id, group, references));
-    diagnostics.extend(sch007::validate_kicad_group_membership(group_id, group, facts));
-    diagnostics.extend(sch009::validate_group_containment(group_id, group, facts));
-    diagnostics.extend(sch012::validate_frame_clearance(group_id, group, facts));
-    diagnostics.extend(sch006::validate_group_spacing(group_id, group, facts));
-    diagnostics.extend(sch016::validate_wire_compactness(group_id, group, facts));
-    let description = facts
-        .text_boxes
-        .iter()
-        .find(|text_box| text_box.uuid == group.description_uuid)
-        .map(|text_box| text_box.text.as_str());
-    let Some(description) = description else {
-        diagnostics.push(Diagnostic::for_builtin_rule(
-            BuiltinRuleId::Sch017,
-            Severity::Error,
-            format!(
-                "group {group_id} description text box UUID {} is missing",
-                group.description_uuid
-            ),
-        ));
-        return diagnostics;
-    };
-    diagnostics.extend(sch020::validate_group_component_purposes(
-        group_id,
-        group,
-        description,
-    ));
-    diagnostics
-}
 /// Tests whether two axis-aligned rectangles have a non-empty overlap.
 ///
 /// # Arguments

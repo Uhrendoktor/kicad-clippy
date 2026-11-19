@@ -196,3 +196,32 @@ pub(super) fn validate_decoupler_groups(components: &BTreeMap<String, ComponentI
     }
     diagnostics
 }
+
+/// Concrete implementation of built-in rule SCH022.
+pub(super) struct Sch022;
+impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch022 {
+    /// Returns the stable SCH022 identifier.
+    ///
+    /// # Returns
+    ///
+    /// The stable SCH022 identifier.
+    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch022 }
+    /// Evaluates decoupling target/terminal/net contracts and consistency between capacitors sharing a target.
+    ///
+    /// # Arguments
+    ///
+    /// * context — Component intent declarations and the optional exported netlist.
+    ///
+    /// # Returns
+    ///
+    /// Diagnostics for invalid decoupling metadata, mismatched terminal nets, or inconsistent decoupler clusters.
+    fn check(&self, context: &super::ProfileRuleContext<'a>) -> Vec<Diagnostic> {
+        let mut diagnostics = validate_decoupler_groups(&context.profile.components);
+        for (reference, intent) in &context.profile.components {
+            if intent.kind == ComponentKind::Capacitor && intent.role.0 == "decoupling" {
+                diagnostics.extend(validate_decoupling_intent(reference, intent.decoupling.as_ref(), context.netlist));
+            }
+        }
+        diagnostics
+    }
+}

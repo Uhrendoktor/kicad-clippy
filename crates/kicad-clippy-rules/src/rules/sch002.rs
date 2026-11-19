@@ -274,3 +274,27 @@ pub fn physical_wire_component_ids(facts: &SchematicFacts) -> BTreeMap<String, u
     points.dedup_by_key(|point| point_key(*point));
     wire_components(&segments, &points, &junctions).0
 }
+
+/// Concrete implementation of built-in rule 002.
+pub(super) struct Sch002;
+impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch002 {
+    /// Returns the stable 002 identifier.
+    ///
+    /// # Returns
+    ///
+    /// The stable 002 identifier.
+    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch002 }
+    /// Evaluates physical wire-island topology and label reuse.
+    ///
+    /// # Arguments
+    ///
+    /// * context — the parsed schematic and normalized wire segments.
+    ///
+    /// # Returns
+    ///
+    /// Diagnostics for physical wire-island topology and label reuse.
+    fn check(&self, context: &crate::RuleContext<'a>) -> Vec<Diagnostic> {
+        let Some(root) = context.document().cst().nodes.first() else { return Vec::new(); };
+        check_label_topology(root, context.segments)
+    }
+}

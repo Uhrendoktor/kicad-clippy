@@ -10,8 +10,7 @@ use super::children;
 use super::collect_label_nodes;
 use super::collect_nodes;
 use super::list_items;
-use super::property_is_hidden;
-use super::text_box_bounds;
+use super::sch010::{property_is_hidden, text_box_bounds};
 use super::text_visual_bounds;
 
 /// Detects overlaps between label glyph bounds and other labels, visible fields, or annotation boxes.
@@ -75,4 +74,28 @@ fn check_label_text_collisions(root: &Node) -> Vec<Diagnostic> {
         }
     }
     diagnostics
+}
+
+/// Concrete implementation of built-in rule 018.
+pub(super) struct Sch018;
+impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch018 {
+    /// Returns the stable 018 identifier.
+    ///
+    /// # Returns
+    ///
+    /// The stable 018 identifier.
+    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch018 }
+    /// Evaluates overlaps between visible label glyphs and other text objects.
+    ///
+    /// # Arguments
+    ///
+    /// * context — the parsed schematic containing labels and visible text objects.
+    ///
+    /// # Returns
+    ///
+    /// Diagnostics for overlaps between visible label glyphs and other text objects.
+    fn check(&self, context: &crate::RuleContext<'a>) -> Vec<Diagnostic> {
+        let Some(root) = context.document().cst().nodes.first() else { return Vec::new(); };
+        check_label_text_collisions(root)
+    }
 }

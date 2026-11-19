@@ -4,6 +4,7 @@
 
 use std::collections::{BTreeMap, btree_map::Entry};
 
+use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::Diagnostic;
 use kicad_clippy_parser::SchematicDocument;
 use thiserror::Error;
@@ -70,10 +71,31 @@ impl<'a> RuleContext<'a> {
     }
 }
 
-/// A deterministic analysis pass that can emit diagnostics for one or more rules.
+/// Common contract implemented by every built-in schematic and project-profile rule.
 ///
-/// Rule passes are distinct from rule IDs: a pass may emit findings for several
-/// rules, and a rule may be implemented by several passes.
+/// A rule has one stable built-in identifier and evaluates one immutable context. Related helper functions may be shared, but rule identity and diagnostic production stay attached to the corresponding rule type.
+pub trait Rule<C>: Send + Sync {
+    /// Returns the stable built-in identifier implemented by this rule.
+    ///
+    /// # Returns
+    ///
+    /// The unique identifier assigned to this rule.
+    fn id(&self) -> BuiltinRuleId;
+
+    /// Evaluates this rule against one immutable analysis context.
+    ///
+    /// # Arguments
+    ///
+    /// * `context` — Immutable schematic or profile analysis data required by this rule.
+    ///
+    /// # Returns
+    ///
+    /// Diagnostics emitted by this rule; an empty vector means that no violation was found.
+    fn check(&self, context: &C) -> Vec<Diagnostic>;
+}
+/// A deterministic analysis pass that composes one or more individual rule implementations.
+///
+/// Passes retain the extension and scheduling boundary; each built-in check implements Rule<C> for one identifier.
 pub trait RulePass: Send + Sync {
     /// Returns the stable, unique name used to register and order this rule pass.
     ///

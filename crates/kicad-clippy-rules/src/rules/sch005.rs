@@ -13,10 +13,10 @@ use super::embedded_symbol_pins;
 use super::GEOMETRY_TOLERANCE_MM;
 use super::list_items;
 use super::number;
-use super::PinAxis;
 use super::point_on_segment;
 use super::Point;
 use super::read_symbol_transform;
+use super::span_of;
 use super::Segment;
 use super::symbol_transform_affine;
 use super::SymbolTransform;
@@ -174,4 +174,28 @@ fn pin_orientation_diagnostic(
         point,
         span_of(instance),
     ))
+}
+
+/// Concrete implementation of built-in rule 005.
+pub(super) struct Sch005;
+impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch005 {
+    /// Returns the stable 005 identifier.
+    ///
+    /// # Returns
+    ///
+    /// The stable 005 identifier.
+    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch005 }
+    /// Evaluates connected wire axes against transformed symbol-pin axes.
+    ///
+    /// # Arguments
+    ///
+    /// * context — the parsed schematic and normalized wire segments.
+    ///
+    /// # Returns
+    ///
+    /// Diagnostics for connected wire axes against transformed symbol-pin axes.
+    fn check(&self, context: &crate::RuleContext<'a>) -> Vec<Diagnostic> {
+        let Some(root) = context.document().cst().nodes.first() else { return Vec::new(); };
+        check_pin_orientation(root, context.segments)
+    }
 }

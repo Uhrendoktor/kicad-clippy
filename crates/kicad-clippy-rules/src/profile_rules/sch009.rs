@@ -13,12 +13,12 @@ use super::COORDINATE_KEY_DECIMAL_PLACES;
 use super::GroupIntent;
 use super::point_inside_frame_with_clearance;
 use super::point_inside_frame;
-use super::point_is_on_wire;
+use super::sch004::point_is_on_wire;
 use super::rectangle_inside_frame_with_clearance;
 use super::rectangle_inside_frame;
 use super::rectangles_overlap;
 use super::SchematicFacts;
-use super::valid_frame_bounds;
+use super::sch012::valid_frame_bounds;
 
 /// Checks that every declared group member and its attached geometry lies inside the group's referenced frame.
 ///
@@ -659,5 +659,29 @@ pub(super) fn wire_overlaps_frame(
             (x1.min(x2), y1.min(y2), x1.max(x2), y1.max(y2)),
             frame_bounds,
         )
+    }
+}
+
+
+/// Concrete implementation of built-in rule SCH009.
+pub(super) struct Sch009;
+impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch009 {
+    /// Returns the stable SCH009 identifier.
+    ///
+    /// # Returns
+    ///
+    /// The stable SCH009 identifier.
+    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch009 }
+    /// Checks group-member and associated geometry containment within each declared frame.
+    ///
+    /// # Arguments
+    ///
+    /// * context — Project group declarations and normalized schematic geometry.
+    ///
+    /// # Returns
+    ///
+    /// Diagnostics for group content that extends outside its assigned frame.
+    fn check(&self, context: &super::ProfileRuleContext<'a>) -> Vec<Diagnostic> {
+        context.profile.groups.iter().flat_map(|(id, group)| validate_group_containment(id, group, context.facts)).collect()
     }
 }

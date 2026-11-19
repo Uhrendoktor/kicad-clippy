@@ -14,11 +14,10 @@ use super::GEOMETRY_TOLERANCE_MM;
 use super::line_hits_bounds;
 use super::list_items;
 use super::number;
+use super::span_of;
 use super::required_text_box_size;
 use super::Segment;
 use super::TEXT_BOX_EQUAL_PADDING_MM;
-use super::TextBoxMetrics;
-use super::TextBoxRecord;
 use super::UNBORDERED_TEXT_BOX_EXTRA_WIDTH_MM;
 
 /// Validates text-box size, font settings, required geometry, and overlap with wires or other annotations.
@@ -275,4 +274,28 @@ fn check_text_box_interactions(boxes: &[TextBoxRecord], segments: &[Segment]) ->
         }
     }
     diagnostics
+}
+
+/// Concrete implementation of built-in rule 008.
+pub(super) struct Sch008;
+impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch008 {
+    /// Returns the stable 008 identifier.
+    ///
+    /// # Returns
+    ///
+    /// The stable 008 identifier.
+    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch008 }
+    /// Evaluates annotation text-box dimensions, overlap, margins, and wire penetration.
+    ///
+    /// # Arguments
+    ///
+    /// * context — the parsed schematic and normalized wire segments.
+    ///
+    /// # Returns
+    ///
+    /// Diagnostics for annotation text-box dimensions, overlap, margins, and wire penetration.
+    fn check(&self, context: &crate::RuleContext<'a>) -> Vec<Diagnostic> {
+        let Some(root) = context.document().cst().nodes.first() else { return Vec::new(); };
+        check_text_box_layout(root, context.segments)
+    }
 }

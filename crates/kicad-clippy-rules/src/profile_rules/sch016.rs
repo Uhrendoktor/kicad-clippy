@@ -85,3 +85,26 @@ pub(super) fn validate_wire_compactness(
         Vec::new()
     }
 }
+
+/// Concrete implementation of built-in rule SCH016.
+pub(super) struct Sch016;
+impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch016 {
+    /// Returns the stable SCH016 identifier.
+    ///
+    /// # Returns
+    ///
+    /// The stable SCH016 identifier.
+    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch016 }
+    /// Evaluates each group's physical wire-length budget.
+    ///
+    /// # Arguments
+    ///
+    /// * context — Project group declarations and normalized physical wire facts.
+    ///
+    /// # Returns
+    ///
+    /// Diagnostics for invalid budgets or group wire lengths that exceed their declared limits.
+    fn check(&self, context: &super::ProfileRuleContext<'a>) -> Vec<Diagnostic> {
+        context.profile.groups.iter().flat_map(|(id, group)| validate_wire_compactness(id, group, context.facts)).collect()
+    }
+}

@@ -83,3 +83,27 @@ pub(super) fn validate_pin_net_contract(
     }
     diagnostics
 }
+
+
+/// Concrete implementation of built-in rule SCH014.
+pub(super) struct Sch014;
+impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch014 {
+    /// Returns the stable SCH014 identifier.
+    ///
+    /// # Returns
+    ///
+    /// The stable SCH014 identifier.
+    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch014 }
+    /// Evaluates declared component pin-to-net expectations against the exported netlist.
+    ///
+    /// # Arguments
+    ///
+    /// * context — Component intent declarations and an optional exported logical netlist.
+    ///
+    /// # Returns
+    ///
+    /// Diagnostics when declared component pins resolve to unexpected or missing nets.
+    fn check(&self, context: &super::ProfileRuleContext<'a>) -> Vec<Diagnostic> {
+        context.profile.components.iter().flat_map(|(reference, intent)| validate_pin_net_contract(reference, intent, context.netlist)).collect()
+    }
+}

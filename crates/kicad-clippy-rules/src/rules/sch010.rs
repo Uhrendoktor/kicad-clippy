@@ -1,6 +1,5 @@
 //! Checks `SCH010` visible symbol-field clearance from nearby schematic objects.
 
-use geo::{Contains, Distance, Euclidean, Intersects};
 use geo::Contains;
 use geo::Coord;
 use geo::Distance;
@@ -154,7 +153,7 @@ pub(super) fn check_symbol_field_clearance(
 /// # Returns
 ///
 /// A normalized `geo::Rect<f64>` enclosing the supplied schematic bounds, with the lesser coordinates as its minimum corner.
-fn geo_rect(bounds: Bounds) -> GeoRect<f64> {
+pub(super) fn geo_rect(bounds: Bounds) -> GeoRect<f64> {
     let opposite_x = bounds.x + bounds.width;
     let opposite_y = bounds.y + bounds.height;
     GeoRect::new(
@@ -326,7 +325,7 @@ fn symbol_primitive_contains_bounds(bounds: Bounds, primitive: &SchematicPrimiti
 /// # Returns
 ///
 /// `true` when the property's `effects` list contains `KiCad`'s `hide` flag.
-fn property_is_hidden(property: &Node) -> bool {
+pub(super) fn property_is_hidden(property: &Node) -> bool {
     child_list(property, "effects").is_some_and(|effects| child_list(effects, "hide").is_some())
 }
 /// Reads a text box's anchor and size and returns its axis-aligned bounds.
@@ -338,7 +337,7 @@ fn property_is_hidden(property: &Node) -> bool {
 /// # Returns
 ///
 /// Axis-aligned bounds of the text box in schematic coordinates, or `None` when its anchor or dimensions are unavailable.
-fn text_box_bounds(node: &Node) -> Option<Bounds> {
+pub(super) fn text_box_bounds(node: &Node) -> Option<Bounds> {
     let at = child_list(node, "at").and_then(list_items)?;
     let size = child_list(node, "size").and_then(list_items)?;
     Some(Bounds {

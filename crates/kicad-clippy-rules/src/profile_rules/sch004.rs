@@ -888,7 +888,7 @@ fn component_has_label(
 /// # Returns
 ///
 /// `true` when the coordinate lies on a wire segment within the schematic geometry tolerance.
-fn point_is_on_wire(point: (f64, f64), facts: &SchematicFacts) -> bool {
+pub(super) fn point_is_on_wire(point: (f64, f64), facts: &SchematicFacts) -> bool {
     facts.wires.iter().any(|wire| {
         let horizontal = (wire.start_mm.1 - wire.end_mm.1).abs() <= GEOMETRY_TOLERANCE_MM;
         if horizontal {
@@ -917,4 +917,34 @@ fn point_is_on_wire(point: (f64, f64), facts: &SchematicFacts) -> bool {
 fn same_wire_point(first: (f64, f64), second: (f64, f64)) -> bool {
     (first.0 - second.0).abs() <= GEOMETRY_TOLERANCE_MM
         && (first.1 - second.1).abs() <= GEOMETRY_TOLERANCE_MM
+}
+
+
+/// Concrete implementation of built-in rule SCH004.
+pub(super) struct Sch004;
+impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch004 {
+    /// Returns the stable SCH004 identifier.
+    ///
+    /// # Returns
+    ///
+    /// The stable SCH004 identifier.
+    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch004 }
+    /// Evaluates every declared physical connectivity and separation contract.
+    ///
+    /// # Arguments
+    ///
+    /// * context — Project profile, normalized physical wire facts, and optional exported netlist.
+    ///
+    /// # Returns
+    ///
+    /// Diagnostics for direct-wire, common-pin, physical-wire-group, and separate-wire-pair violations.
+    fn check(&self, context: &super::ProfileRuleContext<'a>) -> Vec<Diagnostic> {
+        let profile = context.profile;
+        let facts = context.facts;
+        let mut diagnostics = validate_direct_wire_connectivity(&profile.direct_wire_pairs, &profile.forbidden_direct_wire_labels, facts);
+        diagnostics.extend(validate_common_pin_groups(&profile.common_pin_groups, facts, context.netlist));
+        diagnostics.extend(validate_physical_wire_groups(&profile.physical_wire_groups, facts));
+        diagnostics.extend(validate_separate_wire_pairs(&profile.separate_wire_pairs, facts, context.netlist));
+        diagnostics
+    }
 }

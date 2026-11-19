@@ -38,3 +38,27 @@ fn check_label_kind_consistency(root: &Node) -> Vec<Diagnostic> {
         })
         .collect()
 }
+
+/// Concrete implementation of built-in rule 019.
+pub(super) struct Sch019;
+impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch019 {
+    /// Returns the stable 019 identifier.
+    ///
+    /// # Returns
+    ///
+    /// The stable 019 identifier.
+    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch019 }
+    /// Evaluates consistent label kinds for identical label text.
+    ///
+    /// # Arguments
+    ///
+    /// * context — the parsed schematic containing local, global, and hierarchical labels.
+    ///
+    /// # Returns
+    ///
+    /// Diagnostics for consistent label kinds for identical label text.
+    fn check(&self, context: &crate::RuleContext<'a>) -> Vec<Diagnostic> {
+        let Some(root) = context.document().cst().nodes.first() else { return Vec::new(); };
+        check_label_kind_consistency(root)
+    }
+}
