@@ -512,6 +512,8 @@ impl RuleRegistry {
 #[cfg(test)]
 /// Unit tests for rule descriptor construction, lookup, ordering, and duplicate rejection.
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::{RuleDescriptor, RuleLevel, RuleRegistry};
     /// Checks explicit allow, warn, and deny overrides while preserving native ERC findings.
     ///
