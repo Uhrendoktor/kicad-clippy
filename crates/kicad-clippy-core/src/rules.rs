@@ -1,4 +1,4 @@
-use crate::rule_id::BuiltinRuleId;
+use crate::{diagnostic::{Diagnostic, Severity}, rule_id::BuiltinRuleId};
 use std::collections::{BTreeMap, btree_map::Entry};
 
 use serde::{Deserialize, Serialize};
@@ -15,6 +15,96 @@ pub enum RuleLevel {
     /// Emit an error.
     Deny,
 }
+
+/// Optional project policy that overrides the effective level of built-in schematic rules.
+///
+/// Supplying a policy file opts the lint invocation into descriptor defaults for
+/// every built-in rule. Entries in `rules` override those defaults. Omitting a
+/// policy file leaves the current rule-emitted severities unchanged.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RulePolicy {
+    /// Explicit per-rule overrides keyed by stable built-in ID, such as `SCH013`.
+    #[serde(default)]
+    pub rules: BTreeMap<String, RuleLevel>,
+}
+
+impl RulePolicy {
+    /// Validates that every configured key names a rule in the supplied catalogue.
+    ///
+    /// # Arguments
+    ///
+    /// * `registry` — Complete rule catalogue used to validate stable policy keys.
+    ///
+    /// # Returns
+    ///
+    /// Ok when every configured rule ID exists in `registry`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `RulePolicyError` when a configured ID is unknown.
+    pub fn validate(&self, registry: &RuleRegistry) -> Result<(), RulePolicyError> {
+        for id in self.rules.keys() {
+            if registry.get(id).is_none() {
+                return Err(RulePolicyError(id.clone()));
+            }
+        }
+        Ok(())
+    }
+
+    /// Applies descriptor defaults and explicit overrides to built-in diagnostics.
+    ///
+    /// External diagnostics, including native KiCad ERC findings, are retained
+    /// without severity changes. An `allow` policy removes the matching built-in
+    /// findings; `warn` and `deny` set their effective severities.
+    ///
+    /// # Arguments
+    ///
+    /// * `registry` — Complete built-in descriptor catalogue supplying default levels.
+    /// * `diagnostics` — Normalized native and custom findings produced by the lint invocation.
+    ///
+    /// # Returns
+    ///
+    /// Diagnostics after built-in policy levels have been applied.
+    ///
+    /// # Errors
+    ///
+    /// Returns `RulePolicyError` when an explicit policy key does not exist in the catalogue.
+    pub fn apply(
+        &self,
+        registry: &RuleRegistry,
+        diagnostics: Vec<Diagnostic>,
+    ) -> Result<Vec<Diagnostic>, RulePolicyError> {
+        self.validate(registry)?;
+        let mut effective = Vec::with_capacity(diagnostics.len());
+        for mut diagnostic in diagnostics {
+            let Some(descriptor) = registry.get(&diagnostic.code) else {
+                effective.push(diagnostic);
+                continue;
+            };
+            let level = self
+                .rules
+                .get(&diagnostic.code)
+                .copied()
+                .unwrap_or(descriptor.default_level);
+            match level {
+                RuleLevel::Allow => continue,
+                RuleLevel::Warn => diagnostic.severity = Severity::Warning,
+                RuleLevel::Deny => diagnostic.severity = Severity::Error,
+            }
+            effective.push(diagnostic);
+        }
+        Ok(effective)
+    }
+}
+
+/// Error raised when a rule policy references an unknown built-in rule identifier.
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+#[error("rule policy references unknown built-in rule {0:?}")]
+pub struct RulePolicyError(
+    /// Unknown rule ID supplied in the project policy.
+    pub String,
+);
 
 /// Stable metadata used to document and configure a rule.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -423,6 +513,95 @@ impl RuleRegistry {
 /// Unit tests for rule descriptor construction, lookup, ordering, and duplicate rejection.
 mod tests {
     use super::{RuleDescriptor, RuleLevel, RuleRegistry};
+    /// Checks explicit allow, warn, and deny overrides while preserving native ERC findings.
+    ///
+    /// # Returns
+    ///
+    /// Ok when built-in severities follow the configured levels and external diagnostics remain unchanged.
+    ///
+    /// # Errors
+    ///
+    /// Returns a policy error if the test policy contains an unknown built-in rule ID.
+    #[test]
+    fn policy_applies_allow_warn_and_deny_without_touching_external_findings()
+    -> Result<(), super::RulePolicyError> {
+        use crate::diagnostic::{Diagnostic, Severity};
+
+        let registry = super::builtin_rule_registry().unwrap_or_default();
+        let policy = super::RulePolicy {
+            rules: BTreeMap::from([
+                ("SCH001".to_owned(), RuleLevel::Allow),
+                ("SCH002".to_owned(), RuleLevel::Warn),
+                ("SCH003".to_owned(), RuleLevel::Deny),
+            ]),
+        };
+        let diagnostics = vec![
+            Diagnostic::new("SCH001", Severity::Error, "suppressed"),
+            Diagnostic::new("SCH002", Severity::Error, "warning override"),
+            Diagnostic::new("SCH003", Severity::Warning, "error override"),
+            Diagnostic::new("KICAD/ERC/UNDRIVEN", Severity::Note, "native note"),
+        ];
+
+        let effective = policy.apply(&registry, diagnostics)?;
+        assert_eq!(effective.len(), 3);
+        assert_eq!(effective[0].code, "SCH002");
+        assert_eq!(effective[0].severity, Severity::Warning);
+        assert_eq!(effective[1].code, "SCH003");
+        assert_eq!(effective[1].severity, Severity::Error);
+        assert_eq!(effective[2].code, "KICAD/ERC/UNDRIVEN");
+        assert_eq!(effective[2].severity, Severity::Note);
+        Ok(())
+    }
+
+    /// Checks that supplying an empty policy activates descriptor defaults for built-in rules.
+    ///
+    /// # Returns
+    ///
+    /// Ok when default-deny and default-warn descriptors set the effective severity.
+    ///
+    /// # Errors
+    ///
+    /// Returns a policy error if the descriptor defaults cannot be resolved.
+    #[test]
+    fn policy_uses_descriptor_defaults_for_unspecified_rules()
+    -> Result<(), super::RulePolicyError> {
+        use crate::diagnostic::{Diagnostic, Severity};
+
+        let registry = super::builtin_rule_registry().unwrap_or_default();
+        let policy = super::RulePolicy::default();
+        let effective = policy.apply(
+            &registry,
+            vec![
+                Diagnostic::new("SCH001", Severity::Warning, "default deny"),
+                Diagnostic::new("SCH016", Severity::Error, "default warn"),
+            ],
+        )?;
+        assert_eq!(effective[0].severity, Severity::Error);
+        assert_eq!(effective[1].severity, Severity::Warning);
+        Ok(())
+    }
+
+    /// Checks that misspelled or unsupported policy IDs are rejected before diagnostics are changed.
+    ///
+    /// # Returns
+    ///
+    /// Ok when an unknown policy key is returned as a validation error.
+    ///
+    /// # Errors
+    ///
+    /// This test returns no error because the unknown ID is the expected outcome under test.
+    #[test]
+    fn policy_rejects_unknown_rule_ids() {
+        let registry = super::builtin_rule_registry().unwrap_or_default();
+        let policy = super::RulePolicy {
+            rules: BTreeMap::from([("SCH999".to_owned(), RuleLevel::Warn)]),
+        };
+        assert_eq!(
+            policy.validate(&registry),
+            Err(super::RulePolicyError("SCH999".to_owned()))
+        );
+    }
+
     /// Builds a representative SCH001 descriptor used by the registry unit tests.
     ///
     /// # Returns
