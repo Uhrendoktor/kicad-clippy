@@ -1,6 +1,10 @@
 //! Symbol, sheet, bus, table, and image obstacle checks for SCH013.
 
-use super::{at_segment, wire_crosses_bitmap_image, wire_crosses_sheet_graphic_with_wire_stroke, wire_crosses_symbol_primitive_with_wire_stroke, BuiltinRuleId, Diagnostic, SchematicBusObstacleFact, SchematicFacts, SchematicGraphicFact, SchematicSheetFact, Segment, BTreeSet};
+use super::{
+    BTreeSet, BuiltinRuleId, Diagnostic, SchematicBusObstacleFact, SchematicFacts,
+    SchematicGraphicFact, SchematicSheetFact, Segment, at_segment, wire_crosses_bitmap_image,
+    wire_crosses_sheet_graphic_with_wire_stroke, wire_crosses_symbol_primitive_with_wire_stroke,
+};
 
 /// Finds wire intersections or insufficient clearance against a schematic bus obstacle.
 ///
