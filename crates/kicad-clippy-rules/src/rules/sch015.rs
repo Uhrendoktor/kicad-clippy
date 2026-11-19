@@ -56,7 +56,7 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch015 {
     ///
     /// # Returns
     ///
-    /// The stable 015 identifier.
+    /// The stable SCH015 identifier used to associate diagnostics with this rule.
     fn id(&self) -> BuiltinRuleId {
         BuiltinRuleId::Sch015
     }
@@ -64,7 +64,7 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch015 {
     ///
     /// # Arguments
     ///
-    /// * context — the parsed schematic containing symbols and no-connect markers.
+    /// * `context` — the parsed schematic containing symbols and no-connect markers.
     ///
     /// # Returns
     ///

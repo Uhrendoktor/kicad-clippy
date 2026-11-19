@@ -1414,7 +1414,7 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch013 {
     ///
     /// # Returns
     ///
-    /// The stable SCH013 identifier.
+    /// The stable SCH013 identifier used to associate diagnostics with this rule.
     fn id(&self) -> BuiltinRuleId {
         BuiltinRuleId::Sch013
     }
@@ -1422,7 +1422,7 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch013 {
     ///
     /// # Arguments
     ///
-    /// * context — Shared schematic facts and project-resolved per-wire/default stroke widths.
+    /// * `context` — Shared schematic facts and project-resolved per-wire/default stroke widths.
     ///
     /// # Returns
     ///

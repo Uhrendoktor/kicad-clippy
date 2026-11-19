@@ -283,7 +283,7 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch008 {
     ///
     /// # Returns
     ///
-    /// The stable 008 identifier.
+    /// The stable SCH008 identifier used to associate diagnostics with this rule.
     fn id(&self) -> BuiltinRuleId {
         BuiltinRuleId::Sch008
     }
@@ -291,7 +291,7 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch008 {
     ///
     /// # Arguments
     ///
-    /// * context — the parsed schematic and normalized wire segments.
+    /// * `context` — the parsed schematic and normalized wire segments.
     ///
     /// # Returns
     ///

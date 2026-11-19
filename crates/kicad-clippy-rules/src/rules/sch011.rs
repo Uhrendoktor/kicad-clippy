@@ -50,7 +50,7 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch011 {
     ///
     /// # Returns
     ///
-    /// The stable 011 identifier.
+    /// The stable SCH011 identifier used to associate diagnostics with this rule.
     fn id(&self) -> BuiltinRuleId {
         BuiltinRuleId::Sch011
     }
@@ -58,7 +58,7 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch011 {
     ///
     /// # Arguments
     ///
-    /// * context — the parsed schematic containing annotation nodes.
+    /// * `context` — the parsed schematic containing annotation nodes.
     ///
     /// # Returns
     ///

@@ -93,7 +93,7 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch016 {
     ///
     /// # Returns
     ///
-    /// The stable SCH016 identifier.
+    /// The stable SCH016 identifier used to associate diagnostics with this rule.
     fn id(&self) -> BuiltinRuleId {
         BuiltinRuleId::Sch016
     }
@@ -101,7 +101,7 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch016 {
     ///
     /// # Arguments
     ///
-    /// * context — Project group declarations and normalized physical wire facts.
+    /// * `context` — Project group declarations and normalized physical wire facts.
     ///
     /// # Returns
     ///

@@ -46,7 +46,7 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch019 {
     ///
     /// # Returns
     ///
-    /// The stable 019 identifier.
+    /// The stable SCH019 identifier used to associate diagnostics with this rule.
     fn id(&self) -> BuiltinRuleId {
         BuiltinRuleId::Sch019
     }
@@ -54,7 +54,7 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch019 {
     ///
     /// # Arguments
     ///
-    /// * context — the parsed schematic containing local, global, and hierarchical labels.
+    /// * `context` — the parsed schematic containing local, global, and hierarchical labels.
     ///
     /// # Returns
     ///

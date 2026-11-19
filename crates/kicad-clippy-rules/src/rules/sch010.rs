@@ -355,7 +355,7 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch010 {
     ///
     /// # Returns
     ///
-    /// The stable SCH010 identifier.
+    /// The stable SCH010 identifier used to associate diagnostics with this rule.
     fn id(&self) -> BuiltinRuleId {
         BuiltinRuleId::Sch010
     }
@@ -363,7 +363,7 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch010 {
     ///
     /// # Arguments
     ///
-    /// * context — The parsed schematic, wire segments, and normalized symbol/field facts.
+    /// * `context` — The parsed schematic, wire segments, and normalized symbol/field facts.
     ///
     /// # Returns
     ///

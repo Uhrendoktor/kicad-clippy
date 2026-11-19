@@ -642,7 +642,7 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch012 {
     ///
     /// # Returns
     ///
-    /// The stable SCH012 identifier.
+    /// The stable SCH012 identifier used to associate diagnostics with this rule.
     fn id(&self) -> BuiltinRuleId {
         BuiltinRuleId::Sch012
     }
@@ -650,7 +650,7 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch012 {
     ///
     /// # Arguments
     ///
-    /// * context — Project group declarations and normalized schematic geometry.
+    /// * `context` — Project group declarations and normalized schematic geometry.
     ///
     /// # Returns
     ///

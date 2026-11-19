@@ -98,7 +98,7 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch020 {
     ///
     /// # Returns
     ///
-    /// The stable SCH020 identifier.
+    /// The stable SCH020 identifier used to associate diagnostics with this rule.
     fn id(&self) -> BuiltinRuleId {
         BuiltinRuleId::Sch020
     }
@@ -106,7 +106,7 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch020 {
     ///
     /// # Arguments
     ///
-    /// * context — Component intent, group descriptions, and normalized schematic text-box facts.
+    /// * `context` — Component intent, group descriptions, and normalized schematic text-box facts.
     ///
     /// # Returns
     ///

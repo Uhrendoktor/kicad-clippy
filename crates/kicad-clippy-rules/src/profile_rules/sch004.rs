@@ -926,7 +926,7 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch004 {
     ///
     /// # Returns
     ///
-    /// The stable SCH004 identifier.
+    /// The stable SCH004 identifier used to associate diagnostics with this rule.
     fn id(&self) -> BuiltinRuleId {
         BuiltinRuleId::Sch004
     }
@@ -934,7 +934,7 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch004 {
     ///
     /// # Arguments
     ///
-    /// * context — Project profile, normalized physical wire facts, and optional exported netlist.
+    /// * `context` — Project profile, normalized physical wire facts, and optional exported netlist.
     ///
     /// # Returns
     ///

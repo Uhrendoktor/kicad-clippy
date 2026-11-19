@@ -83,7 +83,7 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch018 {
     ///
     /// # Returns
     ///
-    /// The stable 018 identifier.
+    /// The stable SCH018 identifier used to associate diagnostics with this rule.
     fn id(&self) -> BuiltinRuleId {
         BuiltinRuleId::Sch018
     }
@@ -91,7 +91,7 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch018 {
     ///
     /// # Arguments
     ///
-    /// * context — the parsed schematic containing labels and visible text objects.
+    /// * `context` — the parsed schematic containing labels and visible text objects.
     ///
     /// # Returns
     ///

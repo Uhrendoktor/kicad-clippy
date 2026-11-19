@@ -13,8 +13,8 @@ use std::collections::BTreeSet;
 ///
 /// # Arguments
 ///
-/// * profile — Loaded component-intent profile.
-/// * references — Set of reference designators present in the parsed schematic.
+/// * `profile` — Loaded component-intent profile whose component declarations are compared with the placed schematic inventory.
+/// * `references` — Set of placed schematic reference designators used to resolve profile component declarations.
 ///
 /// # Returns
 ///
@@ -114,7 +114,7 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch021 {
     ///
     /// # Returns
     ///
-    /// The stable SCH021 identifier.
+    /// The stable SCH021 identifier used to associate diagnostics with this rule.
     fn id(&self) -> BuiltinRuleId {
         BuiltinRuleId::Sch021
     }
@@ -122,7 +122,7 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch021 {
     ///
     /// # Arguments
     ///
-    /// * context — Project profile and normalized schematic component facts.
+    /// * `context` — Project profile and normalized schematic component facts.
     ///
     /// # Returns
     ///

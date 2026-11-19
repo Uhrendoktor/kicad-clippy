@@ -206,7 +206,7 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch022 {
     ///
     /// # Returns
     ///
-    /// The stable SCH022 identifier.
+    /// The stable SCH022 identifier used to associate diagnostics with this rule.
     fn id(&self) -> BuiltinRuleId {
         BuiltinRuleId::Sch022
     }
@@ -214,7 +214,7 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch022 {
     ///
     /// # Arguments
     ///
-    /// * context — Component intent declarations and the optional exported netlist.
+    /// * `context` — Component intent declarations and the optional exported netlist.
     ///
     /// # Returns
     ///

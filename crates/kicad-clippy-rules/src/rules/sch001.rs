@@ -191,7 +191,7 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch001 {
     ///
     /// # Returns
     ///
-    /// The stable 001 identifier.
+    /// The stable SCH001 identifier used to associate diagnostics with this rule.
     fn id(&self) -> BuiltinRuleId {
         BuiltinRuleId::Sch001
     }
@@ -199,7 +199,7 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch001 {
     ///
     /// # Arguments
     ///
-    /// * context — the parsed schematic, straight wire segments, and explicit junction coordinates.
+    /// * `context` — the parsed schematic, straight wire segments, and explicit junction coordinates.
     ///
     /// # Returns
     ///
