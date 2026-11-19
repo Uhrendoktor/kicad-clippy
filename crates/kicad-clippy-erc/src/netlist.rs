@@ -74,16 +74,16 @@ pub struct Netlist {
 }
 
 impl Netlist {
-    /// Returns the net name connected to a component pin.
+    /// Looks up the logical net connected to the specified component pin.
+    ///
     /// # Arguments
     ///
-    /// * `reference` — Input `reference` used by this operation.
-    /// * `pin` — Input `pin` used by this operation.
+    /// * `reference` — Component reference designator from the flattened netlist.
+    /// * `pin` — Pin number exactly as exported by KiCad.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
-    ///
+    /// The associated net name, or `None` when KiCad did not assign the pin to an exported net.
     #[must_use]
     pub fn net_for_pin(&self, reference: &str, pin: &str) -> Option<&str> {
         self.pin_nets
@@ -94,15 +94,15 @@ impl Netlist {
             .map(String::as_str)
     }
 
-    /// Returns the pins attached to a named net.
+    /// Returns the component pins attached to the named logical net.
+    ///
     /// # Arguments
     ///
-    /// * `name` — Input `name` used by this operation.
+    /// * `name` — Logical net name or S-expression child name being looked up.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
-    ///
+    /// The net's pin slice, or `None` when the net name is not present.
     #[must_use]
     pub fn pins_on_net(&self, name: &str) -> Option<&[NetlistNode]> {
         self.nets.get(name).map(|net| net.nodes.as_slice())
@@ -156,20 +156,20 @@ pub enum NetlistError {
     },
 }
 
-/// Exports a flattened `KiCad` netlist using the CLI native S-expression format.
+/// Invokes KiCad's native netlist exporter and parses the resulting S-expression document.
 ///
-/// # Errors
-///
-/// Returns `NetlistError` when `KiCad` cannot be started, the command fails,
-/// or the generated netlist cannot be read or parsed.
 /// # Arguments
 ///
-/// * `program` — Input `program` used by this operation.
-/// * `schematic_path` — Input `schematic path` used by this operation.
+/// * `program` — Path or command name of the `kicad-cli` executable to run.
+/// * `schematic_path` — Schematic file to pass to the KiCad command.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// A parsed netlist, or an error describing export, file access, S-expression parsing, or inconsistent pin assignments.
+///
+/// # Errors
+///
+/// Returns an error when KiCad execution, file access, JSON/S-expression decoding, or netlist consistency checks fail.
 pub fn export_netlist(
     program: impl AsRef<Path>,
     schematic_path: impl AsRef<Path>,
@@ -212,19 +212,19 @@ pub fn export_netlist(
     parse_netlist_sexpr(&contents)
 }
 
-/// Parses `KiCad` flattened netlist S-expression data.
+/// Parses a KiCad `export` S-expression into component, net, chain, and reverse pin-to-net indexes.
 ///
-/// # Errors
-///
-/// Returns `NetlistError` for malformed S-expressions, wrong roots,
-/// missing required fields, or duplicate component-pin assignments.
 /// # Arguments
 ///
-/// * `contents` — Input `contents` used by this operation.
+/// * `contents` — UTF-8 JSON or S-expression source text returned by KiCad.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The flattened component/net model and indexes, or a structured error for malformed or inconsistent netlist data.
+///
+/// # Errors
+///
+/// Returns an error when KiCad execution, file access, JSON/S-expression decoding, or netlist consistency checks fail.
 pub fn parse_netlist_sexpr(contents: &str) -> Result<Netlist, NetlistError> {
     let document = parse_one(contents)?;
     let root = document
@@ -309,17 +309,17 @@ pub fn parse_netlist_sexpr(contents: &str) -> Result<Netlist, NetlistError> {
     }
     Ok(netlist)
 }
-/// Processes process details using the supplied values and schematic data.
+/// Combines non-empty process output streams with a fallback error description for a failed CLI operation.
 ///
 /// # Arguments
 ///
-/// * `stdout` — Input `stdout` used by this operation.
-/// * `stderr` — Input `stderr` used by this operation.
-/// * `fallback` — Input `fallback` used by this operation.
+/// * `stdout` — Standard output bytes captured from the failed process.
+/// * `stderr` — Standard error bytes captured from the failed process.
+/// * `fallback` — Additional error text to include when neither process stream explains the failure.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// A newline-separated diagnostic string containing the available process output and fallback context.
 fn process_details(stdout: &[u8], stderr: &[u8], fallback: &str) -> String {
     let stdout = String::from_utf8_lossy(stdout);
     let stderr = String::from_utf8_lossy(stderr);
@@ -329,31 +329,31 @@ fn process_details(stdout: &[u8], stderr: &[u8], fallback: &str) -> String {
         .collect::<Vec<_>>()
         .join("\n")
 }
-/// Processes missing field using the supplied values and schematic data.
+/// Constructs a structured parse error naming the required field and the S-expression context where it was absent.
 ///
 /// # Arguments
 ///
-/// * `field` — Input `field` used by this operation.
-/// * `context` — Input `context` used by this operation.
+/// * `field` — Required field name used in the parse error.
+/// * `context` — S-expression object description in which the required field was missing.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// A `NetlistError::MissingField` describing the missing member and its containing object.
 fn missing_field(field: &str, context: &str) -> NetlistError {
     NetlistError::MissingField {
         field: field.to_owned(),
         context: context.to_owned(),
     }
 }
-/// Processes list items using the supplied values and schematic data.
+/// Returns the children of an S-expression list node.
 ///
 /// # Arguments
 ///
-/// * `node` — Input `node` used by this operation.
+/// * `node` — S-expression node whose children or head symbol are being inspected.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// A borrowed slice of list children, or `None` when the node is not a list.
 fn list_items(node: &Node) -> Option<&[Node]> {
     if let Node::List { items, .. } = node {
         Some(items)
@@ -361,15 +361,15 @@ fn list_items(node: &Node) -> Option<&[Node]> {
         None
     }
 }
-/// Processes head using the supplied values and schematic data.
+/// Returns the symbol at the head of an S-expression list.
 ///
 /// # Arguments
 ///
-/// * `node` — Input `node` used by this operation.
+/// * `node` — S-expression node whose children or head symbol are being inspected.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The leading symbol of a list node, or `None` for atoms and malformed lists.
 fn head(node: &Node) -> Option<&str> {
     let Node::List { items, .. } = node else {
         return None;
@@ -383,16 +383,16 @@ fn head(node: &Node) -> Option<&str> {
     };
     Some(value)
 }
-/// Processes children using the supplied values and schematic data.
+/// Iterates over direct child lists whose head matches the requested name.
 ///
 /// # Arguments
 ///
-/// * `node` — Input `node` used by this operation.
-/// * `name` — Input `name` used by this operation.
+/// * `node` — S-expression node whose children or head symbol are being inspected.
+/// * `name` — Logical net name or S-expression child name being looked up.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// An iterator over matching direct child-list nodes.
 fn children<'a>(node: &'a Node, name: &str) -> impl Iterator<Item = &'a Node> + 'a {
     let name = name.to_owned();
     list_items(node)
@@ -400,45 +400,45 @@ fn children<'a>(node: &'a Node, name: &str) -> impl Iterator<Item = &'a Node> + 
         .flatten()
         .filter(move |child| head(child) == Some(name.as_str()))
 }
-/// Processes child list using the supplied values and schematic data.
+/// Returns the first direct child list with the requested head symbol.
 ///
 /// # Arguments
 ///
-/// * `node` — Input `node` used by this operation.
-/// * `name` — Input `name` used by this operation.
+/// * `node` — S-expression node whose children or head symbol are being inspected.
+/// * `name` — Logical net name or S-expression child name being looked up.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The first matching child-list node, or `None` when no such child exists.
 fn child_list<'a>(node: &'a Node, name: &str) -> Option<&'a Node> {
     children(node, name).next()
 }
-/// Processes child value using the supplied values and schematic data.
+/// Reads and decodes the first atom value in a named child list using the original source text.
 ///
 /// # Arguments
 ///
-/// * `node` — Input `node` used by this operation.
-/// * `name` — Input `name` used by this operation.
-/// * `source` — Input `source` used by this operation.
+/// * `node` — S-expression node whose children or head symbol are being inspected.
+/// * `name` — Logical net name or S-expression child name being looked up.
+/// * `source` — Original netlist source text used to decode the raw atom span.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The decoded child string, or `None` when the child or its atom value is absent.
 fn child_value(node: &Node, name: &str, source: &str) -> Option<String> {
     let child = child_list(node, name)?;
     let items = list_items(child)?;
     atom_value(items.get(1)?, source)
 }
-/// Processes atom value using the supplied values and schematic data.
+/// Decodes the source text covered by an atom's span, preserving the original token's escaping rules.
 ///
 /// # Arguments
 ///
-/// * `node` — Input `node` used by this operation.
-/// * `source` — Input `source` used by this operation.
+/// * `node` — S-expression node whose children or head symbol are being inspected.
+/// * `source` — Original netlist source text used to decode the raw atom span.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The decoded string represented by the atom, or `None` when the node is not a quoted/symbol atom with a valid source span.
 fn atom_value(node: &Node, source: &str) -> Option<String> {
     let Node::Atom { span, .. } = node else {
         return None;
@@ -448,12 +448,12 @@ fn atom_value(node: &Node, source: &str) -> Option<String> {
         .map(|value| value.trim_matches('"').to_owned())
 }
 #[cfg(test)]
-/// Contains the tests implementation and supporting types.
+/// Unit tests for native netlist export parsing and pin-to-net indexing.
 mod tests {
     #![allow(clippy::expect_used)]
     use super::parse_netlist_sexpr;
     use std::collections::BTreeSet;
-    /// Defines the netlist constant.
+    /// Minimal exported netlist fixture used to test component, net, and pin relationships.
     const NETLIST: &str = r#"(export
       (components
         (comp (ref "C1") (value "100n") (libsource (lib "Device") (part "C")))
@@ -474,8 +474,7 @@ mod tests {
         )
       )
     )"#;
-    /// Processes maps component pins to exported net names using the supplied values and schematic data.
-    ///
+    /// Verifies that maps component pins to exported net names behaves as required.
     #[test]
     fn maps_component_pins_to_exported_net_names() {
         let netlist = parse_netlist_sexpr(NETLIST).expect("valid fixture");
@@ -495,8 +494,7 @@ mod tests {
         assert_eq!(netlist.components["C1"].value.as_deref(), Some("100n"));
         assert_eq!(netlist.components["U1"].lib_id.as_deref(), Some("MyLib:U"));
     }
-    /// Processes rejects a pin assigned to two nets using the supplied values and schematic data.
-    ///
+    /// Verifies that rejects a pin assigned to two nets behaves as required.
     #[test]
     fn rejects_a_pin_assigned_to_two_nets() {
         let duplicate = r#"(export (nets

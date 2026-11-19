@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 //! Native `KiCad` Electrical Rules Checker adapter.
-/// Contains the netlist implementation and supporting types.
+/// Native netlist export and S-expression parsing, including component, net, and pin lookup types.
 mod netlist;
 
 pub use netlist::{
@@ -36,11 +36,11 @@ pub struct NativeErcReport {
 }
 
 impl NativeErcReport {
-    /// Returns whether any non-excluded error was reported.
+    /// Reports whether the parsed ERC report contains at least one non-excluded error diagnostic.
+    ///
     /// # Returns
     ///
-    /// The value produced by this operation.
-    ///
+    /// `true` when at least one diagnostic has severity `Error` and is not excluded.
     #[must_use]
     pub fn has_errors(&self) -> bool {
         self.diagnostics.iter().any(Diagnostic::is_active_error)
@@ -87,23 +87,20 @@ pub enum ErcError {
     InvalidReport(String),
 }
 
-/// Runs `KiCad` CLI ERC and decodes its JSON report.
+/// Runs `kicad-cli sch erc` in JSON mode, reads its report, and normalizes the sheet violations.
 ///
-/// The CLI's default violation exit behavior is retained; the
-/// `--exit-code-violations` option is deliberately not enabled.
-///
-/// # Errors
-///
-/// Returns [`ErcError`] when the process cannot be started, `KiCad` fails without writing a report,
-/// or the generated report cannot be read or decoded.
 /// # Arguments
 ///
-/// * `program` — Input `program` used by this operation.
-/// * `schematic_path` — Input `schematic path` used by this operation.
+/// * `program` — Path or command name of the `kicad-cli` executable to run.
+/// * `schematic_path` — Schematic file to pass to the KiCad command.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The normalized ERC report, or an error when KiCad cannot run or its output cannot be read or decoded.
+///
+/// # Errors
+///
+/// Returns an error when KiCad execution, file access, JSON/S-expression decoding, or netlist consistency checks fail.
 pub fn run_native_erc(
     program: impl AsRef<Path>,
     schematic_path: impl AsRef<Path>,
@@ -157,20 +154,20 @@ pub fn run_native_erc(
     parse_erc_json(&contents, schematic_path)
 }
 
-/// Parses a `KiCad` ERC report, whose violations are nested under each sheet.
+/// Decodes KiCad's per-sheet ERC JSON structure and converts its violations and ignored checks into the shared report model.
 ///
-/// # Errors
-///
-/// Returns [`ErcError::Json`] for invalid JSON or [`ErcError::InvalidReport`] when the
-/// decoded document does not contain the expected per-sheet report structure.
 /// # Arguments
 ///
-/// * `contents` — Input `contents` used by this operation.
-/// * `schematic_path` — Input `schematic path` used by this operation.
+/// * `contents` — UTF-8 JSON or S-expression source text returned by KiCad.
+/// * `schematic_path` — Schematic file to pass to the KiCad command.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// A report containing KiCad version/date metadata, disabled checks, and normalized diagnostics.
+///
+/// # Errors
+///
+/// Returns an error when KiCad execution, file access, JSON/S-expression decoding, or netlist consistency checks fail.
 pub fn parse_erc_json(
     contents: &[u8],
     schematic_path: impl AsRef<Path>,
@@ -216,17 +213,17 @@ pub fn parse_erc_json(
         diagnostics,
     })
 }
-/// Processes parse violation using the supplied values and schematic data.
+/// Converts one KiCad violation object into a normalized diagnostic, retaining its sheet path, source path, and affected-item context.
 ///
 /// # Arguments
 ///
-/// * `violation` — Input `violation` used by this operation.
-/// * `sheet_path` — Input `sheet path` used by this operation.
-/// * `source_path` — Input `source path` used by this operation.
+/// * `violation` — JSON object representing one native ERC violation.
+/// * `sheet_path` — Optional hierarchical sheet path inherited from the containing sheet entry.
+/// * `source_path` — Schematic source path attached to the normalized diagnostic.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// A diagnostic carrying the rule code, severity, source path, sheet path, and related item locations found in the violation.
 fn parse_violation(
     violation: &Value,
     sheet_path: Option<String>,
@@ -262,15 +259,15 @@ fn parse_violation(
     diagnostic.excluded = excluded;
     diagnostic
 }
-/// Processes parse related location using the supplied values and schematic data.
+/// Extracts an affected-item description, UUID, and schematic position from one violation item.
 ///
 /// # Arguments
 ///
-/// * `item` — Input `item` used by this operation.
+/// * `item` — JSON object describing one affected item in an ERC violation.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The normalized affected-item description, UUID, and schematic location; missing JSON fields remain `None` or empty.
 fn parse_related_location(item: &Value) -> RelatedLocation {
     RelatedLocation {
         description: string_member(item, "description").unwrap_or_default(),
@@ -278,15 +275,15 @@ fn parse_related_location(item: &Value) -> RelatedLocation {
         location: parse_schematic_location(item),
     }
 }
-/// Processes parse schematic location using the supplied values and schematic data.
+/// Reads the `pos` object as an `(x, y)` schematic location in millimetres.
 ///
 /// # Arguments
 ///
-/// * `item` — Input `item` used by this operation.
+/// * `item` — JSON object describing one affected item in an ERC violation.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// A schematic coordinate when both numeric `x` and `y` members are present; otherwise `None`.
 fn parse_schematic_location(item: &Value) -> Option<SchematicLocation> {
     let position = item.get("pos")?;
     Some(SchematicLocation {
@@ -294,28 +291,28 @@ fn parse_schematic_location(item: &Value) -> Option<SchematicLocation> {
         y_mm: position.get("y")?.as_f64()?,
     })
 }
-/// Processes string member using the supplied values and schematic data.
+/// Returns a JSON object member only when it contains a string value.
 ///
 /// # Arguments
 ///
-/// * `value` — Input `value` used by this operation.
-/// * `key` — Input `key` used by this operation.
+/// * `value` — JSON object or value containing the field to inspect.
+/// * `key` — Name of the JSON member to read.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The owned string value when the member exists and is a JSON string; otherwise `None`.
 fn string_member(value: &Value, key: &str) -> Option<String> {
     value.get(key)?.as_str().map(ToOwned::to_owned)
 }
 #[cfg(test)]
-/// Contains the tests implementation and supporting types.
+/// Unit tests for native ERC report parsing and failure handling.
 mod tests {
     use std::{error::Error, path::Path};
 
     use kicad_clippy_core::Severity;
 
     use super::parse_erc_json;
-    /// Defines the erc report constant.
+    /// Representative native ERC JSON report with a nested per-sheet violation.
     const ERC_REPORT: &[u8] = br#"
     {
       "$schema": "https://schemas.kicad.org/erc.v1.json",
@@ -346,16 +343,15 @@ mod tests {
       "ignored_checks": [{"key": "pin_to_pin", "description": "Pin-to-pin conflict"}]
     }
     "#;
-    /// Processes reads sheet nested violations and preserves item context using the supplied values and schematic data.
+    /// Verifies that reads sheet nested violations and preserves item context behaves as required.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
+    /// The result derived from the supplied KiCad report data.
     ///
     /// # Errors
     ///
-    /// Returns an error when the operation cannot complete with the supplied input.
-    ///
+    /// Returns an error when KiCad execution, file access, JSON/S-expression decoding, or netlist consistency checks fail.
     #[test]
     fn reads_sheet_nested_violations_and_preserves_item_context() -> Result<(), Box<dyn Error>> {
         let report = parse_erc_json(ERC_REPORT, Path::new("fixture.kicad_sch"))?;
@@ -377,32 +373,22 @@ mod tests {
         assert!(report.has_errors());
         Ok(())
     }
-    /// Processes rejects a drc shaped top level violations array using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when the operation cannot complete with the supplied input.
-    ///
+    /// Verifies that rejects a drc shaped top level violations array behaves as required.
     #[test]
     fn rejects_a_drc_shaped_top_level_violations_array() {
         let drc_shaped = br#"{"violations":[{"severity":"error"}]}"#;
 
         assert!(parse_erc_json(drc_shaped, "fixture.kicad_sch").is_err());
     }
-    /// Processes excluded errors are retained but do not fail the report using the supplied values and schematic data.
+    /// Verifies that excluded errors are retained but do not fail the report behaves as required.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
+    /// The result derived from the supplied KiCad report data.
     ///
     /// # Errors
     ///
-    /// Returns an error when the operation cannot complete with the supplied input.
-    ///
+    /// Returns an error when KiCad execution, file access, JSON/S-expression decoding, or netlist consistency checks fail.
     #[test]
     fn excluded_errors_are_retained_but_do_not_fail_the_report() -> Result<(), Box<dyn Error>> {
         let contents = br#"{
