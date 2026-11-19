@@ -476,10 +476,7 @@ mod tests {
     -> Result<(), Box<dyn Error>> {
         let document = no_connect_document(false, "passive", Some("no_connect"), true)?;
         let facts = SchematicFacts::from_document(&document);
-        assert_eq!(
-            facts.pins[0].electrical_type.as_deref(),
-            Some("no_connect")
-        );
+        assert_eq!(facts.pins[0].electrical_type.as_deref(), Some("no_connect"));
         let diagnostics = no_connect_profile().validate_with_netlist(&document, None);
         assert!(diagnostics.iter().any(|item| {
             item.code == BuiltinRuleId::Sch015.as_str()
