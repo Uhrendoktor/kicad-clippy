@@ -4845,8 +4845,7 @@ mod tests {
     ///
     /// The cubic control points, exact curve point, crossing wire and flattened polyline.
     /// Compact data returned by the analytic Bézier intersection fixture builder.
-    type AnalyticBezierFixture =
-        ([(f64, f64); 4], (f64, f64), super::Segment, Vec<(f64, f64)>);
+    type AnalyticBezierFixture = ([(f64, f64); 4], (f64, f64), super::Segment, Vec<(f64, f64)>);
 
     fn analytic_bezier_wire_fixture() -> AnalyticBezierFixture {
         let controls = [(0.0, 0.0), (0.0, 10.0), (10.0, 10.0), (10.0, 0.0)];
