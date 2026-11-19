@@ -45,6 +45,23 @@ jobs:
 
           for path in Path("crates").rglob("*.rs"):
               lines = path.read_text(encoding="utf-8").splitlines()
+
+              # Put cfg(test) before the documentation attached to the test module.
+              index = 0
+              while index < len(lines):
+                  if lines[index].strip() == "#[cfg(test)]":
+                      cursor = index - 1
+                      while cursor >= 0 and not lines[cursor].strip():
+                          cursor -= 1
+                      if cursor >= 0 and lines[cursor].lstrip().startswith("///"):
+                          doc_start = cursor
+                          while doc_start > 0 and lines[doc_start - 1].lstrip().startswith("///"):
+                              doc_start -= 1
+                          docs = [line for line in lines[doc_start:index] if line.lstrip().startswith("///")]
+                          lines[doc_start:index + 1] = [lines[index], *docs]
+                          index = doc_start + len(docs) + 1
+                  index += 1
+
               output = []
               index = 0
               while index < len(lines):

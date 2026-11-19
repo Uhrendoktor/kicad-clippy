@@ -8,8 +8,6 @@ repository.workspace = true
 rust-version.workspace = true
 keywords.workspace = true
 categories.workspace = true
-keywords.workspace = true
-categories.workspace = true
 
 [dependencies]
 kurbo.workspace = true
