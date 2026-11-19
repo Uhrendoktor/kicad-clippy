@@ -105,4 +105,3 @@ pub(super) fn wire_text_annotation_obstacle_diagnostics(
     }
     diagnostics
 }
-

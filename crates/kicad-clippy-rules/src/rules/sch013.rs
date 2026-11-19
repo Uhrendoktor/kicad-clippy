@@ -46,16 +46,15 @@ use kurbo::Point as CurvePoint;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
-
 /// Checks annotation and text obstacles in one SCH013 pass.
 #[path = "sch013/annotations.rs"]
 mod annotations;
-/// Checks symbol, sheet, bus, table, and image obstacles in one SCH013 pass.
-#[path = "sch013/graphics.rs"]
-mod graphics;
 /// Checks electrical marker obstacles and combines sheet/table/bus diagnostics.
 #[path = "sch013/electrical.rs"]
 mod electrical;
+/// Checks symbol, sheet, bus, table, and image obstacles in one SCH013 pass.
+#[path = "sch013/graphics.rs"]
+mod graphics;
 /// Checks wire intersections with non-endpoint symbol pins.
 #[path = "sch013/pins.rs"]
 mod pins;

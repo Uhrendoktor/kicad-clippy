@@ -237,4 +237,3 @@ pub(super) fn bitmap_image_obstacle_diagnostics(
         })
         .collect()
 }
-
