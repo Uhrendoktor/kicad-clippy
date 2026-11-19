@@ -12,5 +12,7 @@ pub mod source;
 
 pub use diagnostic::{Diagnostic, RelatedLocation, SchematicLocation, Severity};
 pub use rule_id::{BuiltinRuleId, UnknownBuiltinRuleId};
-pub use rules::{builtin_rule_registry, RuleDescriptor, RuleLevel, RuleRegistry, RuleRegistryError};
+pub use rules::{
+    RuleDescriptor, RuleLevel, RuleRegistry, RuleRegistryError, builtin_rule_registry,
+};
 pub use source::{ByteSpan, SourceFile};
