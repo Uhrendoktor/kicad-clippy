@@ -371,6 +371,8 @@ impl LintProfile {
             netlist,
         };
         let mut diagnostics = Vec::new();
+        diagnostics
+            .extend(crate::additional_profile_rules::validate_profile_extensions(self, &facts));
         diagnostics.extend(sch021::Sch021.check(&context));
         diagnostics.extend(sch020::Sch020.check(&context));
         diagnostics.extend(sch022::Sch022.check(&context));
