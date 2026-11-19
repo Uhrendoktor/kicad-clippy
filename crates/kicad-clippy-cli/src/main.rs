@@ -80,11 +80,11 @@ enum OutputFormat {
 struct LintOptions<'a> {
     /// Requested diagnostic output encoding.
     format: OutputFormat,
-    /// Whether native KiCad ERC should be skipped.
+    /// Whether native `KiCad` ERC should be skipped.
     skip_erc: bool,
-    /// Optional explicit path to the KiCad CLI executable.
+    /// Optional explicit path to the `KiCad` CLI executable.
     explicit_cli: Option<PathBuf>,
-    /// Optional KiCad project file providing schematic and netclass settings.
+    /// Optional `KiCad` project file providing schematic and netclass settings.
     project_path: Option<&'a Path>,
     /// Optional JSON component-intent profile, consumed during profile validation.
     profile_path: Option<PathBuf>,
@@ -276,14 +276,6 @@ fn lint(schematic_path: &Path, options: LintOptions<'_>) -> Result<ExitCode, Cli
     if strict && profile_path.is_none() {
         return Err(CliError::StrictNeedsProfile);
     }
-    let rule_policy = policy_path.as_deref().map(load_rule_policy).transpose()?;
-    let policy_registry = rule_policy
-        .as_ref()
-        .map(|_| builtin_rule_registry())
-        .transpose()?;
-    if let (Some(policy), Some(registry)) = (&rule_policy, &policy_registry) {
-        policy.validate(registry)?;
-    }
     let schematic = SchematicDocument::from_path(schematic_path)?;
     let project = project_path
         .map(project_settings_from_project)
@@ -342,9 +334,7 @@ fn lint(schematic_path: &Path, options: LintOptions<'_>) -> Result<ExitCode, Cli
         }
         diagnostics.extend(profile.validate_with_netlist(&schematic, netlist.as_ref()));
     }
-    if let (Some(policy), Some(registry)) = (&rule_policy, &policy_registry) {
-        diagnostics = policy.apply(registry, diagnostics)?;
-    }
+    diagnostics = apply_optional_rule_policy(policy_path, diagnostics)?;
     let summary = Summary::from_diagnostics(&diagnostics);
     let output = LintOutput {
         schema_version: "1",
@@ -387,6 +377,32 @@ fn lint(schematic_path: &Path, options: LintOptions<'_>) -> Result<ExitCode, Cli
 fn load_rule_policy(policy_path: &Path) -> Result<RulePolicy, CliError> {
     let contents = fs::read_to_string(policy_path)?;
     Ok(parse_rule_policy(&contents)?)
+}
+
+/// Applies the optional TOML rule policy to built-in diagnostics.
+///
+/// # Arguments
+///
+/// * `policy_path` — Optional policy file path; `None` preserves existing rule-emitted severities.
+/// * `diagnostics` — Native and custom diagnostics produced by this lint invocation.
+///
+/// # Returns
+///
+/// The diagnostics after applying the selected preset and explicit built-in rule overrides.
+///
+/// # Errors
+///
+/// Returns a policy decoding, registry construction, or unknown-rule validation error.
+fn apply_optional_rule_policy(
+    policy_path: Option<&Path>,
+    diagnostics: Vec<Diagnostic>,
+) -> Result<Vec<Diagnostic>, CliError> {
+    let Some(policy_path) = policy_path else {
+        return Ok(diagnostics);
+    };
+    let policy = load_rule_policy(policy_path)?;
+    let registry = builtin_rule_registry()?;
+    Ok(policy.apply(&registry, diagnostics)?)
 }
 
 /// Parses a TOML policy string.
