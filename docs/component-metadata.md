@@ -194,3 +194,25 @@ When a project profile is supplied, kicad-clippy exports a flattened netlist thr
 3. Decouplers for one target pin agree on their return net and cluster identifier.
 
 This proves logical pin-to-net membership. It does not yet prove that the connection is a direct wire rather than a label-mediated connection, nor does it prove physical proximity; those require wire-island and transformed symbol-pin geometry checks.
+
+## Profile-declared required no-connect pins
+
+A component may declare pins that are intentionally unused in the current design by adding a comma-separated `required_no_connect_pins` entry to its `attributes` map:
+
+~~~json
+{
+  "components": {
+    "U1": {
+      "kind": "integrated_circuit",
+      "role": "controller",
+      "function": "Power delivery controller",
+      "rationale": "Owns USB-PD negotiation",
+      "attributes": {
+        "required_no_connect_pins": "3, 7"
+      }
+    }
+  }
+}
+~~~
+
+SCH015 resolves those pin numbers through the placed symbol's embedded library geometry and requires a no-connect flag at each transformed pin coordinate. If a pin cannot be resolved, the profile requirement is reported as unverified. Do not list pins whose library electrical type is `unconnected`: that type is intrinsically not connectable and is distinct from a schematic no-connect flag. KiCad native ERC remains authoritative for the electrical meaning of both.
