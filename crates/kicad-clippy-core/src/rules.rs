@@ -76,12 +76,19 @@ impl RuleDescriptor {
 
 /// Static descriptive data for one built-in rule.
 struct BuiltinRuleMetadata {
+    /// Stable enum identifier owning this descriptor.
     id: BuiltinRuleId,
+    /// Concise display name used by rule-listing interfaces.
     name: &'static str,
+    /// High-level family used to group related rules.
     category: &'static str,
+    /// One-sentence statement of the enforced condition.
     summary: &'static str,
+    /// Rationale and semantic limits of the check.
     explanation: &'static str,
+    /// Descriptive default policy level; not applied until policy integration exists.
     level: RuleLevel,
+    /// Search terms used by rule discovery and filtering.
     tags: &'static [&'static str],
 }
 
@@ -455,7 +462,7 @@ mod tests {
         for id in BuiltinRuleId::ALL {
             let descriptor = registry
                 .get(id.as_str())
-                .expect("every built-in rule must have a descriptor");
+                .ok_or_else(|| super::RuleRegistryError(id.as_str().to_owned()))?;
             assert_eq!(descriptor.id, id.as_str());
             assert!(!descriptor.name.trim().is_empty());
             assert!(!descriptor.category.trim().is_empty());
@@ -472,10 +479,14 @@ mod tests {
     fn sch021_and_sch022_descriptors_match_the_profile_contracts()
     -> Result<(), super::RuleRegistryError> {
         let registry = super::builtin_rule_registry()?;
-        let sch021 = registry.get("SCH021").expect("SCH021 descriptor exists");
+        let sch021 = registry
+            .get("SCH021")
+            .ok_or_else(|| super::RuleRegistryError("SCH021".to_owned()))?;
         assert!(sch021.summary.contains("role-specific"));
         assert!(sch021.summary.contains("connector"));
-        let sch022 = registry.get("SCH022").expect("SCH022 descriptor exists");
+        let sch022 = registry
+            .get("SCH022")
+            .ok_or_else(|| super::RuleRegistryError("SCH022".to_owned()))?;
         assert!(sch022.summary.contains("decoupling"));
         assert!(sch022.summary.contains("return nets"));
         Ok(())
