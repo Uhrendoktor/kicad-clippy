@@ -1,5 +1,11 @@
 #![forbid(unsafe_code)]
 
+//! Command-line entry point for the KiCad schematic linter.
+//!
+//! Loads schematic, project, and component-intent profile inputs; runs native
+//! Electrical Rules Checker and built-in schematic rules; and renders findings
+//! as human-readable text or structured JSON.
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::Write as _,
