@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-//! Command-line entry point for the KiCad schematic linter.
+//! Command-line entry point for the `KiCad` schematic linter.
 //!
 //! Loads schematic, project, and component-intent profile inputs; runs native
 //! Electrical Rules Checker and built-in schematic rules; and renders findings
@@ -29,7 +29,7 @@ use thiserror::Error;
 
 /// Millimetres represented by one mil.
 const MILLIMETRES_PER_MIL: f64 = 0.0254;
-/// KiCad's default netclass wire width, in mils.
+/// `KiCad`'s default netclass wire width, in mils.
 const DEFAULT_NETCLASS_WIRE_WIDTH_MILS: f64 = 6.0;
 
 /// Clippy-inspired checks for `KiCad` schematic source files.
