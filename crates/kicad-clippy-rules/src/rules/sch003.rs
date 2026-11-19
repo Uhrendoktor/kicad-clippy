@@ -1,13 +1,13 @@
 //! Checks `SCH003` visible label-glyph clearance from connected wire geometry.
 
+use super::Segment;
+use super::at_span;
+use super::collect_label_nodes;
+use super::strict_line_hits_bounds;
+use super::text_visual_bounds;
 use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::Diagnostic;
 use kiutils_sexpr::Node;
-use super::at_span;
-use super::collect_label_nodes;
-use super::Segment;
-use super::strict_line_hits_bounds;
-use super::text_visual_bounds;
 
 /// Detects intersections between visible label glyph bounds and wire interiors.
 ///
@@ -50,7 +50,9 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch003 {
     /// # Returns
     ///
     /// The stable 003 identifier.
-    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch003 }
+    fn id(&self) -> BuiltinRuleId {
+        BuiltinRuleId::Sch003
+    }
     /// Evaluates visible label-glyph clearance from connected wire geometry.
     ///
     /// # Arguments
@@ -61,7 +63,9 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch003 {
     ///
     /// Diagnostics for visible label-glyph clearance from connected wire geometry.
     fn check(&self, context: &crate::RuleContext<'a>) -> Vec<Diagnostic> {
-        let Some(root) = context.document().cst().nodes.first() else { return Vec::new(); };
+        let Some(root) = context.document().cst().nodes.first() else {
+            return Vec::new();
+        };
         check_label_wire_clearance(root, context.segments)
     }
 }

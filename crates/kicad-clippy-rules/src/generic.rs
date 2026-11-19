@@ -1,14 +1,14 @@
 pub(crate) use crate::HALF_FACTOR;
-use crate::RuleContext;
 use crate::Rule;
+use crate::RuleContext;
 use crate::RulePass;
 pub(crate) use crate::TWO_SIDED_FACTOR;
-use geo::algorithm::line_measures::Length;
 use geo::BooleanOps;
 use geo::Coord;
 use geo::Euclidean;
 use geo::LineString;
 use geo::MultiLineString;
+use geo::algorithm::line_measures::Length;
 use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::ByteSpan;
 use kicad_clippy_core::Diagnostic;
@@ -17,17 +17,17 @@ use kicad_clippy_core::Severity;
 use kicad_clippy_parser::SchematicDocument;
 use kiutils_sexpr::Atom;
 use kiutils_sexpr::Node;
-#[cfg(test)]
-use kurbo::CubicBez as CurveCubicBez;
 use kurbo::Affine;
 use kurbo::Arc as CurveArc;
-use kurbo::flatten as flatten_curve_path;
+#[cfg(test)]
+use kurbo::CubicBez as CurveCubicBez;
 use kurbo::PathEl;
 use kurbo::Point as CurvePoint;
 use kurbo::Rect as CurveRect;
 use kurbo::Shape;
 use kurbo::Triangle;
 use kurbo::Vec2;
+use kurbo::flatten as flatten_curve_path;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::sync::OnceLock;
@@ -4175,8 +4175,6 @@ mod tests {
     use kicad_clippy_parser::SchematicDocument;
     use kurbo::{ParamCurve, ParamCurveDeriv};
 
-
-
     /// Builds a minimal valid schematic fixture by wrapping the supplied S-expression items in a `kicad_sch` root.
     ///
     /// # Arguments
@@ -4776,23 +4774,27 @@ mod tests {
             bezier_mm: None,
             stroke_width_mm: 0.254,
         };
-        assert!(super::sch013::wire_crosses_symbol_primitive_with_wire_stroke(
-            wire,
-            &primitive,
-            &[],
-            0.0
-        ));
+        assert!(
+            super::sch013::wire_crosses_symbol_primitive_with_wire_stroke(
+                wire,
+                &primitive,
+                &[],
+                0.0
+            )
+        );
         let allowed_pin = super::SchematicPinFact {
             reference: "U1".to_owned(),
             number: "1".to_owned(),
             position_mm: (wire.start.x, wire.start.y),
         };
-        assert!(!super::sch013::wire_crosses_symbol_primitive_with_wire_stroke(
-            wire,
-            &primitive,
-            &[allowed_pin],
-            0.0,
-        ));
+        assert!(
+            !super::sch013::wire_crosses_symbol_primitive_with_wire_stroke(
+                wire,
+                &primitive,
+                &[allowed_pin],
+                0.0,
+            )
+        );
 
         let intersections = super::sch013::segment_arc_intersection_points(wire, arc);
         assert_eq!(intersections.len(), 1);
@@ -4913,12 +4915,14 @@ mod tests {
             bezier_mm: Some(controls),
             stroke_width_mm: 0.254,
         };
-        assert!(super::sch013::wire_crosses_symbol_primitive_with_wire_stroke(
-            wire,
-            &primitive,
-            &[],
-            0.0
-        ));
+        assert!(
+            super::sch013::wire_crosses_symbol_primitive_with_wire_stroke(
+                wire,
+                &primitive,
+                &[],
+                0.0
+            )
+        );
 
         let pin_wire = super::Segment {
             start: super::Point {
@@ -4933,12 +4937,14 @@ mod tests {
             number: "1".to_owned(),
             position_mm: (point.x, point.y),
         };
-        assert!(!super::sch013::wire_crosses_symbol_primitive_with_wire_stroke(
-            pin_wire,
-            &primitive,
-            &[allowed_pin],
-            0.0,
-        ));
+        assert!(
+            !super::sch013::wire_crosses_symbol_primitive_with_wire_stroke(
+                pin_wire,
+                &primitive,
+                &[allowed_pin],
+                0.0,
+            )
+        );
     }
     /// Confirms circumcircle reconstruction preserves the requested arc direction and handles collinear control points without inventing a circle.
     #[test]
@@ -5614,12 +5620,14 @@ mod tests {
             bezier_mm: None,
             stroke_width_mm: 0.3,
         };
-        assert!(super::sch013::wire_crosses_symbol_primitive_with_wire_stroke(
-            arc_wire,
-            &arc_primitive,
-            &[],
-            0.0,
-        ));
+        assert!(
+            super::sch013::wire_crosses_symbol_primitive_with_wire_stroke(
+                arc_wire,
+                &arc_primitive,
+                &[],
+                0.0,
+            )
+        );
 
         let controls = [(0.0, 0.0), (0.0, 10.0), (10.0, 10.0), (10.0, 0.0)];
         let curve = super::CurveCubicBez::new(
@@ -5653,22 +5661,26 @@ mod tests {
             bezier_mm: Some(controls),
             stroke_width_mm: 0.3,
         };
-        assert!(super::sch013::wire_crosses_symbol_primitive_with_wire_stroke(
-            bezier_wire,
-            &bezier_primitive,
-            &[],
-            0.0,
-        ));
+        assert!(
+            super::sch013::wire_crosses_symbol_primitive_with_wire_stroke(
+                bezier_wire,
+                &bezier_primitive,
+                &[],
+                0.0,
+            )
+        );
         let narrow_stroke = super::SchematicPrimitiveFact {
             stroke_width_mm: 0.18,
             ..bezier_primitive
         };
-        assert!(!super::sch013::wire_crosses_symbol_primitive_with_wire_stroke(
-            bezier_wire,
-            &narrow_stroke,
-            &[],
-            0.0,
-        ));
+        assert!(
+            !super::sch013::wire_crosses_symbol_primitive_with_wire_stroke(
+                bezier_wire,
+                &narrow_stroke,
+                &[],
+                0.0,
+            )
+        );
     }
     /// Confirms a pin endpoint exemption covers only the local contact region and does not hide a later wire collision.
     #[test]
@@ -5692,12 +5704,14 @@ mod tests {
             number: "1".to_owned(),
             position_mm: (0.0, 0.0),
         };
-        assert!(super::sch013::wire_crosses_symbol_primitive_with_wire_stroke(
-            wire,
-            &primitive,
-            &[pin],
-            0.0,
-        ));
+        assert!(
+            super::sch013::wire_crosses_symbol_primitive_with_wire_stroke(
+                wire,
+                &primitive,
+                &[pin],
+                0.0,
+            )
+        );
     }
     /// Confirms Bézier stroke clearance is based on distance to the curve rather than its control polygon.
     #[test]
@@ -6058,18 +6072,22 @@ mod tests {
             end: super::Point { x: 0.19, y: 0.5 },
             span: kicad_clippy_core::ByteSpan::new(0, 0),
         };
-        assert!(!super::sch013::wire_crosses_symbol_primitive_with_wire_stroke(
-            wire,
-            &primitive,
-            &[],
-            0.0
-        ));
-        assert!(super::sch013::wire_crosses_symbol_primitive_with_wire_stroke(
-            wire,
-            &primitive,
-            &[],
-            0.2,
-        ));
+        assert!(
+            !super::sch013::wire_crosses_symbol_primitive_with_wire_stroke(
+                wire,
+                &primitive,
+                &[],
+                0.0
+            )
+        );
+        assert!(
+            super::sch013::wire_crosses_symbol_primitive_with_wire_stroke(
+                wire,
+                &primitive,
+                &[],
+                0.2,
+            )
+        );
     }
     /// Confirms increasing the explicit wire width expands the collision envelope around a circle's stroke.
     #[test]
@@ -6659,4 +6677,3 @@ mod tests {
         );
     }
 }
-

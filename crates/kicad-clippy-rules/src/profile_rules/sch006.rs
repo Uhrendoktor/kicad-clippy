@@ -1,11 +1,11 @@
 //! Checks `SCH006` minimum spacing between functional-group member symbols.
 
+use super::GroupIntent;
+use super::SchematicFacts;
 use crate::generic::GEOMETRY_TOLERANCE_MM;
 use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::Diagnostic;
 use kicad_clippy_core::Severity;
-use super::GroupIntent;
-use super::SchematicFacts;
 
 /// Checks that a group's member symbols satisfy the spacing constraints declared by the profile.
 ///
@@ -77,7 +77,6 @@ pub(super) fn validate_group_spacing(
     diagnostics
 }
 
-
 /// Concrete implementation of built-in rule SCH006.
 pub(super) struct Sch006;
 impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch006 {
@@ -86,7 +85,9 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch006 {
     /// # Returns
     ///
     /// The stable SCH006 identifier.
-    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch006 }
+    fn id(&self) -> BuiltinRuleId {
+        BuiltinRuleId::Sch006
+    }
     /// Evaluates minimum member-origin spacing for each declared group.
     ///
     /// # Arguments
@@ -97,6 +98,11 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch006 {
     ///
     /// Diagnostics for invalid minimum-spacing contracts or member origins that are too close.
     fn check(&self, context: &super::ProfileRuleContext<'a>) -> Vec<Diagnostic> {
-        context.profile.groups.iter().flat_map(|(id, group)| validate_group_spacing(id, group, context.facts)).collect()
+        context
+            .profile
+            .groups
+            .iter()
+            .flat_map(|(id, group)| validate_group_spacing(id, group, context.facts))
+            .collect()
     }
 }

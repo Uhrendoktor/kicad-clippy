@@ -1,27 +1,27 @@
 //! Checks `SCH001` wire endpoints, segment geometry, overlaps, crossings, and unmarked junctions.
 
-use geo::algorithm::sweep::Cross;
-use geo::algorithm::sweep::Intersections;
-use geo::Line;
-use geo::LineIntersection;
-use kicad_clippy_core::BuiltinRuleId;
-use kicad_clippy_core::Diagnostic;
-use kicad_clippy_core::RelatedLocation;
-use kicad_clippy_core::SchematicLocation;
-use kiutils_sexpr::Node;
+use super::GEOMETRY_TOLERANCE_MM;
+use super::Point;
+use super::Segment;
 use super::at_segment;
 use super::at_span;
 use super::child_list;
 use super::children;
 use super::distance;
-use super::GEOMETRY_TOLERANCE_MM;
 use super::is_endpoint;
-use super::Point;
-use super::sch013::geo_line;
-use super::{head, span_of, walk};
 #[cfg(test)]
 pub(super) use super::line_hits_bounds;
-use super::Segment;
+use super::sch013::geo_line;
+use super::{head, span_of, walk};
+use geo::Line;
+use geo::LineIntersection;
+use geo::algorithm::sweep::Cross;
+use geo::algorithm::sweep::Intersections;
+use kicad_clippy_core::BuiltinRuleId;
+use kicad_clippy_core::Diagnostic;
+use kicad_clippy_core::RelatedLocation;
+use kicad_clippy_core::SchematicLocation;
+use kiutils_sexpr::Node;
 
 /// Wire segment paired with its stable index in the current analysis run.
 #[derive(Clone, Copy)]
@@ -55,7 +55,11 @@ impl Cross for IndexedSegment {
 /// # Returns
 ///
 /// SCH001 diagnostics for invalid endpoints, diagonal or zero-length segments, overlaps, crossings, and unmarked T-junctions.
-pub(super) fn check_wire_geometry(root: &Node, segments: &[Segment], junctions: &[Point]) -> Vec<Diagnostic> {
+pub(super) fn check_wire_geometry(
+    root: &Node,
+    segments: &[Segment],
+    junctions: &[Point],
+) -> Vec<Diagnostic> {
     let mut diagnostics = collect_invalid_wire_diagnostics(root);
     for segment in segments {
         if distance(segment.start, segment.end) < GEOMETRY_TOLERANCE_MM {
@@ -188,7 +192,9 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch001 {
     /// # Returns
     ///
     /// The stable 001 identifier.
-    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch001 }
+    fn id(&self) -> BuiltinRuleId {
+        BuiltinRuleId::Sch001
+    }
     /// Evaluates wire endpoint counts, direction, crossings, overlaps, and unmarked junctions.
     ///
     /// # Arguments
@@ -199,7 +205,9 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch001 {
     ///
     /// Diagnostics for wire endpoint counts, direction, crossings, overlaps, and unmarked junctions.
     fn check(&self, context: &crate::RuleContext<'a>) -> Vec<Diagnostic> {
-        let Some(root) = context.document().cst().nodes.first() else { return Vec::new(); };
+        let Some(root) = context.document().cst().nodes.first() else {
+            return Vec::new();
+        };
         check_wire_geometry(root, context.segments, context.junctions)
     }
 }

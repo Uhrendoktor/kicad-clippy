@@ -1,5 +1,13 @@
 //! Checks `SCH004` profile-declared physical pin-connectivity and wire-separation contracts.
 
+use super::COORDINATE_KEY_DECIMAL_PLACES;
+use super::CommonPinNetGroup;
+use super::DirectWirePair;
+use super::MINIMUM_PIN_GROUP_SIZE;
+use super::PhysicalWireGroup;
+use super::SchematicFacts;
+use super::SeparateWirePair;
+use super::valid_pin_ref;
 use crate::generic::GEOMETRY_TOLERANCE_MM;
 use crate::generic::physical_wire_component_ids;
 use kicad_clippy_core::BuiltinRuleId;
@@ -8,14 +16,6 @@ use kicad_clippy_core::Severity;
 use kicad_clippy_erc::Netlist;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use super::CommonPinNetGroup;
-use super::COORDINATE_KEY_DECIMAL_PLACES;
-use super::DirectWirePair;
-use super::MINIMUM_PIN_GROUP_SIZE;
-use super::PhysicalWireGroup;
-use super::SchematicFacts;
-use super::SeparateWirePair;
-use super::valid_pin_ref;
 
 /// Checks declared pin pairs and forbidden labels against physical wire connectivity, not merely matching net names.
 ///
@@ -919,7 +919,6 @@ fn same_wire_point(first: (f64, f64), second: (f64, f64)) -> bool {
         && (first.1 - second.1).abs() <= GEOMETRY_TOLERANCE_MM
 }
 
-
 /// Concrete implementation of built-in rule SCH004.
 pub(super) struct Sch004;
 impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch004 {
@@ -928,7 +927,9 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch004 {
     /// # Returns
     ///
     /// The stable SCH004 identifier.
-    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch004 }
+    fn id(&self) -> BuiltinRuleId {
+        BuiltinRuleId::Sch004
+    }
     /// Evaluates every declared physical connectivity and separation contract.
     ///
     /// # Arguments
@@ -941,10 +942,25 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch004 {
     fn check(&self, context: &super::ProfileRuleContext<'a>) -> Vec<Diagnostic> {
         let profile = context.profile;
         let facts = context.facts;
-        let mut diagnostics = validate_direct_wire_connectivity(&profile.direct_wire_pairs, &profile.forbidden_direct_wire_labels, facts);
-        diagnostics.extend(validate_common_pin_groups(&profile.common_pin_groups, facts, context.netlist));
-        diagnostics.extend(validate_physical_wire_groups(&profile.physical_wire_groups, facts));
-        diagnostics.extend(validate_separate_wire_pairs(&profile.separate_wire_pairs, facts, context.netlist));
+        let mut diagnostics = validate_direct_wire_connectivity(
+            &profile.direct_wire_pairs,
+            &profile.forbidden_direct_wire_labels,
+            facts,
+        );
+        diagnostics.extend(validate_common_pin_groups(
+            &profile.common_pin_groups,
+            facts,
+            context.netlist,
+        ));
+        diagnostics.extend(validate_physical_wire_groups(
+            &profile.physical_wire_groups,
+            facts,
+        ));
+        diagnostics.extend(validate_separate_wire_pairs(
+            &profile.separate_wire_pairs,
+            facts,
+            context.netlist,
+        ));
         diagnostics
     }
 }

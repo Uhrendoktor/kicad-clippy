@@ -1,15 +1,15 @@
 //! Checks `SCH022` decoupling target-pin, terminal, return-net, and cluster verification.
 
+use super::ComponentIntent;
+use super::ComponentKind;
+use super::DecouplingIntent;
+use super::valid_pin_ref;
 use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::Diagnostic;
 use kicad_clippy_core::Severity;
 use kicad_clippy_erc::Netlist;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use super::ComponentIntent;
-use super::ComponentKind;
-use super::DecouplingIntent;
-use super::valid_pin_ref;
 
 /// Validates a capacitor's decoupling target and supply/return net declarations.
 ///
@@ -151,7 +151,9 @@ fn validate_decoupling_nets(
 /// # Returns
 ///
 /// Diagnostics when capacitors assigned to one decoupling target are not grouped consistently or declare conflicting target/return nets.
-pub(super) fn validate_decoupler_groups(components: &BTreeMap<String, ComponentIntent>) -> Vec<Diagnostic> {
+pub(super) fn validate_decoupler_groups(
+    components: &BTreeMap<String, ComponentIntent>,
+) -> Vec<Diagnostic> {
     let mut by_target: BTreeMap<&str, Vec<&DecouplingIntent>> = BTreeMap::new();
     for intent in components.values() {
         if intent.kind == ComponentKind::Capacitor && intent.role.0 == "decoupling" {
@@ -205,7 +207,9 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch022 {
     /// # Returns
     ///
     /// The stable SCH022 identifier.
-    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch022 }
+    fn id(&self) -> BuiltinRuleId {
+        BuiltinRuleId::Sch022
+    }
     /// Evaluates decoupling target/terminal/net contracts and consistency between capacitors sharing a target.
     ///
     /// # Arguments
@@ -219,7 +223,11 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch022 {
         let mut diagnostics = validate_decoupler_groups(&context.profile.components);
         for (reference, intent) in &context.profile.components {
             if intent.kind == ComponentKind::Capacitor && intent.role.0 == "decoupling" {
-                diagnostics.extend(validate_decoupling_intent(reference, intent.decoupling.as_ref(), context.netlist));
+                diagnostics.extend(validate_decoupling_intent(
+                    reference,
+                    intent.decoupling.as_ref(),
+                    context.netlist,
+                ));
             }
         }
         diagnostics

@@ -1,8 +1,5 @@
 //! Checks `SCH018` overlap between estimated visible label-glyph bounds.
 
-use kicad_clippy_core::BuiltinRuleId;
-use kicad_clippy_core::Diagnostic;
-use kiutils_sexpr::Node;
 use super::at_span;
 use super::atom_value;
 use super::bounds_overlap;
@@ -12,6 +9,9 @@ use super::collect_nodes;
 use super::list_items;
 use super::sch010::{property_is_hidden, text_box_bounds};
 use super::text_visual_bounds;
+use kicad_clippy_core::BuiltinRuleId;
+use kicad_clippy_core::Diagnostic;
+use kiutils_sexpr::Node;
 
 /// Detects overlaps between label glyph bounds and other labels, visible fields, or annotation boxes.
 ///
@@ -84,7 +84,9 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch018 {
     /// # Returns
     ///
     /// The stable 018 identifier.
-    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch018 }
+    fn id(&self) -> BuiltinRuleId {
+        BuiltinRuleId::Sch018
+    }
     /// Evaluates overlaps between visible label glyphs and other text objects.
     ///
     /// # Arguments
@@ -95,7 +97,9 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch018 {
     ///
     /// Diagnostics for overlaps between visible label glyphs and other text objects.
     fn check(&self, context: &crate::RuleContext<'a>) -> Vec<Diagnostic> {
-        let Some(root) = context.document().cst().nodes.first() else { return Vec::new(); };
+        let Some(root) = context.document().cst().nodes.first() else {
+            return Vec::new();
+        };
         check_label_text_collisions(root)
     }
 }

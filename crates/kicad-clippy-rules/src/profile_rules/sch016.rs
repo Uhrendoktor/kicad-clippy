@@ -1,13 +1,13 @@
 //! Checks `SCH016` internal wire-length budgets for functional schematic groups.
 
+use super::GroupIntent;
+use super::MAX_COMPACTNESS_SCORE;
+use super::SCORE_COMPARISON_EPSILON;
+use super::SchematicFacts;
 use crate::generic::GEOMETRY_TOLERANCE_MM;
 use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::Diagnostic;
 use kicad_clippy_core::Severity;
-use super::GroupIntent;
-use super::MAX_COMPACTNESS_SCORE;
-use super::SchematicFacts;
-use super::SCORE_COMPARISON_EPSILON;
 
 /// Checks whether the total physical wire length of a group stays within its declared length budget.
 ///
@@ -94,7 +94,9 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch016 {
     /// # Returns
     ///
     /// The stable SCH016 identifier.
-    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch016 }
+    fn id(&self) -> BuiltinRuleId {
+        BuiltinRuleId::Sch016
+    }
     /// Evaluates each group's physical wire-length budget.
     ///
     /// # Arguments
@@ -105,6 +107,11 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch016 {
     ///
     /// Diagnostics for invalid budgets or group wire lengths that exceed their declared limits.
     fn check(&self, context: &super::ProfileRuleContext<'a>) -> Vec<Diagnostic> {
-        context.profile.groups.iter().flat_map(|(id, group)| validate_wire_compactness(id, group, context.facts)).collect()
+        context
+            .profile
+            .groups
+            .iter()
+            .flat_map(|(id, group)| validate_wire_compactness(id, group, context.facts))
+            .collect()
     }
 }

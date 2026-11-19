@@ -1,9 +1,9 @@
 //! Checks `SCH020` component function and rationale documentation requirements.
 
+use super::GroupIntent;
 use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::Diagnostic;
 use kicad_clippy_core::Severity;
-use super::GroupIntent;
 
 /// Checks that member component roles and purposes are consistent with the group's description.
 ///
@@ -99,7 +99,9 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch020 {
     /// # Returns
     ///
     /// The stable SCH020 identifier.
-    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch020 }
+    fn id(&self) -> BuiltinRuleId {
+        BuiltinRuleId::Sch020
+    }
     /// Evaluates component function/rationale and functional-group purpose documentation.
     ///
     /// # Arguments
@@ -119,7 +121,10 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch020 {
                     diagnostics.push(Diagnostic::for_builtin_rule(
                         BuiltinRuleId::Sch020,
                         Severity::Error,
-                        format!("{} must document both its circuit function and design rationale", component.reference),
+                        format!(
+                            "{} must document both its circuit function and design rationale",
+                            component.reference
+                        ),
                     ));
                 }
             }
@@ -134,11 +139,18 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch020 {
                     ));
                 }
             }
-            if let Some(description) = context.facts.text_boxes.iter()
+            if let Some(description) = context
+                .facts
+                .text_boxes
+                .iter()
                 .find(|item| item.uuid == group.description_uuid)
                 .map(|item| item.text.as_str())
             {
-                diagnostics.extend(validate_group_component_purposes(group_id, group, description));
+                diagnostics.extend(validate_group_component_purposes(
+                    group_id,
+                    group,
+                    description,
+                ));
             }
         }
         diagnostics

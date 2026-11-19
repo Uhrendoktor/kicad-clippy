@@ -1,10 +1,10 @@
 //! Checks `SCH007` consistency between profile group membership and native `KiCad` groups.
 
+use super::GroupIntent;
+use super::SchematicFacts;
 use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::Diagnostic;
 use kicad_clippy_core::Severity;
-use super::GroupIntent;
-use super::SchematicFacts;
 
 /// Checks that the profile's member references match the schematic's explicit `KiCad` group membership.
 ///
@@ -83,7 +83,6 @@ pub(super) fn validate_kicad_group_membership(
     diagnostics
 }
 
-
 /// Concrete implementation of built-in rule SCH007.
 pub(super) struct Sch007;
 impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch007 {
@@ -92,7 +91,9 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch007 {
     /// # Returns
     ///
     /// The stable SCH007 identifier.
-    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch007 }
+    fn id(&self) -> BuiltinRuleId {
+        BuiltinRuleId::Sch007
+    }
     /// Compares profile group membership with native KiCad group membership.
     ///
     /// # Arguments
@@ -103,6 +104,11 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch007 {
     ///
     /// Diagnostics for missing native groups or mismatched native member UUIDs.
     fn check(&self, context: &super::ProfileRuleContext<'a>) -> Vec<Diagnostic> {
-        context.profile.groups.iter().flat_map(|(id, group)| validate_kicad_group_membership(id, group, context.facts)).collect()
+        context
+            .profile
+            .groups
+            .iter()
+            .flat_map(|(id, group)| validate_kicad_group_membership(id, group, context.facts))
+            .collect()
     }
 }

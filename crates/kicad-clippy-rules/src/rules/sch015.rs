@@ -1,15 +1,15 @@
 //! Checks `SCH015` placement of explicit no-connect markers on transformed symbol pins.
 
-use kicad_clippy_core::BuiltinRuleId;
-use kicad_clippy_core::Diagnostic;
-use kiutils_sexpr::Node;
+use super::GEOMETRY_TOLERANCE_MM;
 use super::at_point;
 use super::collect_nodes;
 use super::collect_placed_pin_positions;
 use super::distance;
-use super::GEOMETRY_TOLERANCE_MM;
 use super::point_from_at;
 use super::span_of;
+use kicad_clippy_core::BuiltinRuleId;
+use kicad_clippy_core::Diagnostic;
+use kiutils_sexpr::Node;
 
 /// Checks that explicit no-connect markers coincide with supported transformed pins.
 ///
@@ -57,7 +57,9 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch015 {
     /// # Returns
     ///
     /// The stable 015 identifier.
-    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch015 }
+    fn id(&self) -> BuiltinRuleId {
+        BuiltinRuleId::Sch015
+    }
     /// Evaluates explicit no-connect marker placement on transformed symbol pins.
     ///
     /// # Arguments
@@ -68,7 +70,9 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch015 {
     ///
     /// Diagnostics for explicit no-connect marker placement on transformed symbol pins.
     fn check(&self, context: &crate::RuleContext<'a>) -> Vec<Diagnostic> {
-        let Some(root) = context.document().cst().nodes.first() else { return Vec::new(); };
+        let Some(root) = context.document().cst().nodes.first() else {
+            return Vec::new();
+        };
         check_no_connect_markers(root)
     }
 }

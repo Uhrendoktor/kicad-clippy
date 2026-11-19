@@ -1,10 +1,10 @@
 //! Checks `SCH017` group membership, description references, and evidence requirements.
 
+use super::GroupIntent;
 use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::Diagnostic;
 use kicad_clippy_core::Severity;
 use std::collections::BTreeSet;
-use super::GroupIntent;
 
 /// Checks that the group contains the evidence required by its declared evidence level.
 ///
@@ -80,7 +80,9 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch017 {
     /// # Returns
     ///
     /// The stable SCH017 identifier.
-    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch017 }
+    fn id(&self) -> BuiltinRuleId {
+        BuiltinRuleId::Sch017
+    }
     /// Evaluates group evidence, component membership, and description-box references.
     ///
     /// # Arguments
@@ -91,16 +93,29 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch017 {
     ///
     /// Diagnostics for missing members, incomplete evidence, or missing group description boxes.
     fn check(&self, context: &super::ProfileRuleContext<'a>) -> Vec<Diagnostic> {
-        let references: BTreeSet<_> = context.facts.components.iter().map(|item| item.reference.as_str()).collect();
+        let references: BTreeSet<_> = context
+            .facts
+            .components
+            .iter()
+            .map(|item| item.reference.as_str())
+            .collect();
         let mut diagnostics = Vec::new();
         for (group_id, group) in &context.profile.groups {
             diagnostics.extend(validate_group_evidence(group_id, group));
             diagnostics.extend(validate_group_members(group_id, group, &references));
-            if !context.facts.text_boxes.iter().any(|item| item.uuid == group.description_uuid) {
+            if !context
+                .facts
+                .text_boxes
+                .iter()
+                .any(|item| item.uuid == group.description_uuid)
+            {
                 diagnostics.push(Diagnostic::for_builtin_rule(
                     BuiltinRuleId::Sch017,
                     Severity::Error,
-                    format!("group {group_id} description text box UUID {} is missing", group.description_uuid),
+                    format!(
+                        "group {group_id} description text box UUID {} is missing",
+                        group.description_uuid
+                    ),
                 ));
             }
         }

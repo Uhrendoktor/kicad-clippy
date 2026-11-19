@@ -1,25 +1,25 @@
 //! Checks `SCH005` alignment between connected wire axes and transformed symbol-pin axes.
 
-use kicad_clippy_core::BuiltinRuleId;
-use kicad_clippy_core::Diagnostic;
-use kiutils_sexpr::Node;
-use kurbo::Point as CurvePoint;
+use super::GEOMETRY_TOLERANCE_MM;
+use super::Point;
+use super::Segment;
+use super::SymbolTransform;
 use super::at_point;
 use super::atom_value;
 use super::cardinal_rotation;
 use super::child_list;
 use super::children;
 use super::embedded_symbol_pins;
-use super::GEOMETRY_TOLERANCE_MM;
 use super::list_items;
 use super::number;
 use super::point_on_segment;
-use super::Point;
 use super::read_symbol_transform;
 use super::span_of;
-use super::Segment;
 use super::symbol_transform_affine;
-use super::SymbolTransform;
+use kicad_clippy_core::BuiltinRuleId;
+use kicad_clippy_core::Diagnostic;
+use kiutils_sexpr::Node;
+use kurbo::Point as CurvePoint;
 
 /// Represents the supported pinaxis alternatives.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -184,7 +184,9 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch005 {
     /// # Returns
     ///
     /// The stable 005 identifier.
-    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch005 }
+    fn id(&self) -> BuiltinRuleId {
+        BuiltinRuleId::Sch005
+    }
     /// Evaluates connected wire axes against transformed symbol-pin axes.
     ///
     /// # Arguments
@@ -195,7 +197,9 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch005 {
     ///
     /// Diagnostics for connected wire axes against transformed symbol-pin axes.
     fn check(&self, context: &crate::RuleContext<'a>) -> Vec<Diagnostic> {
-        let Some(root) = context.document().cst().nodes.first() else { return Vec::new(); };
+        let Some(root) = context.document().cst().nodes.first() else {
+            return Vec::new();
+        };
         check_pin_orientation(root, context.segments)
     }
 }

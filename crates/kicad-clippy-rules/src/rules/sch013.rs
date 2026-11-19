@@ -1,36 +1,11 @@
 //! Checks `SCH013` wire clearance from transformed schematic obstacles and effective stroke widths.
 
-use geo::algorithm::line_intersection::line_intersection;
-use geo::Contains;
-use geo::Coord;
-use geo::Distance;
-use geo::Euclidean;
-use geo::Line;
-use geo::LineIntersection;
-use geo::LineString;
-use geo::Point as GeoPoint;
-use geo::Polygon;
-use kicad_clippy_core::BuiltinRuleId;
-use kicad_clippy_core::ByteSpan;
-use kicad_clippy_core::Diagnostic;
-use kiutils_sexpr::Node;
-use kurbo::CubicBez as CurveCubicBez;
-use kurbo::Line as CurveLine;
-use kurbo::PathSeg as CurvePathSeg;
-use kurbo::Point as CurvePoint;
-use std::collections::BTreeMap;
-use std::collections::BTreeSet;
-use super::at_segment;
 use super::Bounds;
-use super::children;
-use super::collect_visible_field_bounds;
 use super::CURVE_FLATTEN_TOLERANCE_MM;
-use super::distance;
 use super::FLOATING_POINT_ROUNDOFF_ULPS;
 use super::GEOMETRY_NUMERIC_EPSILON;
 use super::GEOMETRY_TOLERANCE_MM;
 use super::HALF_FACTOR;
-use super::is_endpoint;
 use super::Point;
 use super::SchematicArcFact;
 use super::SchematicBusObstacleFact;
@@ -42,10 +17,35 @@ use super::SchematicPrimitiveFact;
 use super::SchematicSheetFact;
 use super::SchematicSymbolTextFact;
 use super::Segment;
-use super::strict_line_hits_bounds;
-use super::collect_sheet_table_stroke_facts;
-use super::sch010::text_box_bounds;
 use super::TWO_SIDED_FACTOR;
+use super::at_segment;
+use super::children;
+use super::collect_sheet_table_stroke_facts;
+use super::collect_visible_field_bounds;
+use super::distance;
+use super::is_endpoint;
+use super::sch010::text_box_bounds;
+use super::strict_line_hits_bounds;
+use geo::Contains;
+use geo::Coord;
+use geo::Distance;
+use geo::Euclidean;
+use geo::Line;
+use geo::LineIntersection;
+use geo::LineString;
+use geo::Point as GeoPoint;
+use geo::Polygon;
+use geo::algorithm::line_intersection::line_intersection;
+use kicad_clippy_core::BuiltinRuleId;
+use kicad_clippy_core::ByteSpan;
+use kicad_clippy_core::Diagnostic;
+use kiutils_sexpr::Node;
+use kurbo::CubicBez as CurveCubicBez;
+use kurbo::Line as CurveLine;
+use kurbo::PathSeg as CurvePathSeg;
+use kurbo::Point as CurvePoint;
+use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 
 /// Finds wire crossings or clearance violations against transformed embedded-symbol text.
 ///
@@ -1415,7 +1415,9 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch013 {
     /// # Returns
     ///
     /// The stable SCH013 identifier.
-    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch013 }
+    fn id(&self) -> BuiltinRuleId {
+        BuiltinRuleId::Sch013
+    }
     /// Evaluates physical wire clearance against transformed schematic obstacles.
     ///
     /// # Arguments
@@ -1426,7 +1428,9 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch013 {
     ///
     /// Diagnostics for wire-obstacle intersections or insufficient stroke clearance.
     fn check(&self, context: &crate::RuleContext<'a>) -> Vec<Diagnostic> {
-        let Some(root) = context.document().cst().nodes.first() else { return Vec::new(); };
+        let Some(root) = context.document().cst().nodes.first() else {
+            return Vec::new();
+        };
         let mut widths = super::collect_explicit_wire_stroke_widths(root);
         for (span_start, width_mm) in context.project_wire_stroke_widths_mm {
             widths.entry(*span_start).or_insert(*width_mm);
@@ -1436,6 +1440,13 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch013 {
         } else {
             context.default_wire_stroke_width_mm
         };
-        check_wire_obstacles(root, context.segments, context.facts(), &widths, default_wire_width, context.default_schematic_line_stroke_width_mm)
+        check_wire_obstacles(
+            root,
+            context.segments,
+            context.facts(),
+            &widths,
+            default_wire_width,
+            context.default_schematic_line_stroke_width_mm,
+        )
     }
 }

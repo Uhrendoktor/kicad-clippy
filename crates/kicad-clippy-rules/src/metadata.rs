@@ -1,6 +1,6 @@
+use crate::Rule;
 use crate::generic::GEOMETRY_TOLERANCE_MM;
 use crate::generic::SchematicFacts;
-use crate::Rule;
 use kicad_clippy_core::Diagnostic;
 use kicad_clippy_erc::Netlist;
 use kicad_clippy_parser::SchematicDocument;
@@ -365,7 +365,11 @@ impl LintProfile {
         netlist: Option<&Netlist>,
     ) -> Vec<Diagnostic> {
         let facts = SchematicFacts::from_document(document);
-        let context = ProfileRuleContext { profile: self, facts: &facts, netlist };
+        let context = ProfileRuleContext {
+            profile: self,
+            facts: &facts,
+            netlist,
+        };
         let mut diagnostics = Vec::new();
         diagnostics.extend(sch021::Sch021.check(&context));
         diagnostics.extend(sch020::Sch020.check(&context));
@@ -502,15 +506,10 @@ pub enum MetadataError {
 mod tests {
     #![allow(clippy::expect_used)]
 
-    use std::collections::BTreeMap;
+    use super::{ComponentKind, ComponentRole, LintProfile, ProfileMode, SchematicFacts};
     use kicad_clippy_core::Severity;
     use kicad_clippy_erc::{Netlist, PinRef};
-    use super::{ComponentKind, ComponentRole, LintProfile, ProfileMode, SchematicFacts};
-
-
-
-
-
+    use std::collections::BTreeMap;
 
     /// Builds a minimal schematic fixture with two placed one-pin symbols and appends the supplied serialized wire and label expressions.
     ///
@@ -2497,4 +2496,3 @@ mod tests {
         assert_eq!(profile.mode, ProfileMode::Strict);
     }
 }
-

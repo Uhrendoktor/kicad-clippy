@@ -1,18 +1,21 @@
 //! Checks `SCH012` minimum frame-inset clearance for declared group contents.
 
+use super::COORDINATE_KEY_DECIMAL_PLACES;
+use super::GroupIntent;
+use super::SchematicFacts;
+use super::point_inside_frame;
+use super::point_inside_frame_with_clearance;
+use super::rectangle_inside_frame_with_clearance;
+use super::rectangles_overlap;
+use super::sch009::{
+    group_wire_components, symbol_primitive_inside_frame, wire_belongs_to_group,
+    wire_overlaps_frame,
+};
 use crate::generic::GEOMETRY_TOLERANCE_MM;
 use crate::generic::TWO_SIDED_FACTOR;
 use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::Diagnostic;
 use kicad_clippy_core::Severity;
-use super::COORDINATE_KEY_DECIMAL_PLACES;
-use super::GroupIntent;
-use super::point_inside_frame_with_clearance;
-use super::point_inside_frame;
-use super::rectangle_inside_frame_with_clearance;
-use super::rectangles_overlap;
-use super::sch009::{group_wire_components, symbol_primitive_inside_frame, wire_belongs_to_group, wire_overlaps_frame};
-use super::SchematicFacts;
 
 /// Checks that group members and their associated schematic content are inset from the referenced frame by the requested clearance.
 ///
@@ -632,7 +635,6 @@ fn validate_description_frame_clearance(
     diagnostics
 }
 
-
 /// Concrete implementation of built-in rule SCH012.
 pub(super) struct Sch012;
 impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch012 {
@@ -641,7 +643,9 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch012 {
     /// # Returns
     ///
     /// The stable SCH012 identifier.
-    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch012 }
+    fn id(&self) -> BuiltinRuleId {
+        BuiltinRuleId::Sch012
+    }
     /// Checks minimum inset clearance for group members and associated schematic content.
     ///
     /// # Arguments
@@ -652,6 +656,11 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch012 {
     ///
     /// Diagnostics for group content that does not maintain its configured frame inset.
     fn check(&self, context: &super::ProfileRuleContext<'a>) -> Vec<Diagnostic> {
-        context.profile.groups.iter().flat_map(|(id, group)| validate_frame_clearance(id, group, context.facts)).collect()
+        context
+            .profile
+            .groups
+            .iter()
+            .flat_map(|(id, group)| validate_frame_clearance(id, group, context.facts))
+            .collect()
     }
 }

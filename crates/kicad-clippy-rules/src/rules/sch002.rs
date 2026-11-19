@@ -1,22 +1,22 @@
 //! Checks `SCH002` physical wire-island topology, label reuse, and connected-component identity.
 
+use super::DisjointSet;
+use super::GEOMETRY_TOLERANCE_MM;
+use super::Point;
+use super::SchematicFacts;
+use super::Segment;
+use super::at_point;
+use super::collect_labels;
+use super::collect_points;
+use super::distance;
+use super::is_endpoint;
+use super::point_on_segment;
 use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::ByteSpan;
 use kicad_clippy_core::Diagnostic;
 use kicad_clippy_core::Severity;
 use kiutils_sexpr::Node;
 use std::collections::BTreeMap;
-use super::at_point;
-use super::collect_labels;
-use super::collect_points;
-use super::DisjointSet;
-use super::distance;
-use super::GEOMETRY_TOLERANCE_MM;
-use super::is_endpoint;
-use super::point_on_segment;
-use super::Point;
-use super::SchematicFacts;
-use super::Segment;
 
 /// Checks label reuse, duplicate anchors, physical wire-island membership, and hierarchical wire-twig termination.
 ///
@@ -282,7 +282,9 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch002 {
     /// # Returns
     ///
     /// The stable 002 identifier.
-    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch002 }
+    fn id(&self) -> BuiltinRuleId {
+        BuiltinRuleId::Sch002
+    }
     /// Evaluates physical wire-island topology and label reuse.
     ///
     /// # Arguments
@@ -293,7 +295,9 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch002 {
     ///
     /// Diagnostics for physical wire-island topology and label reuse.
     fn check(&self, context: &crate::RuleContext<'a>) -> Vec<Diagnostic> {
-        let Some(root) = context.document().cst().nodes.first() else { return Vec::new(); };
+        let Some(root) = context.document().cst().nodes.first() else {
+            return Vec::new();
+        };
         check_label_topology(root, context.segments)
     }
 }

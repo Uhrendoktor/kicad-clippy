@@ -1,24 +1,24 @@
 //! Checks `SCH009` containment of group members and their associated schematic geometry.
 
+use super::COORDINATE_KEY_DECIMAL_PLACES;
+use super::GroupIntent;
+use super::SchematicFacts;
+use super::point_inside_frame;
+use super::point_inside_frame_with_clearance;
+use super::rectangle_inside_frame;
+use super::rectangle_inside_frame_with_clearance;
+use super::rectangles_overlap;
+use super::sch004::point_is_on_wire;
+use super::sch012::valid_frame_bounds;
 use crate::generic::GEOMETRY_TOLERANCE_MM;
 use crate::generic::HALF_FACTOR;
-use crate::generic::physical_wire_component_ids;
 use crate::generic::STROKE_CLEARANCE_MARGIN_MM;
+use crate::generic::physical_wire_component_ids;
 use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::Diagnostic;
 use kicad_clippy_core::Severity;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use super::COORDINATE_KEY_DECIMAL_PLACES;
-use super::GroupIntent;
-use super::point_inside_frame_with_clearance;
-use super::point_inside_frame;
-use super::sch004::point_is_on_wire;
-use super::rectangle_inside_frame_with_clearance;
-use super::rectangle_inside_frame;
-use super::rectangles_overlap;
-use super::SchematicFacts;
-use super::sch012::valid_frame_bounds;
 
 /// Checks that every declared group member and its attached geometry lies inside the group's referenced frame.
 ///
@@ -662,7 +662,6 @@ pub(super) fn wire_overlaps_frame(
     }
 }
 
-
 /// Concrete implementation of built-in rule SCH009.
 pub(super) struct Sch009;
 impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch009 {
@@ -671,7 +670,9 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch009 {
     /// # Returns
     ///
     /// The stable SCH009 identifier.
-    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch009 }
+    fn id(&self) -> BuiltinRuleId {
+        BuiltinRuleId::Sch009
+    }
     /// Checks group-member and associated geometry containment within each declared frame.
     ///
     /// # Arguments
@@ -682,6 +683,11 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch009 {
     ///
     /// Diagnostics for group content that extends outside its assigned frame.
     fn check(&self, context: &super::ProfileRuleContext<'a>) -> Vec<Diagnostic> {
-        context.profile.groups.iter().flat_map(|(id, group)| validate_group_containment(id, group, context.facts)).collect()
+        context
+            .profile
+            .groups
+            .iter()
+            .flat_map(|(id, group)| validate_group_containment(id, group, context.facts))
+            .collect()
     }
 }

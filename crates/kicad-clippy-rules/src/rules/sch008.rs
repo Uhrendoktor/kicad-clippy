@@ -1,24 +1,24 @@
 //! Checks `SCH008` annotation text-box dimensions, overlap, margins, and wire penetration.
 
+use super::Bounds;
+use super::GEOMETRY_TOLERANCE_MM;
+use super::Segment;
+use super::TEXT_BOX_EQUAL_PADDING_MM;
+use super::UNBORDERED_TEXT_BOX_EXTRA_WIDTH_MM;
+use super::at_span;
+use super::atom_value;
+use super::bounds_overlap;
+use super::child_list;
+use super::collect_nodes;
+use super::line_hits_bounds;
+use super::list_items;
+use super::number;
+use super::required_text_box_size;
+use super::span_of;
 use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::ByteSpan;
 use kicad_clippy_core::Diagnostic;
 use kiutils_sexpr::Node;
-use super::at_span;
-use super::atom_value;
-use super::bounds_overlap;
-use super::Bounds;
-use super::child_list;
-use super::collect_nodes;
-use super::GEOMETRY_TOLERANCE_MM;
-use super::line_hits_bounds;
-use super::list_items;
-use super::number;
-use super::span_of;
-use super::required_text_box_size;
-use super::Segment;
-use super::TEXT_BOX_EQUAL_PADDING_MM;
-use super::UNBORDERED_TEXT_BOX_EXTRA_WIDTH_MM;
 
 /// Validates text-box size, font settings, required geometry, and overlap with wires or other annotations.
 ///
@@ -284,7 +284,9 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch008 {
     /// # Returns
     ///
     /// The stable 008 identifier.
-    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch008 }
+    fn id(&self) -> BuiltinRuleId {
+        BuiltinRuleId::Sch008
+    }
     /// Evaluates annotation text-box dimensions, overlap, margins, and wire penetration.
     ///
     /// # Arguments
@@ -295,7 +297,9 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch008 {
     ///
     /// Diagnostics for annotation text-box dimensions, overlap, margins, and wire penetration.
     fn check(&self, context: &crate::RuleContext<'a>) -> Vec<Diagnostic> {
-        let Some(root) = context.document().cst().nodes.first() else { return Vec::new(); };
+        let Some(root) = context.document().cst().nodes.first() else {
+            return Vec::new();
+        };
         check_text_box_layout(root, context.segments)
     }
 }

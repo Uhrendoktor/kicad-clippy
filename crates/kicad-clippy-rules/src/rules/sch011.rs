@@ -1,8 +1,5 @@
 //! Checks `SCH011` multiline block annotations for a visible border.
 
-use kicad_clippy_core::BuiltinRuleId;
-use kicad_clippy_core::Diagnostic;
-use kiutils_sexpr::Node;
 use super::at_span;
 use super::atom_value;
 use super::child_list;
@@ -10,6 +7,9 @@ use super::collect_nodes;
 use super::list_items;
 use super::number;
 use super::span_of;
+use kicad_clippy_core::BuiltinRuleId;
+use kicad_clippy_core::Diagnostic;
+use kiutils_sexpr::Node;
 
 /// Checks that multiline text boxes have a visible border.
 ///
@@ -51,7 +51,9 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch011 {
     /// # Returns
     ///
     /// The stable 011 identifier.
-    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch011 }
+    fn id(&self) -> BuiltinRuleId {
+        BuiltinRuleId::Sch011
+    }
     /// Evaluates multiline annotation border and structure requirements.
     ///
     /// # Arguments
@@ -62,7 +64,9 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch011 {
     ///
     /// Diagnostics for multiline annotation border and structure requirements.
     fn check(&self, context: &crate::RuleContext<'a>) -> Vec<Diagnostic> {
-        let Some(root) = context.document().cst().nodes.first() else { return Vec::new(); };
+        let Some(root) = context.document().cst().nodes.first() else {
+            return Vec::new();
+        };
         check_block_annotation_structure(root)
     }
 }

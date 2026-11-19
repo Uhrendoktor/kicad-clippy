@@ -1,13 +1,13 @@
 //! Checks SCH021 component metadata and role-specific connection contracts.
 
-use kicad_clippy_core::BuiltinRuleId;
-use kicad_clippy_core::Diagnostic;
-use kicad_clippy_core::Severity;
-use std::collections::BTreeSet;
 use super::ComponentIntent;
 use super::ComponentKind;
 use super::LintProfile;
 use super::ProfileMode;
+use kicad_clippy_core::BuiltinRuleId;
+use kicad_clippy_core::Diagnostic;
+use kicad_clippy_core::Severity;
+use std::collections::BTreeSet;
 
 /// Reports profile component entries that do not identify placed schematic symbols.
 ///
@@ -19,10 +19,22 @@ use super::ProfileMode;
 /// # Returns
 ///
 /// Diagnostics for profile component references that are absent from the schematic.
-pub(super) fn validate_profile_references(profile: &LintProfile, references: &BTreeSet<String>) -> Vec<Diagnostic> {
-    profile.components.keys().filter(|reference| !references.contains(*reference)).map(|reference| {
-        Diagnostic::for_builtin_rule(BuiltinRuleId::Sch021, Severity::Error, format!("profile metadata references missing component {reference}"))
-    }).collect()
+pub(super) fn validate_profile_references(
+    profile: &LintProfile,
+    references: &BTreeSet<String>,
+) -> Vec<Diagnostic> {
+    profile
+        .components
+        .keys()
+        .filter(|reference| !references.contains(*reference))
+        .map(|reference| {
+            Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch021,
+                Severity::Error,
+                format!("profile metadata references missing component {reference}"),
+            )
+        })
+        .collect()
 }
 
 /// Checks that the declared component role has the required electrical connections.
@@ -103,7 +115,9 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch021 {
     /// # Returns
     ///
     /// The stable SCH021 identifier.
-    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch021 }
+    fn id(&self) -> BuiltinRuleId {
+        BuiltinRuleId::Sch021
+    }
     /// Evaluates component references, strict metadata coverage, and role-specific connection declarations.
     ///
     /// # Arguments
@@ -115,13 +129,24 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch021 {
     /// Diagnostics for unresolved references, missing strict-mode metadata, or incomplete role contracts.
     fn check(&self, context: &super::ProfileRuleContext<'a>) -> Vec<Diagnostic> {
         let profile = context.profile;
-        let references: BTreeSet<_> = context.facts.components.iter().map(|item| item.reference.clone()).collect();
+        let references: BTreeSet<_> = context
+            .facts
+            .components
+            .iter()
+            .map(|item| item.reference.clone())
+            .collect();
         let mut diagnostics = validate_profile_references(profile, &references);
         for component in &context.facts.components {
             if let Some(intent) = profile.components.get(&component.reference) {
                 diagnostics.extend(validate_role_contract(&component.reference, intent));
-            } else if profile.mode == ProfileMode::Strict && !profile.ignore_components.contains(&component.reference) {
-                diagnostics.push(Diagnostic::for_builtin_rule(BuiltinRuleId::Sch021, Severity::Error, format!("{} has no component-intent metadata", component.reference)));
+            } else if profile.mode == ProfileMode::Strict
+                && !profile.ignore_components.contains(&component.reference)
+            {
+                diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch021,
+                    Severity::Error,
+                    format!("{} has no component-intent metadata", component.reference),
+                ));
             }
         }
         diagnostics

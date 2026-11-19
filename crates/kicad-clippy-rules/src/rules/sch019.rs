@@ -1,12 +1,12 @@
 //! Checks `SCH019` that reused label text has a consistent label kind.
 
+use super::collect_labels;
 use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::Diagnostic;
 use kicad_clippy_core::Severity;
 use kiutils_sexpr::Node;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use super::collect_labels;
 
 /// Detects identical label text used with inconsistent local/global/hierarchical label kinds.
 ///
@@ -47,7 +47,9 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch019 {
     /// # Returns
     ///
     /// The stable 019 identifier.
-    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch019 }
+    fn id(&self) -> BuiltinRuleId {
+        BuiltinRuleId::Sch019
+    }
     /// Evaluates consistent label kinds for identical label text.
     ///
     /// # Arguments
@@ -58,7 +60,9 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch019 {
     ///
     /// Diagnostics for consistent label kinds for identical label text.
     fn check(&self, context: &crate::RuleContext<'a>) -> Vec<Diagnostic> {
-        let Some(root) = context.document().cst().nodes.first() else { return Vec::new(); };
+        let Some(root) = context.document().cst().nodes.first() else {
+            return Vec::new();
+        };
         check_label_kind_consistency(root)
     }
 }

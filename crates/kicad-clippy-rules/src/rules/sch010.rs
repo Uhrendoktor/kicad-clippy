@@ -1,5 +1,24 @@
 //! Checks `SCH010` visible symbol-field clearance from nearby schematic objects.
 
+use super::Bounds;
+use super::GEOMETRY_TOLERANCE_MM;
+use super::HALF_FACTOR;
+use super::Point;
+use super::SchematicFacts;
+use super::SchematicPrimitiveFact;
+use super::Segment;
+use super::TWO_SIDED_GEOMETRY_TOLERANCE_MM;
+use super::at_span;
+use super::bounds_overlap;
+use super::child_list;
+use super::children;
+use super::collect_label_nodes;
+use super::collect_visible_field_bounds;
+use super::distance;
+use super::list_items;
+use super::number;
+use super::strict_line_hits_bounds;
+use super::text_visual_bounds;
 use geo::Contains;
 use geo::Coord;
 use geo::Distance;
@@ -12,25 +31,6 @@ use geo::Rect as GeoRect;
 use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::Diagnostic;
 use kiutils_sexpr::Node;
-use super::at_span;
-use super::bounds_overlap;
-use super::Bounds;
-use super::child_list;
-use super::children;
-use super::collect_label_nodes;
-use super::collect_visible_field_bounds;
-use super::distance;
-use super::GEOMETRY_TOLERANCE_MM;
-use super::HALF_FACTOR;
-use super::list_items;
-use super::number;
-use super::Point;
-use super::SchematicFacts;
-use super::SchematicPrimitiveFact;
-use super::Segment;
-use super::strict_line_hits_bounds;
-use super::text_visual_bounds;
-use super::TWO_SIDED_GEOMETRY_TOLERANCE_MM;
 
 /// Checks visible symbol fields against other fields, symbol bodies, wires, pins, labels, and annotation boxes.
 ///
@@ -356,7 +356,9 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch010 {
     /// # Returns
     ///
     /// The stable SCH010 identifier.
-    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch010 }
+    fn id(&self) -> BuiltinRuleId {
+        BuiltinRuleId::Sch010
+    }
     /// Evaluates visible symbol-field clearance against nearby schematic geometry.
     ///
     /// # Arguments
@@ -367,7 +369,9 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch010 {
     ///
     /// Diagnostics for visible symbol fields that violate the configured clearance.
     fn check(&self, context: &crate::RuleContext<'a>) -> Vec<Diagnostic> {
-        let Some(root) = context.document().cst().nodes.first() else { return Vec::new(); };
+        let Some(root) = context.document().cst().nodes.first() else {
+            return Vec::new();
+        };
         check_symbol_field_clearance(root, context.segments, context.facts())
     }
 }
