@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::generic::{
-    GEOMETRY_TOLERANCE_MM, HALF_DIMENSION_FACTOR, STROKE_CLEARANCE_MARGIN_MM, SchematicFacts,
+    GEOMETRY_TOLERANCE_MM, HALF_FACTOR, STROKE_CLEARANCE_MARGIN_MM, SchematicFacts,
     TWO_SIDED_FACTOR, physical_wire_component_ids,
 };
 
@@ -1625,7 +1625,7 @@ fn symbol_primitive_inside_frame(
     clearance: f64,
 ) -> bool {
     let stroke_margin = if primitive.stroke_width_mm.is_finite() {
-        primitive.stroke_width_mm.abs() * HALF_DIMENSION_FACTOR
+        primitive.stroke_width_mm.abs() * HALF_FACTOR
     } else {
         0.0
     };

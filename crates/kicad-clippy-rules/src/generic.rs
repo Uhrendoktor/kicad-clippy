@@ -144,8 +144,8 @@ const MINIMUM_CURVE_TRIANGLE_AREA_MM2: f64 = 2.5e-10;
 const ELLIPSE_ARC_SUBDIVISION_STEPS: u8 = 20;
 /// Millimetres represented by one mil.
 pub const MILLIMETRES_PER_MIL: f64 = 0.0254;
-/// Factor used to convert a full dimension into a half dimension.
-pub(super) const HALF_DIMENSION_FACTOR: f64 = 0.5;
+/// Dimensionless multiplier representing one half.
+pub(super) const HALF_FACTOR: f64 = 0.5;
 /// Factor used when a dimension applies symmetrically to both sides of an object.
 pub(super) const TWO_SIDED_FACTOR: f64 = 2.0;
 /// Default stroke width for embedded symbol primitives, in millimetres.
@@ -1043,7 +1043,7 @@ fn table_line_fact(
     end: (f64, f64),
     stroke_width_mm: f64,
 ) -> SchematicGraphicFact {
-    let margin = stroke_width_mm.mul_add(HALF_DIMENSION_FACTOR, STROKE_CLEARANCE_MARGIN_MM);
+    let margin = stroke_width_mm.mul_add(HALF_FACTOR, STROKE_CLEARANCE_MARGIN_MM);
     SchematicGraphicFact {
         kind: kind.to_owned(),
         uuid: uuid.map(str::to_owned),
@@ -1224,7 +1224,7 @@ fn collect_sheet_table_stroke_facts(root: &Node) -> Vec<SchematicGraphicFact> {
 /// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn sheet_graphic_bounds(node: &Node, kind: &str) -> Option<(f64, f64, f64, f64)> {
     let stroke_margin = symbol_primitive_stroke_width(node)
-        .mul_add(HALF_DIMENSION_FACTOR, STROKE_CLEARANCE_MARGIN_MM);
+        .mul_add(HALF_FACTOR, STROKE_CLEARANCE_MARGIN_MM);
     if kind == "circle" {
         let center = child_list(node, "center").and_then(list_items)?;
         let radius = child_list(node, "radius")
@@ -1300,8 +1300,8 @@ fn rotated_bitmap_image_geometry(
         .rem_euclid(FULL_ROTATION_DEGREES)
         .to_radians();
     let (sin, cos) = radians.sin_cos();
-    let half_width = width_mm * HALF_DIMENSION_FACTOR;
-    let half_height = height_mm * HALF_DIMENSION_FACTOR;
+    let half_width = width_mm * HALF_FACTOR;
+    let half_height = height_mm * HALF_FACTOR;
     let corners = [
         (-half_width, -half_height),
         (half_width, -half_height),
@@ -1996,7 +1996,7 @@ fn object_reference(node: &Node, prefix: &str) -> String {
         )
 }
 /// Half-width of KiCad's fixed-size no-connect X marker, in millimetres.
-const NO_CONNECT_MARKER_HALF_SIZE_MM: f64 = NO_CONNECT_MARKER_SIZE_MILS * MILLIMETRES_PER_MIL * HALF_DIMENSION_FACTOR;
+const NO_CONNECT_MARKER_HALF_SIZE_MM: f64 = NO_CONNECT_MARKER_SIZE_MILS * MILLIMETRES_PER_MIL * HALF_FACTOR;
 
 /// Collects fixed-size no-connect marker geometry without assuming an unavailable per-marker pen width.
 ///
@@ -3968,7 +3968,7 @@ fn wire_within_path_stroke(
         return false;
     };
     let threshold = stroke_width_mm.abs().mul_add(
-        0.5,
+        HALF_FACTOR,
         flatten_tolerance_mm.max(0.0) + SCH013_STROKE_DISTANCE_EPSILON_MM,
     );
     minimum_distance <= threshold
@@ -4051,8 +4051,8 @@ fn wire_within_circle_stroke(
     }
 
     let radius = radius_mm.abs();
-    let half_stroke = stroke_width_mm.abs() / 2.0;
-    let wire_radius = wire_stroke_width_mm.max(0.0) / 2.0;
+    let half_stroke = stroke_width_mm.abs() * HALF_FACTOR;
+    let wire_radius = wire_stroke_width_mm.max(0.0) * HALF_FACTOR;
     let inner_radius = (radius - half_stroke).max(0.0);
     let outer_radius = radius + half_stroke;
     let effective_inner_radius = (inner_radius - wire_radius).max(0.0);
@@ -4368,8 +4368,8 @@ fn symbol_primitive_wire_stroke_collision(
         0.0
     };
     let pin_contact_clearance = combined_stroke_width_mm.mul_add(
-        0.5,
-        2.0_f64.mul_add(SCH013_STROKE_DISTANCE_EPSILON_MM, flatten_tolerance),
+        HALF_FACTOR,
+        TWO_SIDED_FACTOR.mul_add(SCH013_STROKE_DISTANCE_EPSILON_MM, flatten_tolerance),
     );
     let Some(clearance_wire) =
         wire_without_pin_contact_region(wire, &primitive.reference, pins, pin_contact_clearance)
@@ -5568,7 +5568,7 @@ fn text_visual_bounds(value: &str, node: &Node) -> Option<Bounds> {
     let left = match justify_name {
         "left" => 0.0,
         "right" => -width,
-        _ => -width / 2.0,
+        _ => -width * HALF_FACTOR,
     };
 
     // KiCad's anchor and justification define a local text rectangle. Kurbo
@@ -5576,9 +5576,9 @@ fn text_visual_bounds(value: &str, node: &Node) -> Option<Bounds> {
     let (left, top, rotation) = if (normalized_angle - QUARTER_ROTATION_DEGREES).abs()
         < GEOMETRY_TOLERANCE_MM
     {
-        (left, -height / 2.0, -std::f64::consts::FRAC_PI_2)
+        (left, -height * HALF_FACTOR, -std::f64::consts::FRAC_PI_2)
     } else if (normalized_angle - THREE_QUARTER_ROTATION_DEGREES).abs() < GEOMETRY_TOLERANCE_MM {
-        (left, -height / 2.0, std::f64::consts::FRAC_PI_2)
+        (left, -height * HALF_FACTOR, std::f64::consts::FRAC_PI_2)
     } else {
         let top_aligned = justify_items
             .and_then(|items| items.get(2))
@@ -5740,13 +5740,13 @@ fn wire_overlaps_bounds(segment: Segment, bounds: Bounds, strict: bool) -> bool 
     let clipped_bounds = if horizontal {
         Bounds {
             y: bounds.y + inset,
-            height: 2.0_f64.mul_add(-inset, bounds.height),
+            height: TWO_SIDED_FACTOR.mul_add(-inset, bounds.height),
             ..bounds
         }
     } else {
         Bounds {
             x: bounds.x + inset,
-            width: 2.0_f64.mul_add(-inset, bounds.width),
+            width: TWO_SIDED_FACTOR.mul_add(-inset, bounds.width),
             ..bounds
         }
     };
@@ -6361,7 +6361,7 @@ fn symbol_primitive_intersects_bounds(bounds: Bounds, primitive: &SchematicPrimi
             y: center_y,
         };
         return point_bounds_distance(center, bounds)
-            <= radius + primitive.stroke_width_mm * HALF_DIMENSION_FACTOR + GEOMETRY_TOLERANCE_MM;
+            <= radius + primitive.stroke_width_mm * HALF_FACTOR + GEOMETRY_TOLERANCE_MM;
     }
 
     let rectangle = geo_rect(bounds);
@@ -6382,7 +6382,7 @@ fn symbol_primitive_intersects_bounds(bounds: Bounds, primitive: &SchematicPrimi
 /// `true` when the geometry satisfies the condition checked by this helper.
 fn symbol_primitive_contains_bounds(bounds: Bounds, primitive: &SchematicPrimitiveFact) -> bool {
     if let Some((center_x, center_y, radius)) = primitive.circle_mm {
-        let inner_radius = radius - primitive.stroke_width_mm * HALF_DIMENSION_FACTOR;
+        let inner_radius = radius - primitive.stroke_width_mm * HALF_FACTOR;
         if inner_radius <= 0.0 {
             return false;
         }
@@ -7379,7 +7379,7 @@ mod tests {
             span: kicad_clippy_core::ByteSpan::new(0, 0),
         };
 
-        let midpoint = (2.0 / 2.0_f64.sqrt(), 2.0 / 2.0_f64.sqrt());
+        let midpoint = (2.0 * HALF_FACTOR_f64.sqrt(), 2.0 * HALF_FACTOR_f64.sqrt());
         let sampled = super::sample_arc_through_three_points((2.0, 0.0), midpoint, (0.0, 2.0));
         assert!(!sampled.windows(2).any(|pair| {
             !super::segment_intersection_points(
@@ -7656,13 +7656,13 @@ mod tests {
         let doc = document(&source);
         let facts = super::SchematicFacts::from_document(&doc);
         assert_eq!(facts.pins.len(), 1);
-        let expected = 10.0 - 2.54 / 2.0_f64.sqrt();
+        let expected = 10.0 - 2.54 * HALF_FACTOR_f64.sqrt();
         assert!((facts.pins[0].position_mm.0 - expected).abs() < 0.001);
         assert!((facts.pins[0].position_mm.1 - expected).abs() < 0.001);
 
         assert_eq!(facts.symbol_primitives.len(), 1);
         let rotated_corner = facts.symbol_primitives[0].points_mm[1];
-        let expected_corner = (10.0 + 2.0 / 2.0_f64.sqrt(), 10.0 - 2.0 / 2.0_f64.sqrt());
+        let expected_corner = (10.0 + 2.0 * HALF_FACTOR_f64.sqrt(), 10.0 - 2.0 * HALF_FACTOR_f64.sqrt());
         assert!((rotated_corner.0 - expected_corner.0).abs() < 0.001);
         assert!((rotated_corner.1 - expected_corner.1).abs() < 0.001);
         assert!(
@@ -7824,7 +7824,7 @@ mod tests {
                 0.0,
                 "center",
                 "bottom",
-                10.0 - width / 2.0,
+                10.0 - width * HALF_FACTOR,
                 20.0 - height,
                 width,
                 height,
@@ -7833,7 +7833,7 @@ mod tests {
                 90.0,
                 "left",
                 "center",
-                10.0 - height / 2.0,
+                10.0 - height * HALF_FACTOR,
                 20.0 - width,
                 height,
                 width,
@@ -7842,7 +7842,7 @@ mod tests {
                 90.0,
                 "right",
                 "center",
-                10.0 - height / 2.0,
+                10.0 - height * HALF_FACTOR,
                 20.0,
                 height,
                 width,
@@ -7851,8 +7851,8 @@ mod tests {
                 90.0,
                 "center",
                 "center",
-                10.0 - height / 2.0,
-                20.0 - width / 2.0,
+                10.0 - height * HALF_FACTOR,
+                20.0 - width * HALF_FACTOR,
                 height,
                 width,
             ),
@@ -7860,7 +7860,7 @@ mod tests {
                 270.0,
                 "left",
                 "center",
-                10.0 - height / 2.0,
+                10.0 - height * HALF_FACTOR,
                 20.0,
                 height,
                 width,
@@ -7869,7 +7869,7 @@ mod tests {
                 270.0,
                 "right",
                 "center",
-                10.0 - height / 2.0,
+                10.0 - height * HALF_FACTOR,
                 20.0 - width,
                 height,
                 width,
@@ -8245,7 +8245,7 @@ mod tests {
             reference: "U1".to_owned(),
             points_mm: super::sample_arc_through_three_points(
                 (2.0, 0.0),
-                (2.0 / 2.0_f64.sqrt(), 2.0 / 2.0_f64.sqrt()),
+                (2.0 * HALF_FACTOR_f64.sqrt(), 2.0 * HALF_FACTOR_f64.sqrt()),
                 (0.0, 2.0),
             ),
             closed: false,
@@ -8402,7 +8402,7 @@ mod tests {
             start_angle_rad: 0.0,
             sweep_rad: std::f64::consts::FRAC_PI_2,
         };
-        let midpoint = (2.0 / 2.0_f64.sqrt(), 2.0 / 2.0_f64.sqrt());
+        let midpoint = (2.0 * HALF_FACTOR_f64.sqrt(), 2.0 * HALF_FACTOR_f64.sqrt());
         let points = super::sample_arc_through_three_points((2.0, 0.0), midpoint, (0.0, 2.0));
         let angle = 0.37_f64;
         let radial_point = |radius: f64| super::Point {

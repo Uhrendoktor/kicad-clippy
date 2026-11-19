@@ -99,6 +99,9 @@ jobs:
       - name: Enforce Rust documentation contract
         run: python3 scripts/check-rust-docs.py
 
+      - name: Enforce named numeric constants
+        run: python3 scripts/check-rust-magic-numbers.py
+
       - name: Run strict Clippy
         run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
