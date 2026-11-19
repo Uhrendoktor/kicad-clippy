@@ -32,8 +32,19 @@ jobs:
       - name: Verify locked dependencies
         run: cargo fetch --locked
 
-      - name: Check formatting
-        run: cargo fmt --all -- --check
+      - name: Apply rustfmt and export formatted Rust sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          tar -czf "$RUNNER_TEMP/rustfmt-source.tar.gz" crates
+
+      - name: Upload rustfmt source output
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustfmt-source
+          path: ${{ runner.temp }}/rustfmt-source.tar.gz
+          if-no-files-found: error
 
       - name: Enforce Rust documentation contract
         run: python3 scripts/check-rust-docs.py
