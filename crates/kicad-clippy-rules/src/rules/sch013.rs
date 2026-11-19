@@ -477,11 +477,7 @@ fn sheet_graphic_obstacle_diagnostics(
         .graphics
         .iter()
         .filter(|graphic| {
-            wire_crosses_sheet_graphic_with_wire_stroke(
-                segment,
-                graphic,
-                wire_stroke_width_mm,
-            )
+            wire_crosses_sheet_graphic_with_wire_stroke(segment, graphic, wire_stroke_width_mm)
         })
         .map(|graphic| {
             at_segment(
@@ -580,9 +576,7 @@ pub(super) fn check_wire_obstacles(
             },
         ));
         diagnostics.extend(bitmap_image_obstacle_diagnostics(
-            wire_index,
-            *segment,
-            facts,
+            wire_index, *segment, facts,
         ));
         diagnostics.extend(wire_text_annotation_obstacle_diagnostics(
             wire_index,
