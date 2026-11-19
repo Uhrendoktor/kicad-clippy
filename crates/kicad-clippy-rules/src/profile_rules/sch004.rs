@@ -13,7 +13,6 @@ use crate::generic::physical_wire_component_ids;
 use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::Diagnostic;
 use kicad_clippy_core::Severity;
-use kicad_clippy_erc::Netlist;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
@@ -254,21 +253,19 @@ fn validate_forbidden_direct_wire_labels(
     }
     diagnostics
 }
-/// Validates common-net group declarations against physical wire topology and the optional exported netlist.
+/// Validates common-net group declarations against physical wire topology and label policy.
 ///
 /// # Arguments
 ///
 /// * `groups` — Map of profile group identifiers to their associated group-intent records.
 /// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
-/// * `netlist` — Optional `KiCad`-exported flattened netlist; supplies logical pin-to-net assignments when present.
 ///
 /// # Returns
 ///
-/// Diagnostics for common-pin groups whose members fail physical-wire, label, or exported-netlist connectivity requirements.
+/// Diagnostics for common-pin groups whose members fail physical-wire or label connectivity requirements.
 pub(super) fn validate_common_pin_groups(
     groups: &[CommonPinNetGroup],
     facts: &SchematicFacts,
-    netlist: Option<&Netlist>,
 ) -> Vec<Diagnostic> {
     if groups.is_empty() {
         return Vec::new();
@@ -277,7 +274,6 @@ pub(super) fn validate_common_pin_groups(
     let mut diagnostics = Vec::new();
     for group in groups {
         diagnostics.extend(validate_common_pin_group(group, facts, &component_ids));
-        diagnostics.extend(validate_common_pin_group_netlist(group, netlist));
     }
     diagnostics
 }
@@ -323,70 +319,6 @@ fn validate_common_pin_group(
                 ),
             ));
         }
-    }
-    diagnostics
-}
-/// Checks the exported net assignments for a common-pin group when a netlist is available.
-///
-/// # Arguments
-///
-/// * `group` — The group-intent record containing its members and declared constraints.
-/// * `netlist` — Optional `KiCad`-exported flattened netlist; supplies logical pin-to-net assignments when present.
-///
-/// # Returns
-///
-/// Diagnostics when the exported netlist assigns group pins to different logical nets or to a net name other than the declared name.
-fn validate_common_pin_group_netlist(
-    group: &CommonPinNetGroup,
-    netlist: Option<&Netlist>,
-) -> Vec<Diagnostic> {
-    if !group.netlist_connected {
-        return Vec::new();
-    }
-    let Some(netlist) = netlist else {
-        return vec![Diagnostic::for_builtin_rule(
-            BuiltinRuleId::Sch004,
-            Severity::Warning,
-            format!(
-                "common pin group {:?} requests netlist_connected but no exported KiCad netlist was supplied",
-                group.name
-            ),
-        )];
-    };
-
-    let mut nets = BTreeSet::new();
-    let mut diagnostics = Vec::new();
-    for pin_ref in &group.pins {
-        let Some((reference, pin_number)) = pin_ref.rsplit_once('.') else {
-            continue;
-        };
-        if !valid_pin_ref(pin_ref) {
-            continue;
-        }
-        match netlist.net_for_pin(reference, pin_number) {
-            Some(net_name) => {
-                nets.insert(net_name.to_owned());
-            }
-            None => diagnostics.push(Diagnostic::for_builtin_rule(
-                BuiltinRuleId::Sch004,
-                Severity::Error,
-                format!(
-                    "{pin_ref} in common pin group {:?} is absent from the exported KiCad netlist",
-                    group.name
-                ),
-            )),
-        }
-    }
-    if nets.len() > 1 {
-        diagnostics.push(Diagnostic::for_builtin_rule(
-            BuiltinRuleId::Sch004,
-            Severity::Error,
-            format!(
-                "pins in common pin group {:?} resolve to different exported KiCad nets: {}",
-                group.name,
-                nets.into_iter().collect::<Vec<_>>().join(", ")
-            ),
-        ));
     }
     diagnostics
 }
@@ -535,21 +467,19 @@ fn invalid_physical_wire_reference(group_name: &str, pin_ref: &str) -> Diagnosti
         format!("physical wire group {group_name:?} contains invalid pin reference {pin_ref:?}"),
     )
 }
-/// Checks that each declared pair of pins belongs to separate physical and logical nets.
+/// Checks that each declared pair of pins belongs to separate physical wire-only components.
 ///
 /// # Arguments
 ///
 /// * `pairs` — Declared physical-wire pin pairs, each expressed as two REF.PIN references.
 /// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
-/// * `netlist` — Optional `KiCad`-exported flattened netlist; supplies logical pin-to-net assignments when present.
 ///
 /// # Returns
 ///
-/// Diagnostics for separate-wire pairs that share a physical wire component or an exported logical net.
+/// Diagnostics for separate-wire pairs that share a physical wire component.
 pub(super) fn validate_separate_wire_pairs(
     pairs: &[SeparateWirePair],
     facts: &SchematicFacts,
-    netlist: Option<&Netlist>,
 ) -> Vec<Diagnostic> {
     if pairs.is_empty() {
         return Vec::new();
@@ -561,28 +491,25 @@ pub(super) fn validate_separate_wire_pairs(
             pair,
             facts,
             &component_ids,
-            netlist,
         ));
     }
     diagnostics
 }
-/// Checks that the two pins in a separate-wire contract do not share a physical wire component or an exported logical net.
+/// Checks that the two pins in a separate-wire contract do not share a physical wire component.
 ///
 /// # Arguments
 ///
 /// * `pair` — The direct-wire or separate-wire pair contract being validated.
 /// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
 /// * `component_ids` — Map from tolerance-normalized schematic coordinates to physical wire-component identifiers.
-/// * `netlist` — Optional `KiCad`-exported flattened netlist; supplies logical pin-to-net assignments when present.
 ///
 /// # Returns
 ///
-/// Diagnostics when either pin is missing or the two pins share a physical wire component or logical net.
+/// Diagnostics when either pin is missing or the two pins share a physical wire component.
 fn validate_separate_wire_pair(
     pair: &SeparateWirePair,
     facts: &SchematicFacts,
     component_ids: &BTreeMap<String, usize>,
-    netlist: Option<&Netlist>,
 ) -> Vec<Diagnostic> {
     let pair_name = format!("{} / {}", pair.first, pair.second);
     let mut diagnostics = Vec::new();
@@ -647,41 +574,7 @@ fn validate_separate_wire_pair(
         ));
     }
 
-    if pair.netlist_separate {
-        let Some(netlist) = netlist else {
-            diagnostics.push(Diagnostic::for_builtin_rule(
-                BuiltinRuleId::Sch004,
-                Severity::Warning,
-                format!("separate-wire pair {pair_name} requests netlist_separate but no exported KiCad netlist was supplied"),
-            ));
-            return diagnostics;
-        };
-        let first_net = netlist.net_for_pin(first_reference, first_number);
-        let second_net = netlist.net_for_pin(second_reference, second_number);
-        match (first_net, second_net) {
-            (Some(first), Some(second)) if first == second => {
-                diagnostics.push(Diagnostic::for_builtin_rule(
-                    BuiltinRuleId::Sch004,
-                    Severity::Error,
-                    format!(
-                        "pins {} and {} must resolve to different exported KiCad nets, but both resolve to {first:?}",
-                        pair.first, pair.second
-                    ),
-                ));
-            }
-            (None, _) => diagnostics.push(Diagnostic::for_builtin_rule(
-                BuiltinRuleId::Sch004,
-                Severity::Error,
-                format!("{} in separate-wire pair {pair_name} is absent from the exported KiCad netlist", pair.first),
-            )),
-            (_, None) => diagnostics.push(Diagnostic::for_builtin_rule(
-                BuiltinRuleId::Sch004,
-                Severity::Error,
-                format!("{} in separate-wire pair {pair_name} is absent from the exported KiCad netlist", pair.second),
-            )),
-            (Some(_), Some(_)) => {}
-        }
-    }
+
     diagnostics
 }
 /// Returns a configuration error when a common-pin group has an empty name, too few pins, duplicate pins, or malformed pin references.
@@ -950,7 +843,6 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch004 {
         diagnostics.extend(validate_common_pin_groups(
             &profile.common_pin_groups,
             facts,
-            context.netlist,
         ));
         diagnostics.extend(validate_physical_wire_groups(
             &profile.physical_wire_groups,
@@ -959,7 +851,6 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch004 {
         diagnostics.extend(validate_separate_wire_pairs(
             &profile.separate_wire_pairs,
             facts,
-            context.netlist,
         ));
         diagnostics
     }
