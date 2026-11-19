@@ -1,7 +1,6 @@
 //! Checks `SCH004` profile-declared physical pin-connectivity and wire-separation contracts.
 
 use crate::generic::GEOMETRY_TOLERANCE_MM;
-use crate::generic::SchematicFacts;
 use crate::generic::physical_wire_component_ids;
 use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::Diagnostic;
@@ -9,14 +8,33 @@ use kicad_clippy_core::Severity;
 use kicad_clippy_erc::Netlist;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use super::COORDINATE_KEY_DECIMAL_PLACES;
+use super::append_direct_wire_pair_label_diagnostics;
+use super::common_pin_group_configuration_error;
+use super::common_pin_group_label_count;
 use super::CommonPinNetGroup;
+use super::component_has_label;
+use super::COORDINATE_KEY_DECIMAL_PLACES;
 use super::DirectWirePair;
+use super::invalid_common_pin_reference;
+use super::invalid_physical_wire_reference;
 use super::MINIMUM_PIN_GROUP_SIZE;
 use super::PhysicalWireGroup;
+use super::point_is_on_wire;
+use super::resolve_common_pin_group_components;
+use super::same_wire_point;
+use super::SchematicFacts;
 use super::SeparateWirePair;
 use super::valid_pin_ref;
-use thiserror::Error;
+use super::validate_common_pin_group_netlist;
+use super::validate_common_pin_group;
+use super::validate_common_pin_groups;
+use super::validate_direct_wire_connectivity;
+use super::validate_direct_wire_pair;
+use super::validate_forbidden_direct_wire_labels;
+use super::validate_physical_wire_group;
+use super::validate_physical_wire_groups;
+use super::validate_separate_wire_pair;
+use super::validate_separate_wire_pairs;
 
 /// Checks declared pin pairs and forbidden labels against physical wire connectivity, not merely matching net names.
 ///

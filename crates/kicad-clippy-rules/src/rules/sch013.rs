@@ -1,7 +1,7 @@
 //! Checks `SCH013` wire clearance from transformed schematic obstacles and effective stroke widths.
 
-use crate::HALF_FACTOR;
-use crate::TWO_SIDED_FACTOR;
+use geo::{Contains, Distance, Euclidean, Intersects};
+use geo::algorithm::line_intersection::line_intersection;
 use geo::Contains;
 use geo::Coord;
 use geo::Distance;
@@ -11,7 +11,6 @@ use geo::LineIntersection;
 use geo::LineString;
 use geo::Point as GeoPoint;
 use geo::Polygon;
-use geo::algorithm::line_intersection::line_intersection;
 use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::ByteSpan;
 use kicad_clippy_core::Diagnostic;
@@ -22,12 +21,21 @@ use kurbo::PathSeg as CurvePathSeg;
 use kurbo::Point as CurvePoint;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
+use super::at_segment;
 use super::Bounds;
+use super::children;
+use super::collect_visible_field_bounds;
 use super::CURVE_FLATTEN_TOLERANCE_MM;
+use super::distance;
 use super::FLOATING_POINT_ROUNDOFF_ULPS;
 use super::GEOMETRY_NUMERIC_EPSILON;
 use super::GEOMETRY_TOLERANCE_MM;
+use super::HALF_FACTOR;
+use super::is_endpoint;
+use super::number;
 use super::Point;
+use super::SCH013_STROKE_DISTANCE_ACCURACY_MM;
+use super::SCH013_STROKE_DISTANCE_EPSILON_MM;
 use super::SchematicArcFact;
 use super::SchematicBusObstacleFact;
 use super::SchematicFacts;
@@ -38,13 +46,10 @@ use super::SchematicPrimitiveFact;
 use super::SchematicSheetFact;
 use super::SchematicSymbolTextFact;
 use super::Segment;
-use super::at_segment;
-use super::children;
-use super::collect_visible_field_bounds;
-use super::distance;
-use super::is_endpoint;
-use super::number;
 use super::strict_line_hits_bounds;
+use super::text_box_bounds;
+use super::TWO_SIDED_FACTOR;
+use super::WireObstacleStrokeWidths;
 
 /// Finds wire crossings or clearance violations against transformed embedded-symbol text.
 ///

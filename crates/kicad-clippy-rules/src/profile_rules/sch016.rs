@@ -1,14 +1,14 @@
 //! Checks `SCH016` internal wire-length budgets for functional schematic groups.
 
 use crate::generic::GEOMETRY_TOLERANCE_MM;
-use crate::generic::SchematicFacts;
 use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::Diagnostic;
 use kicad_clippy_core::Severity;
 use super::GroupIntent;
 use super::MAX_COMPACTNESS_SCORE;
+use super::SchematicFacts;
 use super::SCORE_COMPARISON_EPSILON;
-use thiserror::Error;
+use super::validate_wire_compactness;
 
 /// Checks whether the total physical wire length of a group stays within its declared length budget.
 ///

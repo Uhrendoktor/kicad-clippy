@@ -3,9 +3,9 @@
 use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::Diagnostic;
 use kiutils_sexpr::Node;
-use super::Segment;
 use super::at_span;
 use super::collect_label_nodes;
+use super::Segment;
 use super::strict_line_hits_bounds;
 use super::text_visual_bounds;
 

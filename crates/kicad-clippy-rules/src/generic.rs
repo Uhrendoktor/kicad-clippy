@@ -4192,9 +4192,9 @@ fn at_point(code: BuiltinRuleId, message: String, point: Point, span: ByteSpan) 
 /// Unit tests for schematic fact extraction, geometry, connectivity, and rule diagnostics.
 mod tests {
     #![allow(clippy::expect_used)]
-    use super::{HALF_FACTOR, run_builtin_rules};
-    use kicad_clippy_parser::SchematicDocument;
-    use kurbo::{ParamCurve, ParamCurveDeriv};
+
+
+
     /// Builds a minimal valid schematic fixture by wrapping the supplied S-expression items in a `kicad_sch` root.
     ///
     /// # Arguments

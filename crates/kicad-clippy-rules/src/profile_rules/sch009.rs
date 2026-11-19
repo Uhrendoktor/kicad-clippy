@@ -1,23 +1,39 @@
-//! Checks `SCH009` containment of group members and associated schematic geometry.
+//! Checks `SCH009` containment of group members and their associated schematic geometry.
 
-use crate::HALF_FACTOR;
 use crate::generic::GEOMETRY_TOLERANCE_MM;
-use crate::generic::STROKE_CLEARANCE_MARGIN_MM;
-use crate::generic::SchematicFacts;
+use crate::generic::HALF_FACTOR;
 use crate::generic::physical_wire_component_ids;
+use crate::generic::STROKE_CLEARANCE_MARGIN_MM;
 use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::Diagnostic;
 use kicad_clippy_core::Severity;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use super::COORDINATE_KEY_DECIMAL_PLACES;
+use super::group_wire_components;
 use super::GroupIntent;
-use super::point_inside_frame;
 use super::point_inside_frame_with_clearance;
-use super::rectangle_inside_frame;
+use super::point_inside_frame;
+use super::point_is_on_wire;
 use super::rectangle_inside_frame_with_clearance;
+use super::rectangle_inside_frame;
 use super::rectangles_overlap;
-use thiserror::Error;
+use super::SchematicFacts;
+use super::symbol_primitive_inside_frame;
+use super::valid_frame_bounds;
+use super::validate_group_annotation_box_containment;
+use super::validate_group_containment;
+use super::validate_group_description_containment;
+use super::validate_group_field_containment;
+use super::validate_group_graphic_containment;
+use super::validate_group_image_containment;
+use super::validate_group_label_containment;
+use super::validate_group_pin_containment;
+use super::validate_group_plain_text_containment;
+use super::validate_group_symbol_primitive_containment;
+use super::validate_group_wire_containment;
+use super::wire_belongs_to_group;
+use super::wire_overlaps_frame;
 
 /// Checks that every declared group member and its attached geometry lies inside the group's referenced frame.
 ///

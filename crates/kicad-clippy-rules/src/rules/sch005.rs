@@ -4,22 +4,22 @@ use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::Diagnostic;
 use kiutils_sexpr::Node;
 use kurbo::Point as CurvePoint;
-use super::GEOMETRY_TOLERANCE_MM;
-use super::Point;
-use super::Segment;
-use super::SymbolTransform;
 use super::at_point;
 use super::atom_value;
 use super::cardinal_rotation;
 use super::child_list;
 use super::children;
 use super::embedded_symbol_pins;
+use super::GEOMETRY_TOLERANCE_MM;
 use super::list_items;
 use super::number;
+use super::PinAxis;
 use super::point_on_segment;
+use super::Point;
 use super::read_symbol_transform;
-use super::span_of;
+use super::Segment;
 use super::symbol_transform_affine;
+use super::SymbolTransform;
 
 /// Represents the supported pinaxis alternatives.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

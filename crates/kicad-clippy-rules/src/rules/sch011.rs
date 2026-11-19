@@ -10,7 +10,6 @@ use super::child_list;
 use super::collect_nodes;
 use super::list_items;
 use super::number;
-use super::span_of;
 
 /// Checks that multiline text boxes have a visible border.
 ///

@@ -4,6 +4,7 @@ use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::Diagnostic;
 use kicad_clippy_core::Severity;
 use kicad_clippy_erc::Netlist;
+use kicad_clippy_erc::PinRef;
 use kicad_clippy_parser::SchematicDocument;
 use serde::Deserialize;
 use serde::Serialize;
@@ -11,6 +12,11 @@ use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
+use super::ComponentKind;
+use super::ComponentRole;
+use super::LintProfile;
+use super::ProfileMode;
+use super::SchematicFacts;
 use thiserror::Error;
 
 /// Checks `SCH004` profile-declared physical pin-connectivity and wire-separation contracts.
@@ -25,7 +31,7 @@ mod sch006;
 #[path = "profile_rules/sch007.rs"]
 mod sch007;
 
-/// Checks `SCH009` containment of group members and associated schematic geometry.
+/// Checks `SCH009` containment of group members and their associated schematic geometry.
 #[path = "profile_rules/sch009.rs"]
 mod sch009;
 
@@ -364,7 +370,7 @@ impl LintProfile {
         let mut diagnostics = sch021::validate_profile_references(self, &references);
         for component in &facts.components {
             if let Some(intent) = self.components.get(&component.reference) {
-                diagnostics.extend(validate_component_intent(
+                diagnostics.extend(sch021::validate_component_intent(
                     &component.reference,
                     intent,
                     netlist,
@@ -402,7 +408,6 @@ impl LintProfile {
         ));
         diagnostics
     }
-}
 /// Validates every group-intent declaration in the profile.
 ///
 /// # Arguments
@@ -558,65 +563,6 @@ fn rectangle_inside_frame(
         && rect_right <= right + GEOMETRY_TOLERANCE_MM
         && rect_bottom <= bottom + GEOMETRY_TOLERANCE_MM
 }
-/// Validates the declared kind, role, purpose, pin contract, and any decoupling intent for one component.
-///
-/// # Arguments
-///
-/// * `reference` — Reference designator of the component whose intent is being checked.
-/// * `intent` — Component-intent record declaring the electrical role and connection contract.
-/// * `netlist` — Optional `KiCad`-exported flattened netlist; supplies logical pin-to-net assignments when present.
-///
-/// # Returns
-///
-/// Diagnostics for missing component function/rationale, mismatched pin nets, invalid role connections, or incomplete decoupling intent.
-fn validate_component_intent(
-    reference: &str,
-    intent: &ComponentIntent,
-    netlist: Option<&Netlist>,
-) -> Vec<Diagnostic> {
-    let mut diagnostics = Vec::new();
-    if intent.function.as_deref().is_none_or(str::is_empty)
-        || intent.rationale.as_deref().is_none_or(str::is_empty)
-    {
-        diagnostics.push(Diagnostic::for_builtin_rule(
-            BuiltinRuleId::Sch020,
-            Severity::Error,
-            format!("{reference} must document both its circuit function and design rationale"),
-        ));
-    }
-    if intent.kind == ComponentKind::Capacitor && intent.role.0 == "decoupling" {
-        diagnostics.extend(sch022::validate_decoupling_intent(
-            reference,
-            intent.decoupling.as_ref(),
-            netlist,
-        ));
-    }
-    diagnostics.extend(sch014::validate_pin_net_contract(reference, intent, netlist));
-    diagnostics.extend(sch021::validate_role_contract(reference, intent));
-    if intent.kind == ComponentKind::Capacitor
-        && !matches!(
-            intent.role.0.as_str(),
-            "decoupling"
-                | "bulk"
-                | "filter"
-                | "timing"
-                | "coupling"
-                | "snubber"
-                | "reservoir"
-                | "safety"
-        )
-    {
-        diagnostics.push(Diagnostic::for_builtin_rule(
-                    BuiltinRuleId::Sch021,
-            Severity::Warning,
-            format!(
-                "{reference} uses unknown capacitor role {:?}; document its meaning or use a standard role",
-                intent.role.0
-            ),
-        ));
-    }
-    diagnostics
-}
 /// Checks whether a string uses the required REF.PIN syntax with non-empty reference and pin parts.
 ///
 /// # Arguments
@@ -654,12 +600,12 @@ pub enum MetadataError {
 /// Exercises profile deserialization and validation for physical connectivity, group geometry, component intent, and decoupling contracts.
 mod tests {
     #![allow(clippy::expect_used)]
-    use std::collections::BTreeMap;
 
-    use kicad_clippy_core::Severity;
-    use kicad_clippy_erc::{Netlist, PinRef};
 
-    use super::{ComponentKind, ComponentRole, LintProfile, ProfileMode, SchematicFacts};
+
+
+
+
     /// Builds a minimal schematic fixture with two placed one-pin symbols and appends the supplied serialized wire and label expressions.
     ///
     /// # Arguments

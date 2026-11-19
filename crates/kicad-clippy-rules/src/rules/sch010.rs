@@ -1,6 +1,6 @@
 //! Checks `SCH010` visible symbol-field clearance from nearby schematic objects.
 
-use crate::HALF_FACTOR;
+use geo::{Contains, Distance, Euclidean, Intersects};
 use geo::Contains;
 use geo::Coord;
 use geo::Distance;
@@ -13,24 +13,25 @@ use geo::Rect as GeoRect;
 use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::Diagnostic;
 use kiutils_sexpr::Node;
-use super::Bounds;
-use super::GEOMETRY_TOLERANCE_MM;
-use super::Point;
-use super::SchematicFacts;
-use super::SchematicPrimitiveFact;
-use super::Segment;
-use super::TWO_SIDED_GEOMETRY_TOLERANCE_MM;
 use super::at_span;
 use super::bounds_overlap;
+use super::Bounds;
 use super::child_list;
 use super::children;
 use super::collect_label_nodes;
 use super::collect_visible_field_bounds;
 use super::distance;
+use super::GEOMETRY_TOLERANCE_MM;
+use super::HALF_FACTOR;
 use super::list_items;
 use super::number;
+use super::Point;
+use super::SchematicFacts;
+use super::SchematicPrimitiveFact;
+use super::Segment;
 use super::strict_line_hits_bounds;
 use super::text_visual_bounds;
+use super::TWO_SIDED_GEOMETRY_TOLERANCE_MM;
 
 /// Checks visible symbol fields against other fields, symbol bodies, wires, pins, labels, and annotation boxes.
 ///

@@ -1,19 +1,31 @@
 //! Checks `SCH012` minimum frame-inset clearance for declared group contents.
 
-use crate::TWO_SIDED_FACTOR;
 use crate::generic::GEOMETRY_TOLERANCE_MM;
-use crate::generic::SchematicFacts;
+use crate::generic::TWO_SIDED_FACTOR;
 use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::Diagnostic;
 use kicad_clippy_core::Severity;
 use super::COORDINATE_KEY_DECIMAL_PLACES;
 use super::GroupIntent;
-use super::point_inside_frame;
 use super::point_inside_frame_with_clearance;
+use super::point_inside_frame;
 use super::rectangle_inside_frame_with_clearance;
 use super::rectangles_overlap;
 use super::sch009::{group_wire_components, symbol_primitive_inside_frame, wire_belongs_to_group, wire_overlaps_frame};
-use thiserror::Error;
+use super::SchematicFacts;
+use super::valid_frame_bounds;
+use super::validate_description_frame_clearance;
+use super::validate_frame_clearance;
+use super::validate_group_annotation_box_clearance;
+use super::validate_group_graphic_clearance;
+use super::validate_group_image_clearance;
+use super::validate_group_label_clearance;
+use super::validate_group_plain_text_clearance;
+use super::validate_group_symbol_primitive_clearance;
+use super::validate_group_wire_clearance;
+use super::validate_member_field_frame_clearance;
+use super::validate_member_frame_clearance;
+use super::validate_member_pin_frame_clearance;
 
 /// Checks that group members and their associated schematic content are inset from the referenced frame by the requested clearance.
 ///

@@ -5,7 +5,7 @@ use kicad_clippy_core::Diagnostic;
 use kicad_clippy_core::Severity;
 use kicad_clippy_erc::Netlist;
 use super::ComponentIntent;
-use thiserror::Error;
+use super::validate_pin_net_contract;
 
 /// Checks the declared pin-to-net expectations against the exported logical netlist.
 ///
