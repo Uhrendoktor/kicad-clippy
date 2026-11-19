@@ -4,6 +4,8 @@ Notable changes are documented here. This project is in early development and ha
 
 ## Unreleased
 
+- SCH015 now records effective embedded pin electrical types, honors selected pin alternates, and rejects redundant `required_no_connect_pins` declarations for intrinsically unconnected library pins.
+
 - Added optional `--policy kicad-clippy.toml` support with `default`, `strict`, and `advisory` presets plus per-rule `allow`, `warn`, and `deny` overrides. Unknown rule IDs and TOML keys are rejected; native KiCad ERC severities are preserved, and no policy file retains existing rule severities.
 
 - Added a complete built-in descriptor catalogue for SCH001–SCH022, with a regression test requiring one fully documented descriptor per typed rule ID.
