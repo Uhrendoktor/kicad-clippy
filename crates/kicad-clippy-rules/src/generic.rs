@@ -6817,7 +6817,7 @@ fn at_point(code: BuiltinRuleId, message: String, point: Point, span: ByteSpan) 
 /// Unit tests for schematic fact extraction, geometry, connectivity, and rule diagnostics.
 mod tests {
     #![allow(clippy::expect_used)]
-    use super::run_builtin_rules;
+    use super::{run_builtin_rules, HALF_FACTOR};
     use kicad_clippy_parser::SchematicDocument;
     use kurbo::{ParamCurve, ParamCurveDeriv};
     /// Builds a minimal valid schematic document around the supplied S-expression body for geometry tests.
@@ -7379,7 +7379,7 @@ mod tests {
             span: kicad_clippy_core::ByteSpan::new(0, 0),
         };
 
-        let midpoint = (2.0 * HALF_FACTOR_f64.sqrt(), 2.0 * HALF_FACTOR_f64.sqrt());
+        let midpoint = (2.0 * HALF_FACTOR.sqrt(), 2.0 * HALF_FACTOR.sqrt());
         let sampled = super::sample_arc_through_three_points((2.0, 0.0), midpoint, (0.0, 2.0));
         assert!(!sampled.windows(2).any(|pair| {
             !super::segment_intersection_points(
@@ -7656,13 +7656,13 @@ mod tests {
         let doc = document(&source);
         let facts = super::SchematicFacts::from_document(&doc);
         assert_eq!(facts.pins.len(), 1);
-        let expected = 10.0 - 2.54 * HALF_FACTOR_f64.sqrt();
+        let expected = 10.0 - 2.54 * HALF_FACTOR.sqrt();
         assert!((facts.pins[0].position_mm.0 - expected).abs() < 0.001);
         assert!((facts.pins[0].position_mm.1 - expected).abs() < 0.001);
 
         assert_eq!(facts.symbol_primitives.len(), 1);
         let rotated_corner = facts.symbol_primitives[0].points_mm[1];
-        let expected_corner = (10.0 + 2.0 * HALF_FACTOR_f64.sqrt(), 10.0 - 2.0 * HALF_FACTOR_f64.sqrt());
+        let expected_corner = (10.0 + 2.0 * HALF_FACTOR.sqrt(), 10.0 - 2.0 * HALF_FACTOR.sqrt());
         assert!((rotated_corner.0 - expected_corner.0).abs() < 0.001);
         assert!((rotated_corner.1 - expected_corner.1).abs() < 0.001);
         assert!(
@@ -8245,7 +8245,7 @@ mod tests {
             reference: "U1".to_owned(),
             points_mm: super::sample_arc_through_three_points(
                 (2.0, 0.0),
-                (2.0 * HALF_FACTOR_f64.sqrt(), 2.0 * HALF_FACTOR_f64.sqrt()),
+                (2.0 * HALF_FACTOR.sqrt(), 2.0 * HALF_FACTOR.sqrt()),
                 (0.0, 2.0),
             ),
             closed: false,
@@ -8402,7 +8402,7 @@ mod tests {
             start_angle_rad: 0.0,
             sweep_rad: std::f64::consts::FRAC_PI_2,
         };
-        let midpoint = (2.0 * HALF_FACTOR_f64.sqrt(), 2.0 * HALF_FACTOR_f64.sqrt());
+        let midpoint = (2.0 * HALF_FACTOR.sqrt(), 2.0 * HALF_FACTOR.sqrt());
         let points = super::sample_arc_through_three_points((2.0, 0.0), midpoint, (0.0, 2.0));
         let angle = 0.37_f64;
         let radial_point = |radius: f64| super::Point {

@@ -2129,7 +2129,7 @@ fn validate_frame_clearance(
         )];
     }
     let (left, top, right, bottom) = bounds;
-    if right - left < TWO_SIDED_FACTOR * clearance || bottom - top < BOTH_SIDES_FACTOR * clearance
+    if right - left < TWO_SIDED_FACTOR * clearance || bottom - top < TWO_SIDED_FACTOR * clearance
     {
         return vec![Diagnostic::for_builtin_rule(
             BuiltinRuleId::Sch012,
