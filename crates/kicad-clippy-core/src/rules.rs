@@ -19,6 +19,19 @@ pub enum RuleLevel {
     Deny,
 }
 
+/// Named baseline profile applied to built-in rule descriptors when a policy file is supplied.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RulePreset {
+    /// Use each rule descriptor's documented default level.
+    #[default]
+    Default,
+    /// Treat every built-in rule finding as an error unless explicitly overridden.
+    Strict,
+    /// Treat every built-in rule finding as a warning unless explicitly overridden.
+    Advisory,
+}
+
 /// Optional project policy that overrides the effective level of built-in schematic rules.
 ///
 /// Supplying a policy file opts the lint invocation into descriptor defaults for
@@ -27,6 +40,9 @@ pub enum RuleLevel {
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RulePolicy {
+    /// Named baseline applied before per-rule overrides.
+    #[serde(default)]
+    pub preset: RulePreset,
     /// Explicit per-rule overrides keyed by stable built-in ID, such as `SCH013`.
     #[serde(default)]
     pub rules: BTreeMap<String, RuleLevel>,
@@ -55,7 +71,7 @@ impl RulePolicy {
         Ok(())
     }
 
-    /// Applies descriptor defaults and explicit overrides to built-in diagnostics.
+    /// Applies the selected named preset and explicit overrides to built-in diagnostics.
     ///
     /// External diagnostics, including native KiCad ERC findings, are retained
     /// without severity changes. An `allow` policy removes the matching built-in
@@ -85,11 +101,16 @@ impl RulePolicy {
                 effective.push(diagnostic);
                 continue;
             };
+            let preset_level = match self.preset {
+                RulePreset::Default => descriptor.default_level,
+                RulePreset::Strict => RuleLevel::Deny,
+                RulePreset::Advisory => RuleLevel::Warn,
+            };
             let level = self
                 .rules
                 .get(&diagnostic.code)
                 .copied()
-                .unwrap_or(descriptor.default_level);
+                .unwrap_or(preset_level);
             match level {
                 RuleLevel::Allow => continue,
                 RuleLevel::Warn => diagnostic.severity = Severity::Warning,
@@ -534,6 +555,7 @@ mod tests {
 
         let registry = super::builtin_rule_registry().unwrap_or_default();
         let policy = super::RulePolicy {
+            preset: super::RulePreset::Default,
             rules: BTreeMap::from([
                 ("SCH001".to_owned(), RuleLevel::Allow),
                 ("SCH002".to_owned(), RuleLevel::Warn),
@@ -599,6 +621,7 @@ mod tests {
     fn policy_rejects_unknown_rule_ids() {
         let registry = super::builtin_rule_registry().unwrap_or_default();
         let policy = super::RulePolicy {
+            preset: super::RulePreset::Default,
             rules: BTreeMap::from([("SCH999".to_owned(), RuleLevel::Warn)]),
         };
         assert_eq!(
