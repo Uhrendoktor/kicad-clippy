@@ -3514,15 +3514,15 @@ mod tests {
     use kicad_clippy_erc::{Netlist, PinRef};
 
     use super::{ComponentKind, ComponentRole, LintProfile, ProfileMode, SchematicFacts};
-    /// Processes direct wire schematic using the supplied values and schematic data.
+    /// Builds a minimal schematic fixture with two placed one-pin symbols and appends the supplied serialized wire and label expressions.
     ///
     /// # Arguments
     ///
-    /// * `wire_and_label_items` — Input `wire and label items` used by this operation.
+    /// * `wire_and_label_items` — KiCad S-expression fragments inserted into the fixture to define wires, junctions, and labels.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
+    /// A parsed schematic document containing U1.1, R1.1, and the supplied connectivity geometry.
     fn direct_wire_schematic(wire_and_label_items: &str) -> kicad_clippy_parser::SchematicDocument {
         kicad_clippy_parser::SchematicDocument::from_text(
             "direct-wire-test.kicad_sch",
@@ -3548,12 +3548,7 @@ mod tests {
         )
         .expect("fixture parses")
     }
-    /// Processes physical wire group accepts connected pins without labels using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that physical wire group accepts connected pins without labels.
     #[test]
     fn physical_wire_group_accepts_connected_pins_without_labels() {
         let schematic = direct_wire_schematic("(wire (pts (xy 10 10) (xy 20 10)))");
@@ -3568,12 +3563,7 @@ mod tests {
                 .any(|item| item.code == "SCH004")
         );
     }
-    /// Processes physical wire group rejects disconnected islands even when labels match using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that physical wire group rejects disconnected islands even when labels match.
     #[test]
     fn physical_wire_group_rejects_disconnected_islands_even_when_labels_match() {
         let schematic = direct_wire_schematic(
@@ -3592,12 +3582,7 @@ mod tests {
             item.code == "SCH004" && item.message.contains("matching labels do not establish")
         }));
     }
-    /// Processes physical wire group rejects invalid missing and unwired pins using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that physical wire group rejects invalid missing and unwired pins.
     #[test]
     fn physical_wire_group_rejects_invalid_missing_and_unwired_pins() {
         let schematic = direct_wire_schematic("(wire (pts (xy 10 10) (xy 15 10)))");
@@ -3627,12 +3612,7 @@ mod tests {
                 .any(|message| message.contains("R1.1") && message.contains("not attached"))
         );
     }
-    /// Processes physical wire group rejects duplicate pins and empty names using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that physical wire group rejects duplicate pins and empty names.
     #[test]
     fn physical_wire_group_rejects_duplicate_pins_and_empty_names() {
         let schematic = direct_wire_schematic("(wire (pts (xy 10 10) (xy 20 10)))");
@@ -3657,12 +3637,7 @@ mod tests {
                 .any(|message| message.contains("non-empty name"))
         );
     }
-    /// Processes common pin group accepts one named label on a shared wire network using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that common pin group accepts one named label on a shared wire network.
     #[test]
     fn common_pin_group_accepts_one_named_label_on_a_shared_wire_network() {
         let schematic = direct_wire_schematic(
@@ -3682,12 +3657,7 @@ mod tests {
                 .any(|item| item.code == "SCH004")
         );
     }
-    /// Processes common pin group rejects disconnected label joined islands using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that common pin group rejects disconnected label joined islands.
     #[test]
     fn common_pin_group_rejects_disconnected_label_joined_islands() {
         let schematic = direct_wire_schematic(
@@ -3710,12 +3680,7 @@ mod tests {
                     && item.message.contains("must share one physical"))
         );
     }
-    /// Processes common pin group allows label joined islands when wire connection is not required using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that common pin group allows label joined islands when wire connection is not required.
     #[test]
     fn common_pin_group_allows_label_joined_islands_when_wire_connection_is_not_required() {
         let schematic = direct_wire_schematic(
@@ -3737,12 +3702,7 @@ mod tests {
                 .any(|item| item.code == "SCH004")
         );
     }
-    /// Processes common pin group rejects duplicate and unresolvable pin references using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that common pin group rejects duplicate and unresolvable pin references.
     #[test]
     fn common_pin_group_rejects_duplicate_and_unresolvable_pin_references() {
         let schematic = direct_wire_schematic(
@@ -3770,12 +3730,7 @@ mod tests {
                 .any(|item| item.message.contains("missing or unsupported pin U1.99"))
         );
     }
-    /// Processes direct wire pair does not connect at an unmarked crossing using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that direct wire pair does not connect at an unmarked crossing.
     #[test]
     fn direct_wire_pair_does_not_connect_at_an_unmarked_crossing() {
         let schematic = direct_wire_schematic(
@@ -3797,12 +3752,7 @@ mod tests {
                     .contains("must share one physical wire-only network")
         }));
     }
-    /// Processes direct wire pair connects at a crossing with an explicit junction using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that direct wire pair connects at a crossing with an explicit junction.
     #[test]
     fn direct_wire_pair_connects_at_a_crossing_with_an_explicit_junction() {
         let schematic = direct_wire_schematic(
@@ -3825,15 +3775,15 @@ mod tests {
                 .any(|item| item.code == "SCH004")
         );
     }
-    /// Processes direct wire t junction schematic using the supplied values and schematic data.
+    /// Builds a schematic fixture in which a branch wire terminates on another wire, optionally adding an explicit junction marker at the shared coordinate.
     ///
     /// # Arguments
     ///
-    /// * `explicit_junction` — Input `explicit junction` used by this operation.
+    /// * `explicit_junction` — Whether to serialize a junction marker at the T-connection; `false` models an unmarked endpoint-on-segment contact.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
+    /// A parsed schematic document with two one-pin symbols and the requested T-junction topology.
     fn direct_wire_t_junction_schematic(
         explicit_junction: bool,
     ) -> kicad_clippy_parser::SchematicDocument {
@@ -3868,12 +3818,7 @@ mod tests {
         )
         .expect("T-junction schematic parses")
     }
-    /// Processes direct wire pair does not connect through an unmarked t junction using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that direct wire pair does not connect through an unmarked t junction.
     #[test]
     fn direct_wire_pair_does_not_connect_through_an_unmarked_t_junction() {
         let schematic = direct_wire_t_junction_schematic(false);
@@ -3888,12 +3833,7 @@ mod tests {
                     .contains("must share one physical wire-only network")
         }));
     }
-    /// Processes direct wire pair connects through a marked t junction using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that direct wire pair connects through a marked t junction.
     #[test]
     fn direct_wire_pair_connects_through_a_marked_t_junction() {
         let schematic = direct_wire_t_junction_schematic(true);
@@ -3908,12 +3848,7 @@ mod tests {
                 .any(|item| item.code == "SCH004")
         );
     }
-    /// Processes common pin group enforces exactly one matching label using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that common pin group enforces exactly one matching label.
     #[test]
     fn common_pin_group_enforces_exactly_one_matching_label() {
         let schematic = direct_wire_schematic(
@@ -3934,16 +3869,16 @@ mod tests {
                 .any(|item| item.code == "SCH004" && item.message.contains("share exactly one"))
         );
     }
-    /// Processes common pin netlist using the supplied values and schematic data.
+    /// Creates a flattened-netlist fixture assigning U1.1 and R1.1 to the supplied logical nets.
     ///
     /// # Arguments
     ///
-    /// * `first_net` — Input `first net` used by this operation.
-    /// * `second_net` — Input `second net` used by this operation.
+    /// * `first_net` — Optional exported net name for U1.1; `None` leaves that pin absent from the reverse index.
+    /// * `second_net` — Optional exported net name for R1.1; `None` leaves that pin absent from the reverse index.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
+    /// A `Netlist` whose `pin_nets` index contains only the assignments supplied by the caller.
     fn common_pin_netlist(first_net: Option<&str>, second_net: Option<&str>) -> Netlist {
         let mut pin_nets = BTreeMap::new();
         if let Some(net) = first_net {
@@ -3969,12 +3904,7 @@ mod tests {
             ..Netlist::default()
         }
     }
-    /// Processes common pin group can require one exported kicad net using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that common pin group can require one exported KiCad net.
     #[test]
     fn common_pin_group_can_require_one_exported_kicad_net() {
         let schematic = direct_wire_schematic(
@@ -3995,12 +3925,7 @@ mod tests {
             item.code == "SCH004" && item.message.contains("different exported KiCad nets")
         }));
     }
-    /// Processes common pin group rejects different exported kicad nets using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that common pin group rejects different exported KiCad nets.
     #[test]
     fn common_pin_group_rejects_different_exported_kicad_nets() {
         let schematic = direct_wire_schematic(
@@ -4021,12 +3946,7 @@ mod tests {
             item.code == "SCH004" && item.message.contains("different exported KiCad nets")
         }));
     }
-    /// Processes common pin group reports pins missing from exported netlist using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that common pin group reports pins missing from exported netlist.
     #[test]
     fn common_pin_group_reports_pins_missing_from_exported_netlist() {
         let schematic = direct_wire_schematic(
@@ -4044,12 +3964,7 @@ mod tests {
         assert!(diagnostics.iter().any(|item| item.message.contains("R1.1")
             && item.message.contains("absent from the exported")));
     }
-    /// Processes common pin group warns when requested netlist is not supplied using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that common pin group warns when requested netlist is not supplied.
     #[test]
     fn common_pin_group_warns_when_requested_netlist_is_not_supplied() {
         let schematic = direct_wire_schematic(
@@ -4071,12 +3986,7 @@ mod tests {
                     .contains("no exported KiCad netlist was supplied")
         }));
     }
-    /// Processes common pin group requires a label on each physical pin network using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that common pin group requires a label on each physical pin network.
     #[test]
     fn common_pin_group_requires_a_label_on_each_physical_pin_network() {
         let schematic = direct_wire_schematic(r"(wire (pts (xy 10 10) (xy 20 10)))");
@@ -4101,12 +4011,7 @@ mod tests {
                 .contains("R1.1 must belong to common net SENSE")
         }));
     }
-    /// Processes direct wire pair passes when pins share a continuous wire using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that direct wire pair passes when pins share a continuous wire.
     #[test]
     fn direct_wire_pair_passes_when_pins_share_a_continuous_wire() {
         let schematic = direct_wire_schematic(r"(wire (pts (xy 10 10) (xy 20 10)))");
@@ -4121,12 +4026,7 @@ mod tests {
                 .any(|item| item.code == "SCH004")
         );
     }
-    /// Processes direct wire pair rejects label joined islands using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that direct wire pair rejects label joined islands.
     #[test]
     fn direct_wire_pair_rejects_label_joined_islands() {
         let schematic = direct_wire_schematic(
@@ -4148,12 +4048,7 @@ mod tests {
                     .contains("must share one physical wire-only network")
         }));
     }
-    /// Processes direct wire pair rejects label anchors and forbidden local labels using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that direct wire pair rejects label anchors and forbidden local labels.
     #[test]
     fn direct_wire_pair_rejects_label_anchors_and_forbidden_local_labels() {
         let schematic = direct_wire_schematic(
@@ -4180,12 +4075,7 @@ mod tests {
                     .contains("forbidden on a direct-wire-only network")
         }));
     }
-    /// Processes forbidden direct wire label is ignored on unrelated wire islands using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that forbidden direct wire label is ignored on unrelated wire islands.
     #[test]
     fn forbidden_direct_wire_label_is_ignored_on_unrelated_wire_islands() {
         let schematic = direct_wire_schematic(
@@ -4206,12 +4096,7 @@ mod tests {
                 .any(|item| item.code == "SCH004")
         );
     }
-    /// Processes direct wire pair requires both pin anchors to touch wire segments using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that direct wire pair requires both pin anchors to touch wire segments.
     #[test]
     fn direct_wire_pair_requires_both_pin_anchors_to_touch_wire_segments() {
         let schematic = direct_wire_schematic("");
@@ -4238,12 +4123,7 @@ mod tests {
                 .any(|item| item.message.contains("R1.1 is not attached"))
         );
     }
-    /// Processes resistor roles require their named connection contract using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that resistor roles require their named connection contract.
     #[test]
     fn resistor_roles_require_their_named_connection_contract() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4262,12 +4142,7 @@ mod tests {
                 .any(|item| item.code == "SCH021")
         );
     }
-    /// Processes incomplete resistor role contract is reported using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that incomplete resistor role contract is reported.
     #[test]
     fn incomplete_resistor_role_contract_is_reported() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4286,12 +4161,7 @@ mod tests {
                 .any(|item| item.code == "SCH021" && item.message.contains("signal"))
         );
     }
-    /// Processes group member origins must be inside the declared schematic frame using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that group member origins must be inside the declared schematic frame.
     #[test]
     fn group_member_origins_must_be_inside_the_declared_schematic_frame() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4315,12 +4185,7 @@ mod tests {
                 .any(|item| item.code == "SCH009")
         );
     }
-    /// Processes group member origin outside the declared schematic frame is reported using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that group member origin outside the declared schematic frame is reported.
     #[test]
     fn group_member_origin_outside_the_declared_schematic_frame_is_reported() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4344,12 +4209,7 @@ mod tests {
                 .any(|item| item.code == "SCH009" && item.message.contains("outside frame"))
         );
     }
-    /// Processes group pin outside frame is reported even when symbol origin is inside using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that group pin outside frame is reported even when symbol origin is inside.
     #[test]
     fn group_pin_outside_frame_is_reported_even_when_symbol_origin_is_inside() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4382,12 +4242,7 @@ mod tests {
                 .any(|item| { item.code == "SCH009" && item.message.contains("member pin R1.1") })
         );
     }
-    /// Processes group visible field bounds must be inside the frame using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that group visible field bounds must be inside the frame.
     #[test]
     fn group_visible_field_bounds_must_be_inside_the_frame() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4412,12 +4267,7 @@ mod tests {
             item.code == "SCH009" && item.message.contains("member field R1 Value")
         }));
     }
-    /// Processes group description text box must be inside the frame using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that group description text box must be inside the frame.
     #[test]
     fn group_description_text_box_must_be_inside_the_frame() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4445,12 +4295,7 @@ mod tests {
                 && item.message.contains("extends outside frame")
         }));
     }
-    /// Processes missing group frame uuid is reported using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that missing group frame uuid is reported.
     #[test]
     fn missing_group_frame_uuid_is_reported() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4474,12 +4319,7 @@ mod tests {
                     && item.message.contains("missing schematic frame UUID"))
         );
     }
-    /// Processes group frame clearance accepts member and description inside margin using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that group frame clearance accepts member and description inside margin.
     #[test]
     fn group_frame_clearance_accepts_member_and_description_inside_margin() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4505,12 +4345,7 @@ mod tests {
                 .any(|item| item.code == "SCH012")
         );
     }
-    /// Processes group frame clearance reports symbol origin near frame edge using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that group frame clearance reports symbol origin near frame edge.
     #[test]
     fn group_frame_clearance_reports_symbol_origin_near_frame_edge() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4536,12 +4371,7 @@ mod tests {
                 .any(|item| item.code == "SCH012" && item.message.contains("origin is within"))
         );
     }
-    /// Processes group frame clearance checks transformed member pin coordinates using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that group frame clearance checks transformed member pin coordinates.
     #[test]
     fn group_frame_clearance_checks_transformed_member_pin_coordinates() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4576,12 +4406,7 @@ mod tests {
                     .contains("member pin R1.1 does not maintain 1.00 mm clearance")
         }));
     }
-    /// Processes group frame clearance accepts member pins inside the configured inset using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that group frame clearance accepts member pins inside the configured inset.
     #[test]
     fn group_frame_clearance_accepts_member_pins_inside_the_configured_inset() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4616,12 +4441,7 @@ mod tests {
                 .any(|item| item.code == "SCH012")
         );
     }
-    /// Processes group frame clearance checks visible member field bounds using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that group frame clearance checks visible member field bounds.
     #[test]
     fn group_frame_clearance_checks_visible_member_field_bounds() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4649,12 +4469,7 @@ mod tests {
                     .contains("member field R1 Value does not maintain")
         }));
     }
-    /// Processes group frame clearance accepts visible member fields inside the configured inset using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that group frame clearance accepts visible member fields inside the configured inset.
     #[test]
     fn group_frame_clearance_accepts_visible_member_fields_inside_the_configured_inset() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4682,12 +4497,7 @@ mod tests {
                 .any(|item| item.code == "SCH012")
         );
     }
-    /// Processes group frame clearance reports description box near frame edge using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that group frame clearance reports description box near frame edge.
     #[test]
     fn group_frame_clearance_reports_description_box_near_frame_edge() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4713,12 +4523,7 @@ mod tests {
                 .any(|item| item.code == "SCH012" && item.message.contains("description text box"))
         );
     }
-    /// Processes group wire compactness uses only segments wholly inside its frame using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that group wire compactness uses only segments wholly inside its frame.
     #[test]
     fn group_wire_compactness_uses_only_segments_wholly_inside_its_frame() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4744,12 +4549,7 @@ mod tests {
             "the wire with endpoints outside the frame must not contribute: {diagnostics:#?}"
         );
     }
-    /// Processes group wire compactness warns when normalized budget is exceeded using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that group wire compactness warns when normalized budget is exceeded.
     #[test]
     fn group_wire_compactness_warns_when_normalized_budget_is_exceeded() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4778,12 +4578,7 @@ mod tests {
         assert!(compactness.message.contains("score is 1.200"));
         assert!(compactness.message.contains("12.00/10.00 mm"));
     }
-    /// Processes group wire compactness requires a frame and positive budget using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that group wire compactness requires a frame and positive budget.
     #[test]
     fn group_wire_compactness_requires_a_frame_and_positive_budget() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4818,12 +4613,7 @@ mod tests {
                 .any(|item| item.message.contains("must set frame_uuid"))
         );
     }
-    /// Processes group minimum member origin spacing is enforced using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that group minimum member origin spacing is enforced.
     #[test]
     fn group_minimum_member_origin_spacing_is_enforced() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4848,12 +4638,7 @@ mod tests {
                 && item.message.contains("2.00 mm")
         }));
     }
-    /// Processes group member origin spacing at or above minimum is accepted using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that group member origin spacing at or above minimum is accepted.
     #[test]
     fn group_member_origin_spacing_at_or_above_minimum_is_accepted() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4878,12 +4663,7 @@ mod tests {
                 .any(|item| item.code == "SCH006")
         );
     }
-    /// Processes group minimum member origin spacing must be positive and finite using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that group minimum member origin spacing must be positive and finite.
     #[test]
     fn group_minimum_member_origin_spacing_must_be_positive_and_finite() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4906,12 +4686,7 @@ mod tests {
                 .any(|item| item.code == "SCH006" && item.message.contains("finite positive"))
         );
     }
-    /// Processes profile group can be bound to native kicad group membership using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that profile group can be bound to native KiCad group membership.
     #[test]
     fn profile_group_can_be_bound_to_native_kicad_group_membership() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4935,12 +4710,7 @@ mod tests {
                 .any(|item| item.code == "SCH007")
         );
     }
-    /// Processes native kicad group must include profile component members using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that native KiCad group must include profile component members.
     #[test]
     fn native_kicad_group_must_include_profile_component_members() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4965,12 +4735,7 @@ mod tests {
                     && item.message.contains("does not contain symbol UUID"))
         );
     }
-    /// Processes missing native kicad group uuid is reported using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that missing native KiCad group uuid is reported.
     #[test]
     fn missing_native_kicad_group_uuid_is_reported() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4994,12 +4759,7 @@ mod tests {
                     && item.message.contains("missing KiCad group UUID"))
         );
     }
-    /// Processes group evidence and component purpose must match rendered description using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that group evidence and component purpose must match rendered description.
     #[test]
     fn group_evidence_and_component_purpose_must_match_rendered_description() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -5018,12 +4778,7 @@ mod tests {
                 .any(|item| item.code == "SCH017" || item.code == "SCH020")
         );
     }
-    /// Processes group without evidence or purpose phrases is rejected using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that group without evidence or purpose phrases is rejected.
     #[test]
     fn group_without_evidence_or_purpose_phrases_is_rejected() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -5039,12 +4794,7 @@ mod tests {
         assert!(diagnostics.iter().any(|item| item.code == "SCH017"));
         assert!(diagnostics.iter().any(|item| item.code == "SCH020"));
     }
-    /// Processes separate wire pair accepts disconnected islands even when labels match using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that separate wire pair accepts disconnected islands even when labels match.
     #[test]
     fn separate_wire_pair_accepts_disconnected_islands_even_when_labels_match() {
         let schematic = direct_wire_schematic(
@@ -5066,12 +4816,7 @@ mod tests {
                 .any(|item| item.code == "SCH004")
         );
     }
-    /// Processes separate wire pair rejects pins on the same physical wire network using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that separate wire pair rejects pins on the same physical wire network.
     #[test]
     fn separate_wire_pair_rejects_pins_on_the_same_physical_wire_network() {
         let schematic = direct_wire_schematic(r"(wire (pts (xy 10 10) (xy 20 10)))");
@@ -5086,12 +4831,7 @@ mod tests {
                     .contains("separate physical wire-only networks")
         }));
     }
-    /// Processes separate wire pair can require distinct exported nets using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that separate wire pair can require distinct exported nets.
     #[test]
     fn separate_wire_pair_can_require_distinct_exported_nets() {
         let schematic = direct_wire_schematic(
@@ -5132,12 +4872,7 @@ mod tests {
                 })
         );
     }
-    /// Processes separate wire pair warns when requested netlist is unavailable using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that separate wire pair warns when requested netlist is unavailable.
     #[test]
     fn separate_wire_pair_warns_when_requested_netlist_is_unavailable() {
         let schematic = direct_wire_schematic(
@@ -5156,12 +4891,7 @@ mod tests {
                 && item.message.contains("no exported KiCad netlist")
         }));
     }
-    /// Processes group symbol body primitive must be inside frame using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that group symbol body primitive must be inside frame.
     #[test]
     fn group_symbol_body_primitive_must_be_inside_frame() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -5197,12 +4927,7 @@ mod tests {
                     .contains("symbol primitive extends outside frame")
         }));
     }
-    /// Processes group symbol body primitive must maintain frame clearance using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that group symbol body primitive must maintain frame clearance.
     #[test]
     fn group_symbol_body_primitive_must_maintain_frame_clearance() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -5238,12 +4963,7 @@ mod tests {
                     .contains("symbol primitive does not maintain 2.00 mm clearance")
         }));
     }
-    /// Processes group wire label and annotation geometry must be inside frame using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that group wire label and annotation geometry must be inside frame.
     #[test]
     fn group_wire_label_and_annotation_geometry_must_be_inside_frame() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -5288,12 +5008,7 @@ mod tests {
             item.code == "SCH009" && item.message.contains("annotation text box note-1")
         }));
     }
-    /// Processes group wire labels must maintain configured frame clearance using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that group wire labels must maintain configured frame clearance.
     #[test]
     fn group_wire_labels_must_maintain_configured_frame_clearance() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -5329,12 +5044,7 @@ mod tests {
                 && item.message.contains("2.00 mm clearance")
         }));
     }
-    /// Processes group frame contains free standing wires labels and plain text using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that group frame contains free standing wires labels and plain text.
     #[test]
     fn group_frame_contains_free_standing_wires_labels_and_plain_text() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -5380,12 +5090,7 @@ mod tests {
             item.code == "SCH009" && item.message.contains("plain text annotation")
         }));
     }
-    /// Processes group frame clearance covers free standing wires labels and plain text using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that group frame clearance covers free standing wires labels and plain text.
     #[test]
     fn group_frame_clearance_covers_free_standing_wires_labels_and_plain_text() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -5433,12 +5138,7 @@ mod tests {
                 && item.message.contains("2.00 mm clearance")
         }));
     }
-    /// Processes group frame contains free standing vector graphics using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that group frame contains free standing vector graphics.
     #[test]
     fn group_frame_contains_free_standing_vector_graphics() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -5477,12 +5177,7 @@ mod tests {
             item.code == "SCH009" && item.message.contains("vector graphic circle")
         }));
     }
-    /// Processes group frame clearance covers free standing vector graphics using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that group frame clearance covers free standing vector graphics.
     #[test]
     fn group_frame_clearance_covers_free_standing_vector_graphics() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -5525,12 +5220,7 @@ mod tests {
                 && item.message.contains("2.00 mm clearance")
         }));
     }
-    /// Processes group frame contains embedded bitmap image bounds using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that group frame contains embedded bitmap image bounds.
     #[test]
     fn group_frame_contains_embedded_bitmap_image_bounds() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -5564,12 +5254,7 @@ mod tests {
             item.code == "SCH009" && item.message.contains("bitmap image Some(\"image-1\")")
         }));
     }
-    /// Processes group frame clearance covers embedded bitmap image bounds using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that group frame clearance covers embedded bitmap image bounds.
     #[test]
     fn group_frame_clearance_covers_embedded_bitmap_image_bounds() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -5605,12 +5290,7 @@ mod tests {
                 && item.message.contains("2.00 mm clearance")
         }));
     }
-    /// Processes bitmap bounds use legacy resolution migration for old schematics using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Regression test: verifies that bitmap bounds use legacy resolution migration for old schematics.
     #[test]
     fn bitmap_bounds_use_legacy_resolution_migration_for_old_schematics() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -5628,15 +5308,15 @@ mod tests {
         let expected = 120.0 * 25.4 / 94.0;
         assert!((width - expected).abs() < 0.001);
     }
-    /// Processes decoupling netlist using the supplied values and schematic data.
+    /// Creates a flattened-netlist fixture for a decoupling capacitor connected between a target supply and ground.
     ///
     /// # Arguments
     ///
-    /// * `capacitor_target_net` — Input `capacitor target net` used by this operation.
+    /// * `capacitor_target_net` — Exported net name assigned to capacitor C1 pin 1; C1 pin 2 is assigned to GND.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
+    /// A `Netlist` containing U1.21 on VREG_1V2, C1.1 on the requested supply net, and C1.2 on GND.
     fn decoupling_netlist(capacitor_target_net: &str) -> Netlist {
         Netlist {
             pin_nets: BTreeMap::from([
@@ -5665,16 +5345,16 @@ mod tests {
             ..Netlist::default()
         }
     }
-    /// Processes pin contract netlist using the supplied values and schematic data.
+    /// Creates a flattened-netlist fixture for resistor R1 with configurable nets on pins 1 and 2.
     ///
     /// # Arguments
     ///
-    /// * `pin_one_net` — Input `pin one net` used by this operation.
-    /// * `pin_two_net` — Input `pin two net` used by this operation.
+    /// * `pin_one_net` — Exported net name assigned to R1 pin 1.
+    /// * `pin_two_net` — Optional exported net name assigned to R1 pin 2; `None` models a pin missing from the exported netlist.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
+    /// A `Netlist` containing the supplied R1 pin assignments.
     fn pin_contract_netlist(pin_one_net: &str, pin_two_net: Option<&str>) -> Netlist {
         let mut pin_nets = BTreeMap::from([(
             PinRef {
@@ -5697,8 +5377,7 @@ mod tests {
             ..Netlist::default()
         }
     }
-    /// Processes declared component pin nets are verified against the exported netlist using the supplied values and schematic data.
-    ///
+    /// Regression test: verifies that declared component pin nets are verified against the exported netlist.
     #[test]
     fn declared_component_pin_nets_are_verified_against_the_exported_netlist() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -5717,8 +5396,7 @@ mod tests {
                 .any(|item| item.code == "SCH014")
         );
     }
-    /// Processes incorrect or missing component pin nets are reported using the supplied values and schematic data.
-    ///
+    /// Regression test: verifies that incorrect or missing component pin nets are reported.
     #[test]
     fn incorrect_or_missing_component_pin_nets_are_reported() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -5749,8 +5427,7 @@ mod tests {
                 .contains("absent from the exported KiCad netlist")
         }));
     }
-    /// Processes connector pin nets are verified from pin numbered connections using the supplied values and schematic data.
-    ///
+    /// Regression test: verifies that connector pin nets are verified from pin numbered connections.
     #[test]
     fn connector_pin_nets_are_verified_from_pin_numbered_connections() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -5779,8 +5456,7 @@ mod tests {
                 .any(|item| item.code == "SCH014" && item.message.contains("expects VBUS"))
         );
     }
-    /// Processes decoupling terminals are checked against exported pin nets using the supplied values and schematic data.
-    ///
+    /// Regression test: verifies that decoupling terminals are checked against exported pin nets.
     #[test]
     fn decoupling_terminals_are_checked_against_exported_pin_nets() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -5805,8 +5481,7 @@ mod tests {
                 .any(|item| item.code == "SCH022")
         );
     }
-    /// Processes decoupling intent preserves pin and terminal mapping using the supplied values and schematic data.
-    ///
+    /// Regression test: verifies that decoupling intent preserves pin and terminal mapping.
     #[test]
     fn decoupling_intent_preserves_pin_and_terminal_mapping() {
         let json = r#"{"schema_version":1,"mode":"strict","components":{"C1":{"kind":"capacitor","role":"decoupling","function":"Local bypass","rationale":"Minimize loop area","decoupling":{"target_pin":"U1.21","target_terminal":"1","return_terminal":"2","return_net":"GND","cluster":"U1.VREG_1V2"}}}}"#;

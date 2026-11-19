@@ -959,11 +959,11 @@ mod tests {
             None
         );
     }
-    /// Processes project fixture using the supplied values and schematic data.
+    /// Builds a valid project-settings fixture with Default, HighSpeed, Critical, and Inheriting netclasses and empty assignment lists.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
+    /// A mutable JSON value that tests customize to exercise class priority, wildcard matching, chain assignments, and default-width inheritance.
     fn project_fixture() -> serde_json::Value {
         serde_json::json!({
             "net_settings": {

@@ -19,7 +19,7 @@ pub enum BuiltinRuleId {
     Sch005,
     /// Represents the `SCH006` rule: Enforces minimum spacing between the placed origins of group members.
     Sch006,
-    /// Represents the `SCH007` rule: Checks that profile-declared members match the native KiCad schematic group.
+    /// Represents the `SCH007` rule: Checks that profile-declared members match the native `KiCad` schematic group.
     Sch007,
     /// Represents the `SCH008` rule: Checks annotation text-box geometry, required margins, overlap, and wire penetration.
     Sch008,

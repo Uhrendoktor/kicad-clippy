@@ -27,38 +27,38 @@ pub use metadata::{
 
 /// Immutable data shared by all rule passes for one schematic.
 pub struct RuleContext<'a> {
-    /// Stores the `document` value.
+    /// Original lossless schematic document shared with every pass, including its syntax tree and source byte spans.
     document: &'a SchematicDocument,
-    /// Stores the `facts` value.
+    /// Normalized component, pin, wire, label, graphic, and annotation facts extracted for this run.
     facts: &'a SchematicFacts,
-    /// Stores the `segments` value.
+    /// Straight wire segments with source spans, reused by topology and obstacle checks.
     segments: &'a [generic::Segment],
-    /// Stores the `junctions` value.
+    /// Explicit sheet-space junction coordinates used to distinguish connected crossings from unmarked crossings.
     junctions: &'a [generic::Point],
-    /// Stores the `default_wire_stroke_width_mm` value.
+    /// Effective Default netclass wire width in millimetres, when the project resolver establishes it.
     default_wire_stroke_width_mm: Option<f64>,
-    /// Stores the `project_wire_stroke_widths_mm` value.
+    /// Per-wire effective widths in millimetres, keyed by each wire's source byte offset.
     project_wire_stroke_widths_mm: &'a BTreeMap<usize, f64>,
-    /// Stores the `default_schematic_line_stroke_width_mm` value.
+    /// Project default schematic line width in millimetres, used for strokes whose width is inherited.
     default_schematic_line_stroke_width_mm: Option<f64>,
 }
 
 impl<'a> RuleContext<'a> {
-    /// Returns the lossless parsed schematic.
+    /// Returns the lossless parsed schematic shared with this rule pass.
+    ///
     /// # Returns
     ///
-    /// The value produced by this operation.
-    ///
+    /// The original `SchematicDocument`, including the syntax tree and source spans.
     #[must_use]
     pub const fn document(&self) -> &'a SchematicDocument {
         self.document
     }
 
-    /// Returns semantic and geometric facts collected once for this run.
+    /// Returns the normalized facts collected once for the current schematic analysis.
+    ///
     /// # Returns
     ///
-    /// The value produced by this operation.
-    ///
+    /// Placed components, pins, wires, labels, frames, graphics, images, and their resolved geometry.
     #[must_use]
     pub const fn facts(&self) -> &'a SchematicFacts {
         self.facts
@@ -70,20 +70,22 @@ impl<'a> RuleContext<'a> {
 /// Rule passes are distinct from rule IDs: a pass may emit findings for several
 /// rules, and a rule may be implemented by several passes.
 pub trait RulePass: Send + Sync {
-    /// Unique, stable pass name used for deterministic registration and execution.
+    /// Returns the stable, unique name used to register and order this rule pass.
+    ///
     /// # Returns
     ///
-    /// The value produced by this operation.
+    /// A static identifier. The engine rejects duplicate names and executes passes in lexicographic name order.
     fn name(&self) -> &'static str;
 
-    /// Analyze an immutable context and return normalized findings.
+    /// Runs this pass against the shared immutable context and returns findings produced by its checks.
+    ///
     /// # Arguments
     ///
-    /// * `context` — Input `context` used by this operation.
+    /// * `context` — Per-run schematic facts, source document, wire geometry, and project-derived stroke widths.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
+    /// Diagnostics emitted by this pass. An empty vector means that this pass found no reportable issue.
     fn run(&self, context: &RuleContext<'_>) -> Vec<Diagnostic>;
 }
 
@@ -98,27 +100,26 @@ pub struct RuleEngineError(
 /// Runs registered rule passes over one shared schematic context.
 #[derive(Default)]
 pub struct RuleEngine {
-    /// Stores the `passes` value.
-    /// Stores the `passes` value.
+    /// Rule implementations keyed by stable pass name; the ordered map preserves deterministic execution order.
     passes: BTreeMap<&'static str, Box<dyn RulePass>>,
 }
 
 impl RuleEngine {
-    /// Creates an empty engine for application- or plugin-provided rule passes.
+    /// Creates an empty rule engine for built-in or externally supplied rule passes.
+    ///
     /// # Returns
     ///
-    /// The value produced by this operation.
-    ///
+    /// A rule engine with no registered passes.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Creates an engine with all built-in schematic rule passes registered.
+    /// Creates a rule engine containing the built-in geometry, label-topology, and annotation passes.
+    ///
     /// # Returns
     ///
-    /// The value produced by this operation.
-    ///
+    /// A ready-to-run engine with all built-in passes registered under their stable names.
     #[must_use]
     pub fn with_builtins() -> Self {
         let mut engine = Self::new();
@@ -132,21 +133,19 @@ impl RuleEngine {
         engine
     }
 
-    /// Registers an in-process rule pass.
+    /// Registers an in-process rule pass under its stable name. The engine rejects duplicate names and uses the name to preserve deterministic execution order.
     ///
-    /// External rule crates can implement `RulePass` and register their pass
-    /// without changing the built-in rule catalogue.
-    ///
-    /// # Errors
-    ///
-    /// Returns `RuleEngineError` if a pass with the same name is already registered.
     /// # Arguments
     ///
-    /// * `pass` — Input `pass` used by this operation.
+    /// * `pass` — Rule-pass implementation that the engine will own and execute with its other registered passes.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
+    /// `Ok(())` when the pass is inserted.
+    ///
+    /// # Errors
+    ///
+    /// Returns `RuleEngineError` when another pass already uses the same name.
     pub fn register_pass(&mut self, pass: impl RulePass + 'static) -> Result<(), RuleEngineError> {
         match self.passes.entry(pass.name()) {
             Entry::Vacant(entry) => {
@@ -157,33 +156,30 @@ impl RuleEngine {
         }
     }
 
-    /// Executes all registered passes in stable name order.
+    /// Executes all registered passes for the supplied schematic using one shared rule context.
+    ///
     /// # Arguments
     ///
-    /// * `document` — Input `document` used by this operation.
+    /// * `document` — Parsed schematic whose lossless source tree and sheet geometry are analyzed.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
-    ///
+    /// A `RuleRun` containing diagnostics and counts of the analyzed wires and placed components.
     #[must_use]
     pub fn run(&self, document: &SchematicDocument) -> RuleRun {
         self.run_with_default_wire_stroke_width(document, None)
     }
 
-    /// Executes all passes with a project-derived default SCH013 wire stroke width.
+    /// Executes all registered passes with an optional project-derived Default netclass wire width.
     ///
-    /// The caller must supply a value only when it can establish that the
-    /// project's effective Default netclass width applies to the schematic.
     /// # Arguments
     ///
-    /// * `document` — Input `document` used by this operation.
-    /// * `default_wire_stroke_width_mm` — Input `default wire stroke width mm` used by this operation.
+    /// * `document` — Parsed schematic to analyze.
+    /// * `default_wire_stroke_width_mm` — Positive finite Default netclass wire width in millimetres; `None` leaves the inherited width unknown.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
-    ///
+    /// A `RuleRun` containing combined diagnostics and schematic object counts.
     #[must_use]
     pub fn run_with_default_wire_stroke_width(
         &self,
@@ -193,19 +189,17 @@ impl RuleEngine {
         self.run_with_project_stroke_widths(document, default_wire_stroke_width_mm, None)
     }
 
-    /// Executes all passes with per-wire netclass stroke widths from a resolved project/netlist.
+    /// Executes all registered passes with project-resolved stroke widths for individual wire objects.
     ///
-    /// Only wire source offsets present in the map receive a project-derived width.
     /// # Arguments
     ///
-    /// * `document` — Input `document` used by this operation.
-    /// * `project_wire_stroke_widths_mm` — Input `project wire stroke widths mm` used by this operation.
-    /// * `default_schematic_line_stroke_width_mm` — Input `default schematic line stroke width mm` used by this operation.
+    /// * `document` — Parsed schematic to analyze.
+    /// * `project_wire_stroke_widths_mm` — Map from each wire's source byte offset to its effective width in millimetres; unresolved wires are absent from the map.
+    /// * `default_schematic_line_stroke_width_mm` — Optional positive finite project line width in millimetres for schematic strokes whose pen width is inherited.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
-    ///
+    /// A `RuleRun` containing diagnostics and wire/component counts for this schematic.
     #[must_use]
     pub fn run_with_wire_stroke_widths(
         &self,
@@ -221,20 +215,17 @@ impl RuleEngine {
         )
     }
 
-    /// Executes all passes with authoritative project-derived SCH013 stroke widths.
+    /// Executes all registered passes with project-derived default wire and schematic-line widths, without assigning per-wire overrides.
     ///
-    /// The schematic line width supplies the pen around fixed-size no-connect markers.
-    /// It remains unknown when the project settings do not provide a positive value.
     /// # Arguments
     ///
-    /// * `document` — Input `document` used by this operation.
-    /// * `default_wire_stroke_width_mm` — Input `default wire stroke width mm` used by this operation.
-    /// * `default_schematic_line_stroke_width_mm` — Input `default schematic line stroke width mm` used by this operation.
+    /// * `document` — Parsed schematic to analyze.
+    /// * `default_wire_stroke_width_mm` — Optional effective Default netclass wire width in millimetres.
+    /// * `default_schematic_line_stroke_width_mm` — Optional project schematic-line width in millimetres, used for graphic strokes whose width is inherited.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
-    ///
+    /// A `RuleRun` containing diagnostics and counts derived from the parsed schematic.
     #[must_use]
     pub fn run_with_project_stroke_widths(
         &self,
@@ -249,18 +240,18 @@ impl RuleEngine {
             default_schematic_line_stroke_width_mm,
         )
     }
-    /// Processes run with project and wire stroke widths using the supplied values and schematic data.
+    /// Builds one shared schematic context, applies only validated project stroke widths, and executes every registered pass in stable name order.
     ///
     /// # Arguments
     ///
-    /// * `document` — Input `document` used by this operation.
-    /// * `default_wire_stroke_width_mm` — Input `default wire stroke width mm` used by this operation.
-    /// * `project_wire_stroke_widths_mm` — Input `project wire stroke widths mm` used by this operation.
-    /// * `default_schematic_line_stroke_width_mm` — Input `default schematic line stroke width mm` used by this operation.
+    /// * `document` — Parsed schematic whose lossless syntax tree supplies source spans and placed-object definitions.
+    /// * `default_wire_stroke_width_mm` — Optional effective Default netclass wire width in millimetres; non-finite and non-positive values are treated as unknown.
+    /// * `project_wire_stroke_widths_mm` — Per-wire effective width map keyed by source byte offset. Include only wires with an unambiguous project, netlist, and physical-topology mapping.
+    /// * `default_schematic_line_stroke_width_mm` — Optional positive finite schematic-line width in millimetres, used for the pen around fixed-size no-connect markers.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
+    /// A `RuleRun` containing all pass diagnostics and the number of wire segments and placed components analyzed.
     fn run_with_project_and_wire_stroke_widths(
         &self,
         document: &SchematicDocument,
@@ -298,21 +289,21 @@ impl RuleEngine {
         }
     }
 
-    /// Returns the number of registered passes.
+    /// Returns the number of rule passes currently registered in the engine.
+    ///
     /// # Returns
     ///
-    /// The value produced by this operation.
-    ///
+    /// The count of uniquely named pass implementations.
     #[must_use]
     pub fn len(&self) -> usize {
         self.passes.len()
     }
 
-    /// Returns whether no passes are registered.
+    /// Returns whether the engine has any registered rule passes.
+    ///
     /// # Returns
     ///
-    /// The value produced by this operation.
-    ///
+    /// `true` when no pass is registered; otherwise `false`.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.passes.is_empty()
@@ -327,42 +318,41 @@ mod tests {
     use kicad_clippy_parser::SchematicDocument;
 
     use super::{RuleContext, RuleEngine, RuleEngineError, RulePass};
-    /// Stores externalexamplepass data used by this crate.
+    /// Test pass that emits one note containing the number of components visible in the shared rule context.
     struct ExternalExamplePass;
 
     impl RulePass for ExternalExamplePass {
-        /// Processes name using the supplied values and schematic data.
+        /// Returns the stable identifier used to register this example external pass.
         ///
         /// # Returns
         ///
-        /// The value produced by this operation.
+        /// The pass name `example.external`.
         fn name(&self) -> &'static str {
             "example.external"
         }
-        /// Processes run using the supplied values and schematic data.
+        /// Emits a note diagnostic reporting the number of placed components visible through the shared rule context.
         ///
         /// # Arguments
         ///
-        /// * `context` — Input `context` used by this operation.
+        /// * `context` — Immutable per-run context containing the normalized schematic component facts.
         ///
         /// # Returns
         ///
-        /// The value produced by this operation.
+        /// A single informational diagnostic from the example external pass.
         fn run(&self, context: &RuleContext<'_>) -> Vec<Diagnostic> {
             let message = format!("analyzed {} component(s)", context.facts().components.len());
             vec![Diagnostic::new("EXAMPLE/EXTERNAL", Severity::Note, message)]
         }
     }
-    /// Processes external passes share context and run deterministically using the supplied values and schematic data.
+    /// Regression test: verifies that an external pass can be registered, receives the shared context, and runs in stable name order.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
+    /// `Ok(())` when registration succeeds and the emitted note reports the expected component count.
     ///
     /// # Errors
     ///
-    /// Returns an error when the operation cannot complete with the supplied input.
-    ///
+    /// Returns an error if the schematic fixture cannot be parsed or registration fails.
     #[test]
     fn external_passes_share_context_and_run_deterministically() -> Result<(), Box<dyn Error>> {
         let document = SchematicDocument::from_text("fixture.kicad_sch", "(kicad_sch)")?;
@@ -376,16 +366,15 @@ mod tests {
         assert!(result.diagnostics[0].message.contains("0 component(s)"));
         Ok(())
     }
-    /// Processes duplicate pass names are rejected using the supplied values and schematic data.
+    /// Regression test: verifies that registering a second pass with the same stable name returns `RuleEngineError`.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
+    /// `Ok(())` when the duplicate-name error is returned as expected.
     ///
     /// # Errors
     ///
-    /// Returns an error when the operation cannot complete with the supplied input.
-    ///
+    /// Returns an error if the first registration or the fixture setup fails.
     #[test]
     fn duplicate_pass_names_are_rejected() -> Result<(), Box<dyn Error>> {
         let mut engine = RuleEngine::new();
@@ -396,16 +385,15 @@ mod tests {
         );
         Ok(())
     }
-    /// Processes built in engine registers and runs its passes using the supplied values and schematic data.
+    /// Regression test: verifies that the built-in engine registers all three standard passes and can run them on an empty schematic without SCH diagnostics.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
+    /// `Ok(())` when all built-in passes are registered and the fixture produces no unexpected findings.
     ///
     /// # Errors
     ///
-    /// Returns an error when the operation cannot complete with the supplied input.
-    ///
+    /// Returns an error if the minimal schematic fixture cannot be parsed.
     #[test]
     fn built_in_engine_registers_and_runs_its_passes() -> Result<(), Box<dyn Error>> {
         let document = SchematicDocument::from_text("fixture.kicad_sch", "(kicad_sch)")?;

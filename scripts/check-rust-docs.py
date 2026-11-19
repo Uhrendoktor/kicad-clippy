@@ -93,6 +93,14 @@ def validate(path: Path) -> list[str]:
         name = match.group(1)
         location = f"{path.relative_to(ROOT)}:{index + 1} ({name})"
         docs = preceding_docs(lines, index)
+        placeholder_patterns = (
+            r"Processes .* using the supplied values and schematic data",
+            r"Input `[^`]+` used by this operation",
+            r"The value produced by this operation",
+            r"Stores the `[^`]+` value",
+        )
+        if any(re.search(pattern, docs) for pattern in placeholder_patterns):
+            failures.append(f"{location}: placeholder documentation is not allowed")
         if not docs.strip():
             failures.append(f"{location}: missing doc comment")
             continue
@@ -107,10 +115,23 @@ def validate(path: Path) -> list[str]:
                 failures.append(f"{location}: missing # Arguments")
             else:
                 for item in names:
-                    if not re.search(rf"^\s*[-*]\s+`{re.escape(item)}`(?:\s|$)", docs, flags=re.MULTILINE):
+                    description = re.search(
+                        rf"^\s*[-*]\s+`{re.escape(item)}`\s+—\s+(.+)$",
+                        docs,
+                        flags=re.MULTILINE,
+                    )
+                    if not description:
                         failures.append(f"{location}: argument `{item}` is undocumented")
-        if return_type and not re.search(r"^# Returns\s*$", docs, flags=re.MULTILINE):
-            failures.append(f"{location}: missing # Returns")
+                    elif len(description.group(1).split()) < 5:
+                        failures.append(f"{location}: argument `{item}` needs a meaningful description")
+        if return_type:
+            if not re.search(r"^# Returns\s*$", docs, flags=re.MULTILINE):
+                failures.append(f"{location}: missing # Returns")
+            else:
+                return_section = re.split(r"^# Returns\s*$", docs, flags=re.MULTILINE)[1]
+                return_section = re.split(r"^# ", return_section, flags=re.MULTILINE)[0]
+                if len(return_section.split()) < 5:
+                    failures.append(f"{location}: # Returns must explain the returned value")
         if return_type and return_type.startswith("Result<") and not re.search(r"^# Errors\s*$", docs, flags=re.MULTILINE):
             failures.append(f"{location}: missing # Errors")
     return failures
