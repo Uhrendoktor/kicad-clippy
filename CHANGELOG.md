@@ -4,6 +4,8 @@ Notable changes are documented here. This project is in early development and ha
 
 ## Unreleased
 
+- Added a complete built-in descriptor catalogue for SCH001–SCH022, with a regression test requiring one fully documented descriptor per typed rule ID. The catalogue remains descriptive; runtime allow/warn/deny policy is still future work.
+
 - Added SCH009 profile validation for overlapping interiors of separately declared functional-group frames; shared edges and groups reusing the same frame UUID are accepted.
 - Added the `required_no_connect_pins` component-profile attribute for SCH015. Each declared pin must resolve to transformed embedded-symbol geometry and have an explicit no-connect marker; missing markers are errors and unresolved geometry is reported as unverified. Library pins whose electrical type is `unconnected` must not be listed; automatic pin-type filtering remains future work.
 
