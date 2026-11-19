@@ -1,8 +1,10 @@
-pub use crate::HALF_FACTOR;
+#[allow(clippy::redundant_pub_crate)]
+pub(crate) use crate::HALF_FACTOR;
 use crate::Rule;
 use crate::RuleContext;
 use crate::RulePass;
-pub use crate::TWO_SIDED_FACTOR;
+#[allow(clippy::redundant_pub_crate)]
+pub(crate) use crate::TWO_SIDED_FACTOR;
 use geo::BooleanOps;
 use geo::Coord;
 use geo::Euclidean;
