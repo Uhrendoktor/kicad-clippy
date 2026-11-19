@@ -34,9 +34,9 @@ pub enum RulePreset {
 
 /// Optional project policy that overrides the effective level of built-in schematic rules.
 ///
-/// Supplying a policy file opts the lint invocation into descriptor defaults for
-/// every built-in rule. Entries in `rules` override those defaults. Omitting a
-/// policy file leaves the current rule-emitted severities unchanged.
+/// Supplying a policy file selects a named baseline (`default`, `strict`, or
+/// `advisory`) for every built-in rule. Entries in `rules` override that
+/// baseline. Omitting a policy file leaves current rule-emitted severities unchanged.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RulePolicy {
@@ -605,6 +605,51 @@ mod tests {
         )?;
         assert_eq!(effective[0].severity, Severity::Error);
         assert_eq!(effective[1].severity, Severity::Warning);
+        Ok(())
+    }
+
+    /// Checks strict and advisory presets and confirms explicit entries override a preset.
+    ///
+    /// # Returns
+    ///
+    /// Ok when strict promotes all built-ins, advisory downgrades them, and explicit overrides win.
+    ///
+    /// # Errors
+    ///
+    /// Returns a policy error if the built-in rule catalogue cannot validate the test policy.
+    #[test]
+    fn policy_named_presets_apply_and_allow_explicit_overrides()
+    -> Result<(), super::RulePolicyError> {
+        use crate::diagnostic::{Diagnostic, Severity};
+
+        let registry = super::builtin_rule_registry().unwrap_or_default();
+        let strict = super::RulePolicy {
+            preset: super::RulePreset::Strict,
+            rules: BTreeMap::new(),
+        };
+        let strict_result = strict.apply(
+            &registry,
+            vec![
+                Diagnostic::new("SCH001", Severity::Warning, "strict finding"),
+                Diagnostic::new("SCH016", Severity::Warning, "strict warning"),
+            ],
+        )?;
+        assert_eq!(strict_result[0].severity, Severity::Error);
+        assert_eq!(strict_result[1].severity, Severity::Error);
+
+        let advisory = super::RulePolicy {
+            preset: super::RulePreset::Advisory,
+            rules: BTreeMap::from([("SCH001".to_owned(), RuleLevel::Deny)]),
+        };
+        let advisory_result = advisory.apply(
+            &registry,
+            vec![
+                Diagnostic::new("SCH001", Severity::Warning, "explicit deny"),
+                Diagnostic::new("SCH002", Severity::Error, "advisory baseline"),
+            ],
+        )?;
+        assert_eq!(advisory_result[0].severity, Severity::Error);
+        assert_eq!(advisory_result[1].severity, Severity::Warning);
         Ok(())
     }
 
