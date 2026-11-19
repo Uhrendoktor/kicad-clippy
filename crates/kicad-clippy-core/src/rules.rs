@@ -453,6 +453,14 @@ mod tests {
     }
 
     /// Checks that the built-in descriptor catalogue covers every stable rule ID exactly once.
+    ///
+    /// # Returns
+    ///
+    /// Ok when every typed built-in ID has one complete descriptor.
+    ///
+    /// # Errors
+    ///
+    /// Returns a registry error if descriptor registration encounters a duplicate ID.
     #[test]
     fn builtin_registry_covers_every_typed_rule_id() -> Result<(), super::RuleRegistryError> {
         use crate::rule_id::BuiltinRuleId;
@@ -475,6 +483,14 @@ mod tests {
     }
 
     /// Checks that the latest profile-rule descriptors summarize their implemented contracts.
+    ///
+    /// # Returns
+    ///
+    /// Ok when the SCH021 and SCH022 metadata describes their implemented contracts.
+    ///
+    /// # Errors
+    ///
+    /// Returns a registry error if descriptor registration encounters a duplicate ID.
     #[test]
     fn sch021_and_sch022_descriptors_match_the_profile_contracts()
     -> Result<(), super::RuleRegistryError> {
