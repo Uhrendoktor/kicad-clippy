@@ -302,7 +302,7 @@ pub struct LintProfile {
 }
 
 /// Immutable data shared by all project-profile rule implementations.
-pub(super) struct ProfileRuleContext<'a> {
+pub struct ProfileRuleContext<'a> {
     /// Profile declarations evaluated by the rule set.
     profile: &'a LintProfile,
     /// Normalized facts extracted from the parsed schematic.
