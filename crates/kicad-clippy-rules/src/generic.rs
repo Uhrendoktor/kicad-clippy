@@ -57,8 +57,8 @@ impl DisjointSet {
     ///
     /// # Arguments
     ///
-    /// * `first` — First element index.
-    /// * `second` — Second element index.
+    /// * `first` — Index of the first element whose disjoint set is to be merged with the set containing the second element.
+    /// * `second` — Index of the second element whose disjoint set is to be merged with the set containing the first element.
     fn union(&mut self, first: usize, second: usize) {
         let mut first_root = self.find(first);
         let mut second_root = self.find(second);
@@ -1589,7 +1589,7 @@ fn parse_png_image_metadata(bytes: &[u8]) -> Option<BitmapImageMetadata> {
 ///
 /// # Returns
 ///
-/// The calculated integer value.
+/// The PNG density converted to a nearest-integer pixels-per-inch value, clamped to a minimum of one PPI.
 fn pixels_per_meter_to_ppi(pixels_per_meter: u32) -> u32 {
     // Round pixels/metre * 2.54 / 100 to the nearest integer without a float cast.
     rounded_ratio_to_u32(
@@ -1605,7 +1605,7 @@ fn pixels_per_meter_to_ppi(pixels_per_meter: u32) -> u32 {
 ///
 /// # Returns
 ///
-/// The calculated integer value.
+/// The legacy density converted to a nearest-integer pixels-per-inch value, clamped to a minimum of one PPI.
 fn pixels_per_cm_to_ppi(pixels_per_cm: u32) -> u32 {
     // Legacy KiCad first truncated pixels/metre to integer pixels/cm.
     rounded_ratio_to_u32(
@@ -1622,7 +1622,7 @@ fn pixels_per_cm_to_ppi(pixels_per_cm: u32) -> u32 {
 ///
 /// # Returns
 ///
-/// The calculated integer value.
+/// The quotient rounded to the nearest integer, saturated at `u32::MAX`, and clamped to at least one.
 fn rounded_ratio_to_u32(numerator: u64, denominator: u64) -> u32 {
     let rounded = numerator.saturating_add(denominator / 2) / denominator;
     u32::try_from(rounded).unwrap_or(u32::MAX).max(1)
@@ -2358,7 +2358,7 @@ fn transform_symbol_bounds(bounds: Bounds, transform: &SymbolTransform) -> Optio
 ///
 /// # Arguments
 ///
-/// * `definition` — KiCad S-expression syntax-tree node.
+/// * `definition` — Embedded library-symbol definition node containing the sub-symbol declarations for its available units and conversions.
 /// * `unit` — Selected library symbol unit number.
 /// * `convert` — Selected library symbol conversion variant.
 ///
@@ -4504,9 +4504,9 @@ fn geo_line(start: Point, end: Point) -> Line<f64> {
 ///
 /// # Arguments
 ///
-/// * `first` — First element index or geometric endpoint participating in the operation.
-/// * `second_start` — Schematic coordinate in millimetres.
-/// * `second_end` — Schematic coordinate in millimetres.
+/// * `first` — Straight schematic wire segment whose intersection with the second line is being calculated.
+/// * `second_start` — Sheet-space start coordinate of the second line segment, expressed in millimetres.
+/// * `second_end` — Sheet-space end coordinate of the second line segment, expressed in millimetres.
 ///
 /// # Returns
 ///
@@ -4616,7 +4616,7 @@ fn check_pin_orientation(root: &Node, segments: &[Segment]) -> Vec<Diagnostic> {
 /// # Arguments
 ///
 /// * `instance` — Placed symbol instance node containing reference, transform, unit, and conversion metadata.
-/// * `library_symbols` — KiCad S-expression syntax-tree node.
+/// * `library_symbols` — Root node of the embedded library-symbol collection used to resolve the placed instance's referenced symbol definition.
 /// * `segments` — Parsed wire segments used to determine geometry, topology, or obstacle intersections.
 ///
 /// # Returns
@@ -4808,7 +4808,7 @@ fn instance_integer(instance: &Node, name: &str) -> Option<u32> {
 ///
 /// # Arguments
 ///
-/// * `library_symbol` — KiCad S-expression syntax-tree node.
+/// * `library_symbol` — Embedded library-symbol definition containing the unit-specific pin declarations for the placed component.
 /// * `unit` — Selected library symbol unit number.
 /// * `convert` — Selected library symbol conversion variant.
 ///
@@ -4841,7 +4841,7 @@ fn embedded_symbol_pins(library_symbol: &Node, unit: u32, convert: u32) -> Vec<&
 /// # Arguments
 ///
 /// * `instance` — Placed symbol instance node containing reference, transform, unit, and conversion metadata.
-/// * `pin` — KiCad S-expression syntax-tree node.
+/// * `pin` — Embedded library pin node containing the pin's local position, rotation angle, number, and electrical name.
 /// * `transform` — Resolved transform that maps library-local coordinates to the schematic sheet.
 /// * `segments` — Parsed wire segments used to determine geometry, topology, or obstacle intersections.
 ///
@@ -5791,7 +5791,7 @@ fn strict_line_hits_bounds(segment: Segment, bounds: Bounds) -> bool {
 ///
 /// # Returns
 ///
-/// The at span result derived from the schematic geometry.
+/// A diagnostic with the supplied rule code and message, linked to the exact half-open byte range in the original schematic source.
 fn at_span(code: BuiltinRuleId, message: impl Into<String>, span: ByteSpan) -> Diagnostic {
     let mut diagnostic = Diagnostic::for_builtin_rule(code, Severity::Error, message);
     diagnostic.span = Some(span);
@@ -6766,7 +6766,7 @@ fn distance(first: Point, second: Point) -> f64 {
 ///
 /// # Returns
 ///
-/// The at segment result derived from the schematic geometry.
+/// A diagnostic whose source span covers the serialized wire segment, allowing an editor to highlight the offending wire.
 fn at_segment(code: BuiltinRuleId, message: &str, segment: Segment) -> Diagnostic {
     let mut diagnostic = Diagnostic::new(code, Severity::Error, message);
     diagnostic.span = Some(segment.span);
@@ -6783,7 +6783,7 @@ fn at_segment(code: BuiltinRuleId, message: &str, segment: Segment) -> Diagnosti
 ///
 /// # Returns
 ///
-/// The at point result derived from the schematic geometry.
+/// A diagnostic linked to the original source span and the supplied sheet-space X/Y coordinate in millimetres.
 fn at_point(code: BuiltinRuleId, message: String, point: Point, span: ByteSpan) -> Diagnostic {
     let mut diagnostic = Diagnostic::new(code, Severity::Error, message);
     diagnostic.span = Some(span);

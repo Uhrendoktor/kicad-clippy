@@ -174,7 +174,7 @@ impl RuleEngine {
     ///
     /// # Arguments
     ///
-    /// * `document` — Parsed schematic to analyze.
+    /// * `document` — Parsed KiCad schematic whose placed symbols, wires, labels, and sheet graphics are passed to the registered rule implementations.
     /// * `default_wire_stroke_width_mm` — Positive finite Default netclass wire width in millimetres; `None` leaves the inherited width unknown.
     ///
     /// # Returns
@@ -193,7 +193,7 @@ impl RuleEngine {
     ///
     /// # Arguments
     ///
-    /// * `document` — Parsed schematic to analyze.
+    /// * `document` — Parsed KiCad schematic whose source tree and sheet geometry are analyzed by the registered rule implementations.
     /// * `project_wire_stroke_widths_mm` — Map from each wire's source byte offset to its effective width in millimetres; unresolved wires are absent from the map.
     /// * `default_schematic_line_stroke_width_mm` — Optional positive finite project line width in millimetres for schematic strokes whose pen width is inherited.
     ///
@@ -219,7 +219,7 @@ impl RuleEngine {
     ///
     /// # Arguments
     ///
-    /// * `document` — Parsed schematic to analyze.
+    /// * `document` — Parsed KiCad schematic whose source tree and sheet geometry are analyzed by the registered rule implementations.
     /// * `default_wire_stroke_width_mm` — Optional effective Default netclass wire width in millimetres.
     /// * `default_schematic_line_stroke_width_mm` — Optional project schematic-line width in millimetres, used for graphic strokes whose width is inherited.
     ///
@@ -326,7 +326,7 @@ mod tests {
         ///
         /// # Returns
         ///
-        /// The pass name `example.external`.
+        /// The unique static identifier `example.external` used by the rule engine for registration and deterministic pass ordering.
         fn name(&self) -> &'static str {
             "example.external"
         }
