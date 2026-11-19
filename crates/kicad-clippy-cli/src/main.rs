@@ -36,11 +36,11 @@ const DEFAULT_NETCLASS_WIRE_WIDTH_MILS: f64 = 6.0;
 #[derive(Debug, Parser)]
 #[command(version, about, long_about = None)]
 struct Cli {
-    /// Stores the `command` value.
+    /// Subcommand selected by the user, including the schematic and optional project/profile paths.
     #[command(subcommand)]
     command: Commands,
 }
-/// Represents the supported commands alternatives.
+/// Commands accepted by the executable.
 #[derive(Debug, Subcommand)]
 enum Commands {
     /// Parse a schematic and run `KiCad`'s native Electrical Rules Checker.
@@ -67,7 +67,7 @@ enum Commands {
         strict: bool,
     },
 }
-/// Represents the supported outputformat alternatives.
+/// Output encodings supported by the CLI renderer.
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum OutputFormat {
     /// Human-readable diagnostics.
@@ -75,77 +75,77 @@ enum OutputFormat {
     /// Structured JSON diagnostics.
     Json,
 }
-/// Represents the supported clierror alternatives.
+/// Errors that can prevent a lint command from completing.
 #[derive(Debug, Error)]
 enum CliError {
-    /// Represents the `Schematic` case.
+    /// Schematic file reading or parsing failed.
     #[error(transparent)]
     Schematic(#[from] kicad_clippy_parser::SchematicParseError),
-    /// Represents the `Erc` case.
+    /// Native KiCad ERC invocation or report decoding failed.
     #[error(transparent)]
     Erc(#[from] kicad_clippy_erc::ErcError),
-    /// Represents the `KiCadCliNotFound` case.
+    /// No KiCad CLI executable could be resolved.
     #[error("KiCad CLI was not found; install KiCad or pass --kicad-cli PATH")]
     KiCadCliNotFound,
-    /// Represents the `Metadata` case.
+    /// The component-intent profile could not be loaded or validated.
     #[error(transparent)]
     Metadata(#[from] kicad_clippy_rules::MetadataError),
-    /// Represents the `Netlist` case.
+    /// Native netlist export or parsing failed.
     #[error(transparent)]
     Netlist(#[from] NetlistError),
-    /// Represents the `StrictNeedsProfile` case.
+    /// Strict mode was requested without a profile file.
     #[error("--strict requires --profile FILE")]
     StrictNeedsProfile,
-    /// Represents the `Json` case.
+    /// JSON output serialization failed.
     #[error("failed to serialize JSON output: {0}")]
     Json(#[from] serde_json::Error),
-    /// Represents the `Io` case.
+    /// Writing CLI output failed.
     #[error("failed to write CLI output: {0}")]
     Io(#[from] io::Error),
 }
-/// Stores lintoutput data used by this crate.
+/// JSON-serializable result returned by a lint invocation.
 #[derive(Debug, Serialize)]
 struct LintOutput {
-    /// Stores the `schema_version` value.
+    /// Version of the JSON output schema.
     schema_version: &'static str,
-    /// Stores the `tool_version` value.
+    /// Version of the `kicad-clippy` executable that produced this report.
     tool_version: &'static str,
-    /// Stores the `schematic` value.
+    /// Display path of the schematic that was analyzed.
     schematic: String,
-    /// Stores the `syntax_valid` value.
+    /// Whether the input passed S-expression and schematic-root validation.
     syntax_valid: bool,
-    /// Stores the `erc_skipped` value.
+    /// Whether native ERC was intentionally skipped for this invocation.
     erc_skipped: bool,
-    /// Stores the `kicad_version` value.
+    /// KiCad CLI version reported by native ERC, or `None` when ERC was skipped.
     kicad_version: Option<String>,
-    /// Stores the `diagnostics` value.
+    /// Normalized ERC and Rust-rule findings for the schematic.
     diagnostics: Vec<Diagnostic>,
-    /// Stores the `summary` value.
+    /// Counts of errors, warnings, notes, and excluded findings.
     summary: Summary,
 }
-/// Stores summary data used by this crate.
+/// Counts of lint findings grouped by severity and exclusion state.
 #[derive(Debug, Serialize)]
 struct Summary {
-    /// Stores the `errors` value.
+    /// Number of non-excluded error diagnostics that make the command fail.
     errors: usize,
-    /// Stores the `warnings` value.
+    /// Number of non-excluded warning diagnostics.
     warnings: usize,
-    /// Stores the `notes` value.
+    /// Number of non-excluded informational diagnostics.
     notes: usize,
-    /// Stores the `excluded` value.
+    /// Number of diagnostics marked excluded by KiCad or project configuration.
     excluded: usize,
 }
 
 impl Summary {
-    /// Processes from diagnostics using the supplied values and schematic data.
+    /// Counts active errors, non-excluded warnings, notes, and excluded findings for the CLI summary.
     ///
     /// # Arguments
     ///
-    /// * `diagnostics` — Input `diagnostics` used by this operation.
+    /// * `diagnostics` — All normalized findings produced by ERC and the schematic rule engine.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
+    /// A summary whose counts distinguish active errors, visible warnings/notes, and excluded findings.
     fn from_diagnostics(diagnostics: &[Diagnostic]) -> Self {
         Self {
             errors: diagnostics
@@ -169,11 +169,11 @@ impl Summary {
         }
     }
 }
-/// Processes main using the supplied values and schematic data.
+/// Parses command-line arguments, executes the selected operation, and converts its result into the process exit code.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The process exit code returned by the lint command.
 fn main() -> ExitCode {
     match execute(Cli::parse()) {
         Ok(code) => code,
@@ -183,19 +183,19 @@ fn main() -> ExitCode {
         }
     }
 }
-/// Processes execute using the supplied values and schematic data.
+/// Dispatches the parsed command to the corresponding CLI operation.
 ///
 /// # Arguments
 ///
-/// * `cli` — Input `cli` used by this operation.
+/// * `cli` — Validated CLI options describing the schematic, selected output format, and optional project/profile inputs.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// A success exit code when linting has no active errors, or a failure exit code when errors are present or execution fails.
 ///
 /// # Errors
 ///
-/// Returns an error when the operation cannot complete with the supplied input.
+/// Returns an error when the requested input cannot be read, decoded, executed, or rendered.
 fn execute(cli: Cli) -> Result<ExitCode, CliError> {
     match cli.command {
         Commands::Lint {
@@ -217,25 +217,25 @@ fn execute(cli: Cli) -> Result<ExitCode, CliError> {
         ),
     }
 }
-/// Processes lint using the supplied values and schematic data.
+/// Loads the schematic and any requested project/profile data, runs native ERC and Rust checks, then renders the normalized findings.
 ///
 /// # Arguments
 ///
-/// * `schematic_path` — Input `schematic path` used by this operation.
-/// * `format` — Input `format` used by this operation.
-/// * `skip_erc` — Input `skip erc` used by this operation.
-/// * `explicit_cli` — Input `explicit cli` used by this operation.
-/// * `project_path` — Input `project path` used by this operation.
-/// * `profile_path` — Input `profile path` used by this operation.
-/// * `strict` — Input `strict` used by this operation.
+/// * `schematic_path` — Path to the `.kicad_sch` file being analyzed.
+/// * `format` — Requested diagnostic output format (`text` or `json`).
+/// * `skip_erc` — Whether native ERC should be skipped; project/netlist processing may still require the CLI.
+/// * `explicit_cli` — Optional explicit path to `kicad-cli`; it takes precedence over PATH lookup.
+/// * `project_path` — Optional KiCad project file providing netclass and schematic drawing settings.
+/// * `profile_path` — Optional component-intent profile JSON file.
+/// * `strict` — Whether the profile must provide all required component-intent metadata.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// A success exit code when there are no active errors, or a failure exit code when errors are present.
 ///
 /// # Errors
 ///
-/// Returns an error when the operation cannot complete with the supplied input.
+/// Returns an error when the requested input cannot be read, decoded, executed, or rendered.
 fn lint(
     schematic_path: &Path,
     format: OutputFormat,
@@ -332,32 +332,32 @@ fn lint(
         Ok(ExitCode::SUCCESS)
     }
 }
-/// Processes project settings from project using the supplied values and schematic data.
+/// Reads and decodes a KiCad project JSON file.
 ///
 /// # Arguments
 ///
-/// * `project_path` — Input `project path` used by this operation.
+/// * `project_path` — Optional KiCad project file providing netclass and schematic drawing settings.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The decoded project JSON value.
 ///
 /// # Errors
 ///
-/// Returns an error when the operation cannot complete with the supplied input.
+/// Returns an error when the requested input cannot be read, decoded, executed, or rendered.
 fn project_settings_from_project(project_path: &Path) -> Result<serde_json::Value, CliError> {
     let contents = fs::read_to_string(project_path)?;
     Ok(serde_json::from_str(&contents)?)
 }
-/// Processes project default schematic line stroke width mm using the supplied values and schematic data.
+/// Reads the project's default schematic line thickness and converts its mil value to millimetres.
 ///
 /// # Arguments
 ///
-/// * `project` — Input `project` used by this operation.
+/// * `project` — Decoded KiCad project JSON object.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The positive default line width in millimetres, or `None` when the project does not provide a valid value.
 fn project_default_schematic_line_stroke_width_mm(project: &serde_json::Value) -> Option<f64> {
     let width_mils = project
         .get("schematic")?
@@ -367,17 +367,17 @@ fn project_default_schematic_line_stroke_width_mm(project: &serde_json::Value) -
     let width_mm = width_mils * MILLIMETRES_PER_MIL;
     (width_mm.is_finite() && width_mm > 0.0).then_some(width_mm)
 }
-/// Processes project wire stroke widths mm using the supplied values and schematic data.
+/// Resolves effective netclass wire widths for wires whose physical components map unambiguously to exported logical nets.
 ///
 /// # Arguments
 ///
-/// * `project` — Input `project` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
-/// * `netlist` — Input `netlist` used by this operation.
+/// * `project` — Decoded KiCad project JSON object.
+/// * `facts` — Schematic facts containing placed pins and the topology of physical wire components.
+/// * `netlist` — Flattened netlist exported by KiCad, including pin-to-net and effective netclass data.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// A map from each unambiguously resolved wire's source byte offset to its effective width in millimetres.
 fn project_wire_stroke_widths_mm(
     project: &serde_json::Value,
     facts: &SchematicFacts,
@@ -449,16 +449,16 @@ fn project_wire_stroke_widths_mm(
     }
     widths_by_wire
 }
-/// Processes netlist pin coordinates are complete using the supplied values and schematic data.
+/// Checks that every non-virtual pin in the exported netlist has a corresponding coordinate-bearing pin fact.
 ///
 /// # Arguments
 ///
-/// * `facts` — Input `facts` used by this operation.
-/// * `netlist` — Input `netlist` used by this operation.
+/// * `facts` — Schematic facts containing placed pins and the topology of physical wire components.
+/// * `netlist` — Flattened netlist exported by KiCad, including pin-to-net and effective netclass data.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when every exported non-virtual pin is represented in the schematic facts; otherwise `false`.
 fn netlist_pin_coordinates_are_complete(facts: &SchematicFacts, netlist: &Netlist) -> bool {
     let schematic_pin_refs = facts
         .pins
@@ -472,19 +472,19 @@ fn netlist_pin_coordinates_are_complete(facts: &SchematicFacts, netlist: &Netlis
             || schematic_pin_refs.contains(&(pin_ref.reference.as_str(), pin_ref.pin.as_str()))
     })
 }
-/// Defines the projectnetclassdefinitions type used by this crate.
+/// Project netclasses keyed by name, with each entry storing priority and optional wire width in millimetres.
 type ProjectNetclassDefinitions = BTreeMap<String, (i64, Option<f64>)>;
-/// Processes project netclass wire width mm using the supplied values and schematic data.
+/// Resolves the effective wire width for one net from the project's explicit assignments, patterns, chains, priorities, and Default class.
 ///
 /// # Arguments
 ///
-/// * `project` — Input `project` used by this operation.
-/// * `netlist` — Input `netlist` used by this operation.
-/// * `net_name` — Input `net name` used by this operation.
+/// * `project` — Decoded KiCad project JSON object.
+/// * `netlist` — Flattened netlist exported by KiCad, including pin-to-net and effective netclass data.
+/// * `net_name` — Exact logical net name whose project netclass assignments are being resolved.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The effective wire width in millimetres, or `None` when the assignment cannot be resolved safely.
 fn project_netclass_wire_width_mm(
     project: &serde_json::Value,
     netlist: &Netlist,
@@ -508,15 +508,15 @@ fn project_netclass_wire_width_mm(
         .min_by(|first, second| first.0.cmp(&second.0).then_with(|| first.1.cmp(second.1)));
     Some(selected.map_or(default_width_mm, |(_, _, width_mm)| width_mm))
 }
-/// Processes project netclass definitions using the supplied values and schematic data.
+/// Reads project netclass names, priorities, and optional wire widths into a lookup table.
 ///
 /// # Arguments
 ///
-/// * `settings` — Input `settings` used by this operation.
+/// * `settings` — The `net_settings` JSON object from the KiCad project.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// A map from class name to its priority and optional positive wire width in millimetres, or `None` when the settings are malformed.
 fn project_netclass_definitions(
     settings: &serde_json::Map<String, serde_json::Value>,
 ) -> Option<ProjectNetclassDefinitions> {
@@ -544,17 +544,17 @@ fn project_netclass_definitions(
     }
     Some(classes)
 }
-/// Processes project netclass candidates using the supplied values and schematic data.
+/// Collects all project netclasses that may apply to the named net through explicit, pattern, or net-chain assignments.
 ///
 /// # Arguments
 ///
-/// * `settings` — Input `settings` used by this operation.
-/// * `netlist` — Input `netlist` used by this operation.
-/// * `net_name` — Input `net name` used by this operation.
+/// * `settings` — The `net_settings` JSON object from the KiCad project.
+/// * `netlist` — Flattened netlist exported by KiCad, including pin-to-net and effective netclass data.
+/// * `net_name` — Exact logical net name whose project netclass assignments are being resolved.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// All supported class names that could apply to the given net, or `None` when the assignment data has an unsupported shape.
 fn project_netclass_candidates(
     settings: &serde_json::Map<String, serde_json::Value>,
     netlist: &Netlist,
@@ -566,17 +566,17 @@ fn project_netclass_candidates(
     add_chain_netclass_assignments(settings, netlist, net_name, &mut candidates)?;
     Some(candidates)
 }
-/// Processes add explicit netclass assignments using the supplied values and schematic data.
+/// Adds netclass names assigned directly to the exact logical net.
 ///
 /// # Arguments
 ///
-/// * `settings` — Input `settings` used by this operation.
-/// * `net_name` — Input `net name` used by this operation.
-/// * `candidates` — Input `candidates` used by this operation.
+/// * `settings` — The `net_settings` JSON object from the KiCad project.
+/// * `net_name` — Exact logical net name whose project netclass assignments are being resolved.
+/// * `candidates` — Set to extend with each supported class assignment that applies to the net.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `Some(())` after successfully processing the explicit-assignment object; `None` when it has an unsupported JSON shape.
 fn add_explicit_netclass_assignments(
     settings: &serde_json::Map<String, serde_json::Value>,
     net_name: &str,
@@ -595,17 +595,17 @@ fn add_explicit_netclass_assignments(
     }
     Some(())
 }
-/// Processes add pattern netclass assignments using the supplied values and schematic data.
+/// Adds netclass names whose supported wildcard patterns match the logical net name.
 ///
 /// # Arguments
 ///
-/// * `settings` — Input `settings` used by this operation.
-/// * `net_name` — Input `net name` used by this operation.
-/// * `candidates` — Input `candidates` used by this operation.
+/// * `settings` — The `net_settings` JSON object from the KiCad project.
+/// * `net_name` — Exact logical net name whose project netclass assignments are being resolved.
+/// * `candidates` — Set to extend with each supported class assignment that applies to the net.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `Some(())` after processing supported pattern entries; `None` when the pattern settings have an unsupported shape.
 fn add_pattern_netclass_assignments(
     settings: &serde_json::Map<String, serde_json::Value>,
     net_name: &str,
@@ -637,18 +637,18 @@ fn add_pattern_netclass_assignments(
     }
     Some(())
 }
-/// Processes add chain netclass assignments using the supplied values and schematic data.
+/// Adds netclass names inherited from committed net chains containing the logical net.
 ///
 /// # Arguments
 ///
-/// * `settings` — Input `settings` used by this operation.
-/// * `netlist` — Input `netlist` used by this operation.
-/// * `net_name` — Input `net name` used by this operation.
-/// * `candidates` — Input `candidates` used by this operation.
+/// * `settings` — The `net_settings` JSON object from the KiCad project.
+/// * `netlist` — Flattened netlist exported by KiCad, including pin-to-net and effective netclass data.
+/// * `net_name` — Exact logical net name whose project netclass assignments are being resolved.
+/// * `candidates` — Set to extend with each supported class assignment that applies to the net.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `Some(())` after processing chain assignments; `None` when the assignment data has an unsupported shape.
 fn add_chain_netclass_assignments(
     settings: &serde_json::Map<String, serde_json::Value>,
     netlist: &Netlist,
@@ -682,17 +682,17 @@ fn add_chain_netclass_assignments(
     }
     Some(())
 }
-/// Processes exported netclass matches using the supplied values and schematic data.
+/// Checks that the project-derived candidate set is consistent with the effective class name exported by KiCad.
 ///
 /// # Arguments
 ///
-/// * `exported_class` — Input `exported class` used by this operation.
-/// * `net_name` — Input `net name` used by this operation.
-/// * `candidates` — Input `candidates` used by this operation.
+/// * `exported_class` — Effective class name reported by KiCad's netlist exporter.
+/// * `net_name` — Exact logical net name whose project netclass assignments are being resolved.
+/// * `candidates` — Set to extend with each supported class assignment that applies to the net.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when KiCad's exported effective class is compatible with the project-derived candidate set.
 fn exported_netclass_matches(
     exported_class: &str,
     net_name: &str,
@@ -706,16 +706,16 @@ fn exported_netclass_matches(
         candidates.len() == 1 && candidates.contains(exported_class)
     }
 }
-/// Processes wildcard pattern matches using the supplied values and schematic data.
+/// Matches a project netclass pattern containing `*` and `?` against a complete net name.
 ///
 /// # Arguments
 ///
-/// * `pattern` — Input `pattern` used by this operation.
-/// * `candidate` — Input `candidate` used by this operation.
+/// * `pattern` — Supported netclass wildcard expression; `*` matches any sequence and `?` matches one character.
+/// * `candidate` — Complete net name being tested against the wildcard expression.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the entire candidate string matches the pattern.
 fn wildcard_pattern_matches(pattern: &str, candidate: &str) -> bool {
     let pattern: Vec<char> = pattern.chars().collect();
     let candidate: Vec<char> = candidate.chars().collect();
@@ -744,20 +744,20 @@ fn wildcard_pattern_matches(pattern: &str, candidate: &str) -> bool {
     }
     previous[candidate.len()]
 }
-/// Processes render text using the supplied values and schematic data.
+/// Writes the lint summary and diagnostics as human-readable text.
 ///
 /// # Arguments
 ///
-/// * `output` — Input `output` used by this operation.
-/// * `source` — Input `source` used by this operation.
+/// * `output` — Normalized lint output containing the diagnostics and summary counts.
+/// * `source` — Original source file used to resolve diagnostic spans and render highlighted text.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `Ok(())` when all text was written successfully.
 ///
 /// # Errors
 ///
-/// Returns an error when the operation cannot complete with the supplied input.
+/// Returns an error when the requested input cannot be read, decoded, executed, or rendered.
 fn render_text(output: &LintOutput, source: &SourceFile) -> Result<(), io::Error> {
     let mut stdout = io::stdout().lock();
     writeln!(stdout, "kicad-clippy {}", output.tool_version)?;
@@ -790,21 +790,21 @@ fn render_text(output: &LintOutput, source: &SourceFile) -> Result<(), io::Error
     writeln!(stdout, "Built-in schematic rules: active")?;
     Ok(())
 }
-/// Processes render diagnostic using the supplied values and schematic data.
+/// Formats one diagnostic, including its source span and schematic location when those are available.
 ///
 /// # Arguments
 ///
-/// * `stdout` — Input `stdout` used by this operation.
-/// * `diagnostic` — Input `diagnostic` used by this operation.
-/// * `source` — Input `source` used by this operation.
+/// * `stdout` — Output writer receiving the formatted diagnostic.
+/// * `diagnostic` — Finding to render, including its message, severity, source span, and related context.
+/// * `source` — Original source file used to resolve diagnostic spans and render highlighted text.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `Ok(())` when the diagnostic was written successfully.
 ///
 /// # Errors
 ///
-/// Returns an error when the operation cannot complete with the supplied input.
+/// Returns an error when the requested input cannot be read, decoded, executed, or rendered.
 fn render_diagnostic(
     stdout: &mut impl Write,
     diagnostic: &Diagnostic,
@@ -880,19 +880,19 @@ fn render_diagnostic(
     writeln!(stdout, "{report:?}")?;
     Ok(())
 }
-/// Processes resolve kicad cli using the supplied values and schematic data.
+/// Resolves the KiCad CLI executable, preferring an explicit path before searching the environment.
 ///
 /// # Arguments
 ///
-/// * `explicit` — Input `explicit` used by this operation.
+/// * `explicit` — Optional executable path supplied by the caller.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The explicit executable path or the first KiCad CLI executable found on PATH.
 ///
 /// # Errors
 ///
-/// Returns an error when the operation cannot complete with the supplied input.
+/// Returns an error when the requested input cannot be read, decoded, executed, or rendered.
 fn resolve_kicad_cli(explicit: Option<PathBuf>) -> Result<PathBuf, CliError> {
     if let Some(path) = explicit {
         return Ok(path);
@@ -911,7 +911,7 @@ fn resolve_kicad_cli(explicit: Option<PathBuf>) -> Result<PathBuf, CliError> {
     Err(CliError::KiCadCliNotFound)
 }
 #[cfg(test)]
-/// Contains the tests implementation and supporting types.
+/// Unit tests for project setting conversion, conservative netclass resolution, and summary counts.
 mod tests {
     use kicad_clippy_core::{Diagnostic, Severity};
 
@@ -922,12 +922,7 @@ mod tests {
     use kicad_clippy_erc::Netlist;
     use kicad_clippy_rules::SchematicFacts;
     use std::collections::{BTreeMap, BTreeSet};
-    /// Processes project default schematic line width reads mils using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Verifies that project default schematic line width reads mils behaves as required.
     #[test]
     fn project_default_schematic_line_width_reads_mils() {
         let project = serde_json::json!({
@@ -943,12 +938,7 @@ mod tests {
                 .is_some_and(|width| (width - 0.1524).abs() < 1.0e-12)
         );
     }
-    /// Processes project default schematic line width stays unknown when missing or invalid using the supplied values and schematic data.
-    ///
-    /// # Returns
-    ///
-    /// The value produced by this operation.
-    ///
+    /// Verifies that project default schematic line width stays unknown when missing or invalid behaves as required.
     #[test]
     fn project_default_schematic_line_width_stays_unknown_when_missing_or_invalid() {
         let missing = serde_json::json!({"schematic": {"drawing": {}}});
@@ -989,8 +979,7 @@ mod tests {
             }
         })
     }
-    /// Processes overlapping patterns and explicit assignments use class priority using the supplied values and schematic data.
-    ///
+    /// Verifies that overlapping patterns and explicit assignments use class priority behaves as required.
     #[test]
     fn overlapping_patterns_and_explicit_assignments_use_class_priority() {
         let mut project = project_fixture();
@@ -1019,8 +1008,7 @@ mod tests {
         assert!(wildcard_pattern_matches("/USB?", "/USB1"));
         assert!(!wildcard_pattern_matches("/USB?", "/USB12"));
     }
-    /// Processes class without wire width inherits the project default using the supplied values and schematic data.
-    ///
+    /// Verifies that class without wire width inherits the project default behaves as required.
     #[test]
     fn class_without_wire_width_inherits_the_project_default() {
         let mut project = project_fixture();
@@ -1043,8 +1031,7 @@ mod tests {
             Some(0.2032)
         );
     }
-    /// Processes committed chain netclass is applied to member nets using the supplied values and schematic data.
-    ///
+    /// Verifies that committed chain netclass is applied to member nets behaves as required.
     #[test]
     fn committed_chain_netclass_is_applied_to_member_nets() {
         let mut project = project_fixture();
@@ -1071,8 +1058,7 @@ mod tests {
             Some(0.4572)
         );
     }
-    /// Processes inconsistent or unmodeled assignments remain unknown using the supplied values and schematic data.
-    ///
+    /// Verifies that inconsistent or unmodeled assignments remain unknown behaves as required.
     #[test]
     fn inconsistent_or_unmodeled_assignments_remain_unknown() {
         let mut project = project_fixture();
@@ -1108,8 +1094,7 @@ mod tests {
             None
         );
     }
-    /// Processes per wire width requires one unambiguous physical component net using the supplied values and schematic data.
-    ///
+    /// Verifies that per wire width requires one unambiguous physical component net behaves as required.
     #[test]
     fn per_wire_width_requires_one_unambiguous_physical_component_net() {
         use kicad_clippy_erc::{NetlistNode, PinRef};
@@ -1200,8 +1185,7 @@ mod tests {
         );
         assert!(project_wire_stroke_widths_mm(&project, &conflicting_facts, &netlist).is_empty());
     }
-    /// Processes schematic netclass directives suppress project only width inference using the supplied values and schematic data.
-    ///
+    /// Verifies that schematic netclass directives suppress project only width inference behaves as required.
     #[test]
     fn schematic_netclass_directives_suppress_project_only_width_inference() {
         let project = project_fixture();
@@ -1211,8 +1195,7 @@ mod tests {
         };
         assert!(project_wire_stroke_widths_mm(&project, &facts, &Netlist::default()).is_empty());
     }
-    /// Processes summary counts only active errors using the supplied values and schematic data.
-    ///
+    /// Verifies that summary counts only active errors behaves as required.
     #[test]
     fn summary_counts_only_active_errors() {
         let mut excluded = Diagnostic::new("ERC/EXCLUDED", Severity::Error, "ignored");
