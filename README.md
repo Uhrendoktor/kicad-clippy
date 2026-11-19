@@ -12,6 +12,7 @@ A Rust-based linter for KiCad schematic files. `kicad-clippy` combines repositor
 - Runs native ERC using `kicad-cli sch erc --format json --severity-all`.
 - Exports the flattened netlist for profile-declared pin/net contracts.
 - Runs built-in schematic rules and optional project-profile checks.
+- Checks overlaps between independently declared functional-group frames and enforces profile-declared no-connect pin markers.
 - Preserves source byte spans, physical coordinates, sheet paths and affected item UUIDs where available.
 - Emits human-readable or JSON diagnostics with an exit code based on active errors.
 
