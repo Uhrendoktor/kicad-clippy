@@ -1,8 +1,8 @@
-pub(crate) use crate::HALF_FACTOR;
+pub use crate::HALF_FACTOR;
 use crate::Rule;
 use crate::RuleContext;
 use crate::RulePass;
-pub(crate) use crate::TWO_SIDED_FACTOR;
+pub use crate::TWO_SIDED_FACTOR;
 use geo::BooleanOps;
 use geo::Coord;
 use geo::Euclidean;
@@ -4837,9 +4837,17 @@ mod tests {
         assert!(tangent[0].x.abs() < 1.0e-9);
         assert!((tangent[0].y - 2.0).abs() < 1.0e-9);
     }
-    /// Confirms analytic Bézier intersection detects a hit missed by its flattened polyline approximation.
-    #[test]
-    fn analytic_bezier_intersection_detects_a_curve_hit_missed_by_its_flattened_polyline() {
+    /// Builds the Bézier test curve and a short wire that crosses its exact path.
+    ///
+    /// # Returns
+    ///
+    /// The cubic control points, exact curve point, crossing wire and flattened polyline.
+    fn analytic_bezier_wire_fixture() -> (
+        [(f64, f64); 4],
+        (f64, f64),
+        super::Segment,
+        Vec<(f64, f64)>,
+    ) {
         let controls = [(0.0, 0.0), (0.0, 10.0), (10.0, 10.0), (10.0, 0.0)];
         let curve = super::CurveCubicBez::new(
             super::CurvePoint::new(controls[0].0, controls[0].1),
@@ -4847,9 +4855,8 @@ mod tests {
             super::CurvePoint::new(controls[2].0, controls[2].1),
             super::CurvePoint::new(controls[3].0, controls[3].1),
         );
-        let angle_parameter = 0.453_f64;
-        let point = curve.eval(angle_parameter);
-        let tangent = curve.deriv().eval(angle_parameter);
+        let point = curve.eval(0.453_f64);
+        let tangent = curve.deriv().eval(0.453_f64);
         let normal_length = tangent.x.hypot(tangent.y);
         let normal = (-tangent.y / normal_length, tangent.x / normal_length);
         let wire = super::Segment {
@@ -4872,6 +4879,13 @@ mod tests {
             ),
         ];
         let sampled = super::flattened_curve_points(path, controls[0], controls[3]);
+        (controls, (point.x, point.y), wire, sampled)
+    }
+
+    /// Confirms analytic Bézier intersection detects a hit missed by its flattened polyline approximation.
+    #[test]
+    fn analytic_bezier_intersection_detects_a_curve_hit_missed_by_its_flattened_polyline() {
+        let (controls, point, wire, sampled) = analytic_bezier_wire_fixture();
         assert!(!sampled.windows(2).any(|pair| {
             !super::sch013::segment_intersection_points(
                 wire,
@@ -4926,8 +4940,8 @@ mod tests {
 
         let pin_wire = super::Segment {
             start: super::Point {
-                x: point.x,
-                y: point.y,
+                x: point.0,
+                y: point.1,
             },
             end: wire.end,
             span: wire.span,
@@ -4935,7 +4949,7 @@ mod tests {
         let allowed_pin = super::SchematicPinFact {
             reference: "U1".to_owned(),
             number: "1".to_owned(),
-            position_mm: (point.x, point.y),
+            position_mm: point,
         };
         assert!(
             !super::sch013::wire_crosses_symbol_primitive_with_wire_stroke(
@@ -5208,7 +5222,7 @@ mod tests {
                 90.0,
                 "right",
                 "center",
-                10.0 - height * HALF_FACTOR,
+                height.mul_add(-HALF_FACTOR, 10.0),
                 20.0,
                 height,
                 width,
@@ -5217,7 +5231,7 @@ mod tests {
                 90.0,
                 "center",
                 "center",
-                10.0 - height * HALF_FACTOR,
+                height.mul_add(-HALF_FACTOR, 10.0),
                 width.mul_add(-HALF_FACTOR, 20.0),
                 height,
                 width,
@@ -5226,7 +5240,7 @@ mod tests {
                 270.0,
                 "left",
                 "center",
-                10.0 - height * HALF_FACTOR,
+                height.mul_add(-HALF_FACTOR, 10.0),
                 20.0,
                 height,
                 width,
@@ -5235,7 +5249,7 @@ mod tests {
                 270.0,
                 "right",
                 "center",
-                10.0 - height * HALF_FACTOR,
+                height.mul_add(-HALF_FACTOR, 10.0),
                 20.0 - width,
                 height,
                 width,
