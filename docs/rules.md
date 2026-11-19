@@ -27,6 +27,12 @@ The current built-in catalogue defines stable IDs SCH001–SCH022 and separates 
 | SCH021 | Component metadata and role contracts | Implemented: strict metadata completeness, profile reference validity, supported role-specific connection requirements and connector metadata |
 | SCH022 | Decoupling contracts | Implemented: target pin/terminal, return terminal/net and consistency of declared decoupling groups |
 
+## Descriptor catalogue
+
+The core crate exports `builtin_rule_registry()`, which builds one descriptive `RuleDescriptor` for every value in `BuiltinRuleId::ALL` (SCH001–SCH022). A regression test keeps the typed identifiers and descriptor catalogue in one-to-one correspondence and requires each descriptor to include a category, summary, rationale, documentation link, and searchable tags. The registry is deterministic and rejects duplicate IDs.
+
+Descriptor `default_level` values are catalogue metadata, not an active rule-policy system. Current rule implementations continue to emit their own diagnostic severities; project-level allow/warn/deny overrides remain future work.
+
 ## Rule boundaries
 
 KiCad native ERC remains the electrical authority. Rust rules must not duplicate pin-type conflicts, undriven power pins, or native unconnected-pin analysis. Rules requiring exact pin-to-net facts must consume KiCad's exported netlist, not infer connectivity from equal label strings.
