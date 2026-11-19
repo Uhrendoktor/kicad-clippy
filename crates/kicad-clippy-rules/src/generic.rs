@@ -91,7 +91,6 @@ impl DisjointSet {
     }
 }
 
-
 /// Coordinate equality tolerance used for schematic geometry, in millimetres.
 pub const GEOMETRY_TOLERANCE_MM: f64 = 0.001;
 /// Additional clearance applied when testing wire-to-obstacle spacing, in millimetres.
@@ -1213,8 +1212,8 @@ fn collect_sheet_table_stroke_facts(root: &Node) -> Vec<SchematicGraphicFact> {
 ///
 /// The value produced by this operation.
 fn sheet_graphic_bounds(node: &Node, kind: &str) -> Option<(f64, f64, f64, f64)> {
-    let stroke_margin =
-        symbol_primitive_stroke_width(node).mul_add(HALF_DIMENSION_FACTOR, STROKE_CLEARANCE_MARGIN_MM);
+    let stroke_margin = symbol_primitive_stroke_width(node)
+        .mul_add(HALF_DIMENSION_FACTOR, STROKE_CLEARANCE_MARGIN_MM);
     if kind == "circle" {
         let center = child_list(node, "center").and_then(list_items)?;
         let radius = child_list(node, "radius")
@@ -1382,12 +1381,10 @@ fn collect_sheet_image_facts(root: &Node) -> Vec<SchematicImageFact> {
                     } else {
                         f64::from(metadata.ppi)
                     };
-                    let width = f64::from(metadata.width_pixels) * MILLIMETRES_PER_INCH
-                        / ppi
-                        * scale;
-                    let height = f64::from(metadata.height_pixels) * MILLIMETRES_PER_INCH
-                        / ppi
-                        * scale;
+                    let width =
+                        f64::from(metadata.width_pixels) * MILLIMETRES_PER_INCH / ppi * scale;
+                    let height =
+                        f64::from(metadata.height_pixels) * MILLIMETRES_PER_INCH / ppi * scale;
                     rotated_bitmap_image_geometry(position, width, height, orientation)
                 });
             let bounds_mm = geometry.map(|geometry| geometry.bounds_mm);
