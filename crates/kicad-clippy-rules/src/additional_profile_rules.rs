@@ -168,6 +168,19 @@ fn validate_required_no_connect_pins(
                 continue;
             };
 
+            if let Some(electrical_type @ ("no_connect" | "unconnected")) =
+                pin.electrical_type.as_deref()
+            {
+                diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch015,
+                    Severity::Error,
+                    format!(
+                        "{pin_reference} has library electrical type {electrical_type:?} and must not be listed in {REQUIRED_NO_CONNECT_PINS_ATTRIBUTE}; that pin type already denotes no connection"
+                    ),
+                ));
+                continue;
+            }
+
             let marker_present = facts.no_connects.iter().any(|marker| {
                 (marker.center_mm.0 - pin.position_mm.0)
                     .hypot(marker.center_mm.1 - pin.position_mm.1)
@@ -316,22 +329,38 @@ mod tests {
         Ok(())
     }
 
-    /// Builds a one-pin symbol fixture with an optional no-connect marker at its pin anchor.
+    /// Builds a one-pin symbol fixture with optional marker and effective electrical type.
     ///
     /// # Arguments
     ///
     /// * `with_marker` — Whether the fixture should contain the marker at the transformed pin coordinate.
+    /// * `pin_type` — Base library electrical-type token for the pin.
+    /// * `alternate_type` — Optional electrical type declared by an `NC` alternate.
+    /// * `select_alternate` — Whether the placed instance selects the `NC` alternate.
     ///
     /// # Returns
     ///
-    /// A parsed schematic containing the embedded one-pin symbol and the requested marker state.
+    /// A parsed schematic containing the embedded one-pin symbol and the requested pin-type/marker state.
     ///
     /// # Errors
     ///
     /// Returns an error if the schematic fixture cannot be parsed.
-    fn no_connect_document(with_marker: bool) -> Result<SchematicDocument, Box<dyn Error>> {
+    fn no_connect_document(
+        with_marker: bool,
+        pin_type: &str,
+        alternate_type: Option<&str>,
+        select_alternate: bool,
+    ) -> Result<SchematicDocument, Box<dyn Error>> {
         let marker = if with_marker {
             r#"(no_connect (at 10 10) (uuid "required-nc"))"#
+        } else {
+            ""
+        };
+        let alternate_definition = alternate_type
+            .map(|type_token| format!("(alternate \"NC\" {type_token} line)"))
+            .unwrap_or_default();
+        let instance_alternate = if select_alternate {
+            r#"(pin "1" (alternate "NC") (uuid "pin-alternate"))"#
         } else {
             ""
         };
@@ -340,14 +369,15 @@ mod tests {
                 (lib_symbols
                     (symbol "Test:OnePin"
                         (symbol "OnePin_1_1"
-                            (pin passive line (at 0 0 0) (length 1.27)
-                                (name "1") (number "1"))
+                            (pin {pin_type} line (at 0 0 0) (length 1.27)
+                                (name "1") (number "1") {alternate_definition})
                         )
                     )
                 )
                 (symbol (lib_id "Test:OnePin") (at 10 10 0) (unit 1)
                     (property "Reference" "U1" (at 10 9 0)
                         (effects (font (size 1 1))))
+                    {instance_alternate}
                 )
                 {marker}
             )"#
@@ -392,7 +422,7 @@ mod tests {
     /// Returns an error if the schematic fixture cannot be parsed or validated.
     #[test]
     fn declared_required_no_connect_pin_must_have_a_marker() -> Result<(), Box<dyn Error>> {
-        let document = no_connect_document(false)?;
+        let document = no_connect_document(false, "passive", None, false)?;
         let profile = no_connect_profile();
         let diagnostics = profile.validate_with_netlist(&document, None);
 
@@ -400,6 +430,62 @@ mod tests {
             item.code == BuiltinRuleId::Sch015.as_str()
                 && item.message.contains("U1.1")
                 && item.message.contains("no explicit no-connect marker")
+        }));
+        Ok(())
+    }
+
+    /// Rejects profile no-connect declarations for pins whose base electrical type is already unconnected.
+    ///
+    /// # Returns
+    ///
+    /// Ok when an intrinsically unconnected library pin is rejected as a redundant declaration.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the schematic fixture cannot be parsed or validated.
+    #[test]
+    fn declared_required_no_connect_pin_rejects_unconnected_library_type()
+    -> Result<(), Box<dyn Error>> {
+        let document = no_connect_document(false, "unconnected", None, false)?;
+        let facts = SchematicFacts::from_document(&document);
+        assert_eq!(
+            facts.pins[0].electrical_type.as_deref(),
+            Some("unconnected")
+        );
+        let diagnostics = no_connect_profile().validate_with_netlist(&document, None);
+        assert!(diagnostics.iter().any(|item| {
+            item.code == BuiltinRuleId::Sch015.as_str()
+                && item.message.contains("U1.1")
+                && item.message.contains("must not be listed")
+                && item.message.contains("unconnected")
+        }));
+        Ok(())
+    }
+
+    /// Rejects a required no-connect declaration when the active alternate has no-connect electrical type.
+    ///
+    /// # Returns
+    ///
+    /// Ok when the selected alternate type, rather than the passive base type, controls SCH015 validation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the schematic fixture cannot be parsed or validated.
+    #[test]
+    fn declared_required_no_connect_pin_uses_active_alternate_electrical_type()
+    -> Result<(), Box<dyn Error>> {
+        let document = no_connect_document(false, "passive", Some("no_connect"), true)?;
+        let facts = SchematicFacts::from_document(&document);
+        assert_eq!(
+            facts.pins[0].electrical_type.as_deref(),
+            Some("no_connect")
+        );
+        let diagnostics = no_connect_profile().validate_with_netlist(&document, None);
+        assert!(diagnostics.iter().any(|item| {
+            item.code == BuiltinRuleId::Sch015.as_str()
+                && item.message.contains("U1.1")
+                && item.message.contains("must not be listed")
+                && item.message.contains("no_connect")
         }));
         Ok(())
     }
@@ -416,7 +502,7 @@ mod tests {
     #[test]
     fn declared_required_no_connect_pin_accepts_a_marker_at_the_transformed_pin()
     -> Result<(), Box<dyn Error>> {
-        let document = no_connect_document(true)?;
+        let document = no_connect_document(true, "passive", None, false)?;
         let profile = no_connect_profile();
         let diagnostics = profile.validate_with_netlist(&document, None);
 
