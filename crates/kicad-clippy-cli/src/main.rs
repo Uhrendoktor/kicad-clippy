@@ -280,7 +280,7 @@ fn project_wire_stroke_widths_mm(
 ) -> BTreeMap<usize, f64> {
     // Directive labels and rule areas contribute runtime netclass assignments
     // that are not represented by the project-only resolver below.
-    if facts.has_netclass_assignments {
+    if facts.has_netclass_assignments || !netlist_pin_coordinates_are_complete(facts, netlist) {
         return BTreeMap::new();
     }
 
@@ -343,6 +343,20 @@ fn project_wire_stroke_widths_mm(
         }
     }
     widths_by_wire
+}
+
+fn netlist_pin_coordinates_are_complete(facts: &SchematicFacts, netlist: &Netlist) -> bool {
+    let schematic_pin_refs = facts
+        .pins
+        .iter()
+        .filter(|pin| !pin.reference.starts_with('#'))
+        .map(|pin| (pin.reference.as_str(), pin.number.as_str()))
+        .collect::<BTreeSet<_>>();
+
+    netlist.pin_nets.keys().all(|pin_ref| {
+        pin_ref.reference.starts_with('#')
+            || schematic_pin_refs.contains(&(pin_ref.reference.as_str(), pin_ref.pin.as_str()))
+    })
 }
 
 type ProjectNetclassDefinitions = BTreeMap<String, (i64, Option<f64>)>;
@@ -901,6 +915,16 @@ mod tests {
 
         let widths = project_wire_stroke_widths_mm(&project, &facts, &netlist);
         assert_eq!(widths.get(&42), Some(&0.254));
+
+        let mut incomplete_netlist = netlist.clone();
+        incomplete_netlist.pin_nets.insert(
+            PinRef {
+                reference: "U2".to_owned(),
+                pin: "1".to_owned(),
+            },
+            "N2".to_owned(),
+        );
+        assert!(project_wire_stroke_widths_mm(&project, &facts, &incomplete_netlist).is_empty());
 
         let conflicting_facts = SchematicFacts {
             pins: vec![
