@@ -7,7 +7,7 @@ This page separates implemented functionality from the remaining migration work.
 - Four-crate Rust workspace with a strict inherited lint policy and locked dependencies.
 - Lossless KiCad S-expression parser integration, UTF-8 byte spans, and terminal line/column rendering delegated to `miette`.
 - Shared diagnostic model with severity, source spans, and schematic coordinates.
-- Typed built-in rule IDs, a complete 22-entry built-in descriptor catalogue, deterministic registry, and a deterministic `RulePass` engine with shared immutable analysis facts. The descriptor default levels are descriptive until the rule-policy layer is implemented.
+- Typed built-in rule IDs, a complete 22-entry built-in descriptor catalogue, deterministic registry, and a deterministic `RulePass` engine with shared immutable analysis facts. An opt-in TOML policy applies named `default`, `strict`, or `advisory` presets and per-rule `allow`, `warn`, or `deny` overrides; no policy file preserves existing rule severities.
 - KiCad CLI native ERC adapter, per-sheet JSON normalization, and flattened netlist export with component-pin-to-net lookup.
 - Text and JSON CLI output.
 - CI for formatting, strict Clippy, workspace tests, documentation tests, release build, and a native KiCad ERC/netlist smoke test.
@@ -32,7 +32,7 @@ Version-1 JSON profiles currently support:
 - Minimum member-origin spacing, minimum frame inset, and a per-group wire-length budget measured as the sum of segments wholly within the referenced frame.
 - Explicit required no-connect pin numbers via the component `attributes.required_no_connect_pins` comma-separated string.
 
-The profile format is deliberately explicit; project-specific expectations are not imported from a schematic generator. A broader JSON Schema and a separate general rule-policy configuration are still planned.
+The profile format is deliberately explicit; project-specific expectations are not imported from a schematic generator. A broader JSON Schema and typed rule-policy options remain planned.
 
 ## Next: reduce remaining domain-specific extraction
 
@@ -50,7 +50,7 @@ The profile format is deliberately explicit; project-specific expectations are n
 
 ## Rule configuration and extensibility
 
-- Add a project rule-policy file such as `kicad-clippy.toml` with explicit `allow`, `warn`, and `deny` levels and named presets.
+- Add typed per-rule options and schema versioning for the implemented `kicad-clippy.toml` policy file.
 - Extend the initial geometry, label and annotation passes with explicit semantic/connectivity phases; version the extension contract and add typed per-rule options.
 - Add rule explain/list commands and schema validation for configuration.
 - Consider sandboxed WASM rule packs only after the in-process API and semantic model are stable.
