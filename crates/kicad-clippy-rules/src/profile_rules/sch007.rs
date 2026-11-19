@@ -94,7 +94,7 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch007 {
     fn id(&self) -> BuiltinRuleId {
         BuiltinRuleId::Sch007
     }
-    /// Compares profile group membership with native KiCad group membership.
+    /// Compares profile group membership with native `KiCad` group membership.
     ///
     /// # Arguments
     ///
