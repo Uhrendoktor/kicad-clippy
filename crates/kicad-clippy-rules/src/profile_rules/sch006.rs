@@ -6,7 +6,6 @@ use kicad_clippy_core::Diagnostic;
 use kicad_clippy_core::Severity;
 use super::GroupIntent;
 use super::SchematicFacts;
-use super::validate_group_spacing;
 
 /// Checks that a group's member symbols satisfy the spacing constraints declared by the profile.
 ///

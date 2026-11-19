@@ -8,7 +8,6 @@ use super::GroupIntent;
 use super::MAX_COMPACTNESS_SCORE;
 use super::SchematicFacts;
 use super::SCORE_COMPARISON_EPSILON;
-use super::validate_wire_compactness;
 
 /// Checks whether the total physical wire length of a group stays within its declared length budget.
 ///

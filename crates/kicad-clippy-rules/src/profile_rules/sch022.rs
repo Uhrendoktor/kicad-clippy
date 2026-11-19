@@ -10,9 +10,6 @@ use super::ComponentIntent;
 use super::ComponentKind;
 use super::DecouplingIntent;
 use super::valid_pin_ref;
-use super::validate_decoupler_groups;
-use super::validate_decoupling_intent;
-use super::validate_decoupling_nets;
 
 /// Validates a capacitor's decoupling target and supply/return net declarations.
 ///

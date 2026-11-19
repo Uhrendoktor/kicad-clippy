@@ -1,38 +1,102 @@
-//! Checks `SCH021` strict component metadata and role-specific connection requirements.
+//! Checks `SCH021` component metadata and role-specific connection contracts.
 
 use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::Diagnostic;
 use kicad_clippy_core::Severity;
+use kicad_clippy_erc::Netlist;
 use std::collections::BTreeSet;
 use super::ComponentIntent;
 use super::ComponentKind;
 use super::LintProfile;
-use super::validate_role_contract;
 
-    /// Reports profile entries whose reference designators do not identify placed symbols in the schematic.
-    ///
-    /// # Arguments
-    ///
-    /// * `profile` — Loaded profile whose component declarations and strict-mode exemptions are checked.
-/// * `references` — Set of schematic reference designators used to verify profile membership.
-    ///
-    /// # Returns
-    ///
-    /// Diagnostics for profile component references that do not resolve to placed symbols in the schematic.
-    pub(super) fn validate_profile_references(profile: &LintProfile, references: &BTreeSet<String>) -> Vec<Diagnostic> {
-        profile.components
-            .keys()
-            .filter(|reference| !references.contains(*reference))
-            .map(|reference| {
-                Diagnostic::for_builtin_rule(
-                    BuiltinRuleId::Sch021,
-                    Severity::Error,
-                    format!("profile metadata references missing component {reference}"),
-                )
-            })
-            .collect()
-    }
+/// Reports profile entries whose reference designators do not identify placed symbols in the schematic.
+///
+/// # Arguments
+///
+/// * `profile` — Project profile whose component declarations are compared with the placed schematic inventory.
+/// * `references` — Set of placed schematic reference designators used to validate profile entries.
+///
+/// # Returns
+///
+/// Diagnostics for profile entries that refer to components absent from the schematic.
+pub(super) fn validate_profile_references(
+    profile: &LintProfile,
+    references: &BTreeSet<String>,
+) -> Vec<Diagnostic> {
+    profile.components
+        .keys()
+        .filter(|reference| !references.contains(*reference))
+        .map(|reference| {
+            Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch021,
+                Severity::Error,
+                format!("profile metadata references missing component {reference}"),
+            )
+        })
+        .collect()
 }
+
+
+/// Validates the declared kind, role, purpose, pin contract, and any decoupling intent for one component.
+///
+/// # Arguments
+///
+/// * `reference` — Reference designator of the component whose declared function, role, and connections are validated.
+/// * `intent` — Component-intent record containing the documented purpose, electrical role, and optional decoupling contract.
+/// * `netlist` — Optional `KiCad`-exported flattened netlist used to validate logical pin-to-net assignments.
+///
+/// # Returns
+///
+/// Diagnostics for missing purpose documentation, mismatched pin nets, invalid role connections, or incomplete decoupling intent.
+pub(super) fn validate_component_intent(
+    reference: &str,
+    intent: &ComponentIntent,
+    netlist: Option<&Netlist>,
+) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+    if intent.function.as_deref().is_none_or(str::is_empty)
+        || intent.rationale.as_deref().is_none_or(str::is_empty)
+    {
+        diagnostics.push(Diagnostic::for_builtin_rule(
+            BuiltinRuleId::Sch020,
+            Severity::Error,
+            format!("{reference} must document both its circuit function and design rationale"),
+        ));
+    }
+    if intent.kind == ComponentKind::Capacitor && intent.role.0 == "decoupling" {
+        diagnostics.extend(super::sch022::validate_decoupling_intent(
+            reference,
+            intent.decoupling.as_ref(),
+            netlist,
+        ));
+    }
+    diagnostics.extend(super::sch014::validate_pin_net_contract(reference, intent, netlist));
+    diagnostics.extend(validate_role_contract(reference, intent));
+    if intent.kind == ComponentKind::Capacitor
+        && !matches!(
+            intent.role.0.as_str(),
+            "decoupling"
+                | "bulk"
+                | "filter"
+                | "timing"
+                | "coupling"
+                | "snubber"
+                | "reservoir"
+                | "safety"
+        )
+    {
+        diagnostics.push(Diagnostic::for_builtin_rule(
+            BuiltinRuleId::Sch021,
+            Severity::Warning,
+            format!(
+                "{reference} uses unknown capacitor role {:?}; document its meaning or use a standard role",
+                intent.role.0
+            ),
+        ));
+    }
+    diagnostics
+}
+
 
 /// Checks that the declared component role has the required electrical connections.
 ///

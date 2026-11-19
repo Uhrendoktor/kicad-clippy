@@ -5,7 +5,6 @@ use kicad_clippy_core::Diagnostic;
 use kicad_clippy_core::Severity;
 use super::GroupIntent;
 use super::SchematicFacts;
-use super::validate_kicad_group_membership;
 
 /// Checks that the profile's member references match the schematic's explicit `KiCad` group membership.
 ///
