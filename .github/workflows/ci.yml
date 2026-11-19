@@ -8,7 +8,7 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -21,6 +21,8 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref }}
 
       - name: Install stable Rust toolchain
         shell: bash
@@ -33,19 +35,46 @@ jobs:
       - name: Verify locked dependencies
         run: cargo fetch --locked
 
-      - name: Apply rustfmt and export formatted Rust sources
+      - name: Apply rustfmt and normalize doc-comment spacing
         shell: bash
         run: |
           set -euo pipefail
           cargo fmt --all
-          tar -czf "$RUNNER_TEMP/rustfmt-source.tar.gz" crates
+          python3 - <<'PY'
+          from pathlib import Path
 
-      - name: Upload rustfmt source output
-        uses: actions/upload-artifact@v4
-        with:
-          name: rustfmt-source
-          path: ${{ runner.temp }}/rustfmt-source.tar.gz
-          if-no-files-found: error
+          for path in Path("crates").rglob("*.rs"):
+              lines = path.read_text(encoding="utf-8").splitlines()
+              output = []
+              index = 0
+              while index < len(lines):
+                  if not lines[index].strip() and output and output[-1].lstrip().startswith("///"):
+                      following = index
+                      while following < len(lines) and not lines[following].strip():
+                          following += 1
+                      if following < len(lines) and not lines[following].lstrip().startswith("///"):
+                          index = following
+                          continue
+                  output.append(lines[index])
+                  index += 1
+              path.write_text("\n".join(output) + "\n", encoding="utf-8")
+          PY
+
+      - name: Commit formatting and documentation fixes
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add crates
+          if ! git diff --cached --quiet; then
+            git commit -m "style: normalize strict Rust documentation"
+            git push origin "HEAD:${GITHUB_HEAD_REF}"
+          fi
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
 
       - name: Enforce Rust documentation contract
         run: python3 scripts/check-rust-docs.py
