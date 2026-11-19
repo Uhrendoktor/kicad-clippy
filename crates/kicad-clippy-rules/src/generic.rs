@@ -4844,12 +4844,8 @@ mod tests {
     /// # Returns
     ///
     /// The cubic control points, exact curve point, crossing wire and flattened polyline.
-    fn analytic_bezier_wire_fixture() -> (
-        [(f64, f64); 4],
-        (f64, f64),
-        super::Segment,
-        Vec<(f64, f64)>,
-    ) {
+    fn analytic_bezier_wire_fixture()
+    -> ([(f64, f64); 4], (f64, f64), super::Segment, Vec<(f64, f64)>) {
         let controls = [(0.0, 0.0), (0.0, 10.0), (10.0, 10.0), (10.0, 0.0)];
         let curve = super::CurveCubicBez::new(
             super::CurvePoint::new(controls[0].0, controls[0].1),
