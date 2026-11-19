@@ -262,17 +262,19 @@ pub struct LintProfile {
 }
 
 impl LintProfile {
-    /// Load a JSON profile from disk.
+    /// Loads a component-intent profile, validates its schema version, and returns the decoded profile.
     ///
-    /// # Errors
-    /// Returns an I/O or JSON decoding error.
     /// # Arguments
     ///
-    /// * `path` — Input `path` used by this operation.
+    /// * `path` — Path to the profile JSON file to load.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
+    /// The decoded profile on success; an error describes file access, JSON decoding, or an unsupported profile schema.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the file cannot be read, the JSON is invalid, or the schema version is unsupported.
     pub fn from_path(path: impl AsRef<Path>) -> Result<Self, MetadataError> {
         let content = fs::read_to_string(path).map_err(MetadataError::Io)?;
         let profile: Self = serde_json::from_str(&content).map_err(MetadataError::Json)?;
@@ -282,30 +284,30 @@ impl LintProfile {
         Ok(profile)
     }
 
-    /// Validate declared intent against placed components in the schematic.
+    /// Validates the profile against the schematic without relying on an exported electrical netlist.
+    ///
     /// # Arguments
     ///
-    /// * `document` — Input `document` used by this operation.
+    /// * `document` — Parsed schematic whose symbols, geometry, labels, and group declarations are being checked.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
-    ///
+    /// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
     #[must_use]
     pub fn validate(&self, document: &SchematicDocument) -> Vec<Diagnostic> {
         self.validate_with_netlist(document, None)
     }
 
-    /// Validate declared intent against the schematic and an exported `KiCad` netlist.
+    /// Validates all declared component, group, and connectivity intent against the schematic and, when available, KiCad's exported netlist.
+    ///
     /// # Arguments
     ///
-    /// * `document` — Input `document` used by this operation.
-    /// * `netlist` — Input `netlist` used by this operation.
+    /// * `document` — Parsed schematic whose symbols, geometry, labels, and group declarations are being checked.
+    /// * `netlist` — Optional KiCad-exported flattened netlist; supplies logical pin-to-net assignments when present.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
-    ///
+    /// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
     #[must_use]
     pub fn validate_with_netlist(
         &self,
@@ -359,15 +361,15 @@ impl LintProfile {
         ));
         diagnostics
     }
-    /// Processes validate profile references using the supplied values and schematic data.
+    /// Reports profile entries whose reference designators do not identify placed symbols in the schematic.
     ///
     /// # Arguments
     ///
-    /// * `references` — Input `references` used by this operation.
+    /// * `references` — Set of schematic reference designators used to verify profile membership.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
+    /// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
     fn validate_profile_references(&self, references: &BTreeSet<String>) -> Vec<Diagnostic> {
         self.components
             .keys()
@@ -382,17 +384,17 @@ impl LintProfile {
             .collect()
     }
 }
-/// Processes validate direct wire connectivity using the supplied values and schematic data.
+/// Checks declared pin pairs and forbidden labels against physical wire connectivity, not merely matching net names.
 ///
 /// # Arguments
 ///
-/// * `pairs` — Input `pairs` used by this operation.
-/// * `forbidden_labels` — Input `forbidden labels` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
+/// * `pairs` — Declared physical-wire pin pairs, each expressed as two REF.PIN references.
+/// * `forbidden_labels` — Names that are not permitted on the selected physical wire components.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_direct_wire_connectivity(
     pairs: &[DirectWirePair],
     forbidden_labels: &BTreeSet<String>,
@@ -419,17 +421,17 @@ fn validate_direct_wire_connectivity(
     ));
     diagnostics
 }
-/// Processes validate direct wire pair using the supplied values and schematic data.
+/// Checks that both REF.PIN endpoints share one physical wire-only component and do not have disallowed label anchors.
 ///
 /// # Arguments
 ///
-/// * `pair` — Input `pair` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
-/// * `component_ids` — Input `component ids` used by this operation.
+/// * `pair` — The direct-wire or separate-wire pair contract being validated.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
+/// * `component_ids` — Map from tolerance-normalized schematic coordinates to physical wire-component identifiers.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The diagnostics produced for this pair and the physical wire-component identifiers protected by its declaration.
 fn validate_direct_wire_pair(
     pair: &DirectWirePair,
     facts: &SchematicFacts,
@@ -574,18 +576,18 @@ fn append_direct_wire_pair_label_diagnostics(
         }
     }
 }
-/// Processes validate forbidden direct wire labels using the supplied values and schematic data.
+/// Reports forbidden labels that appear on wire components protected by a direct-wire-pair declaration.
 ///
 /// # Arguments
 ///
-/// * `forbidden_labels` — Input `forbidden labels` used by this operation.
-/// * `protected_components` — Input `protected components` used by this operation.
-/// * `component_ids` — Input `component ids` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
+/// * `forbidden_labels` — Names that are not permitted on the selected physical wire components.
+/// * `protected_components` — Wire-component identifiers that are covered by a direct-wire-pair declaration.
+/// * `component_ids` — Map from tolerance-normalized schematic coordinates to physical wire-component identifiers.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_forbidden_direct_wire_labels(
     forbidden_labels: &BTreeSet<String>,
     protected_components: &BTreeSet<usize>,
@@ -619,17 +621,17 @@ fn validate_forbidden_direct_wire_labels(
     }
     diagnostics
 }
-/// Processes validate common pin groups using the supplied values and schematic data.
+/// Validates common-net group declarations against physical wire topology and the optional exported netlist.
 ///
 /// # Arguments
 ///
-/// * `groups` — Input `groups` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
-/// * `netlist` — Input `netlist` used by this operation.
+/// * `groups` — Map of profile group identifiers to their associated group-intent records.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
+/// * `netlist` — Optional KiCad-exported flattened netlist; supplies logical pin-to-net assignments when present.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_common_pin_groups(
     groups: &[CommonPinNetGroup],
     facts: &SchematicFacts,
@@ -646,17 +648,17 @@ fn validate_common_pin_groups(
     }
     diagnostics
 }
-/// Processes validate common pin group using the supplied values and schematic data.
+/// Checks that every pin in one common-net group resolves to the same physical wire component and has the required label.
 ///
 /// # Arguments
 ///
-/// * `group` — Input `group` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
-/// * `component_ids` — Input `component ids` used by this operation.
+/// * `group` — The group-intent record containing its members and declared constraints.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
+/// * `component_ids` — Map from tolerance-normalized schematic coordinates to physical wire-component identifiers.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_common_pin_group(
     group: &CommonPinNetGroup,
     facts: &SchematicFacts,
@@ -691,16 +693,16 @@ fn validate_common_pin_group(
     }
     diagnostics
 }
-/// Processes validate common pin group netlist using the supplied values and schematic data.
+/// Checks the exported net assignments for a common-pin group when a netlist is available.
 ///
 /// # Arguments
 ///
-/// * `group` — Input `group` used by this operation.
-/// * `netlist` — Input `netlist` used by this operation.
+/// * `group` — The group-intent record containing its members and declared constraints.
+/// * `netlist` — Optional KiCad-exported flattened netlist; supplies logical pin-to-net assignments when present.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_common_pin_group_netlist(
     group: &CommonPinNetGroup,
     netlist: Option<&Netlist>,
@@ -755,16 +757,16 @@ fn validate_common_pin_group_netlist(
     }
     diagnostics
 }
-/// Processes validate physical wire groups using the supplied values and schematic data.
+/// Validates the physical membership and label constraints of each declared wire group.
 ///
 /// # Arguments
 ///
-/// * `groups` — Input `groups` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
+/// * `groups` — Map of profile group identifiers to their associated group-intent records.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_physical_wire_groups(
     groups: &[PhysicalWireGroup],
     facts: &SchematicFacts,
@@ -778,17 +780,17 @@ fn validate_physical_wire_groups(
         .flat_map(|group| validate_physical_wire_group(group, facts, &component_ids))
         .collect()
 }
-/// Processes validate physical wire group using the supplied values and schematic data.
+/// Checks that the declared pins of one physical-wire group resolve to the required connected wire component.
 ///
 /// # Arguments
 ///
-/// * `group` — Input `group` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
-/// * `component_ids` — Input `component ids` used by this operation.
+/// * `group` — The group-intent record containing its members and declared constraints.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
+/// * `component_ids` — Map from tolerance-normalized schematic coordinates to physical wire-component identifiers.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_physical_wire_group(
     group: &PhysicalWireGroup,
     facts: &SchematicFacts,
@@ -883,16 +885,16 @@ fn validate_physical_wire_group(
     }
     diagnostics
 }
-/// Processes invalid physical wire reference using the supplied values and schematic data.
+/// Builds an SCH004 error for a physical-wire group member that is not a valid REF.PIN identifier.
 ///
 /// # Arguments
 ///
-/// * `group_name` — Input `group name` used by this operation.
-/// * `pin_ref` — Input `pin ref` used by this operation.
+/// * `group_name` — Human-readable group name used in the diagnostic message.
+/// * `pin_ref` — A single pin identifier in REF.PIN form.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// An SCH004 error diagnostic identifying the malformed pin reference.
 fn invalid_physical_wire_reference(group_name: &str, pin_ref: &str) -> Diagnostic {
     Diagnostic::for_builtin_rule(
         BuiltinRuleId::Sch004,
@@ -900,17 +902,17 @@ fn invalid_physical_wire_reference(group_name: &str, pin_ref: &str) -> Diagnosti
         format!("physical wire group {group_name:?} contains invalid pin reference {pin_ref:?}"),
     )
 }
-/// Processes validate separate wire pairs using the supplied values and schematic data.
+/// Checks that each declared pair of pins belongs to separate physical and logical nets.
 ///
 /// # Arguments
 ///
-/// * `pairs` — Input `pairs` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
-/// * `netlist` — Input `netlist` used by this operation.
+/// * `pairs` — Declared physical-wire pin pairs, each expressed as two REF.PIN references.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
+/// * `netlist` — Optional KiCad-exported flattened netlist; supplies logical pin-to-net assignments when present.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_separate_wire_pairs(
     pairs: &[SeparateWirePair],
     facts: &SchematicFacts,
@@ -931,18 +933,18 @@ fn validate_separate_wire_pairs(
     }
     diagnostics
 }
-/// Processes validate separate wire pair using the supplied values and schematic data.
+/// Checks that the two pins in a separate-wire contract do not share a physical wire component or an exported logical net.
 ///
 /// # Arguments
 ///
-/// * `pair` — Input `pair` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
-/// * `component_ids` — Input `component ids` used by this operation.
-/// * `netlist` — Input `netlist` used by this operation.
+/// * `pair` — The direct-wire or separate-wire pair contract being validated.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
+/// * `component_ids` — Map from tolerance-normalized schematic coordinates to physical wire-component identifiers.
+/// * `netlist` — Optional KiCad-exported flattened netlist; supplies logical pin-to-net assignments when present.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_separate_wire_pair(
     pair: &SeparateWirePair,
     facts: &SchematicFacts,
@@ -1049,15 +1051,15 @@ fn validate_separate_wire_pair(
     }
     diagnostics
 }
-/// Processes common pin group configuration error using the supplied values and schematic data.
+/// Returns a configuration error when a common-pin group has an empty name, too few pins, duplicate pins, or malformed pin references.
 ///
 /// # Arguments
 ///
-/// * `group` — Input `group` used by this operation.
+/// * `group` — The group-intent record containing its members and declared constraints.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// A configuration diagnostic when the group declaration is invalid, or `None` when the declaration is well formed.
 fn common_pin_group_configuration_error(group: &CommonPinNetGroup) -> Option<Diagnostic> {
     let group_name = group.name.trim();
     let unique_pins: BTreeSet<_> = group.pins.iter().collect();
@@ -1074,17 +1076,17 @@ fn common_pin_group_configuration_error(group: &CommonPinNetGroup) -> Option<Dia
         Diagnostic::for_builtin_rule(BuiltinRuleId::Sch004, Severity::Error, message)
     })
 }
-/// Processes resolve common pin group components using the supplied values and schematic data.
+/// Resolves the physical wire components touched by a common-pin group and reports pins that cannot be mapped to the schematic.
 ///
 /// # Arguments
 ///
-/// * `group` — Input `group` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
-/// * `component_ids` — Input `component ids` used by this operation.
+/// * `group` — The group-intent record containing its members and declared constraints.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
+/// * `component_ids` — Map from tolerance-normalized schematic coordinates to physical wire-component identifiers.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The physical wire components resolved from the declared pins, together with diagnostics for pins that could not be resolved.
 fn resolve_common_pin_group_components(
     group: &CommonPinNetGroup,
     facts: &SchematicFacts,
@@ -1156,16 +1158,16 @@ fn resolve_common_pin_group_components(
     }
     (roots, diagnostics)
 }
-/// Processes invalid common pin reference using the supplied values and schematic data.
+/// Builds an SCH004 error for a common-pin group member that is not a valid REF.PIN identifier.
 ///
 /// # Arguments
 ///
-/// * `group_name` — Input `group name` used by this operation.
-/// * `pin_ref` — Input `pin ref` used by this operation.
+/// * `group_name` — Human-readable group name used in the diagnostic message.
+/// * `pin_ref` — A single pin identifier in REF.PIN form.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// An SCH004 error diagnostic identifying the malformed pin reference.
 fn invalid_common_pin_reference(group_name: &str, pin_ref: &str) -> Diagnostic {
     Diagnostic::for_builtin_rule(
         BuiltinRuleId::Sch004,
@@ -1173,18 +1175,18 @@ fn invalid_common_pin_reference(group_name: &str, pin_ref: &str) -> Diagnostic {
         format!("common pin group {group_name:?} contains invalid pin reference {pin_ref:?}"),
     )
 }
-/// Processes common pin group label count using the supplied values and schematic data.
+/// Counts how many declared pins belong to a physical component carrying the requested common-net label.
 ///
 /// # Arguments
 ///
-/// * `group` — Input `group` used by this operation.
-/// * `roots` — Input `roots` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
-/// * `component_ids` — Input `component ids` used by this operation.
+/// * `group` — The group-intent record containing its members and declared constraints.
+/// * `roots` — Physical wire-component identifiers already resolved for the group's declared pins.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
+/// * `component_ids` — Map from tolerance-normalized schematic coordinates to physical wire-component identifiers.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The number of declared pins that resolve to a component carrying the expected label.
 fn common_pin_group_label_count(
     group: &CommonPinNetGroup,
     roots: &BTreeSet<usize>,
@@ -1211,18 +1213,18 @@ fn common_pin_group_label_count(
         })
         .count()
 }
-/// Processes component has label using the supplied values and schematic data.
+/// Checks whether a physical wire component carries a label with the requested exact name.
 ///
 /// # Arguments
 ///
-/// * `component` — Input `component` used by this operation.
-/// * `expected_name` — Input `expected name` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
-/// * `component_ids` — Input `component ids` used by this operation.
+/// * `component` — Physical wire-component identifier to inspect.
+/// * `expected_name` — Exact label text expected on the selected wire component.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
+/// * `component_ids` — Map from tolerance-normalized schematic coordinates to physical wire-component identifiers.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the physical component carries a label whose text exactly matches `expected_name`.
 fn component_has_label(
     component: usize,
     expected_name: &str,
@@ -1243,16 +1245,16 @@ fn component_has_label(
         component_ids.get(&key) == Some(&component)
     })
 }
-/// Processes point is on wire using the supplied values and schematic data.
+/// Checks whether a schematic coordinate lies on any parsed wire segment within the geometry tolerance.
 ///
 /// # Arguments
 ///
-/// * `point` — Input `point` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
+/// * `point` — Schematic coordinate to test, in millimetres.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the coordinate lies on a wire segment within the schematic geometry tolerance.
 fn point_is_on_wire(point: (f64, f64), facts: &SchematicFacts) -> bool {
     facts.wires.iter().any(|wire| {
         let horizontal = (wire.start_mm.1 - wire.end_mm.1).abs() <= GEOMETRY_TOLERANCE_MM;
@@ -1269,30 +1271,30 @@ fn point_is_on_wire(point: (f64, f64), facts: &SchematicFacts) -> bool {
         }
     })
 }
-/// Processes same wire point using the supplied values and schematic data.
+/// Compares two schematic coordinates using the shared geometry tolerance.
 ///
 /// # Arguments
 ///
-/// * `first` — Input `first` used by this operation.
-/// * `second` — Input `second` used by this operation.
+/// * `first` — First schematic point or pin endpoint in the comparison.
+/// * `second` — Second schematic point or pin endpoint in the comparison.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when both coordinates match within the schematic geometry tolerance.
 fn same_wire_point(first: (f64, f64), second: (f64, f64)) -> bool {
     (first.0 - second.0).abs() <= GEOMETRY_TOLERANCE_MM
         && (first.1 - second.1).abs() <= GEOMETRY_TOLERANCE_MM
 }
-/// Processes validate groups using the supplied values and schematic data.
+/// Validates every group-intent declaration in the profile.
 ///
 /// # Arguments
 ///
-/// * `groups` — Input `groups` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
+/// * `groups` — Map of profile group identifiers to their associated group-intent records.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_groups(
     groups: &BTreeMap<String, GroupIntent>,
     facts: &SchematicFacts,
@@ -1308,18 +1310,18 @@ fn validate_groups(
     }
     diagnostics
 }
-/// Processes validate group using the supplied values and schematic data.
+/// Validates one group declaration, including membership, evidence, containment, frame clearance, spacing, and wiring contracts.
 ///
 /// # Arguments
 ///
-/// * `group_id` — Input `group id` used by this operation.
-/// * `group` — Input `group` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
-/// * `references` — Input `references` used by this operation.
+/// * `group_id` — Stable profile identifier for the group; it is included in any diagnostic produced by this check.
+/// * `group` — The group-intent record containing its members and declared constraints.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
+/// * `references` — Set of schematic reference designators used to verify profile membership.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_group(
     group_id: &str,
     group: &GroupIntent,
@@ -1356,17 +1358,17 @@ fn validate_group(
     ));
     diagnostics
 }
-/// Processes validate group containment using the supplied values and schematic data.
+/// Checks that every declared group member and its attached geometry lies inside the group's referenced frame.
 ///
 /// # Arguments
 ///
-/// * `group_id` — Input `group id` used by this operation.
-/// * `group` — Input `group` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
+/// * `group_id` — Stable profile identifier for the group; it is included in any diagnostic produced by this check.
+/// * `group` — The group-intent record containing its members and declared constraints.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_group_containment(
     group_id: &str,
     group: &GroupIntent,
@@ -1453,19 +1455,19 @@ fn validate_group_containment(
     ));
     diagnostics
 }
-/// Processes validate group pin containment using the supplied values and schematic data.
+/// Checks that every pin belonging to a group member lies inside the frame bounds.
 ///
 /// # Arguments
 ///
-/// * `group_id` — Input `group id` used by this operation.
-/// * `group` — Input `group` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
-/// * `frame_uuid` — Input `frame uuid` used by this operation.
-/// * `frame_bounds` — Input `frame bounds` used by this operation.
+/// * `group_id` — Stable profile identifier for the group; it is included in any diagnostic produced by this check.
+/// * `group` — The group-intent record containing its members and declared constraints.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
+/// * `frame_uuid` — UUID of the schematic frame assigned to this group.
+/// * `frame_bounds` — Frame bounds in millimetres, ordered as (left, top, right, bottom).
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_group_pin_containment(
     group_id: &str,
     group: &GroupIntent,
@@ -1490,19 +1492,19 @@ fn validate_group_pin_containment(
         })
         .collect()
 }
-/// Processes validate group field containment using the supplied values and schematic data.
+/// Checks that visible reference/value fields for group members lie inside the frame bounds.
 ///
 /// # Arguments
 ///
-/// * `group_id` — Input `group id` used by this operation.
-/// * `group` — Input `group` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
-/// * `frame_uuid` — Input `frame uuid` used by this operation.
-/// * `frame_bounds` — Input `frame bounds` used by this operation.
+/// * `group_id` — Stable profile identifier for the group; it is included in any diagnostic produced by this check.
+/// * `group` — The group-intent record containing its members and declared constraints.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
+/// * `frame_uuid` — UUID of the schematic frame assigned to this group.
+/// * `frame_bounds` — Frame bounds in millimetres, ordered as (left, top, right, bottom).
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_group_field_containment(
     group_id: &str,
     group: &GroupIntent,
@@ -1527,19 +1529,19 @@ fn validate_group_field_containment(
         })
         .collect()
 }
-/// Processes validate group description containment using the supplied values and schematic data.
+/// Checks that the description text box referenced by the group lies inside the frame bounds.
 ///
 /// # Arguments
 ///
-/// * `group_id` — Input `group id` used by this operation.
-/// * `group` — Input `group` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
-/// * `frame_uuid` — Input `frame uuid` used by this operation.
-/// * `frame_bounds` — Input `frame bounds` used by this operation.
+/// * `group_id` — Stable profile identifier for the group; it is included in any diagnostic produced by this check.
+/// * `group` — The group-intent record containing its members and declared constraints.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
+/// * `frame_uuid` — UUID of the schematic frame assigned to this group.
+/// * `frame_bounds` — Frame bounds in millimetres, ordered as (left, top, right, bottom).
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_group_description_containment(
     group_id: &str,
     group: &GroupIntent,
@@ -1569,19 +1571,19 @@ fn validate_group_description_containment(
         ),
     )]
 }
-/// Processes validate group symbol primitive containment using the supplied values and schematic data.
+/// Checks that symbol-library primitives for group members lie inside the frame bounds.
 ///
 /// # Arguments
 ///
-/// * `group_id` — Input `group id` used by this operation.
-/// * `group` — Input `group` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
-/// * `frame_uuid` — Input `frame uuid` used by this operation.
-/// * `frame_bounds` — Input `frame bounds` used by this operation.
+/// * `group_id` — Stable profile identifier for the group; it is included in any diagnostic produced by this check.
+/// * `group` — The group-intent record containing its members and declared constraints.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
+/// * `frame_uuid` — UUID of the schematic frame assigned to this group.
+/// * `frame_bounds` — Frame bounds in millimetres, ordered as (left, top, right, bottom).
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_group_symbol_primitive_containment(
     group_id: &str,
     group: &GroupIntent,
@@ -1606,17 +1608,17 @@ fn validate_group_symbol_primitive_containment(
         })
         .collect()
 }
-/// Processes symbol primitive inside frame using the supplied values and schematic data.
+/// Tests whether a symbol primitive's stroked geometry is contained within the supplied frame rectangle.
 ///
 /// # Arguments
 ///
-/// * `primitive` — Input `primitive` used by this operation.
-/// * `frame_bounds` — Input `frame bounds` used by this operation.
-/// * `clearance` — Input `clearance` used by this operation.
+/// * `primitive` — The transformed symbol primitive whose stroked geometry must fit inside the frame.
+/// * `frame_bounds` — Frame bounds in millimetres, ordered as (left, top, right, bottom).
+/// * `clearance` — Minimum required distance from each frame edge, in millimetres.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the primitive's stroked geometry is fully contained in the frame's clearance inset.
 fn symbol_primitive_inside_frame(
     primitive: &crate::generic::SchematicPrimitiveFact,
     frame_bounds: (f64, f64, f64, f64),
@@ -1647,16 +1649,16 @@ fn symbol_primitive_inside_frame(
             .iter()
             .all(|point| point_inside_frame_with_clearance(frame_bounds, *point, margin))
 }
-/// Processes group wire components using the supplied values and schematic data.
+/// Resolves the connected wire components that contain the group's member pins and returns the corresponding pin-to-component map.
 ///
 /// # Arguments
 ///
-/// * `group` — Input `group` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
+/// * `group` — The group-intent record containing its members and declared constraints.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Mappings from normalized pin coordinates to their physical wire-component identifiers, together with the related component lookup needed by the caller.
 fn group_wire_components(
     group: &GroupIntent,
     facts: &SchematicFacts,
@@ -1680,17 +1682,17 @@ fn group_wire_components(
         .collect();
     (component_ids, member_components)
 }
-/// Processes wire belongs to group using the supplied values and schematic data.
+/// Checks whether a wire segment belongs to one of the physical components reached from the group's member pins.
 ///
 /// # Arguments
 ///
-/// * `wire` — Input `wire` used by this operation.
-/// * `component_ids` — Input `component ids` used by this operation.
-/// * `member_components` — Input `member components` used by this operation.
+/// * `wire` — Parsed wire segment being tested for membership in the group's connected components.
+/// * `component_ids` — Map from tolerance-normalized schematic coordinates to physical wire-component identifiers.
+/// * `member_components` — Physical wire-component identifiers reached from the group's member pins.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the wire's connected component is among the components reached from the group pins.
 fn wire_belongs_to_group(
     wire: &crate::generic::SchematicWireFact,
     component_ids: &BTreeMap<String, usize>,
@@ -1704,19 +1706,19 @@ fn wire_belongs_to_group(
     .filter_map(|(x, y)| component_ids.get(&format!("{x:.3}:{y:.3}")))
     .any(|component| member_components.contains(component))
 }
-/// Processes validate group wire containment using the supplied values and schematic data.
+/// Checks that every wire segment in the group's physical components remains inside the referenced frame.
 ///
 /// # Arguments
 ///
-/// * `group_id` — Input `group id` used by this operation.
-/// * `group` — Input `group` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
-/// * `frame_uuid` — Input `frame uuid` used by this operation.
-/// * `frame_bounds` — Input `frame bounds` used by this operation.
+/// * `group_id` — Stable profile identifier for the group; it is included in any diagnostic produced by this check.
+/// * `group` — The group-intent record containing its members and declared constraints.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
+/// * `frame_uuid` — UUID of the schematic frame assigned to this group.
+/// * `frame_bounds` — Frame bounds in millimetres, ordered as (left, top, right, bottom).
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_group_wire_containment(
     group_id: &str,
     group: &GroupIntent,
@@ -1748,19 +1750,19 @@ fn validate_group_wire_containment(
         })
         .collect()
 }
-/// Processes validate group label containment using the supplied values and schematic data.
+/// Checks that labels attached to the group's physical wire components lie inside the referenced frame.
 ///
 /// # Arguments
 ///
-/// * `group_id` — Input `group id` used by this operation.
-/// * `group` — Input `group` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
-/// * `frame_uuid` — Input `frame uuid` used by this operation.
-/// * `frame_bounds` — Input `frame bounds` used by this operation.
+/// * `group_id` — Stable profile identifier for the group; it is included in any diagnostic produced by this check.
+/// * `group` — The group-intent record containing its members and declared constraints.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
+/// * `frame_uuid` — UUID of the schematic frame assigned to this group.
+/// * `frame_bounds` — Frame bounds in millimetres, ordered as (left, top, right, bottom).
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_group_label_containment(
     group_id: &str,
     group: &GroupIntent,
@@ -1807,19 +1809,19 @@ fn validate_group_label_containment(
         })
         .collect()
 }
-/// Processes validate group annotation box containment using the supplied values and schematic data.
+/// Checks that annotation text boxes associated with group members lie inside the referenced frame.
 ///
 /// # Arguments
 ///
-/// * `group_id` — Input `group id` used by this operation.
-/// * `group` — Input `group` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
-/// * `frame_uuid` — Input `frame uuid` used by this operation.
-/// * `frame_bounds` — Input `frame bounds` used by this operation.
+/// * `group_id` — Stable profile identifier for the group; it is included in any diagnostic produced by this check.
+/// * `group` — The group-intent record containing its members and declared constraints.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
+/// * `frame_uuid` — UUID of the schematic frame assigned to this group.
+/// * `frame_bounds` — Frame bounds in millimetres, ordered as (left, top, right, bottom).
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_group_annotation_box_containment(
     group_id: &str,
     group: &GroupIntent,
@@ -1848,18 +1850,18 @@ fn validate_group_annotation_box_containment(
         })
         .collect()
 }
-/// Processes validate group plain text containment using the supplied values and schematic data.
+/// Checks that standalone schematic text lies inside the referenced frame.
 ///
 /// # Arguments
 ///
-/// * `group_id` — Input `group id` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
-/// * `frame_uuid` — Input `frame uuid` used by this operation.
-/// * `frame_bounds` — Input `frame bounds` used by this operation.
+/// * `group_id` — Stable profile identifier for the group; it is included in any diagnostic produced by this check.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
+/// * `frame_uuid` — UUID of the schematic frame assigned to this group.
+/// * `frame_bounds` — Frame bounds in millimetres, ordered as (left, top, right, bottom).
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_group_plain_text_containment(
     group_id: &str,
     facts: &SchematicFacts,
@@ -1886,18 +1888,18 @@ fn validate_group_plain_text_containment(
         })
         .collect()
 }
-/// Processes validate group graphic containment using the supplied values and schematic data.
+/// Checks that sheet-level graphical primitives lie inside the referenced frame.
 ///
 /// # Arguments
 ///
-/// * `group_id` — Input `group id` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
-/// * `frame_uuid` — Input `frame uuid` used by this operation.
-/// * `frame_bounds` — Input `frame bounds` used by this operation.
+/// * `group_id` — Stable profile identifier for the group; it is included in any diagnostic produced by this check.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
+/// * `frame_uuid` — UUID of the schematic frame assigned to this group.
+/// * `frame_bounds` — Frame bounds in millimetres, ordered as (left, top, right, bottom).
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_group_graphic_containment(
     group_id: &str,
     facts: &SchematicFacts,
@@ -1925,18 +1927,18 @@ fn validate_group_graphic_containment(
         })
         .collect()
 }
-/// Processes validate group image containment using the supplied values and schematic data.
+/// Checks that bitmap images associated with the group lie inside the referenced frame.
 ///
 /// # Arguments
 ///
-/// * `group_id` — Input `group id` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
-/// * `frame_uuid` — Input `frame uuid` used by this operation.
-/// * `frame_bounds` — Input `frame bounds` used by this operation.
+/// * `group_id` — Stable profile identifier for the group; it is included in any diagnostic produced by this check.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
+/// * `frame_uuid` — UUID of the schematic frame assigned to this group.
+/// * `frame_bounds` — Frame bounds in millimetres, ordered as (left, top, right, bottom).
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_group_image_containment(
     group_id: &str,
     facts: &SchematicFacts,
@@ -1963,16 +1965,16 @@ fn validate_group_image_containment(
         })
         .collect()
 }
-/// Processes wire overlaps frame using the supplied values and schematic data.
+/// Tests whether a wire segment intersects or crosses the supplied frame boundary.
 ///
 /// # Arguments
 ///
-/// * `wire` — Input `wire` used by this operation.
-/// * `frame_bounds` — Input `frame bounds` used by this operation.
+/// * `wire` — Parsed wire segment being tested for membership in the group's connected components.
+/// * `frame_bounds` — Frame bounds in millimetres, ordered as (left, top, right, bottom).
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the wire segment intersects the frame rectangle or its boundary.
 fn wire_overlaps_frame(
     wire: &crate::generic::SchematicWireFact,
     frame_bounds: (f64, f64, f64, f64),
@@ -1997,31 +1999,31 @@ fn wire_overlaps_frame(
         )
     }
 }
-/// Processes rectangles overlap using the supplied values and schematic data.
+/// Tests whether two axis-aligned rectangles have a non-empty overlap.
 ///
 /// # Arguments
 ///
-/// * `first` — Input `first` used by this operation.
-/// * `second` — Input `second` used by this operation.
+/// * `first` — First schematic point or pin endpoint in the comparison.
+/// * `second` — Second schematic point or pin endpoint in the comparison.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the two rectangles share any area.
 fn rectangles_overlap(first: (f64, f64, f64, f64), second: (f64, f64, f64, f64)) -> bool {
     first.0 <= second.2 + GEOMETRY_TOLERANCE_MM
         && first.2 >= second.0 - GEOMETRY_TOLERANCE_MM
         && first.1 <= second.3 + GEOMETRY_TOLERANCE_MM
         && first.3 >= second.1 - GEOMETRY_TOLERANCE_MM
 }
-/// Processes point inside frame with clearance using the supplied values and schematic data.
+/// Tests whether a point remains inside a frame after reserving the requested edge clearance.
 ///
 /// # Arguments
 ///
-/// * `clearance` — Input `clearance` used by this operation.
+/// * `clearance` — Minimum required distance from each frame edge, in millimetres.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the point remains inside the frame after the requested inset is applied.
 fn point_inside_frame_with_clearance(
     (left, top, right, bottom): (f64, f64, f64, f64),
     (x, y): (f64, f64),
@@ -2032,15 +2034,15 @@ fn point_inside_frame_with_clearance(
         && y >= top + clearance - GEOMETRY_TOLERANCE_MM
         && y <= bottom - clearance + GEOMETRY_TOLERANCE_MM
 }
-/// Processes rectangle inside frame with clearance using the supplied values and schematic data.
+/// Tests whether an entire rectangle remains inside a frame after reserving the requested edge clearance.
 ///
 /// # Arguments
 ///
-/// * `clearance` — Input `clearance` used by this operation.
+/// * `clearance` — Minimum required distance from each frame edge, in millimetres.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the full rectangle remains inside the frame after the requested inset is applied.
 fn rectangle_inside_frame_with_clearance(
     (rect_left, rect_top, rect_right, rect_bottom): (f64, f64, f64, f64),
     (left, top, right, bottom): (f64, f64, f64, f64),
@@ -2051,11 +2053,11 @@ fn rectangle_inside_frame_with_clearance(
         && rect_right <= right - clearance + GEOMETRY_TOLERANCE_MM
         && rect_bottom <= bottom - clearance + GEOMETRY_TOLERANCE_MM
 }
-/// Processes point inside frame using the supplied values and schematic data.
+/// Tests whether a point lies inside or on the edge of an axis-aligned frame rectangle.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the point lies within the frame rectangle, including its boundary.
 fn point_inside_frame(
     (left, top, right, bottom): (f64, f64, f64, f64),
     (x, y): (f64, f64),
@@ -2065,11 +2067,11 @@ fn point_inside_frame(
         && y >= top - GEOMETRY_TOLERANCE_MM
         && y <= bottom + GEOMETRY_TOLERANCE_MM
 }
-/// Processes rectangle inside frame using the supplied values and schematic data.
+/// Tests whether an axis-aligned rectangle is fully contained by another rectangle.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the full rectangle is contained within the frame rectangle.
 fn rectangle_inside_frame(
     (rect_left, rect_top, rect_right, rect_bottom): (f64, f64, f64, f64),
     (left, top, right, bottom): (f64, f64, f64, f64),
@@ -2079,17 +2081,17 @@ fn rectangle_inside_frame(
         && rect_right <= right + GEOMETRY_TOLERANCE_MM
         && rect_bottom <= bottom + GEOMETRY_TOLERANCE_MM
 }
-/// Processes validate frame clearance using the supplied values and schematic data.
+/// Checks that group members and their associated schematic content are inset from the referenced frame by the requested clearance.
 ///
 /// # Arguments
 ///
-/// * `group_id` — Input `group id` used by this operation.
-/// * `group` — Input `group` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
+/// * `group_id` — Stable profile identifier for the group; it is included in any diagnostic produced by this check.
+/// * `group` — The group-intent record containing its members and declared constraints.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_frame_clearance(
     group_id: &str,
     group: &GroupIntent,
@@ -2172,11 +2174,11 @@ fn validate_frame_clearance(
     ));
     diagnostics
 }
-/// Processes valid frame bounds using the supplied values and schematic data.
+/// Checks that all four frame coordinates are finite and that the rectangle has positive width and height.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when all coordinates are finite and the frame has positive width and height.
 fn valid_frame_bounds((left, top, right, bottom): (f64, f64, f64, f64)) -> bool {
     left < right
         && top < bottom
@@ -2184,20 +2186,20 @@ fn valid_frame_bounds((left, top, right, bottom): (f64, f64, f64, f64)) -> bool 
             .iter()
             .all(|value| value.is_finite())
 }
-/// Processes validate member frame clearance using the supplied values and schematic data.
+/// Checks each group member's symbol origin against the minimum clearance inset from the frame edges.
 ///
 /// # Arguments
 ///
-/// * `group_id` — Input `group id` used by this operation.
-/// * `group` — Input `group` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
-/// * `frame_uuid` — Input `frame uuid` used by this operation.
-/// * `bounds` — Input `bounds` used by this operation.
-/// * `clearance` — Input `clearance` used by this operation.
+/// * `group_id` — Stable profile identifier for the group; it is included in any diagnostic produced by this check.
+/// * `group` — The group-intent record containing its members and declared constraints.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
+/// * `frame_uuid` — UUID of the schematic frame assigned to this group.
+/// * `bounds` — Frame bounds in millimetres, ordered as (left, top, right, bottom).
+/// * `clearance` — Minimum required distance from each frame edge, in millimetres.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_member_frame_clearance(
     group_id: &str,
     group: &GroupIntent,
@@ -2242,20 +2244,20 @@ fn validate_member_frame_clearance(
     }
     diagnostics
 }
-/// Processes validate member pin frame clearance using the supplied values and schematic data.
+/// Checks every placed pin on a group member against the minimum frame-edge clearance.
 ///
 /// # Arguments
 ///
-/// * `group_id` — Input `group id` used by this operation.
-/// * `group` — Input `group` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
-/// * `frame_uuid` — Input `frame uuid` used by this operation.
-/// * `bounds` — Input `bounds` used by this operation.
-/// * `clearance` — Input `clearance` used by this operation.
+/// * `group_id` — Stable profile identifier for the group; it is included in any diagnostic produced by this check.
+/// * `group` — The group-intent record containing its members and declared constraints.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
+/// * `frame_uuid` — UUID of the schematic frame assigned to this group.
+/// * `bounds` — Frame bounds in millimetres, ordered as (left, top, right, bottom).
+/// * `clearance` — Minimum required distance from each frame edge, in millimetres.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_member_pin_frame_clearance(
     group_id: &str,
     group: &GroupIntent,
@@ -2289,20 +2291,20 @@ fn validate_member_pin_frame_clearance(
     }
     diagnostics
 }
-/// Processes validate member field frame clearance using the supplied values and schematic data.
+/// Checks the visible reference and value fields of group members against the minimum frame-edge clearance.
 ///
 /// # Arguments
 ///
-/// * `group_id` — Input `group id` used by this operation.
-/// * `group` — Input `group` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
-/// * `frame_uuid` — Input `frame uuid` used by this operation.
-/// * `bounds` — Input `bounds` used by this operation.
-/// * `clearance` — Input `clearance` used by this operation.
+/// * `group_id` — Stable profile identifier for the group; it is included in any diagnostic produced by this check.
+/// * `group` — The group-intent record containing its members and declared constraints.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
+/// * `frame_uuid` — UUID of the schematic frame assigned to this group.
+/// * `bounds` — Frame bounds in millimetres, ordered as (left, top, right, bottom).
+/// * `clearance` — Minimum required distance from each frame edge, in millimetres.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_member_field_frame_clearance(
     group_id: &str,
     group: &GroupIntent,
@@ -2336,20 +2338,20 @@ fn validate_member_field_frame_clearance(
     }
     diagnostics
 }
-/// Processes validate group symbol primitive clearance using the supplied values and schematic data.
+/// Checks that stroked symbol-library geometry stays the requested distance from the frame edges.
 ///
 /// # Arguments
 ///
-/// * `group_id` — Input `group id` used by this operation.
-/// * `group` — Input `group` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
-/// * `frame_uuid` — Input `frame uuid` used by this operation.
-/// * `frame_bounds` — Input `frame bounds` used by this operation.
-/// * `clearance` — Input `clearance` used by this operation.
+/// * `group_id` — Stable profile identifier for the group; it is included in any diagnostic produced by this check.
+/// * `group` — The group-intent record containing its members and declared constraints.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
+/// * `frame_uuid` — UUID of the schematic frame assigned to this group.
+/// * `frame_bounds` — Frame bounds in millimetres, ordered as (left, top, right, bottom).
+/// * `clearance` — Minimum required distance from each frame edge, in millimetres.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_group_symbol_primitive_clearance(
     group_id: &str,
     group: &GroupIntent,
@@ -2375,20 +2377,20 @@ fn validate_group_symbol_primitive_clearance(
         })
         .collect()
 }
-/// Processes validate group wire clearance using the supplied values and schematic data.
+/// Checks that wire segments belonging to the group stay the requested distance from the frame edges.
 ///
 /// # Arguments
 ///
-/// * `group_id` — Input `group id` used by this operation.
-/// * `group` — Input `group` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
-/// * `frame_uuid` — Input `frame uuid` used by this operation.
-/// * `frame_bounds` — Input `frame bounds` used by this operation.
-/// * `clearance` — Input `clearance` used by this operation.
+/// * `group_id` — Stable profile identifier for the group; it is included in any diagnostic produced by this check.
+/// * `group` — The group-intent record containing its members and declared constraints.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
+/// * `frame_uuid` — UUID of the schematic frame assigned to this group.
+/// * `frame_bounds` — Frame bounds in millimetres, ordered as (left, top, right, bottom).
+/// * `clearance` — Minimum required distance from each frame edge, in millimetres.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_group_wire_clearance(
     group_id: &str,
     group: &GroupIntent,
@@ -2421,20 +2423,20 @@ fn validate_group_wire_clearance(
         })
         .collect()
 }
-/// Processes validate group label clearance using the supplied values and schematic data.
+/// Checks that labels attached to group wires stay the requested distance from the frame edges.
 ///
 /// # Arguments
 ///
-/// * `group_id` — Input `group id` used by this operation.
-/// * `group` — Input `group` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
-/// * `frame_uuid` — Input `frame uuid` used by this operation.
-/// * `frame_bounds` — Input `frame bounds` used by this operation.
-/// * `clearance` — Input `clearance` used by this operation.
+/// * `group_id` — Stable profile identifier for the group; it is included in any diagnostic produced by this check.
+/// * `group` — The group-intent record containing its members and declared constraints.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
+/// * `frame_uuid` — UUID of the schematic frame assigned to this group.
+/// * `frame_bounds` — Frame bounds in millimetres, ordered as (left, top, right, bottom).
+/// * `clearance` — Minimum required distance from each frame edge, in millimetres.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_group_label_clearance(
     group_id: &str,
     group: &GroupIntent,
@@ -2476,20 +2478,20 @@ fn validate_group_label_clearance(
         })
         .collect()
 }
-/// Processes validate group annotation box clearance using the supplied values and schematic data.
+/// Checks that group annotation boxes stay the requested distance from the frame edges.
 ///
 /// # Arguments
 ///
-/// * `group_id` — Input `group id` used by this operation.
-/// * `group` — Input `group` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
-/// * `frame_uuid` — Input `frame uuid` used by this operation.
-/// * `frame_bounds` — Input `frame bounds` used by this operation.
-/// * `clearance` — Input `clearance` used by this operation.
+/// * `group_id` — Stable profile identifier for the group; it is included in any diagnostic produced by this check.
+/// * `group` — The group-intent record containing its members and declared constraints.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
+/// * `frame_uuid` — UUID of the schematic frame assigned to this group.
+/// * `frame_bounds` — Frame bounds in millimetres, ordered as (left, top, right, bottom).
+/// * `clearance` — Minimum required distance from each frame edge, in millimetres.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_group_annotation_box_clearance(
     group_id: &str,
     group: &GroupIntent,
@@ -2519,19 +2521,19 @@ fn validate_group_annotation_box_clearance(
         })
         .collect()
 }
-/// Processes validate group plain text clearance using the supplied values and schematic data.
+/// Checks that standalone text stays the requested distance from the frame edges.
 ///
 /// # Arguments
 ///
-/// * `group_id` — Input `group id` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
-/// * `frame_uuid` — Input `frame uuid` used by this operation.
-/// * `frame_bounds` — Input `frame bounds` used by this operation.
-/// * `clearance` — Input `clearance` used by this operation.
+/// * `group_id` — Stable profile identifier for the group; it is included in any diagnostic produced by this check.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
+/// * `frame_uuid` — UUID of the schematic frame assigned to this group.
+/// * `frame_bounds` — Frame bounds in millimetres, ordered as (left, top, right, bottom).
+/// * `clearance` — Minimum required distance from each frame edge, in millimetres.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_group_plain_text_clearance(
     group_id: &str,
     facts: &SchematicFacts,
@@ -2559,19 +2561,19 @@ fn validate_group_plain_text_clearance(
         })
         .collect()
 }
-/// Processes validate group graphic clearance using the supplied values and schematic data.
+/// Checks that sheet graphics stay the requested distance from the frame edges.
 ///
 /// # Arguments
 ///
-/// * `group_id` — Input `group id` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
-/// * `frame_uuid` — Input `frame uuid` used by this operation.
-/// * `frame_bounds` — Input `frame bounds` used by this operation.
-/// * `clearance` — Input `clearance` used by this operation.
+/// * `group_id` — Stable profile identifier for the group; it is included in any diagnostic produced by this check.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
+/// * `frame_uuid` — UUID of the schematic frame assigned to this group.
+/// * `frame_bounds` — Frame bounds in millimetres, ordered as (left, top, right, bottom).
+/// * `clearance` — Minimum required distance from each frame edge, in millimetres.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_group_graphic_clearance(
     group_id: &str,
     facts: &SchematicFacts,
@@ -2600,19 +2602,19 @@ fn validate_group_graphic_clearance(
         })
         .collect()
 }
-/// Processes validate group image clearance using the supplied values and schematic data.
+/// Checks that bitmap image bounds stay the requested distance from the frame edges.
 ///
 /// # Arguments
 ///
-/// * `group_id` — Input `group id` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
-/// * `frame_uuid` — Input `frame uuid` used by this operation.
-/// * `frame_bounds` — Input `frame bounds` used by this operation.
-/// * `clearance` — Input `clearance` used by this operation.
+/// * `group_id` — Stable profile identifier for the group; it is included in any diagnostic produced by this check.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
+/// * `frame_uuid` — UUID of the schematic frame assigned to this group.
+/// * `frame_bounds` — Frame bounds in millimetres, ordered as (left, top, right, bottom).
+/// * `clearance` — Minimum required distance from each frame edge, in millimetres.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_group_image_clearance(
     group_id: &str,
     facts: &SchematicFacts,
@@ -2640,20 +2642,20 @@ fn validate_group_image_clearance(
         })
         .collect()
 }
-/// Processes validate description frame clearance using the supplied values and schematic data.
+/// Checks that the group's referenced description text box remains inside the sheet frame with the required clearance on all four sides. A missing description box is treated as absent metadata; a present box without usable geometry produces an SCH012 diagnostic.
 ///
 /// # Arguments
 ///
-/// * `group_id` — Input `group id` used by this operation.
-/// * `group` — Input `group` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
-/// * `frame_uuid` — Input `frame uuid` used by this operation.
-/// * `bounds` — Input `bounds` used by this operation.
-/// * `clearance` — Input `clearance` used by this operation.
+/// * `group_id` — Stable profile identifier for the group; it is included in any diagnostic produced by this check.
+/// * `group` — The group-intent record containing its members and declared constraints.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
+/// * `frame_uuid` — UUID of the schematic frame assigned to this group.
+/// * `bounds` — Frame bounds in millimetres, ordered as (left, top, right, bottom).
+/// * `clearance` — Minimum required distance from each frame edge, in millimetres.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_description_frame_clearance(
     group_id: &str,
     group: &GroupIntent,
@@ -2697,17 +2699,17 @@ fn validate_description_frame_clearance(
     }
     diagnostics
 }
-/// Processes validate wire compactness using the supplied values and schematic data.
+/// Checks whether the total physical wire length of a group stays within its declared length budget.
 ///
 /// # Arguments
 ///
-/// * `group_id` — Input `group id` used by this operation.
-/// * `group` — Input `group` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
+/// * `group_id` — Stable profile identifier for the group; it is included in any diagnostic produced by this check.
+/// * `group` — The group-intent record containing its members and declared constraints.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_wire_compactness(
     group_id: &str,
     group: &GroupIntent,
@@ -2773,17 +2775,17 @@ fn validate_wire_compactness(
         Vec::new()
     }
 }
-/// Processes validate group spacing using the supplied values and schematic data.
+/// Checks that a group's member symbols satisfy the spacing constraints declared by the profile.
 ///
 /// # Arguments
 ///
-/// * `group_id` — Input `group id` used by this operation.
-/// * `group` — Input `group` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
+/// * `group_id` — Stable profile identifier for the group; it is included in any diagnostic produced by this check.
+/// * `group` — The group-intent record containing its members and declared constraints.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_group_spacing(
     group_id: &str,
     group: &GroupIntent,
@@ -2842,17 +2844,17 @@ fn validate_group_spacing(
     }
     diagnostics
 }
-/// Processes validate kicad group membership using the supplied values and schematic data.
+/// Checks that the profile's member references match the schematic's explicit KiCad group membership.
 ///
 /// # Arguments
 ///
-/// * `group_id` — Input `group id` used by this operation.
-/// * `group` — Input `group` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
+/// * `group_id` — Stable profile identifier for the group; it is included in any diagnostic produced by this check.
+/// * `group` — The group-intent record containing its members and declared constraints.
+/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_kicad_group_membership(
     group_id: &str,
     group: &GroupIntent,
@@ -2918,16 +2920,16 @@ fn validate_kicad_group_membership(
     }
     diagnostics
 }
-/// Processes validate group evidence using the supplied values and schematic data.
+/// Checks that the group contains the evidence required by its declared evidence level.
 ///
 /// # Arguments
 ///
-/// * `group_id` — Input `group id` used by this operation.
-/// * `group` — Input `group` used by this operation.
+/// * `group_id` — Stable profile identifier for the group; it is included in any diagnostic produced by this check.
+/// * `group` — The group-intent record containing its members and declared constraints.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_group_evidence(group_id: &str, group: &GroupIntent) -> Vec<Diagnostic> {
     let evidence = group.evidence.as_ref();
     let has_document_evidence = evidence.is_some_and(|item| {
@@ -2955,17 +2957,17 @@ fn validate_group_evidence(group_id: &str, group: &GroupIntent) -> Vec<Diagnosti
         )]
     }
 }
-/// Processes validate group members using the supplied values and schematic data.
+/// Checks that every reference listed as a group member exists in the schematic.
 ///
 /// # Arguments
 ///
-/// * `group_id` — Input `group id` used by this operation.
-/// * `group` — Input `group` used by this operation.
-/// * `references` — Input `references` used by this operation.
+/// * `group_id` — Stable profile identifier for the group; it is included in any diagnostic produced by this check.
+/// * `group` — The group-intent record containing its members and declared constraints.
+/// * `references` — Set of schematic reference designators used to verify profile membership.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_group_members(
     group_id: &str,
     group: &GroupIntent,
@@ -2994,17 +2996,17 @@ fn validate_group_members(
     }
     diagnostics
 }
-/// Processes validate group component purposes using the supplied values and schematic data.
+/// Checks that member component roles and purposes are consistent with the group's description.
 ///
 /// # Arguments
 ///
-/// * `group_id` — Input `group id` used by this operation.
-/// * `group` — Input `group` used by this operation.
-/// * `description` — Input `description` used by this operation.
+/// * `group_id` — Stable profile identifier for the group; it is included in any diagnostic produced by this check.
+/// * `group` — The group-intent record containing its members and declared constraints.
+/// * `description` — Description text used to verify declared group/component purpose phrases.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_group_component_purposes(
     group_id: &str,
     group: &GroupIntent,
@@ -3045,20 +3047,16 @@ fn validate_group_component_purposes(
     }
     diagnostics
 }
-/// Processes validate group phrase using the supplied values and schematic data.
+/// Adds a diagnostic when a component's descriptive text does not contain a required role or purpose phrase.
 ///
 /// # Arguments
 ///
-/// * `diagnostics` — Input `diagnostics` used by this operation.
-/// * `group_id` — Input `group id` used by this operation.
-/// * `reference` — Input `reference` used by this operation.
-/// * `field` — Input `field` used by this operation.
-/// * `phrase` — Input `phrase` used by this operation.
-/// * `description` — Input `description` used by this operation.
-///
-/// # Returns
-///
-/// The value produced by this operation.
+/// * `diagnostics` — Mutable diagnostic vector that receives any failed phrase checks.
+/// * `group_id` — Stable profile identifier for the group; it is included in any diagnostic produced by this check.
+/// * `reference` — Reference designator of the component whose intent is being checked.
+/// * `field` — Name of the component field being checked, such as its reference or value field.
+/// * `phrase` — Required phrase expected to appear in the component's descriptive text.
+/// * `description` — Description text used to verify declared group/component purpose phrases.
 fn validate_group_phrase(
     diagnostics: &mut Vec<Diagnostic>,
     group_id: &str,
@@ -3083,17 +3081,17 @@ fn validate_group_phrase(
         ));
     }
 }
-/// Processes validate component intent using the supplied values and schematic data.
+/// Validates the declared kind, role, purpose, pin contract, and any decoupling intent for one component.
 ///
 /// # Arguments
 ///
-/// * `reference` — Input `reference` used by this operation.
-/// * `intent` — Input `intent` used by this operation.
-/// * `netlist` — Input `netlist` used by this operation.
+/// * `reference` — Reference designator of the component whose intent is being checked.
+/// * `intent` — Component-intent record declaring the electrical role and connection contract.
+/// * `netlist` — Optional KiCad-exported flattened netlist; supplies logical pin-to-net assignments when present.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_component_intent(
     reference: &str,
     intent: &ComponentIntent,
@@ -3142,17 +3140,17 @@ fn validate_component_intent(
     }
     diagnostics
 }
-/// Processes validate pin net contract using the supplied values and schematic data.
+/// Checks the declared pin-to-net expectations against the exported logical netlist.
 ///
 /// # Arguments
 ///
-/// * `reference` — Input `reference` used by this operation.
-/// * `intent` — Input `intent` used by this operation.
-/// * `netlist` — Input `netlist` used by this operation.
+/// * `reference` — Reference designator of the component whose intent is being checked.
+/// * `intent` — Component-intent record declaring the electrical role and connection contract.
+/// * `netlist` — Optional KiCad-exported flattened netlist; supplies logical pin-to-net assignments when present.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_pin_net_contract(
     reference: &str,
     intent: &ComponentIntent,
@@ -3219,16 +3217,16 @@ fn validate_pin_net_contract(
     }
     diagnostics
 }
-/// Processes validate role contract using the supplied values and schematic data.
+/// Checks that the declared component role has the required electrical connections.
 ///
 /// # Arguments
 ///
-/// * `reference` — Input `reference` used by this operation.
-/// * `intent` — Input `intent` used by this operation.
+/// * `reference` — Reference designator of the component whose intent is being checked.
+/// * `intent` — Component-intent record declaring the electrical role and connection contract.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_role_contract(reference: &str, intent: &ComponentIntent) -> Vec<Diagnostic> {
     let required_connections: &[&str] = match (intent.kind, intent.role.0.as_str()) {
         (ComponentKind::Capacitor, "bulk") => &["rail", "return"],
@@ -3288,17 +3286,17 @@ fn validate_role_contract(reference: &str, intent: &ComponentIntent) -> Vec<Diag
     }
     diagnostics
 }
-/// Processes validate decoupling intent using the supplied values and schematic data.
+/// Validates a capacitor's decoupling target and supply/return net declarations.
 ///
 /// # Arguments
 ///
-/// * `reference` — Input `reference` used by this operation.
-/// * `contract` — Input `contract` used by this operation.
-/// * `netlist` — Input `netlist` used by this operation.
+/// * `reference` — Reference designator of the component whose intent is being checked.
+/// * `contract` — Optional decoupling contract declared for this component.
+/// * `netlist` — Optional KiCad-exported flattened netlist; supplies logical pin-to-net assignments when present.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_decoupling_intent(
     reference: &str,
     contract: Option<&DecouplingIntent>,
@@ -3349,17 +3347,17 @@ fn validate_decoupling_intent(
     }
     diagnostics
 }
-/// Processes validate decoupling nets using the supplied values and schematic data.
+/// Checks that the decoupling capacitor connects to its declared target net and return net.
 ///
 /// # Arguments
 ///
-/// * `reference` — Input `reference` used by this operation.
-/// * `contract` — Input `contract` used by this operation.
-/// * `netlist` — Input `netlist` used by this operation.
+/// * `reference` — Reference designator of the component whose intent is being checked.
+/// * `contract` — Optional decoupling contract declared for this component.
+/// * `netlist` — Optional KiCad-exported flattened netlist; supplies logical pin-to-net assignments when present.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_decoupling_nets(
     reference: &str,
     contract: &DecouplingIntent,
@@ -3419,15 +3417,15 @@ fn validate_decoupling_nets(
     }
     diagnostics
 }
-/// Processes validate decoupler groups using the supplied values and schematic data.
+/// Checks that capacitors assigned to the same decoupling target are grouped consistently.
 ///
 /// # Arguments
 ///
-/// * `components` — Input `components` used by this operation.
+/// * `components` — Map of component reference designators to their intent records.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for each contract violation found; an empty vector means the declaration passed this check.
 fn validate_decoupler_groups(components: &BTreeMap<String, ComponentIntent>) -> Vec<Diagnostic> {
     let mut by_target: BTreeMap<&str, Vec<&DecouplingIntent>> = BTreeMap::new();
     for intent in components.values() {
@@ -3473,15 +3471,15 @@ fn validate_decoupler_groups(components: &BTreeMap<String, ComponentIntent>) -> 
     }
     diagnostics
 }
-/// Processes valid pin ref using the supplied values and schematic data.
+/// Checks whether a string uses the required REF.PIN syntax with non-empty reference and pin parts.
 ///
 /// # Arguments
 ///
-/// * `value` — Input `value` used by this operation.
+/// * `value` — value associated with this validation.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the value contains non-empty reference and pin parts separated by a period.
 fn valid_pin_ref(value: &str) -> bool {
     let Some((reference, pin)) = value.rsplit_once('.') else {
         return false;
