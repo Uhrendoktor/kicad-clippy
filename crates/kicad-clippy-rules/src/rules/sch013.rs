@@ -394,20 +394,6 @@ fn intermediate_pin_obstacle_diagnostics(
         })
         .collect()
 }
-/// Checks each wire against embedded primitives, labels/text, buses, frames, tables, pins, images, and no-connect markers.
-///
-/// # Arguments
-///
-/// * `root` — Root S-expression node of the parsed schematic.
-/// * `segments` — Parsed wire segments used to determine geometry, topology, or obstacle intersections.
-/// * `facts` — Normalized facts extracted from the schematic.
-/// * `wire_stroke_widths` — wire stroke widths to be used in this geometry or parsing operation.
-/// * `default_wire_stroke_width_mm` — default wire stroke width mm to be used in this geometry or parsing operation.
-/// * `default_marker_pen_width_mm` — Optional schematic default line pen width applied to no-connect marker strokes, in millimetres.
-///
-/// # Returns
-///
-/// SCH013 diagnostics for collisions with symbol primitives, text, buses, frames, tables, pins, images, and no-connect markers.
 /// Checks one wire against selected-unit embedded symbol primitives.
 ///
 /// A symbol is reported at most once per wire, even when multiple selected-unit
@@ -417,7 +403,7 @@ fn intermediate_pin_obstacle_diagnostics(
 /// # Arguments
 ///
 /// * `wire_index` — Stable index of the wire within the current segment collection.
-/// * `segment` — Wire segment being checked.
+/// * `segment` — Wire segment whose centerline and combined stroke envelope are tested against selected-unit symbol-body geometry.
 /// * `facts` — Normalized schematic facts containing embedded symbol primitives and pin anchors.
 /// * `wire_stroke_width_mm` — Effective stroke width for this wire, in millimetres.
 ///
@@ -460,7 +446,7 @@ fn symbol_primitive_obstacle_diagnostics(
 /// # Arguments
 ///
 /// * `wire_index` — Stable index of the wire within the current segment collection.
-/// * `segment` — Wire segment being checked.
+/// * `segment` — Wire segment whose stroke envelope is compared with transformed graphic paths, circles, and closed-body regions.
 /// * `facts` — Normalized schematic facts containing top-level graphic primitives.
 /// * `wire_stroke_width_mm` — Effective stroke width for this wire, in millimetres.
 ///
@@ -497,7 +483,7 @@ fn sheet_graphic_obstacle_diagnostics(
 /// # Arguments
 ///
 /// * `wire_index` — Stable index of the wire within the current segment collection.
-/// * `segment` — Wire segment being checked.
+/// * `segment` — Wire segment tested against each embedded image's orientation-aware quadrilateral footprint.
 /// * `facts` — Normalized schematic facts containing the orientation-aware bitmap image corners.
 ///
 /// # Returns
@@ -529,6 +515,20 @@ fn bitmap_image_obstacle_diagnostics(
         .collect()
 }
 
+/// Checks every wire segment against symbol, sheet-graphic, electrical-graphic, and annotation obstacles.
+///
+/// # Arguments
+///
+/// * `root` — Root S-expression node supplying text boxes and table stroke settings.
+/// * `segments` — Parsed wire segments whose centerlines and effective stroke envelopes are evaluated.
+/// * `facts` — Normalized transformed symbol, graphic, sheet, bus, image, pin, and marker facts.
+/// * `wire_stroke_widths` — Resolved positive wire widths keyed by the source offset of each segment.
+/// * `default_wire_stroke_width_mm` — Optional project default used when a segment has no resolved explicit width.
+/// * `default_marker_pen_width_mm` — Optional project schematic-default pen width applied to no-connect marker strokes.
+///
+/// # Returns
+///
+/// SCH013 diagnostics aggregated from the supported obstacle families in stable per-wire order.
 pub(super) fn check_wire_obstacles(
     root: &Node,
     segments: &[Segment],
