@@ -4839,14 +4839,14 @@ mod tests {
         assert!(tangent[0].x.abs() < 1.0e-9);
         assert!((tangent[0].y - 2.0).abs() < 1.0e-9);
     }
+    /// Compact data returned by the analytic Bézier intersection fixture builder.
+    type AnalyticBezierFixture = ([(f64, f64); 4], (f64, f64), super::Segment, Vec<(f64, f64)>);
+
     /// Builds the Bézier test curve and a short wire that crosses its exact path.
     ///
     /// # Returns
     ///
     /// The cubic control points, exact curve point, crossing wire and flattened polyline.
-    /// Compact data returned by the analytic Bézier intersection fixture builder.
-    type AnalyticBezierFixture = ([(f64, f64); 4], (f64, f64), super::Segment, Vec<(f64, f64)>);
-
     fn analytic_bezier_wire_fixture() -> AnalyticBezierFixture {
         let controls = [(0.0, 0.0), (0.0, 10.0), (10.0, 10.0), (10.0, 0.0)];
         let curve = super::CurveCubicBez::new(
