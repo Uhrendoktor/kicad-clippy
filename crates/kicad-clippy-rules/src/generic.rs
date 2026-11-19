@@ -17,6 +17,8 @@ use kicad_clippy_core::Severity;
 use kicad_clippy_parser::SchematicDocument;
 use kiutils_sexpr::Atom;
 use kiutils_sexpr::Node;
+#[cfg(test)]
+use kurbo::CubicBez as CurveCubicBez;
 use kurbo::Affine;
 use kurbo::Arc as CurveArc;
 use kurbo::flatten as flatten_curve_path;
