@@ -4,6 +4,9 @@ Notable changes are documented here. This project is in early development and ha
 
 ## Unreleased
 
+- Added SCH009 profile validation for overlapping interiors of separately declared functional-group frames; shared edges and groups reusing the same frame UUID are accepted.
+- Added the `required_no_connect_pins` component-profile attribute for SCH015. Each declared pin must resolve to transformed embedded-symbol geometry and have an explicit no-connect marker; missing markers are errors and unresolved geometry is reported as unverified. Library pins whose electrical type is `unconnected` must not be listed; automatic pin-type filtering remains future work.
+
 - Added SCH013 no-connect marker X strokes using KiCad's fixed 48-mil marker size; when `--project` supplies a positive `schematic.drawing.default_line_thickness`, its mil-to-mm pen width is combined with the wire width. Without project settings, checking remains centerline-only.
 
 - Added per-wire SCH013 netclass width resolution from the KiCad flattened netlist and project settings: exact/wildcard patterns, multiple explicit assignments, committed net-chain classes, class priorities and Default wire-width inheritance are supported when physical wire components map to one logical net; directive/rule-area assignments, regex/bus-expansion patterns and ambiguous components remain unknown.
