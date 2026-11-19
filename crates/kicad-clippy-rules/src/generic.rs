@@ -30,9 +30,9 @@ use crate::{RuleContext, RulePass};
 /// Disjoint-set forest used to resolve connected physical wire components.
 #[derive(Debug)]
 struct DisjointSet {
-    /// Parent index for each disjoint-set element.
+    /// Parent index for each element; a root is identified by a parent equal to its own index.
     parents: Vec<usize>,
-    /// Number of elements in each root's tree.
+    /// Number of elements in each root's component, used for union by size.
     sizes: Vec<usize>,
 }
 
@@ -148,290 +148,289 @@ const HALF_DIMENSION_FACTOR: f64 = 0.5;
 const JPEG_JFIF_MINIMUM_SEGMENT_BYTES: usize = 12;
 /// Defines the point type used by this crate.
 pub type Point = Coord<f64>;
-/// Stores segment data used by this crate.
+/// One schematic line segment with a source span for diagnostics.
 #[derive(Clone, Copy, Debug)]
 pub struct Segment {
-    /// Stores the `start` value.
+    /// First endpoint of the segment in schematic coordinates.
     pub start: Point,
-    /// Stores the `end` value.
+    /// Second endpoint of the segment in schematic coordinates.
     pub end: Point,
-    /// Stores the `span` value.
+    /// Original source byte span of the wire expression.
     pub span: ByteSpan,
 }
 
 /// Exact circular geometry reconstructed from `KiCad`'s start/mid/end arc points.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SchematicArcFact {
-    /// Circle centre in schematic coordinates, in millimetres.
+    /// Circle center in schematic millimetres.
     pub center_mm: (f64, f64),
     /// Circle radius in millimetres.
     pub radius_mm: f64,
-    /// Start angle in radians, measured in the schematic coordinate plane.
+    /// Angle of the start point around the circle, in radians.
     pub start_angle_rad: f64,
-    /// Signed sweep in radians, selected to pass through `KiCad`'s midpoint.
+    /// Directed angular sweep from the start point to the end point, in radians.
     pub sweep_rad: f64,
 }
-/// Stores bounds data used by this crate.
+/// Axis-aligned rectangle in schematic coordinates, measured in millimetres.
 #[derive(Clone, Copy, Debug)]
 struct Bounds {
-    /// Stores the `x` value.
+    /// Left coordinate of the rectangle in millimetres.
     x: f64,
-    /// Stores the `y` value.
+    /// Top coordinate of the rectangle in millimetres.
     y: f64,
-    /// Stores the `width` value.
+    /// Rectangle width in millimetres.
     width: f64,
-    /// Stores the `height` value.
+    /// Rectangle height in millimetres.
     height: f64,
 }
-/// Stores componentfact data used by this crate.
+/// Placed symbol identity and origin extracted from the schematic.
 #[derive(Clone, Debug)]
 pub struct ComponentFact {
-    /// Stores the `reference` value.
+    /// Placed component reference designator.
     pub reference: String,
-    /// UUID of the placed schematic symbol instance.
+    /// KiCad UUID of the placed symbol, when available.
     pub uuid: Option<String>,
-    /// Schematic symbol anchor position in millimetres.
+    /// Symbol origin in millimetres, or `None` when no origin could be resolved.
     pub position_mm: Option<(f64, f64)>,
 }
-/// Stores schematicgroupfact data used by this crate.
+/// Native KiCad group name, UUID, and member UUIDs.
 #[derive(Clone, Debug)]
 pub struct SchematicGroupFact {
-    /// Name shown by the native `KiCad` group.
+    /// Native KiCad group name.
     pub name: String,
-    /// Stable UUID from the group's id field.
+    /// UUID identifying the native group.
     pub uuid: String,
-    /// UUIDs of schematic objects that belong to the group.
+    /// UUIDs of the schematic items declared as group members.
     pub member_uuids: BTreeSet<String>,
 }
-/// Stores schematicframefact data used by this crate.
+/// Rectangular sheet frame identified by its KiCad UUID.
 #[derive(Clone, Debug)]
 pub struct SchematicFrameFact {
-    /// UUID of the top-level schematic rectangle.
+    /// UUID identifying the rectangular frame object.
     pub uuid: String,
-    /// Frame bounds as (left, top, right, bottom), in millimetres.
+    /// Frame rectangle as `(left, top, right, bottom)`, in millimetres.
     pub bounds_mm: (f64, f64, f64, f64),
 }
-/// Stores schematicwirefact data used by this crate.
+/// Wire endpoint coordinates and source offset used for diagnostics and per-wire lookups.
 #[derive(Clone, Copy, Debug)]
 pub struct SchematicWireFact {
-    /// First endpoint of the wire segment in millimetres.
+    /// First wire endpoint in millimetres.
     pub start_mm: (f64, f64),
-    /// Second endpoint of the wire segment in millimetres.
+    /// Second wire endpoint in millimetres.
     pub end_mm: (f64, f64),
-    /// Byte offset identifying this wire in the source schematic.
+    /// Byte offset of the wire expression in the original schematic source.
     pub span_start: usize,
 }
-/// Stores schematicpinfact data used by this crate.
+/// Placed symbol pin reference, number, and schematic coordinate.
 #[derive(Clone, Debug)]
 pub struct SchematicPinFact {
-    /// Placed-symbol reference.
+    /// Reference designator of the placed symbol owning this pin.
     pub reference: String,
-    /// Embedded library-symbol pin number.
+    /// Pin number as serialized by the symbol library.
     pub number: String,
-    /// Transformed pin position on the sheet, in millimetres.
+    /// Pin anchor coordinate in schematic millimetres.
     pub position_mm: (f64, f64),
 }
-/// Stores schematicfieldfact data used by this crate.
+/// Visible symbol field and its estimated text bounds.
 #[derive(Clone, Debug)]
 pub struct SchematicFieldFact {
-    /// Placed-symbol reference.
+    /// Reference designator of the symbol owning the field.
     pub reference: String,
-    /// `KiCad` property name, such as `Reference`, `Value`, or `Footprint`.
+    /// Field name, typically `Reference` or `Value`.
     pub name: String,
-    /// Estimated visible glyph bounds as (left, top, right, bottom), in millimetres.
+    /// Estimated visible glyph bounds in schematic millimetres.
     pub bounds_mm: (f64, f64, f64, f64),
 }
-/// Stores schematicprimitivefact data used by this crate.
+/// Transformed symbol or sheet primitive geometry used by collision and containment checks.
 #[derive(Clone, Debug)]
 pub struct SchematicPrimitiveFact {
-    /// Placed-symbol reference that owns this primitive.
+    /// Reference designator of the placed symbol owning this primitive, when it is embedded geometry.
     pub reference: String,
-    /// Transformed path points in sheet coordinates, or empty for a circle.
+    /// Transformed path points in schematic millimetres.
     pub points_mm: Vec<(f64, f64)>,
-    /// Whether the path is closed.
+    /// Whether the primitive path encloses a filled interior.
     pub closed: bool,
-    /// Optional transformed circle (centre x, centre y, radius).
+    /// Circle center and radius when the primitive is circular.
     pub circle_mm: Option<(f64, f64, f64)>,
-    /// Exact transformed three-point arc geometry, when the arc is non-degenerate.
+    /// Reconstructed circular-arc geometry when the primitive is an arc.
     pub arc_mm: Option<SchematicArcFact>,
-    /// Exact transformed cubic Bézier control points, when available.
+    /// Four transformed control points when the primitive is a cubic Bézier.
     pub bezier_mm: Option<[(f64, f64); 4]>,
-    /// Approximate stroke width in millimetres.
+    /// Declared primitive stroke width in millimetres.
     pub stroke_width_mm: f64,
 }
 
 /// A hierarchical sheet frame and its connection pins.
 #[derive(Clone, Debug)]
 pub struct SchematicSheetFact {
-    /// Stable UUID used to associate wire-endpoint exceptions with sheet pins.
+    /// UUID identifying the hierarchical sheet.
     pub uuid: String,
-    /// Sheet name shown in wire-obstacle diagnostics.
+    /// Displayed sheet name.
     pub name: String,
-    /// Rectangular sheet-body outline and declared border stroke.
+    /// Sheet frame and body geometry.
     pub primitive: SchematicPrimitiveFact,
-    /// Connection anchors on the sheet border.
+    /// Placed sheet pins with their coordinates and numbers.
     pub pins: Vec<SchematicPinFact>,
 }
 
 /// A schematic bus line or wire-to-bus entry used as a wire obstacle.
 #[derive(Clone, Debug)]
 pub struct SchematicBusObstacleFact {
-    /// Obstacle kind shown in SCH013 diagnostics.
+    /// Bus primitive kind used to select the intersection model.
     pub kind: String,
-    /// Two-ended stroked path geometry.
+    /// Bus path geometry in schematic coordinates.
     pub primitive: SchematicPrimitiveFact,
-    /// Matching endpoint anchors; empty for a bus line.
+    /// Sheet or symbol pins associated with the bus obstacle.
     pub pins: Vec<SchematicPinFact>,
 }
 
 /// A fixed-size X-shaped schematic no-connect marker.
 #[derive(Clone, Debug)]
 pub struct SchematicNoConnectFact {
-    /// Stable UUID or parser-node fallback identifier.
+    /// Reference designator of the placed symbol carrying the marker.
     pub reference: String,
-    /// Marker centre in sheet coordinates.
+    /// Center of the no-connect X marker in millimetres.
     pub center_mm: (f64, f64),
-    /// Half of `KiCad`'s fixed 48-mil marker dimension.
+    /// Half of the fixed marker width, in millimetres.
     pub half_size_mm: f64,
 }
-/// Stores schematicsymboltextfact data used by this crate.
+/// Transformed text or text-box obstacle extracted from a library symbol.
 #[derive(Clone, Debug)]
 pub struct SchematicSymbolTextFact {
-    /// Placed-symbol reference that owns the text.
+    /// Reference designator of the owning placed symbol.
     pub reference: String,
-    /// Embedded primitive kind: `text` or `text_box`.
+    /// Library text object kind, such as text or text_box.
     pub kind: String,
-    /// Text content.
+    /// Decoded text content.
     pub text: String,
-    /// Estimated or declared bounds in sheet coordinates (left, top, right, bottom).
+    /// Transformed visible glyph or text-box bounds in schematic millimetres.
     pub bounds_mm: (f64, f64, f64, f64),
 }
-/// Stores schematiclabelfact data used by this crate.
+/// Label kind, text, anchor, and optional visible glyph bounds.
 #[derive(Clone, Debug)]
 pub struct SchematicLabelFact {
-    /// Label form: `local`, `hierarchical_label`, or `global_label`.
+    /// Label kind, such as local, global, or hierarchical.
     pub kind: String,
-    /// Label name.
+    /// Decoded label text.
     pub name: String,
-    /// Label anchor on the sheet, in millimetres.
+    /// Label anchor coordinate in schematic millimetres.
     pub position_mm: (f64, f64),
-    /// Estimated visible glyph bounds in sheet coordinates, when resolvable.
+    /// Estimated visible glyph bounds, when they can be resolved.
     pub bounds_mm: Option<(f64, f64, f64, f64)>,
 }
-/// Stores textboxfact data used by this crate.
+/// Schematic text-box identity, content, and optional rectangular bounds.
 #[derive(Clone, Debug)]
 pub struct TextBoxFact {
-    /// UUID of the schematic text box.
+    /// UUID identifying the text-box object.
     pub uuid: String,
-    /// Rendered text content.
+    /// Decoded text content.
     pub text: String,
-    /// Approximate text-box rectangle as (left, top, right, bottom), in millimetres.
+    /// Text-box rectangle in schematic millimetres, when geometry is valid.
     pub bounds_mm: Option<(f64, f64, f64, f64)>,
 }
 
 /// A free-standing schematic text object and its estimated visible glyph bounds.
 #[derive(Clone, Debug)]
 pub struct SchematicTextFact {
-    /// Rendered text content.
+    /// Decoded standalone schematic text.
     pub text: String,
-    /// Estimated visible glyph rectangle as (left, top, right, bottom), in millimetres.
+    /// Estimated visible text glyph bounds, when available.
     pub bounds_mm: Option<(f64, f64, f64, f64)>,
 }
 
 /// A top-level vector graphic and its approximate sheet-space bounds.
 #[derive(Clone, Debug)]
 pub struct SchematicGraphicFact {
-    /// Graphic kind: rectangle, polyline, polygon, circle, arc or bezier.
+    /// Graphic primitive kind.
     pub kind: String,
-    /// Stable object UUID, when present in the schematic.
+    /// KiCad UUID of the graphic, when present.
     pub uuid: Option<String>,
-    /// Approximate bounds including half the graphic stroke width.
+    /// Stroke-expanded axis-aligned bounds, when calculable.
     pub bounds_mm: Option<(f64, f64, f64, f64)>,
-    /// Sheet-space path points (empty for a circle).
+    /// Ordered transformed path points in schematic millimetres.
     pub points_mm: Vec<(f64, f64)>,
-    /// Whether the vector graphic path is closed.
+    /// Whether the path has a closed interior.
     pub closed: bool,
-    /// Optional sheet-space circle (centre x, centre y, radius).
+    /// Circle center and radius when this is a circular primitive.
     pub circle_mm: Option<(f64, f64, f64)>,
-    /// Exact three-point circular arc geometry, when the arc is non-degenerate.
+    /// Reconstructed arc geometry when this is a circular arc.
     pub arc_mm: Option<SchematicArcFact>,
-    /// Exact cubic Bézier control points for analytic wire intersections, when available.
+    /// Cubic Bézier control points when this is a Bézier primitive.
     pub bezier_mm: Option<[(f64, f64); 4]>,
-    /// Approximate graphic stroke width in millimetres.
+    /// Declared graphic stroke width in millimetres.
     pub stroke_width_mm: f64,
 }
 
 /// A bitmap's centre-derived envelope and orientation-aware rectangular footprint.
 #[derive(Clone, Copy, Debug)]
 struct BitmapImageGeometry {
-    /// Stores the `bounds_mm` value.
+    /// Axis-aligned bounds enclosing the rotated image quadrilateral, in millimetres.
     bounds_mm: (f64, f64, f64, f64),
-    /// Stores the `corners_mm` value.
+    /// Four rotated image corners in sheet coordinates.
     corners_mm: [(f64, f64); 4],
 }
 
 /// An embedded bitmap image with bounds derived from its pixel size, PPI and scale.
 #[derive(Clone, Debug)]
 pub struct SchematicImageFact {
-    /// Stable image UUID, when present in the schematic.
+    /// KiCad UUID of the embedded image, when present.
     pub uuid: Option<String>,
-    /// Axis-aligned bounds in millimetres, when PNG/JPEG metadata resolves.
+    /// Resolved image bounds in millimetres, or `None` when its encoding is unsupported.
     pub bounds_mm: Option<(f64, f64, f64, f64)>,
-    /// Exact orientation-aware rectangular footprint in millimetres.
+    /// Orientation-aware image corners, or `None` when its geometry cannot be resolved.
     pub corners_mm: Option<[(f64, f64); 4]>,
 }
-/// Stores schematicfacts data used by this crate.
+/// Normalized schematic facts collected once and shared by the built-in rule passes.
 #[derive(Clone, Debug, Default)]
 pub struct SchematicFacts {
-    /// Placed symbol instances.
+    /// Placed component references and origins.
     pub components: Vec<ComponentFact>,
-    /// Text boxes used for group documentation.
+    /// Top-level annotation text boxes and their geometry.
     pub text_boxes: Vec<TextBoxFact>,
-    /// Free-standing text objects with estimated visible glyph geometry.
+    /// Top-level standalone text and estimated glyph bounds.
     pub texts: Vec<SchematicTextFact>,
-    /// Top-level vector graphics with approximate sheet-space bounds.
+    /// Top-level vector graphics and their path/stroke geometry.
     pub graphics: Vec<SchematicGraphicFact>,
-    /// Embedded PNG/JPEG images with bounds derived from pixel size and resolution.
+    /// Embedded bitmap image geometry.
     pub images: Vec<SchematicImageFact>,
-    /// Native `KiCad` schematic groups.
+    /// Native KiCad group declarations and member UUIDs.
     pub groups: Vec<SchematicGroupFact>,
-    /// Top-level rectangular frames on the schematic sheet.
+    /// Rectangular sheet frames.
     pub frames: Vec<SchematicFrameFact>,
-    /// Two-ended wire segments used by frame-scoped layout rules.
+    /// Wire segments with endpoint coordinates and source offsets.
     pub wires: Vec<SchematicWireFact>,
-    /// Resolved placed-symbol pin coordinates.
+    /// Placed symbol pins with reference, number, and position.
     pub pins: Vec<SchematicPinFact>,
-    /// Estimated bounds for visible symbol property glyphs.
+    /// Visible Reference/Value fields and estimated glyph bounds.
     pub visible_fields: Vec<SchematicFieldFact>,
-    /// Transformed outlines from embedded symbol primitives.
+    /// Selected-unit embedded symbol primitives transformed to sheet coordinates.
     pub symbol_primitives: Vec<SchematicPrimitiveFact>,
-    /// Hierarchical sheet frames and their deliberate connection anchors.
+    /// Hierarchical sheet frames and sheet pins.
     pub sheets: Vec<SchematicSheetFact>,
-    /// Bus lines and bus-entry strokes, with local wire-entry endpoint anchors.
+    /// Bus line geometry and associated pins.
     pub bus_obstacles: Vec<SchematicBusObstacleFact>,
-    /// Top-level no-connect X marker centreline strokes (without guessed pen width).
+    /// Fixed-size no-connect marker locations.
     pub no_connects: Vec<SchematicNoConnectFact>,
-    /// Embedded library-symbol text and text-box obstacles in sheet coordinates.
+    /// Transformed library-symbol text and text boxes.
     pub symbol_texts: Vec<SchematicSymbolTextFact>,
-    /// Label anchors used to ensure labels are not mistaken for physical wires.
+    /// Schematic labels with kind, text, anchors, and glyph bounds.
     pub labels: Vec<SchematicLabelFact>,
-    /// Explicit junction marker coordinates.
+    /// Explicit wire junction coordinates.
     pub junctions: Vec<(f64, f64)>,
-    /// Whether schematic directives, rule areas or label properties can assign netclasses.
+    /// Whether schematic-local labels, directives, or rule areas assign netclasses.
     pub has_netclass_assignments: bool,
 }
 
 impl SchematicFacts {
-    /// Processes from document using the supplied values and schematic data.
+    /// Extracts normalized component, pin, wire, label, graphic, and annotation facts from a parsed schematic.
     ///
     /// # Arguments
     ///
-    /// * `document` — Input `document` used by this operation.
+    /// * `document` — Parsed schematic document whose S-expression tree and source spans are used for fact extraction.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
-    ///
+    /// A `SchematicFacts` value containing the normalized schematic objects and their geometry.
     #[must_use]
     pub fn from_document(document: &SchematicDocument) -> Self {
         let Some(root) = document.cst().nodes.first() else {
@@ -441,17 +440,17 @@ impl SchematicFacts {
         let junctions = collect_points(root, "junction");
         Self::from_document_with_geometry(document, &segments, &junctions)
     }
-    /// Processes from document with geometry using the supplied values and schematic data.
+    /// Builds schematic facts while reusing the caller's already-collected wire segments and junction points.
     ///
     /// # Arguments
     ///
-    /// * `document` — Input `document` used by this operation.
-    /// * `segments` — Input `segments` used by this operation.
-    /// * `junctions` — Input `junctions` used by this operation.
+    /// * `document` — Parsed schematic document whose S-expression tree and source spans are used for fact extraction.
+    /// * `segments` — Parsed wire segments used to determine geometry, topology, or obstacle intersections.
+    /// * `junctions` — Explicit schematic junction coordinates used when resolving wire connectivity.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
+    /// A `SchematicFacts` value containing the normalized schematic objects and their geometry.
     pub(crate) fn from_document_with_geometry(
         document: &SchematicDocument,
         segments: &[Segment],
@@ -489,15 +488,15 @@ impl SchematicFacts {
         }
     }
 }
-/// Processes collect component facts using the supplied values and schematic data.
+/// Extracts placed symbol references, UUIDs, and origins from the schematic.
 ///
 /// # Arguments
 ///
-/// * `root` — Input `root` used by this operation.
+/// * `root` — Root S-expression node of the parsed schematic.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Normalized component facts records or coordinates derived from the input.
 fn collect_component_facts(root: &Node) -> Vec<ComponentFact> {
     children(root, "symbol")
         .filter_map(|node| {
@@ -527,15 +526,15 @@ fn collect_component_facts(root: &Node) -> Vec<ComponentFact> {
         })
         .collect()
 }
-/// Processes collect text box facts using the supplied values and schematic data.
+/// Extracts text-box identifiers, text content, and available geometric bounds.
 ///
 /// # Arguments
 ///
-/// * `root` — Input `root` used by this operation.
+/// * `root` — Root S-expression node of the parsed schematic.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Normalized text box facts records or coordinates derived from the input.
 fn collect_text_box_facts(root: &Node) -> Vec<TextBoxFact> {
     children(root, "text_box")
         .filter_map(|node| {
@@ -561,15 +560,15 @@ fn collect_text_box_facts(root: &Node) -> Vec<TextBoxFact> {
         })
         .collect()
 }
-/// Processes table cell text rotation is supported using the supplied values and schematic data.
+/// Checks whether a table cell uses a supported cardinal text rotation.
 ///
 /// # Arguments
 ///
-/// * `cell` — Input `cell` used by this operation.
+/// * `cell` — Table cell node whose style or text rotation is being checked.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the geometry satisfies the condition checked by this helper.
 fn table_cell_text_rotation_is_supported(cell: &Node) -> bool {
     let Some(angle) = child_list(cell, "at")
         .and_then(list_items)
@@ -586,15 +585,15 @@ fn table_cell_text_rotation_is_supported(cell: &Node) -> bool {
         .iter()
         .any(|supported| (normalized - supported).abs() <= GEOMETRY_TOLERANCE_MM)
 }
-/// Processes table text rotations are supported using the supplied values and schematic data.
+/// Checks whether all populated cells in a table use supported cardinal text rotations.
 ///
 /// # Arguments
 ///
-/// * `table` — Input `table` used by this operation.
+/// * `table` — Table node whose dimensions, cells, strokes, and orientation are being resolved.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the geometry satisfies the condition checked by this helper.
 fn table_text_rotations_are_supported(table: &Node) -> bool {
     let Some(cells) = child_list(table, "cells") else {
         return false;
@@ -605,15 +604,15 @@ fn table_text_rotations_are_supported(table: &Node) -> bool {
         .is_some_and(table_cell_text_rotation_is_supported)
         && cell_iterator.all(table_cell_text_rotation_is_supported)
 }
-/// Processes collect plain text facts using the supplied values and schematic data.
+/// Extracts top-level plain-text objects while excluding text represented by supported table cells.
 ///
 /// # Arguments
 ///
-/// * `root` — Input `root` used by this operation.
+/// * `root` — Root S-expression node of the parsed schematic.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Normalized plain text facts records or coordinates derived from the input.
 fn collect_plain_text_facts(root: &Node) -> Vec<SchematicTextFact> {
     let table_cells = children(root, "table")
         .filter(|table| table_text_rotations_are_supported(table))
@@ -646,15 +645,15 @@ fn collect_plain_text_facts(root: &Node) -> Vec<SchematicTextFact> {
         })
         .collect()
 }
-/// Processes collect sheet graphic facts using the supplied values and schematic data.
+/// Extracts top-level sheet primitives and their bounds, paths, and stroke widths.
 ///
 /// # Arguments
 ///
-/// * `root` — Input `root` used by this operation.
+/// * `root` — Root S-expression node of the parsed schematic.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Normalized sheet graphic facts records or coordinates derived from the input.
 fn collect_sheet_graphic_facts(root: &Node) -> Vec<SchematicGraphicFact> {
     let mut graphics = Vec::new();
     for kind in [
@@ -741,56 +740,56 @@ fn collect_sheet_graphic_facts(root: &Node) -> Vec<SchematicGraphicFact> {
 }
 /// Defines the default table stroke width mm constant.
 const DEFAULT_TABLE_STROKE_WIDTH_MM: f64 = 0.1524;
-/// Stores schematictablelayout data used by this crate.
+/// Resolved table origin, rotation, row/column sizes, and cell spans.
 #[derive(Clone, Debug)]
 struct SchematicTableLayout {
-    /// Stores the `uuid` value.
+    /// Table UUID, when KiCad serializes one.
     uuid: Option<String>,
-    /// Stores the `origin_mm` value.
+    /// Table insertion point in schematic millimetres.
     origin_mm: (f64, f64),
-    /// Stores the `rotation_quadrants` value.
+    /// Cardinal table rotation as a number of quarter turns.
     rotation_quadrants: u8,
-    /// Stores the `column_widths_mm` value.
+    /// Column widths in millimetres.
     column_widths_mm: Vec<f64>,
-    /// Stores the `row_heights_mm` value.
+    /// Row heights in millimetres.
     row_heights_mm: Vec<f64>,
-    /// Stores the `cell_spans` value.
+    /// Row/column spans for merged cells in row-major order.
     cell_spans: Vec<(usize, usize)>,
 }
-/// Processes nonnegative integer using the supplied values and schematic data.
+/// Parses an S-expression atom as a non-negative integer.
 ///
 /// # Arguments
 ///
-/// * `node` — Input `node` used by this operation.
+/// * `node` — S-expression node whose properties, coordinates, or geometry are being decoded.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn nonnegative_integer(node: &Node) -> Option<usize> {
     atom_value(node)?.parse::<usize>().ok()
 }
-/// Processes positive integer using the supplied values and schematic data.
+/// Parses a strictly positive integer from an S-expression child.
 ///
 /// # Arguments
 ///
-/// * `node` — Input `node` used by this operation.
+/// * `node` — S-expression node whose properties, coordinates, or geometry are being decoded.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn positive_integer(node: &Node) -> Option<usize> {
     nonnegative_integer(node).filter(|value| *value > 0)
 }
-/// Processes table dimension values using the supplied values and schematic data.
+/// Reads a named table dimension list and converts its entries to numeric millimetre values.
 ///
 /// # Arguments
 ///
-/// * `table` — Input `table` used by this operation.
-/// * `name` — Input `name` used by this operation.
+/// * `table` — Table node whose dimensions, cells, strokes, and orientation are being resolved.
+/// * `name` — S-expression property name, label, or lookup key to read.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn table_dimension_values(table: &Node, name: &str) -> Option<Vec<f64>> {
     let values = child_list(table, name).and_then(list_items)?;
     let values: Option<Vec<_>> = values.iter().skip(1).map(number).collect();
@@ -800,15 +799,15 @@ fn table_dimension_values(table: &Node, name: &str) -> Option<Vec<f64>> {
         .all(|value| value.is_finite() && *value > 0.0)
         .then_some(values)
 }
-/// Processes table cell span using the supplied values and schematic data.
+/// Reads a cell's row/column span, defaulting to a single cell when no span is serialized.
 ///
 /// # Arguments
 ///
-/// * `cell` — Input `cell` used by this operation.
+/// * `cell` — Table cell node whose style or text rotation is being checked.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn table_cell_span(cell: &Node) -> Option<(usize, usize)> {
     let Some(span) = child_list(cell, "span") else {
         return Some((1, 1));
@@ -819,15 +818,15 @@ fn table_cell_span(cell: &Node) -> Option<(usize, usize)> {
         nonnegative_integer(span.get(2)?)?,
     ))
 }
-/// Processes cardinal table rotation quadrants using the supplied values and schematic data.
+/// Converts a finite cardinal table angle into the corresponding quarter-turn count.
 ///
 /// # Arguments
 ///
-/// * `angle` — Input `angle` used by this operation.
+/// * `angle` — Rotation angle in degrees as serialized by KiCad.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn cardinal_table_rotation_quadrants(angle: f64) -> Option<u8> {
     if !angle.is_finite() {
         return None;
@@ -844,15 +843,15 @@ fn cardinal_table_rotation_quadrants(angle: f64) -> Option<u8> {
         _ => None,
     }
 }
-/// Processes schematic table layout using the supplied values and schematic data.
+/// Builds a table layout from its origin, rotation, column widths, row heights, and merged-cell spans.
 ///
 /// # Arguments
 ///
-/// * `table` — Input `table` used by this operation.
+/// * `table` — Table node whose dimensions, cells, strokes, and orientation are being resolved.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn schematic_table_layout(table: &Node) -> Option<SchematicTableLayout> {
     let columns = child_list(table, "column_count")
         .and_then(list_items)
@@ -928,17 +927,17 @@ fn schematic_table_layout(table: &Node) -> Option<SchematicTableLayout> {
 
     Some(layout)
 }
-/// Processes table grid point using the supplied values and schematic data.
+/// Maps a table-local grid offset into schematic coordinates after applying the table's cardinal rotation.
 ///
 /// # Arguments
 ///
-/// * `layout` — Input `layout` used by this operation.
-/// * `x_offset` — Input `x offset` used by this operation.
-/// * `y_offset` — Input `y offset` used by this operation.
+/// * `layout` — Resolved table layout containing its origin, rotation, grid dimensions, and cell spans.
+/// * `x_offset` — Horizontal displacement in the table's unrotated local coordinate system, in millimetres.
+/// * `y_offset` — Vertical displacement in the table's unrotated local coordinate system, in millimetres.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The transformed schematic coordinate in millimetres.
 fn table_grid_point(layout: &SchematicTableLayout, x_offset: f64, y_offset: f64) -> (f64, f64) {
     let (x, y) = match layout.rotation_quadrants {
         0 => (x_offset, y_offset),
@@ -948,17 +947,17 @@ fn table_grid_point(layout: &SchematicTableLayout, x_offset: f64, y_offset: f64)
     };
     (layout.origin_mm.0 + x, layout.origin_mm.1 + y)
 }
-/// Processes table flag using the supplied values and schematic data.
+/// Reads a table-style boolean flag and uses the supplied default when the flag is absent.
 ///
 /// # Arguments
 ///
-/// * `group` — Input `group` used by this operation.
-/// * `name` — Input `name` used by this operation.
-/// * `default` — Input `default` used by this operation.
+/// * `group` — Table-style or group node providing the requested option or declared intent.
+/// * `name` — S-expression property name, label, or lookup key to read.
+/// * `default` — Fallback boolean used when the requested style flag is not serialized.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the geometry satisfies the condition checked by this helper.
 fn table_flag(group: Option<&Node>, name: &str, default: bool) -> bool {
     group
         .and_then(|group| child_list(group, name))
@@ -967,15 +966,15 @@ fn table_flag(group: Option<&Node>, name: &str, default: bool) -> bool {
         .and_then(atom_value)
         .map_or(default, |value| value == "yes")
 }
-/// Processes table stroke width mm using the supplied values and schematic data.
+/// Reads a table style's stroke width and returns zero when no positive width is configured.
 ///
 /// # Arguments
 ///
-/// * `group` — Input `group` used by this operation.
+/// * `group` — Table-style or group node providing the requested option or declared intent.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The positive stroke width in millimetres, or zero when no width is declared.
 fn table_stroke_width_mm(group: Option<&Node>) -> f64 {
     group
         .and_then(|group| child_list(group, "stroke"))
@@ -986,16 +985,16 @@ fn table_stroke_width_mm(group: Option<&Node>) -> f64 {
         .filter(|width| width.is_finite() && *width > 0.0)
         .unwrap_or(DEFAULT_TABLE_STROKE_WIDTH_MM)
 }
-/// Processes cumulative positions using the supplied values and schematic data.
+/// Builds cumulative grid coordinates from an origin and a sequence of row or column sizes.
 ///
 /// # Arguments
 ///
-/// * `origin` — Input `origin` used by this operation.
-/// * `sizes` — Input `sizes` used by this operation.
+/// * `origin` — Starting coordinate from which cumulative grid positions are measured, in millimetres.
+/// * `sizes` — Ordered row heights or column widths, in millimetres.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Normalized cumulative positions records or coordinates derived from the input.
 fn cumulative_positions(origin: f64, sizes: &[f64]) -> Vec<f64> {
     let mut positions = Vec::with_capacity(sizes.len() + 1);
     positions.push(origin);
@@ -1004,19 +1003,19 @@ fn cumulative_positions(origin: f64, sizes: &[f64]) -> Vec<f64> {
     }
     positions
 }
-/// Processes table line fact using the supplied values and schematic data.
+/// Creates a graphic fact for one table border or separator segment, including stroke-expanded bounds.
 ///
 /// # Arguments
 ///
-/// * `kind` — Input `kind` used by this operation.
-/// * `uuid` — Input `uuid` used by this operation.
-/// * `start` — Input `start` used by this operation.
-/// * `end` — Input `end` used by this operation.
-/// * `stroke_width_mm` — Input `stroke width mm` used by this operation.
+/// * `kind` — Schematic object kind used to select parsing behavior or identify the resulting fact.
+/// * `uuid` — Optional KiCad UUID associated with the source object.
+/// * `start` — Starting coordinate of the segment or curve, in millimetres.
+/// * `end` — Ending coordinate of the segment or curve, in millimetres.
+/// * `stroke_width_mm` — Declared primitive stroke width, in millimetres.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The table line fact result derived from the schematic geometry.
 fn table_line_fact(
     kind: &str,
     uuid: Option<&str>,
@@ -1042,17 +1041,13 @@ fn table_line_fact(
         stroke_width_mm,
     }
 }
-/// Processes append table outline using the supplied values and schematic data.
+/// Appends the four outer table-border segments to the extracted graphic facts.
 ///
 /// # Arguments
 ///
-/// * `graphics` — Input `graphics` used by this operation.
-/// * `layout` — Input `layout` used by this operation.
-/// * `stroke_width_mm` — Input `stroke width mm` used by this operation.
-///
-/// # Returns
-///
-/// The value produced by this operation.
+/// * `graphics` — Mutable collection receiving extracted table graphic facts.
+/// * `layout` — Resolved table layout containing its origin, rotation, grid dimensions, and cell spans.
+/// * `stroke_width_mm` — Declared primitive stroke width, in millimetres.
 fn append_table_outline(
     graphics: &mut Vec<SchematicGraphicFact>,
     layout: &SchematicTableLayout,
@@ -1076,21 +1071,17 @@ fn append_table_outline(
         ));
     }
 }
-/// Processes append table separators using the supplied values and schematic data.
+/// Appends enabled header, row, and column separator segments while omitting merged-cell boundaries.
 ///
 /// # Arguments
 ///
-/// * `graphics` — Input `graphics` used by this operation.
-/// * `layout` — Input `layout` used by this operation.
-/// * `header_enabled` — Input `header enabled` used by this operation.
-/// * `columns_enabled` — Input `columns enabled` used by this operation.
-/// * `rows_enabled` — Input `rows enabled` used by this operation.
-/// * `border_width_mm` — Input `border width mm` used by this operation.
-/// * `separator_width_mm` — Input `separator width mm` used by this operation.
-///
-/// # Returns
-///
-/// The value produced by this operation.
+/// * `graphics` — Mutable collection receiving extracted table graphic facts.
+/// * `layout` — Resolved table layout containing its origin, rotation, grid dimensions, and cell spans.
+/// * `header_enabled` — Whether the table header separator is enabled.
+/// * `columns_enabled` — Whether column separators are enabled.
+/// * `rows_enabled` — Whether row separators are enabled.
+/// * `border_width_mm` — Width of the table's external border stroke, in millimetres.
+/// * `separator_width_mm` — Width of enabled internal separator strokes, in millimetres.
 fn append_table_separators(
     graphics: &mut Vec<SchematicGraphicFact>,
     layout: &SchematicTableLayout,
@@ -1167,15 +1158,15 @@ fn append_table_separators(
         }
     }
 }
-/// Processes collect sheet table stroke facts using the supplied values and schematic data.
+/// Extracts enabled table borders and separators for tables with a supported layout.
 ///
 /// # Arguments
 ///
-/// * `root` — Input `root` used by this operation.
+/// * `root` — Root S-expression node of the parsed schematic.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Normalized sheet table stroke facts records or coordinates derived from the input.
 fn collect_sheet_table_stroke_facts(root: &Node) -> Vec<SchematicGraphicFact> {
     let mut graphics = Vec::new();
     for table in children(root, "table") {
@@ -1201,16 +1192,16 @@ fn collect_sheet_table_stroke_facts(root: &Node) -> Vec<SchematicGraphicFact> {
     }
     graphics
 }
-/// Processes sheet graphic bounds using the supplied values and schematic data.
+/// Calculates stroke-expanded bounds for a top-level sheet graphic primitive.
 ///
 /// # Arguments
 ///
-/// * `node` — Input `node` used by this operation.
-/// * `kind` — Input `kind` used by this operation.
+/// * `node` — S-expression node whose properties, coordinates, or geometry are being decoded.
+/// * `kind` — Schematic object kind used to select parsing behavior or identify the resulting fact.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn sheet_graphic_bounds(node: &Node, kind: &str) -> Option<(f64, f64, f64, f64)> {
     let stroke_margin = symbol_primitive_stroke_width(node)
         .mul_add(HALF_DIMENSION_FACTOR, STROKE_CLEARANCE_MARGIN_MM);
@@ -1258,18 +1249,18 @@ fn sheet_graphic_bounds(node: &Node, kind: &str) -> Option<(f64, f64, f64, f64)>
         max_y + stroke_margin,
     ))
 }
-/// Processes rotated bitmap image geometry using the supplied values and schematic data.
+/// Calculates the orientation-aware corners and axis-aligned bounds of a scaled bitmap image.
 ///
 /// # Arguments
 ///
-/// * `center` — Input `center` used by this operation.
-/// * `width_mm` — Input `width mm` used by this operation.
-/// * `height_mm` — Input `height mm` used by this operation.
-/// * `orientation_degrees` — Input `orientation degrees` used by this operation.
+/// * `center` — Image or arc center coordinate in schematic millimetres.
+/// * `width_mm` — Bitmap width after applying image scale, in millimetres.
+/// * `height_mm` — Bitmap height after applying image scale, in millimetres.
+/// * `orientation_degrees` — Clockwise image orientation in degrees.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn rotated_bitmap_image_geometry(
     center: Point,
     width_mm: f64,
@@ -1328,15 +1319,15 @@ fn rotated_bitmap_image_geometry(
         corners_mm: corners,
     })
 }
-/// Processes collect sheet image facts using the supplied values and schematic data.
+/// Extracts embedded image facts, including pixel-derived dimensions, scale, rotation, and source UUID.
 ///
 /// # Arguments
 ///
-/// * `root` — Input `root` used by this operation.
+/// * `root` — Root S-expression node of the parsed schematic.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Normalized sheet image facts records or coordinates derived from the input.
 fn collect_sheet_image_facts(root: &Node) -> Vec<SchematicImageFact> {
     let format_version = child_list(root, "version")
         .and_then(list_items)
@@ -1397,29 +1388,29 @@ fn collect_sheet_image_facts(root: &Node) -> Vec<SchematicImageFact> {
         })
         .collect()
 }
-/// Stores bitmapimagemetadata data used by this crate.
+/// Pixel dimensions and current/legacy PPI values decoded from a supported bitmap header.
 #[derive(Clone, Copy, Debug)]
 struct BitmapImageMetadata {
-    /// Stores the `width_pixels` value.
+    /// Decoded bitmap width in pixels.
     width_pixels: u32,
-    /// Stores the `height_pixels` value.
+    /// Decoded bitmap height in pixels.
     height_pixels: u32,
-    /// Stores the `ppi` value.
+    /// Current bitmap resolution in pixels per inch.
     ppi: u32,
-    /// Stores the `legacy_ppi` value.
+    /// Legacy resolution value used by older KiCad file versions.
     legacy_ppi: u32,
 }
-/// Processes parse bitmap image metadata using the supplied values and schematic data.
+/// Decodes the supported bitmap header fields needed to determine image dimensions and PPI.
 ///
 /// # Arguments
 ///
-/// * `encoded` — Input `encoded` used by this operation.
+/// * `encoded` — Base64-encoded bitmap payload from the schematic.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn parse_bitmap_image_metadata(encoded: &str) -> Option<BitmapImageMetadata> {
-    /// Defines the max header bytes constant.
+    /// Maximum decoded header prefix retained when inspecting an embedded bitmap.
     const MAX_BITMAP_HEADER_BYTES: usize = 256 * 1024;
     let bytes = decode_base64_prefix(encoded, MAX_BITMAP_HEADER_BYTES);
     if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
@@ -1430,16 +1421,16 @@ fn parse_bitmap_image_metadata(encoded: &str) -> Option<BitmapImageMetadata> {
         None
     }
 }
-/// Processes decode base64 prefix using the supplied values and schematic data.
+/// Decodes at most the requested prefix of a base64-encoded bitmap payload.
 ///
 /// # Arguments
 ///
-/// * `encoded` — Input `encoded` used by this operation.
-/// * `max_bytes` — Input `max bytes` used by this operation.
+/// * `encoded` — Base64-encoded bitmap payload from the schematic.
+/// * `max_bytes` — Maximum number of decoded bytes to retain from the image payload.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Normalized decode base64 prefix records or coordinates derived from the input.
 fn decode_base64_prefix(encoded: &str, max_bytes: usize) -> Vec<u8> {
     let mut decoded = Vec::with_capacity(max_bytes.min(encoded.len() * 3 / 4));
     let mut quartet = [0_u8; 4];
@@ -1483,15 +1474,15 @@ fn decode_base64_prefix(encoded: &str, max_bytes: usize) -> Vec<u8> {
     decoded.truncate(max_bytes);
     decoded
 }
-/// Processes base64 digit using the supplied values and schematic data.
+/// Converts one base64 alphabet byte to its six-bit digit value.
 ///
 /// # Arguments
 ///
-/// * `byte` — Input `byte` used by this operation.
+/// * `byte` — byte to be used in this geometry or parsing operation.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 const fn base64_digit(byte: u8) -> Option<u8> {
     match byte {
         b'A'..=b'Z' => Some(byte - b'A'),
@@ -1502,45 +1493,45 @@ const fn base64_digit(byte: u8) -> Option<u8> {
         _ => None,
     }
 }
-/// Processes read be u32 using the supplied values and schematic data.
+/// Reads one big-endian 32-bit integer from a byte slice at the requested offset.
 ///
 /// # Arguments
 ///
-/// * `bytes` — Input `bytes` used by this operation.
-/// * `offset` — Input `offset` used by this operation.
+/// * `bytes` — Raw PNG/JPEG or network-order bytes being inspected.
+/// * `offset` — Byte offset at which the integer is read.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The decoded unsigned 32-bit integer, or `None` when the byte range is incomplete.
 fn read_be_u32(bytes: &[u8], offset: usize) -> Option<u32> {
     Some(u32::from_be_bytes(
         bytes.get(offset..offset + 4)?.try_into().ok()?,
     ))
 }
-/// Processes read be u16 using the supplied values and schematic data.
+/// Reads one big-endian 16-bit integer from a byte slice at the requested offset.
 ///
 /// # Arguments
 ///
-/// * `bytes` — Input `bytes` used by this operation.
-/// * `offset` — Input `offset` used by this operation.
+/// * `bytes` — Raw PNG/JPEG or network-order bytes being inspected.
+/// * `offset` — Byte offset at which the integer is read.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The decoded unsigned 16-bit integer, or `None` when the byte range is incomplete.
 fn read_be_u16(bytes: &[u8], offset: usize) -> Option<u16> {
     Some(u16::from_be_bytes(
         bytes.get(offset..offset + 2)?.try_into().ok()?,
     ))
 }
-/// Processes parse png image metadata using the supplied values and schematic data.
+/// Reads width, height, and resolution metadata from a PNG header and its supported resolution chunk.
 ///
 /// # Arguments
 ///
-/// * `bytes` — Input `bytes` used by this operation.
+/// * `bytes` — Raw PNG/JPEG or network-order bytes being inspected.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn parse_png_image_metadata(bytes: &[u8]) -> Option<BitmapImageMetadata> {
     if !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
         return None;
@@ -1590,15 +1581,15 @@ fn parse_png_image_metadata(bytes: &[u8]) -> Option<BitmapImageMetadata> {
         legacy_ppi: legacy_ppi.max(1),
     })
 }
-/// Processes pixels per meter to ppi using the supplied values and schematic data.
+/// Converts pixels per metre to pixels per inch using integer rounding.
 ///
 /// # Arguments
 ///
-/// * `pixels_per_meter` — Input `pixels per meter` used by this operation.
+/// * `pixels_per_meter` — PNG resolution value expressed in pixels per metre.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The calculated integer value.
 fn pixels_per_meter_to_ppi(pixels_per_meter: u32) -> u32 {
     // Round pixels/metre * 2.54 / 100 to the nearest integer without a float cast.
     rounded_ratio_to_u32(
@@ -1606,15 +1597,15 @@ fn pixels_per_meter_to_ppi(pixels_per_meter: u32) -> u32 {
         10_000,
     )
 }
-/// Processes pixels per cm to ppi using the supplied values and schematic data.
+/// Converts legacy pixels-per-centimetre metadata to pixels per inch using integer rounding.
 ///
 /// # Arguments
 ///
-/// * `pixels_per_cm` — Input `pixels per cm` used by this operation.
+/// * `pixels_per_cm` — Legacy bitmap resolution expressed in pixels per centimetre.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The calculated integer value.
 fn pixels_per_cm_to_ppi(pixels_per_cm: u32) -> u32 {
     // Legacy KiCad first truncated pixels/metre to integer pixels/cm.
     rounded_ratio_to_u32(
@@ -1622,29 +1613,29 @@ fn pixels_per_cm_to_ppi(pixels_per_cm: u32) -> u32 {
         u64::from(CENTIMETRES_PER_METRE),
     )
 }
-/// Processes rounded ratio to u32 using the supplied values and schematic data.
+/// Rounds an integer numerator/denominator ratio and clamps the result to a valid positive `u32`.
 ///
 /// # Arguments
 ///
-/// * `numerator` — Input `numerator` used by this operation.
-/// * `denominator` — Input `denominator` used by this operation.
+/// * `numerator` — Integer numerator of the ratio being rounded.
+/// * `denominator` — Positive integer denominator of the ratio.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The calculated integer value.
 fn rounded_ratio_to_u32(numerator: u64, denominator: u64) -> u32 {
     let rounded = numerator.saturating_add(denominator / 2) / denominator;
     u32::try_from(rounded).unwrap_or(u32::MAX).max(1)
 }
-/// Processes parse jpeg image metadata using the supplied values and schematic data.
+/// Reads image dimensions and JFIF density metadata from a JPEG header.
 ///
 /// # Arguments
 ///
-/// * `bytes` — Input `bytes` used by this operation.
+/// * `bytes` — Raw PNG/JPEG or network-order bytes being inspected.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn parse_jpeg_image_metadata(bytes: &[u8]) -> Option<BitmapImageMetadata> {
     if !bytes.starts_with(&[0xff, 0xd8]) {
         return None;
@@ -1721,15 +1712,15 @@ fn parse_jpeg_image_metadata(bytes: &[u8]) -> Option<BitmapImageMetadata> {
         legacy_ppi: ppi.max(1),
     })
 }
-/// Processes collect group facts using the supplied values and schematic data.
+/// Extracts native KiCad schematic groups, their UUIDs, names, and member UUIDs.
 ///
 /// # Arguments
 ///
-/// * `root` — Input `root` used by this operation.
+/// * `root` — Root S-expression node of the parsed schematic.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Normalized group facts records or coordinates derived from the input.
 fn collect_group_facts(root: &Node) -> Vec<SchematicGroupFact> {
     children(root, "group")
         .filter_map(|node| {
@@ -1755,15 +1746,15 @@ fn collect_group_facts(root: &Node) -> Vec<SchematicGroupFact> {
         })
         .collect()
 }
-/// Processes collect frame facts using the supplied values and schematic data.
+/// Extracts rectangular sheet frames and their axis-aligned bounds.
 ///
 /// # Arguments
 ///
-/// * `root` — Input `root` used by this operation.
+/// * `root` — Root S-expression node of the parsed schematic.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Normalized frame facts records or coordinates derived from the input.
 fn collect_frame_facts(root: &Node) -> Vec<SchematicFrameFact> {
     children(root, "rectangle")
         .filter_map(|node| {
@@ -1789,15 +1780,15 @@ fn collect_frame_facts(root: &Node) -> Vec<SchematicFrameFact> {
         })
         .collect()
 }
-/// Processes collect label facts using the supplied values and schematic data.
+/// Extracts label kind, text, anchor position, and visible glyph bounds.
 ///
 /// # Arguments
 ///
-/// * `root` — Input `root` used by this operation.
+/// * `root` — Root S-expression node of the parsed schematic.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Normalized label facts records or coordinates derived from the input.
 fn collect_label_facts(root: &Node) -> Vec<SchematicLabelFact> {
     collect_label_nodes(root)
         .into_iter()
@@ -1816,15 +1807,15 @@ fn collect_label_facts(root: &Node) -> Vec<SchematicLabelFact> {
         })
         .collect()
 }
-/// Processes collect pin facts using the supplied values and schematic data.
+/// Resolves placed symbol-pin coordinates through the selected library symbol unit and transform.
 ///
 /// # Arguments
 ///
-/// * `root` — Input `root` used by this operation.
+/// * `root` — Root S-expression node of the parsed schematic.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Normalized pin facts records or coordinates derived from the input.
 fn collect_pin_facts(root: &Node) -> Vec<SchematicPinFact> {
     let Some(library_symbols) = child_list(root, "lib_symbols") else {
         return Vec::new();
@@ -1882,15 +1873,15 @@ fn collect_pin_facts(root: &Node) -> Vec<SchematicPinFact> {
     }
     pins
 }
-/// Processes collect sheet facts using the supplied values and schematic data.
+/// Extracts hierarchical sheet instances, their frame geometry, and sheet pins.
 ///
 /// # Arguments
 ///
-/// * `root` — Input `root` used by this operation.
+/// * `root` — Root S-expression node of the parsed schematic.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Normalized sheet facts records or coordinates derived from the input.
 fn collect_sheet_facts(root: &Node) -> Vec<SchematicSheetFact> {
     children(root, "sheet")
         .filter_map(|sheet| {
@@ -1964,16 +1955,16 @@ fn collect_sheet_facts(root: &Node) -> Vec<SchematicSheetFact> {
         })
         .collect()
 }
-/// Processes object reference using the supplied values and schematic data.
+/// Reads an object's UUID and formats it with the supplied object-kind prefix.
 ///
 /// # Arguments
 ///
-/// * `node` — Input `node` used by this operation.
-/// * `prefix` — Input `prefix` used by this operation.
+/// * `node` — S-expression node whose properties, coordinates, or geometry are being decoded.
+/// * `prefix` — prefix to be used in this geometry or parsing operation.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The formatted value used by schematic geometry lookups.
 fn object_reference(node: &Node, prefix: &str) -> String {
     child_list(node, "uuid")
         .and_then(list_items)
@@ -1984,18 +1975,18 @@ fn object_reference(node: &Node, prefix: &str) -> String {
             str::to_owned,
         )
 }
-/// Defines the no connect marker half size mm constant.
+/// Half-width of KiCad's fixed-size no-connect X marker, in millimetres.
 const NO_CONNECT_MARKER_HALF_SIZE_MM: f64 = 48.0 * 0.0254 / 2.0;
 
-/// Collects `KiCad`'s fixed-size no-connect marker strokes without assuming the
-/// schematic-settings-dependent pen width, which is not serialized per marker.
+/// Collects fixed-size no-connect marker geometry without assuming an unavailable per-marker pen width.
+///
 /// # Arguments
 ///
-/// * `root` — Input `root` used by this operation.
+/// * `root` — Root S-expression node of the parsed schematic.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Normalized no connect facts records or coordinates derived from the input.
 fn collect_no_connect_facts(root: &Node) -> Vec<SchematicNoConnectFact> {
     children(root, "no_connect")
         .filter_map(|node| {
@@ -2009,15 +2000,15 @@ fn collect_no_connect_facts(root: &Node) -> Vec<SchematicNoConnectFact> {
         })
         .collect()
 }
-/// Processes collect bus obstacle facts using the supplied values and schematic data.
+/// Extracts schematic bus polylines as stroked obstacles for wire-clearance analysis.
 ///
 /// # Arguments
 ///
-/// * `root` — Input `root` used by this operation.
+/// * `root` — Root S-expression node of the parsed schematic.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Normalized bus obstacle facts records or coordinates derived from the input.
 fn collect_bus_obstacle_facts(root: &Node) -> Vec<SchematicBusObstacleFact> {
     let mut obstacles = Vec::new();
     for bus in children(root, "bus") {
@@ -2108,15 +2099,15 @@ fn collect_bus_obstacle_facts(root: &Node) -> Vec<SchematicBusObstacleFact> {
 
     obstacles
 }
-/// Processes collect symbol field facts using the supplied values and schematic data.
+/// Extracts visible symbol reference/value fields and their estimated text bounds.
 ///
 /// # Arguments
 ///
-/// * `root` — Input `root` used by this operation.
+/// * `root` — Root S-expression node of the parsed schematic.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Normalized symbol field facts records or coordinates derived from the input.
 fn collect_symbol_field_facts(root: &Node) -> Vec<SchematicFieldFact> {
     let mut fields = Vec::new();
     for symbol in children(root, "symbol") {
@@ -2164,15 +2155,15 @@ fn collect_symbol_field_facts(root: &Node) -> Vec<SchematicFieldFact> {
     }
     fields
 }
-/// Processes collect symbol primitive facts using the supplied values and schematic data.
+/// Collects selected-unit embedded symbol primitives after applying the placed symbol transform.
 ///
 /// # Arguments
 ///
-/// * `root` — Input `root` used by this operation.
+/// * `root` — Root S-expression node of the parsed schematic.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Normalized symbol primitive facts records or coordinates derived from the input.
 fn collect_symbol_primitive_facts(root: &Node) -> Vec<SchematicPrimitiveFact> {
     let Some(library_symbols) = child_list(root, "lib_symbols") else {
         return Vec::new();
@@ -2182,16 +2173,16 @@ fn collect_symbol_primitive_facts(root: &Node) -> Vec<SchematicPrimitiveFact> {
         .flat_map(|instance| collect_instance_primitives(instance, &definitions))
         .collect()
 }
-/// Processes collect instance primitives using the supplied values and schematic data.
+/// Transforms the primitives belonging to a placed symbol's selected library unit.
 ///
 /// # Arguments
 ///
-/// * `instance` — Input `instance` used by this operation.
-/// * `definitions` — Input `definitions` used by this operation.
+/// * `instance` — Placed symbol instance node containing reference, transform, unit, and conversion metadata.
+/// * `definitions` — Library symbol definitions available to resolve the placed symbol.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Normalized instance primitives records or coordinates derived from the input.
 fn collect_instance_primitives(
     instance: &Node,
     definitions: &[&Node],
@@ -2219,15 +2210,15 @@ fn collect_instance_primitives(
         .flat_map(|unit| collect_primitives_from_unit(unit, &transform))
         .collect()
 }
-/// Processes collect symbol text facts using the supplied values and schematic data.
+/// Extracts embedded library-symbol text and text boxes as transformed wire-obstacle geometry.
 ///
 /// # Arguments
 ///
-/// * `root` — Input `root` used by this operation.
+/// * `root` — Root S-expression node of the parsed schematic.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Normalized symbol text facts records or coordinates derived from the input.
 fn collect_symbol_text_facts(root: &Node) -> Vec<SchematicSymbolTextFact> {
     let Some(library_symbols) = child_list(root, "lib_symbols") else {
         return Vec::new();
@@ -2262,16 +2253,16 @@ fn collect_symbol_text_facts(root: &Node) -> Vec<SchematicSymbolTextFact> {
 
     texts
 }
-/// Processes collect symbol text from unit using the supplied values and schematic data.
+/// Transforms text and text-box objects from one library unit into sheet coordinates.
 ///
 /// # Arguments
 ///
-/// * `unit` — Input `unit` used by this operation.
-/// * `transform` — Input `transform` used by this operation.
+/// * `unit` — Selected library symbol unit number.
+/// * `transform` — Resolved transform that maps library-local coordinates to the schematic sheet.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Normalized symbol text from unit records or coordinates derived from the input.
 fn collect_symbol_text_from_unit(
     unit: &Node,
     transform: &SymbolTransform,
@@ -2316,16 +2307,16 @@ fn collect_symbol_text_from_unit(
     }
     texts
 }
-/// Processes transform symbol bounds using the supplied values and schematic data.
+/// Transforms all four corners of a symbol-local rectangle and returns the enclosing sheet-coordinate bounds.
 ///
 /// # Arguments
 ///
-/// * `bounds` — Input `bounds` used by this operation.
-/// * `transform` — Input `transform` used by this operation.
+/// * `bounds` — Axis-aligned rectangle or primitive bounds in schematic millimetres.
+/// * `transform` — Resolved transform that maps library-local coordinates to the schematic sheet.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn transform_symbol_bounds(bounds: Bounds, transform: &SymbolTransform) -> Option<Bounds> {
     let points = [
         (bounds.x, bounds.y),
@@ -2363,17 +2354,17 @@ fn transform_symbol_bounds(bounds: Bounds, transform: &SymbolTransform) -> Optio
         height: bottom - top,
     })
 }
-/// Processes selected symbol units using the supplied values and schematic data.
+/// Selects the library symbol units matching the placed instance's unit and conversion number.
 ///
 /// # Arguments
 ///
-/// * `definition` — Input `definition` used by this operation.
-/// * `unit` — Input `unit` used by this operation.
-/// * `convert` — Input `convert` used by this operation.
+/// * `definition` — KiCad S-expression syntax-tree node.
+/// * `unit` — Selected library symbol unit number.
+/// * `convert` — Selected library symbol conversion variant.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Normalized selected symbol units records or coordinates derived from the input.
 fn selected_symbol_units(definition: &Node, unit: u32, convert: u32) -> Vec<&Node> {
     let sub_symbols: Vec<_> = children(definition, "symbol").collect();
     if sub_symbols.is_empty() {
@@ -2392,16 +2383,16 @@ fn selected_symbol_units(definition: &Node, unit: u32, convert: u32) -> Vec<&Nod
         })
         .collect()
 }
-/// Processes collect primitives from unit using the supplied values and schematic data.
+/// Extracts and transforms supported geometric primitives from one library symbol unit.
 ///
 /// # Arguments
 ///
-/// * `unit` — Input `unit` used by this operation.
-/// * `transform` — Input `transform` used by this operation.
+/// * `unit` — Selected library symbol unit number.
+/// * `transform` — Resolved transform that maps library-local coordinates to the schematic sheet.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Normalized primitives from unit records or coordinates derived from the input.
 fn collect_primitives_from_unit(
     unit: &Node,
     transform: &SymbolTransform,
@@ -2423,16 +2414,16 @@ fn collect_primitives_from_unit(
     }
     primitives
 }
-/// Processes parse symbol primitive using the supplied values and schematic data.
+/// Parses a supported symbol-library primitive and maps its geometry into sheet coordinates.
 ///
 /// # Arguments
 ///
-/// * `node` — Input `node` used by this operation.
-/// * `transform` — Input `transform` used by this operation.
+/// * `node` — S-expression node whose properties, coordinates, or geometry are being decoded.
+/// * `transform` — Resolved transform that maps library-local coordinates to the schematic sheet.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn parse_symbol_primitive(
     node: &Node,
     transform: &SymbolTransform,
@@ -2514,15 +2505,15 @@ fn parse_symbol_primitive(
         stroke_width_mm,
     })
 }
-/// Processes symbol primitive stroke width using the supplied values and schematic data.
+/// Reads a symbol primitive's declared stroke width, defaulting to zero when it is missing.
 ///
 /// # Arguments
 ///
-/// * `node` — Input `node` used by this operation.
+/// * `node` — S-expression node whose properties, coordinates, or geometry are being decoded.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The positive stroke width in millimetres, or zero when no width is declared.
 fn symbol_primitive_stroke_width(node: &Node) -> f64 {
     child_list(node, "stroke")
         .and_then(|stroke| child_list(stroke, "width"))
@@ -2532,15 +2523,15 @@ fn symbol_primitive_stroke_width(node: &Node) -> f64 {
         .filter(|width| width.is_finite() && width.abs() > GEOMETRY_TOLERANCE_MM)
         .map_or(0.254, f64::abs)
 }
-/// Processes rectangle primitive points using the supplied values and schematic data.
+/// Reads the two corners of a rectangle primitive from its S-expression.
 ///
 /// # Arguments
 ///
-/// * `node` — Input `node` used by this operation.
+/// * `node` — S-expression node whose properties, coordinates, or geometry are being decoded.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn rectangle_primitive_points(node: &Node) -> Option<Vec<(f64, f64)>> {
     let start = child_list(node, "start").and_then(list_items)?;
     let end = child_list(node, "end").and_then(list_items)?;
@@ -2550,15 +2541,15 @@ fn rectangle_primitive_points(node: &Node) -> Option<Vec<(f64, f64)>> {
     let y2 = number(end.get(2)?)?;
     Some(vec![(x1, y1), (x2, y1), (x2, y2), (x1, y2)])
 }
-/// Processes polyline primitive points using the supplied values and schematic data.
+/// Reads the ordered coordinate list from a polyline or polygon primitive.
 ///
 /// # Arguments
 ///
-/// * `node` — Input `node` used by this operation.
+/// * `node` — S-expression node whose properties, coordinates, or geometry are being decoded.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn polyline_primitive_points(node: &Node) -> Option<Vec<(f64, f64)>> {
     let points = child_list(node, "pts")?;
     let points: Vec<_> = children(points, "xy")
@@ -2569,15 +2560,15 @@ fn polyline_primitive_points(node: &Node) -> Option<Vec<(f64, f64)>> {
         .collect();
     (points.len() >= 2).then_some(points)
 }
-/// Processes arc primitive control points using the supplied values and schematic data.
+/// Reads the start, midpoint, and end coordinates of a three-point arc.
 ///
 /// # Arguments
 ///
-/// * `node` — Input `node` used by this operation.
+/// * `node` — S-expression node whose properties, coordinates, or geometry are being decoded.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn arc_primitive_control_points(node: &Node) -> Option<[(f64, f64); 3]> {
     let point = |name| {
         let items = child_list(node, name).and_then(list_items)?;
@@ -2585,45 +2576,45 @@ fn arc_primitive_control_points(node: &Node) -> Option<[(f64, f64); 3]> {
     };
     Some([point("start")?, point("mid")?, point("end")?])
 }
-/// Processes arc primitive geometry using the supplied values and schematic data.
+/// Reconstructs the center, radius, start angle, and directed sweep of a three-point circular arc.
 ///
 /// # Arguments
 ///
-/// * `node` — Input `node` used by this operation.
+/// * `node` — S-expression node whose properties, coordinates, or geometry are being decoded.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn arc_primitive_geometry(node: &Node) -> Option<SchematicArcFact> {
     let [start, mid, end] = arc_primitive_control_points(node)?;
     circular_arc_through_three_points(start, mid, end)
 }
-/// Processes arc primitive points using the supplied values and schematic data.
+/// Samples a three-point circular arc into a sequence of points for path-based geometry checks.
 ///
 /// # Arguments
 ///
-/// * `node` — Input `node` used by this operation.
+/// * `node` — S-expression node whose properties, coordinates, or geometry are being decoded.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn arc_primitive_points(node: &Node) -> Option<Vec<(f64, f64)>> {
     let [start, mid, end] = arc_primitive_control_points(node)?;
     Some(sample_arc_through_three_points(start, mid, end))
 }
 /// Defines the curve flatten tolerance mm constant.
 const CURVE_FLATTEN_TOLERANCE_MM: f64 = 0.01;
-/// Processes flattened curve points using the supplied values and schematic data.
+/// Flattens a Kurbo path into schematic-coordinate points using the configured curve tolerance.
 ///
 /// # Arguments
 ///
-/// * `path` — Input `path` used by this operation.
-/// * `start` — Input `start` used by this operation.
-/// * `end` — Input `end` used by this operation.
+/// * `path` — Kurbo path elements or path segment being evaluated.
+/// * `start` — Starting coordinate of the segment or curve, in millimetres.
+/// * `end` — Ending coordinate of the segment or curve, in millimetres.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Normalized ed curve points records or coordinates derived from the input.
 fn flattened_curve_points(
     path: impl IntoIterator<Item = PathEl>,
     start: (f64, f64),
@@ -2645,15 +2636,15 @@ fn flattened_curve_points(
     }
     points
 }
-/// Processes bezier primitive control points using the supplied values and schematic data.
+/// Reads the four control points of a cubic Bézier primitive.
 ///
 /// # Arguments
 ///
-/// * `node` — Input `node` used by this operation.
+/// * `node` — S-expression node whose properties, coordinates, or geometry are being decoded.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn bezier_primitive_control_points(node: &Node) -> Option<[(f64, f64); 4]> {
     let points_node = child_list(node, "pts")?;
     let coordinates: Option<Vec<_>> = children(points_node, "xy")
@@ -2668,15 +2659,15 @@ fn bezier_primitive_control_points(node: &Node) -> Option<[(f64, f64); 4]> {
     };
     Some([*start, *control_one, *control_two, *end])
 }
-/// Processes bezier primitive points using the supplied values and schematic data.
+/// Flattens a cubic Bézier primitive into a sequence of schematic-coordinate points.
 ///
 /// # Arguments
 ///
-/// * `node` — Input `node` used by this operation.
+/// * `node` — S-expression node whose properties, coordinates, or geometry are being decoded.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn bezier_primitive_points(node: &Node) -> Option<Vec<(f64, f64)>> {
     let [start, control_one, control_two, end] = bezier_primitive_control_points(node)?;
     let path = [
@@ -2689,17 +2680,17 @@ fn bezier_primitive_points(node: &Node) -> Option<Vec<(f64, f64)>> {
     ];
     Some(flattened_curve_points(path, start, end))
 }
-/// Processes sample arc through three points using the supplied values and schematic data.
+/// Samples a circular arc passing through the supplied start, midpoint, and end points.
 ///
 /// # Arguments
 ///
-/// * `start` — Input `start` used by this operation.
-/// * `mid` — Input `mid` used by this operation.
-/// * `end` — Input `end` used by this operation.
+/// * `start` — Starting coordinate of the segment or curve, in millimetres.
+/// * `mid` — mid to be used in this geometry or parsing operation.
+/// * `end` — Ending coordinate of the segment or curve, in millimetres.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Normalized arc through three points records or coordinates derived from the input.
 fn sample_arc_through_three_points(
     start: (f64, f64),
     mid: (f64, f64),
@@ -2717,21 +2708,21 @@ fn sample_arc_through_three_points(
     );
     flattened_curve_points(path.path_elements(CURVE_FLATTEN_TOLERANCE_MM), start, end)
 }
-/// Processes subdivide ellipse arc using the supplied values and schematic data.
+/// Recursively subdivides an elliptical arc until its midpoint deviation is within the flattening tolerance.
 ///
 /// # Arguments
 ///
-/// * `start_angle` — Input `start angle` used by this operation.
-/// * `start` — Input `start` used by this operation.
-/// * `end_angle` — Input `end angle` used by this operation.
-/// * `end` — Input `end` used by this operation.
-/// * `depth` — Input `depth` used by this operation.
-/// * `evaluate` — Input `evaluate` used by this operation.
-/// * `points` — Input `points` used by this operation.
+/// * `start_angle` — start angle to be used in this geometry or parsing operation.
+/// * `start` — Starting coordinate of the segment or curve, in millimetres.
+/// * `end_angle` — end angle to be used in this geometry or parsing operation.
+/// * `end` — Ending coordinate of the segment or curve, in millimetres.
+/// * `depth` — Remaining recursive subdivision depth for the ellipse approximation.
+/// * `evaluate` — Parametric evaluator returning a sampled point along the elliptical arc.
+/// * `points` — Ordered schematic-coordinate points defining a primitive or path.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn subdivide_ellipse_arc(
     start_angle: f64,
     start: (f64, f64),
@@ -2777,16 +2768,16 @@ fn subdivide_ellipse_arc(
     }
     Some(())
 }
-/// Processes ellipse primitive points using the supplied values and schematic data.
+/// Samples an ellipse or elliptical arc from its center, radii, rotation, and optional arc sweep.
 ///
 /// # Arguments
 ///
-/// * `node` — Input `node` used by this operation.
-/// * `is_arc` — Input `is arc` used by this operation.
+/// * `node` — S-expression node whose properties, coordinates, or geometry are being decoded.
+/// * `is_arc` — is arc to be used in this geometry or parsing operation.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn ellipse_primitive_points(node: &Node, is_arc: bool) -> Option<Vec<(f64, f64)>> {
     let center = child_list(node, "center").and_then(list_items)?;
     let center = (number(center.get(1)?)?, number(center.get(2)?)?);
@@ -2870,17 +2861,17 @@ fn ellipse_primitive_points(node: &Node, is_arc: bool) -> Option<Vec<(f64, f64)>
     )?;
     Some(points)
 }
-/// Processes circular arc through three points using the supplied values and schematic data.
+/// Reconstructs circular-arc center, radius, and directed sweep from three non-collinear points.
 ///
 /// # Arguments
 ///
-/// * `start` — Input `start` used by this operation.
-/// * `mid` — Input `mid` used by this operation.
-/// * `end` — Input `end` used by this operation.
+/// * `start` — Starting coordinate of the segment or curve, in millimetres.
+/// * `mid` — mid to be used in this geometry or parsing operation.
+/// * `end` — Ending coordinate of the segment or curve, in millimetres.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn circular_arc_through_three_points(
     start: (f64, f64),
     mid: (f64, f64),
@@ -2930,16 +2921,16 @@ fn circular_arc_through_three_points(
         sweep_rad: sweep,
     })
 }
-/// Processes transform primitive points using the supplied values and schematic data.
+/// Applies a placed-symbol affine transform to each primitive point.
 ///
 /// # Arguments
 ///
-/// * `points` — Input `points` used by this operation.
-/// * `transform` — Input `transform` used by this operation.
+/// * `points` — Ordered schematic-coordinate points defining a primitive or path.
+/// * `transform` — Resolved transform that maps library-local coordinates to the schematic sheet.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn transform_primitive_points(
     points: &[(f64, f64)],
     transform: &SymbolTransform,
@@ -2957,11 +2948,11 @@ fn transform_primitive_points(
 /// Result of the built-in rule pass.
 #[derive(Clone, Debug, Default)]
 pub struct RuleRun {
-    /// Emitted custom-rule diagnostics.
+    /// Diagnostics emitted by all registered passes.
     pub diagnostics: Vec<Diagnostic>,
-    /// Number of schematic wires inspected.
+    /// Number of wire segments analyzed in this run.
     pub wires: usize,
-    /// Number of placed components inspected.
+    /// Number of placed components collected from the schematic.
     pub components: usize,
 }
 
@@ -2969,23 +2960,23 @@ pub struct RuleRun {
 pub struct BuiltinGeometryPass;
 
 impl RulePass for BuiltinGeometryPass {
-    /// Processes name using the supplied values and schematic data.
+    /// Calculates name from the supplied schematic geometry or S-expression data.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
+    /// The name result derived from the schematic geometry.
     fn name(&self) -> &'static str {
         "01-kicad-clippy.geometry"
     }
-    /// Processes run using the supplied values and schematic data.
+    /// Calculates run from the supplied schematic geometry or S-expression data.
     ///
     /// # Arguments
     ///
-    /// * `context` — Input `context` used by this operation.
+    /// * `context` — Shared rule context containing schematic facts and project-resolved width settings.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
+    /// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
     fn run(&self, context: &RuleContext<'_>) -> Vec<Diagnostic> {
         run_geometry_checks(context)
     }
@@ -2995,23 +2986,23 @@ impl RulePass for BuiltinGeometryPass {
 pub struct BuiltinLabelPass;
 
 impl RulePass for BuiltinLabelPass {
-    /// Processes name using the supplied values and schematic data.
+    /// Calculates name from the supplied schematic geometry or S-expression data.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
+    /// The name result derived from the schematic geometry.
     fn name(&self) -> &'static str {
         "02-kicad-clippy.labels"
     }
-    /// Processes run using the supplied values and schematic data.
+    /// Calculates run from the supplied schematic geometry or S-expression data.
     ///
     /// # Arguments
     ///
-    /// * `context` — Input `context` used by this operation.
+    /// * `context` — Shared rule context containing schematic facts and project-resolved width settings.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
+    /// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
     fn run(&self, context: &RuleContext<'_>) -> Vec<Diagnostic> {
         run_label_checks(context)
     }
@@ -3021,51 +3012,50 @@ impl RulePass for BuiltinLabelPass {
 pub struct BuiltinAnnotationPass;
 
 impl RulePass for BuiltinAnnotationPass {
-    /// Processes name using the supplied values and schematic data.
+    /// Calculates name from the supplied schematic geometry or S-expression data.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
+    /// The name result derived from the schematic geometry.
     fn name(&self) -> &'static str {
         "03-kicad-clippy.annotations"
     }
-    /// Processes run using the supplied values and schematic data.
+    /// Calculates run from the supplied schematic geometry or S-expression data.
     ///
     /// # Arguments
     ///
-    /// * `context` — Input `context` used by this operation.
+    /// * `context` — Shared rule context containing schematic facts and project-resolved width settings.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
+    /// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
     fn run(&self, context: &RuleContext<'_>) -> Vec<Diagnostic> {
         run_annotation_checks(context)
     }
 }
 
-/// Run reusable rules that do not require a project profile.
+/// Runs the registered built-in schematic rules and returns their combined diagnostics and run statistics.
+///
 /// # Arguments
 ///
-/// * `document` — Input `document` used by this operation.
+/// * `document` — Parsed schematic document whose S-expression tree and source spans are used for fact extraction.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
-///
+/// A `RuleRun` containing the combined diagnostics and counts of analyzed wires and components.
 #[must_use]
 pub fn run_builtin_rules(document: &SchematicDocument) -> RuleRun {
     crate::RuleEngine::with_builtins().run(document)
 }
-/// Processes run geometry checks using the supplied values and schematic data.
+/// Runs geometry, orientation, no-connect, and wire-obstacle checks over one schematic analysis context.
 ///
 /// # Arguments
 ///
-/// * `context` — Input `context` used by this operation.
+/// * `context` — Shared rule context containing schematic facts and project-resolved width settings.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
-///
+/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
 #[must_use]
 pub fn run_geometry_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
     let Some(root) = context.document().cst().nodes.first() else {
@@ -3093,15 +3083,15 @@ pub fn run_geometry_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
     ));
     diagnostics
 }
-/// Processes schematic has graphical netclass assignments using the supplied values and schematic data.
+/// Detects schematic-local netclass assignments that make project-only width inference unsafe.
 ///
 /// # Arguments
 ///
-/// * `root` — Input `root` used by this operation.
+/// * `root` — Root S-expression node of the parsed schematic.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the geometry satisfies the condition checked by this helper.
 fn schematic_has_graphical_netclass_assignments(root: &Node) -> bool {
     let mut has_assignments = false;
     walk(root, &mut |node| match head(node) {
@@ -3120,16 +3110,15 @@ fn schematic_has_graphical_netclass_assignments(root: &Node) -> bool {
     });
     has_assignments
 }
-/// Processes run label checks using the supplied values and schematic data.
+/// Runs physical label-topology, label/wire glyph, and label-text consistency checks.
 ///
 /// # Arguments
 ///
-/// * `context` — Input `context` used by this operation.
+/// * `context` — Shared rule context containing schematic facts and project-resolved width settings.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
-///
+/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
 #[must_use]
 pub fn run_label_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
     let Some(root) = context.document().cst().nodes.first() else {
@@ -3141,16 +3130,15 @@ pub fn run_label_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
     diagnostics.extend(check_label_kind_consistency(root));
     diagnostics
 }
-/// Processes run annotation checks using the supplied values and schematic data.
+/// Runs annotation text-box geometry and multiline block-annotation checks.
 ///
 /// # Arguments
 ///
-/// * `context` — Input `context` used by this operation.
+/// * `context` — Shared rule context containing schematic facts and project-resolved width settings.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
-///
+/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
 #[must_use]
 pub fn run_annotation_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
     let Some(root) = context.document().cst().nodes.first() else {
@@ -3168,18 +3156,18 @@ pub fn run_annotation_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
 /// Represents the supported pinaxis alternatives.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PinAxis {
-    /// Represents the `Horizontal` case.
+    /// Wire axis parallel to the X coordinate.
     Horizontal,
-    /// Represents the `Vertical` case.
+    /// Wire axis parallel to the Y coordinate.
     Vertical,
 }
 
 impl PinAxis {
-    /// Processes as str using the supplied values and schematic data.
+    /// Calculates as str from the supplied schematic geometry or S-expression data.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
+    /// The as str result derived from the schematic geometry.
     const fn as_str(self) -> &'static str {
         match self {
             Self::Horizontal => "horizontal",
@@ -3187,33 +3175,33 @@ impl PinAxis {
         }
     }
 }
-/// Stores symboltransform data used by this crate.
+/// Placed-symbol identity and transform parameters used to map library geometry to the sheet.
 #[derive(Clone, Debug)]
 struct SymbolTransform {
-    /// Stores the `reference` value.
+    /// Reference designator of the placed symbol.
     reference: String,
-    /// Stores the `origin` value.
+    /// Symbol origin in schematic coordinates.
     origin: Point,
-    /// Stores the `rotation` value.
+    /// Placed-symbol rotation in degrees.
     rotation: f64,
-    /// Stores the `mirror` value.
+    /// Optional mirror mode applied by KiCad.
     mirror: Option<String>,
-    /// Stores the `unit` value.
+    /// Selected library symbol unit number.
     unit: u32,
-    /// Stores the `convert` value.
+    /// Selected library symbol conversion number.
     convert: u32,
 }
-/// Processes embedded symbol text obstacle diagnostics using the supplied values and schematic data.
+/// Finds wire crossings or clearance violations against transformed embedded-symbol text.
 ///
 /// # Arguments
 ///
-/// * `wire_index` — Input `wire index` used by this operation.
-/// * `wire` — Input `wire` used by this operation.
-/// * `texts` — Input `texts` used by this operation.
+/// * `wire_index` — Stable index of the wire within the current segment collection.
+/// * `wire` — Wire segment whose collision or clearance is being evaluated.
+/// * `texts` — Transformed embedded-symbol text obstacles to compare with the wire.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
 fn embedded_symbol_text_obstacle_diagnostics(
     wire_index: usize,
     wire: Segment,
@@ -3242,18 +3230,18 @@ fn embedded_symbol_text_obstacle_diagnostics(
         })
         .collect()
 }
-/// Processes bus obstacle diagnostics using the supplied values and schematic data.
+/// Finds wire intersections or insufficient clearance against a schematic bus obstacle.
 ///
 /// # Arguments
 ///
-/// * `wire_index` — Input `wire index` used by this operation.
-/// * `segment` — Input `segment` used by this operation.
-/// * `obstacles` — Input `obstacles` used by this operation.
-/// * `wire_stroke_width_mm` — Input `wire stroke width mm` used by this operation.
+/// * `wire_index` — Stable index of the wire within the current segment collection.
+/// * `segment` — Wire segment being checked for obstacle intersection or clearance.
+/// * `obstacles` — Extracted bus or graphic obstacle geometry.
+/// * `wire_stroke_width_mm` — wire stroke width mm to be used in this geometry or parsing operation.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
 fn bus_obstacle_diagnostics(
     wire_index: usize,
     segment: Segment,
@@ -3282,18 +3270,18 @@ fn bus_obstacle_diagnostics(
         })
         .collect()
 }
-/// Processes sheet frame obstacle diagnostics using the supplied values and schematic data.
+/// Finds wire segments that collide with hierarchical sheet frames or their stroke envelopes.
 ///
 /// # Arguments
 ///
-/// * `wire_index` — Input `wire index` used by this operation.
-/// * `segment` — Input `segment` used by this operation.
-/// * `sheets` — Input `sheets` used by this operation.
-/// * `wire_stroke_width_mm` — Input `wire stroke width mm` used by this operation.
+/// * `wire_index` — Stable index of the wire within the current segment collection.
+/// * `segment` — Wire segment being checked for obstacle intersection or clearance.
+/// * `sheets` — Hierarchical sheet-frame facts used as wire obstacles.
+/// * `wire_stroke_width_mm` — wire stroke width mm to be used in this geometry or parsing operation.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
 fn sheet_frame_obstacle_diagnostics(
     wire_index: usize,
     segment: Segment,
@@ -3322,18 +3310,18 @@ fn sheet_frame_obstacle_diagnostics(
         })
         .collect()
 }
-/// Processes table stroke obstacle diagnostics using the supplied values and schematic data.
+/// Finds wire intersections or clearance violations against enabled table border and separator strokes.
 ///
 /// # Arguments
 ///
-/// * `wire_index` — Input `wire index` used by this operation.
-/// * `segment` — Input `segment` used by this operation.
-/// * `table_strokes` — Input `table strokes` used by this operation.
-/// * `wire_stroke_width_mm` — Input `wire stroke width mm` used by this operation.
+/// * `wire_index` — Stable index of the wire within the current segment collection.
+/// * `segment` — Wire segment being checked for obstacle intersection or clearance.
+/// * `table_strokes` — Enabled table-border and separator strokes used as obstacles.
+/// * `wire_stroke_width_mm` — wire stroke width mm to be used in this geometry or parsing operation.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
 fn table_stroke_obstacle_diagnostics(
     wire_index: usize,
     segment: Segment,
@@ -3357,17 +3345,17 @@ fn table_stroke_obstacle_diagnostics(
         })
         .collect()
 }
-/// Processes wire crosses no connect diagonal using the supplied values and schematic data.
+/// Tests whether a wire intersects either diagonal stroke of a no-connect marker.
 ///
 /// # Arguments
 ///
-/// * `wire` — Input `wire` used by this operation.
-/// * `diagonal` — Input `diagonal` used by this operation.
-/// * `wire_stroke_width_mm` — Input `wire stroke width mm` used by this operation.
+/// * `wire` — Wire segment whose collision or clearance is being evaluated.
+/// * `diagonal` — diagonal to be used in this geometry or parsing operation.
+/// * `wire_stroke_width_mm` — wire stroke width mm to be used in this geometry or parsing operation.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the geometry satisfies the condition checked by this helper.
 fn wire_crosses_no_connect_diagonal(
     wire: Segment,
     diagonal: [(f64, f64); 2],
@@ -3396,19 +3384,19 @@ fn wire_crosses_no_connect_diagonal(
     (finite && !segment_intersection_points(wire, start, end).is_empty())
         || wire_within_sampled_path_stroke(wire, &diagonal, false, wire_stroke_width_mm, 0.0)
 }
-/// Processes no connect marker obstacle diagnostics using the supplied values and schematic data.
+/// Finds wires that collide with a no-connect marker, accounting for its fixed marker geometry and available pen width.
 ///
 /// # Arguments
 ///
-/// * `wire_index` — Input `wire index` used by this operation.
-/// * `segment` — Input `segment` used by this operation.
-/// * `markers` — Input `markers` used by this operation.
-/// * `wire_stroke_width_mm` — Input `wire stroke width mm` used by this operation.
-/// * `default_marker_pen_width_mm` — Input `default marker pen width mm` used by this operation.
+/// * `wire_index` — Stable index of the wire within the current segment collection.
+/// * `segment` — Wire segment being checked for obstacle intersection or clearance.
+/// * `markers` — No-connect marker facts, including marker centers and half-size.
+/// * `wire_stroke_width_mm` — wire stroke width mm to be used in this geometry or parsing operation.
+/// * `default_marker_pen_width_mm` — Optional schematic default line pen width applied to no-connect marker strokes, in millimetres.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
 fn no_connect_marker_obstacle_diagnostics(
     wire_index: usize,
     segment: Segment,
@@ -3458,29 +3446,29 @@ fn no_connect_marker_obstacle_diagnostics(
         })
         .collect()
 }
-/// Stores wireobstaclestrokewidths data used by this crate.
+/// Effective wire width and optional no-connect marker pen width used by obstacle checks.
 #[derive(Clone, Copy)]
 struct WireObstacleStrokeWidths {
-    /// Stores the `wire_mm` value.
+    /// Effective wire stroke width in millimetres.
     wire_mm: f64,
-    /// Stores the `no_connect_marker_pen_mm` value.
+    /// Schematic default pen width used for no-connect markers, when the project supplies it.
     no_connect_marker_pen_mm: Option<f64>,
 }
-/// Processes sheet table bus obstacle diagnostics using the supplied values and schematic data.
+/// Combines sheet-frame, table-stroke, bus, and no-connect obstacle diagnostics for one wire.
 ///
 /// # Arguments
 ///
-/// * `wire_index` — Input `wire index` used by this operation.
-/// * `segment` — Input `segment` used by this operation.
-/// * `sheets` — Input `sheets` used by this operation.
-/// * `table_strokes` — Input `table strokes` used by this operation.
-/// * `bus_obstacles` — Input `bus obstacles` used by this operation.
-/// * `no_connects` — Input `no connects` used by this operation.
-/// * `stroke_widths` — Input `stroke widths` used by this operation.
+/// * `wire_index` — Stable index of the wire within the current segment collection.
+/// * `segment` — Wire segment being checked for obstacle intersection or clearance.
+/// * `sheets` — Hierarchical sheet-frame facts used as wire obstacles.
+/// * `table_strokes` — Enabled table-border and separator strokes used as obstacles.
+/// * `bus_obstacles` — bus obstacles to be used in this geometry or parsing operation.
+/// * `no_connects` — no connects to be used in this geometry or parsing operation.
+/// * `stroke_widths` — Resolved explicit and project-derived stroke widths indexed by wire source offset.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
 fn sheet_table_bus_obstacle_diagnostics(
     wire_index: usize,
     segment: Segment,
@@ -3514,17 +3502,17 @@ fn sheet_table_bus_obstacle_diagnostics(
     ));
     diagnostics
 }
-/// Processes intermediate pin obstacle diagnostics using the supplied values and schematic data.
+/// Finds wires that pass through a placed pin that is not a permitted endpoint contact.
 ///
 /// # Arguments
 ///
-/// * `wire_index` — Input `wire index` used by this operation.
-/// * `segment` — Input `segment` used by this operation.
-/// * `pins` — Input `pins` used by this operation.
+/// * `wire_index` — Stable index of the wire within the current segment collection.
+/// * `segment` — Wire segment being checked for obstacle intersection or clearance.
+/// * `pins` — Placed symbol-pin facts used to allow only local wire endpoint contact.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
 fn intermediate_pin_obstacle_diagnostics(
     wire_index: usize,
     segment: Segment,
@@ -3550,20 +3538,20 @@ fn intermediate_pin_obstacle_diagnostics(
         })
         .collect()
 }
-/// Processes check wire obstacles using the supplied values and schematic data.
+/// Checks each wire against embedded primitives, labels/text, buses, frames, tables, pins, images, and no-connect markers.
 ///
 /// # Arguments
 ///
-/// * `root` — Input `root` used by this operation.
-/// * `segments` — Input `segments` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
-/// * `wire_stroke_widths` — Input `wire stroke widths` used by this operation.
-/// * `default_wire_stroke_width_mm` — Input `default wire stroke width mm` used by this operation.
-/// * `default_marker_pen_width_mm` — Input `default marker pen width mm` used by this operation.
+/// * `root` — Root S-expression node of the parsed schematic.
+/// * `segments` — Parsed wire segments used to determine geometry, topology, or obstacle intersections.
+/// * `facts` — Normalized facts extracted from the schematic.
+/// * `wire_stroke_widths` — wire stroke widths to be used in this geometry or parsing operation.
+/// * `default_wire_stroke_width_mm` — default wire stroke width mm to be used in this geometry or parsing operation.
+/// * `default_marker_pen_width_mm` — Optional schematic default line pen width applied to no-connect marker strokes, in millimetres.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
 fn check_wire_obstacles(
     root: &Node,
     segments: &[Segment],
@@ -3662,19 +3650,19 @@ fn check_wire_obstacles(
     }
     diagnostics
 }
-/// Processes wire text annotation obstacle diagnostics using the supplied values and schematic data.
+/// Finds wire collisions with visible fields, labels, plain text, and text boxes.
 ///
 /// # Arguments
 ///
-/// * `wire_index` — Input `wire index` used by this operation.
-/// * `segment` — Input `segment` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
-/// * `fields` — Input `fields` used by this operation.
-/// * `text_boxes` — Input `text boxes` used by this operation.
+/// * `wire_index` — Stable index of the wire within the current segment collection.
+/// * `segment` — Wire segment being checked for obstacle intersection or clearance.
+/// * `facts` — Normalized facts extracted from the schematic.
+/// * `fields` — Visible symbol-field geometry used as wire or label collision obstacles.
+/// * `text_boxes` — Text-box geometries used as wire or annotation obstacles.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
 fn wire_text_annotation_obstacle_diagnostics(
     wire_index: usize,
     segment: Segment,
@@ -3725,15 +3713,15 @@ fn wire_text_annotation_obstacle_diagnostics(
     }
     diagnostics
 }
-/// Processes collect visible field bounds using the supplied values and schematic data.
+/// Collects visible symbol Reference and Value fields with estimated glyph bounds and source spans.
 ///
 /// # Arguments
 ///
-/// * `root` — Input `root` used by this operation.
+/// * `root` — Root S-expression node of the parsed schematic.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Normalized visible field bounds records or coordinates derived from the input.
 fn collect_visible_field_bounds(root: &Node) -> Vec<(String, Bounds, ByteSpan)> {
     let mut fields = Vec::new();
     for symbol in children(root, "symbol") {
@@ -3771,16 +3759,16 @@ fn collect_visible_field_bounds(root: &Node) -> Vec<(String, Bounds, ByteSpan)> 
     }
     fields
 }
-/// Processes segment arc intersection points using the supplied values and schematic data.
+/// Calculates the intersection points between a wire segment and the circular sweep of an arc.
 ///
 /// # Arguments
 ///
-/// * `wire` — Input `wire` used by this operation.
-/// * `arc` — Input `arc` used by this operation.
+/// * `wire` — Wire segment whose collision or clearance is being evaluated.
+/// * `arc` — arc to be used in this geometry or parsing operation.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Normalized segment arc intersection points records or coordinates derived from the input.
 fn segment_arc_intersection_points(wire: Segment, arc: SchematicArcFact) -> Vec<Point> {
     let direction_x = wire.end.x - wire.start.x;
     let direction_y = wire.end.y - wire.start.y;
@@ -3843,16 +3831,16 @@ fn segment_arc_intersection_points(wire: Segment, arc: SchematicArcFact) -> Vec<
 
     intersections
 }
-/// Processes segment bezier intersection points using the supplied values and schematic data.
+/// Calculates the intersection points between a wire segment and a cubic Bézier path.
 ///
 /// # Arguments
 ///
-/// * `wire` — Input `wire` used by this operation.
-/// * `control_points` — Input `control points` used by this operation.
+/// * `wire` — Wire segment whose collision or clearance is being evaluated.
+/// * `control_points` — Cubic Bézier control points in start/control/control/end order.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Normalized segment bezier intersection points records or coordinates derived from the input.
 fn segment_bezier_intersection_points(
     wire: Segment,
     control_points: [(f64, f64); 4],
@@ -3893,15 +3881,15 @@ fn segment_bezier_intersection_points(
         })
         .collect()
 }
-/// Processes cubic bezier path segment using the supplied values and schematic data.
+/// Builds a Kurbo cubic Bézier segment from its four schematic-coordinate control points.
 ///
 /// # Arguments
 ///
-/// * `control_points` — Input `control points` used by this operation.
+/// * `control_points` — Cubic Bézier control points in start/control/control/end order.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The cubic bezier path segment result derived from the schematic geometry.
 fn cubic_bezier_path_segment(control_points: [(f64, f64); 4]) -> CurvePathSeg {
     CurvePathSeg::Cubic(CurveCubicBez::new(
         CurvePoint::new(control_points[0].0, control_points[0].1),
@@ -3914,16 +3902,16 @@ fn cubic_bezier_path_segment(control_points: [(f64, f64); 4]) -> CurvePathSeg {
 const SCH013_STROKE_DISTANCE_ACCURACY_MM: f64 = 1.0e-6;
 /// Defines the sch013 stroke distance epsilon mm constant.
 const SCH013_STROKE_DISTANCE_EPSILON_MM: f64 = 1.0e-6;
-/// Processes wire path min distance using the supplied values and schematic data.
+/// Calculates the minimum Euclidean distance between a wire segment and a curve path segment.
 ///
 /// # Arguments
 ///
-/// * `wire` — Input `wire` used by this operation.
-/// * `path` — Input `path` used by this operation.
+/// * `wire` — Wire segment whose collision or clearance is being evaluated.
+/// * `path` — Kurbo path elements or path segment being evaluated.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The shortest Euclidean distance in millimetres.
 fn wire_path_min_distance(wire: Segment, path: CurvePathSeg) -> Option<f64> {
     let line = CurveLine::new(
         CurvePoint::new(wire.start.x, wire.start.y),
@@ -3935,18 +3923,18 @@ fn wire_path_min_distance(wire: Segment, path: CurvePathSeg) -> Option<f64> {
     let nearest = path.min_dist(CurvePathSeg::Line(line), SCH013_STROKE_DISTANCE_ACCURACY_MM);
     nearest.distance.is_finite().then_some(nearest.distance)
 }
-/// Processes wire within path stroke using the supplied values and schematic data.
+/// Tests whether a wire's combined stroke envelope reaches a path segment.
 ///
 /// # Arguments
 ///
-/// * `wire` — Input `wire` used by this operation.
-/// * `path` — Input `path` used by this operation.
-/// * `stroke_width_mm` — Input `stroke width mm` used by this operation.
-/// * `flatten_tolerance_mm` — Input `flatten tolerance mm` used by this operation.
+/// * `wire` — Wire segment whose collision or clearance is being evaluated.
+/// * `path` — Kurbo path elements or path segment being evaluated.
+/// * `stroke_width_mm` — Declared primitive stroke width, in millimetres.
+/// * `flatten_tolerance_mm` — flatten tolerance mm to be used in this geometry or parsing operation.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the geometry satisfies the condition checked by this helper.
 fn wire_within_path_stroke(
     wire: Segment,
     path: CurvePathSeg,
@@ -3965,19 +3953,19 @@ fn wire_within_path_stroke(
     );
     minimum_distance <= threshold
 }
-/// Processes wire within sampled path stroke using the supplied values and schematic data.
+/// Tests whether a wire's stroke envelope reaches a path represented by sampled points.
 ///
 /// # Arguments
 ///
-/// * `wire` — Input `wire` used by this operation.
-/// * `points` — Input `points` used by this operation.
-/// * `closed` — Input `closed` used by this operation.
-/// * `stroke_width_mm` — Input `stroke width mm` used by this operation.
-/// * `flatten_tolerance_mm` — Input `flatten tolerance mm` used by this operation.
+/// * `wire` — Wire segment whose collision or clearance is being evaluated.
+/// * `points` — Ordered schematic-coordinate points defining a primitive or path.
+/// * `closed` — closed to be used in this geometry or parsing operation.
+/// * `stroke_width_mm` — Declared primitive stroke width, in millimetres.
+/// * `flatten_tolerance_mm` — flatten tolerance mm to be used in this geometry or parsing operation.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the geometry satisfies the condition checked by this helper.
 fn wire_within_sampled_path_stroke(
     wire: Segment,
     points: &[(f64, f64)],
@@ -4009,18 +3997,19 @@ fn wire_within_sampled_path_stroke(
     false
 }
 
-/// Checks the declared circular stroke ring while retaining the existing inner-body obstacle rule.
+/// Tests wire clearance against the stroked circumference of a circle.
+///
 /// # Arguments
 ///
-/// * `wire` — Input `wire` used by this operation.
-/// * `center` — Input `center` used by this operation.
-/// * `radius_mm` — Input `radius mm` used by this operation.
-/// * `stroke_width_mm` — Input `stroke width mm` used by this operation.
-/// * `wire_stroke_width_mm` — Input `wire stroke width mm` used by this operation.
+/// * `wire` — Wire segment whose collision or clearance is being evaluated.
+/// * `center` — Image or arc center coordinate in schematic millimetres.
+/// * `radius_mm` — radius mm to be used in this geometry or parsing operation.
+/// * `stroke_width_mm` — Declared primitive stroke width, in millimetres.
+/// * `wire_stroke_width_mm` — wire stroke width mm to be used in this geometry or parsing operation.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the geometry satisfies the condition checked by this helper.
 fn wire_within_circle_stroke(
     wire: Segment,
     center: Point,
@@ -4062,17 +4051,17 @@ fn wire_within_circle_stroke(
 
     intersects_stroke_ring || penetrates_existing_body_region
 }
-/// Processes wire crosses sheet graphic with wire stroke using the supplied values and schematic data.
+/// Tests whether the combined wire/graphic stroke envelopes intersect.
 ///
 /// # Arguments
 ///
-/// * `wire` — Input `wire` used by this operation.
-/// * `graphic` — Input `graphic` used by this operation.
-/// * `wire_stroke_width_mm` — Input `wire stroke width mm` used by this operation.
+/// * `wire` — Wire segment whose collision or clearance is being evaluated.
+/// * `graphic` — Extracted graphic primitive with its path and stroke metadata.
+/// * `wire_stroke_width_mm` — wire stroke width mm to be used in this geometry or parsing operation.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the geometry satisfies the condition checked by this helper.
 fn wire_crosses_sheet_graphic_with_wire_stroke(
     wire: Segment,
     graphic: &SchematicGraphicFact,
@@ -4152,16 +4141,16 @@ fn wire_crosses_sheet_graphic_with_wire_stroke(
     }
     false
 }
-/// Processes wire crosses polygon interior using the supplied values and schematic data.
+/// Tests whether a wire crosses the interior of a closed polygon, excluding boundary-only contact.
 ///
 /// # Arguments
 ///
-/// * `wire` — Input `wire` used by this operation.
-/// * `polygon` — Input `polygon` used by this operation.
+/// * `wire` — Wire segment whose collision or clearance is being evaluated.
+/// * `polygon` — Ordered polygon vertices in schematic millimetres.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the geometry satisfies the condition checked by this helper.
 fn wire_crosses_polygon_interior(wire: Segment, polygon: &Polygon<f64>) -> bool {
     let direction_x = wire.end.x - wire.start.x;
     let direction_y = wire.end.y - wire.start.y;
@@ -4202,16 +4191,16 @@ fn wire_crosses_polygon_interior(wire: Segment, polygon: &Polygon<f64>) -> bool 
             && Euclidean.distance(&midpoint, polygon.exterior()) > GEOMETRY_TOLERANCE_MM
     })
 }
-/// Processes wire crosses bitmap image using the supplied values and schematic data.
+/// Tests whether a wire intersects the quadrilateral footprint of a rotated bitmap image.
 ///
 /// # Arguments
 ///
-/// * `wire` — Input `wire` used by this operation.
-/// * `corners` — Input `corners` used by this operation.
+/// * `wire` — Wire segment whose collision or clearance is being evaluated.
+/// * `corners` — corners to be used in this geometry or parsing operation.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the geometry satisfies the condition checked by this helper.
 fn wire_crosses_bitmap_image(wire: Segment, corners: &[(f64, f64); 4]) -> bool {
     let mut ring: Vec<_> = corners
         .iter()
@@ -4222,17 +4211,18 @@ fn wire_crosses_bitmap_image(wire: Segment, corners: &[(f64, f64); 4]) -> bool {
     wire_crosses_polygon_interior(wire, &polygon)
 }
 
-/// Excludes only the local stroke-clearance neighbourhood at matching pin endpoints.
+/// Removes only the locally permitted pin-contact region from a wire segment before obstacle testing.
+///
 /// # Arguments
 ///
-/// * `wire` — Input `wire` used by this operation.
-/// * `reference` — Input `reference` used by this operation.
-/// * `pins` — Input `pins` used by this operation.
-/// * `exclusion_distance_mm` — Input `exclusion distance mm` used by this operation.
+/// * `wire` — Wire segment whose collision or clearance is being evaluated.
+/// * `reference` — Placed component reference designator associated with a pin or symbol.
+/// * `pins` — Placed symbol-pin facts used to allow only local wire endpoint contact.
+/// * `exclusion_distance_mm` — Radius of the local pin-contact region to exclude from the remaining wire segment, in millimetres.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn wire_without_pin_contact_region(
     wire: Segment,
     reference: &str,
@@ -4279,17 +4269,17 @@ fn wire_without_pin_contact_region(
         span: wire.span,
     })
 }
-/// Processes symbol primitive has centerline collision using the supplied values and schematic data.
+/// Tests whether a wire centerline collides with a symbol primitive, excluding permitted pin contacts.
 ///
 /// # Arguments
 ///
-/// * `wire` — Input `wire` used by this operation.
-/// * `primitive` — Input `primitive` used by this operation.
-/// * `pins` — Input `pins` used by this operation.
+/// * `wire` — Wire segment whose collision or clearance is being evaluated.
+/// * `primitive` — Embedded or sheet-level primitive whose body and stroke are checked against the wire.
+/// * `pins` — Placed symbol-pin facts used to allow only local wire endpoint contact.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the geometry satisfies the condition checked by this helper.
 fn symbol_primitive_has_centerline_collision(
     wire: Segment,
     primitive: &SchematicPrimitiveFact,
@@ -4334,18 +4324,18 @@ fn symbol_primitive_has_centerline_collision(
             .any(|point| !wire_intersection_is_allowed_pin(point, wire, &primitive.reference, pins))
         })
 }
-/// Processes symbol primitive wire stroke collision using the supplied values and schematic data.
+/// Tests whether a wire's stroke envelope collides with the stroked geometry of a symbol primitive.
 ///
 /// # Arguments
 ///
-/// * `wire` — Input `wire` used by this operation.
-/// * `primitive` — Input `primitive` used by this operation.
-/// * `pins` — Input `pins` used by this operation.
-/// * `combined_stroke_width_mm` — Input `combined stroke width mm` used by this operation.
+/// * `wire` — Wire segment whose collision or clearance is being evaluated.
+/// * `primitive` — Embedded or sheet-level primitive whose body and stroke are checked against the wire.
+/// * `pins` — Placed symbol-pin facts used to allow only local wire endpoint contact.
+/// * `combined_stroke_width_mm` — Combined wire and primitive stroke width used for the collision test, in millimetres.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the geometry satisfies the condition checked by this helper.
 fn symbol_primitive_wire_stroke_collision(
     wire: Segment,
     primitive: &SchematicPrimitiveFact,
@@ -4392,18 +4382,18 @@ fn symbol_primitive_wire_stroke_collision(
         0.0,
     )
 }
-/// Processes wire crosses symbol primitive with wire stroke using the supplied values and schematic data.
+/// Checks a wire against a symbol primitive using both declared stroke widths and allowed pin-endpoint contacts.
 ///
 /// # Arguments
 ///
-/// * `wire` — Input `wire` used by this operation.
-/// * `primitive` — Input `primitive` used by this operation.
-/// * `pins` — Input `pins` used by this operation.
-/// * `wire_stroke_width_mm` — Input `wire stroke width mm` used by this operation.
+/// * `wire` — Wire segment whose collision or clearance is being evaluated.
+/// * `primitive` — Embedded or sheet-level primitive whose body and stroke are checked against the wire.
+/// * `pins` — Placed symbol-pin facts used to allow only local wire endpoint contact.
+/// * `wire_stroke_width_mm` — wire stroke width mm to be used in this geometry or parsing operation.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the geometry satisfies the condition checked by this helper.
 fn wire_crosses_symbol_primitive_with_wire_stroke(
     wire: Segment,
     primitive: &SchematicPrimitiveFact,
@@ -4450,18 +4440,18 @@ fn wire_crosses_symbol_primitive_with_wire_stroke(
         || (!wire_endpoint_is_pin(wire.end, &primitive.reference, pins)
             && point_in_polygon(wire.end, &primitive.points_mm))
 }
-/// Processes wire intersection is allowed pin using the supplied values and schematic data.
+/// Checks whether a candidate wire/primitive intersection is an allowed contact at a pin on that wire.
 ///
 /// # Arguments
 ///
-/// * `point` — Input `point` used by this operation.
-/// * `wire` — Input `wire` used by this operation.
-/// * `reference` — Input `reference` used by this operation.
-/// * `pins` — Input `pins` used by this operation.
+/// * `point` — Schematic coordinate being tested, in millimetres.
+/// * `wire` — Wire segment whose collision or clearance is being evaluated.
+/// * `reference` — Placed component reference designator associated with a pin or symbol.
+/// * `pins` — Placed symbol-pin facts used to allow only local wire endpoint contact.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the geometry satisfies the condition checked by this helper.
 fn wire_intersection_is_allowed_pin(
     point: Point,
     wire: Segment,
@@ -4473,17 +4463,17 @@ fn wire_intersection_is_allowed_pin(
         || (distance(point, wire.end) <= GEOMETRY_TOLERANCE_MM
             && wire_endpoint_is_pin(wire.end, reference, pins))
 }
-/// Processes wire endpoint is pin using the supplied values and schematic data.
+/// Checks whether a wire endpoint coincides with a placed pin belonging to the specified component.
 ///
 /// # Arguments
 ///
-/// * `endpoint` — Input `endpoint` used by this operation.
-/// * `reference` — Input `reference` used by this operation.
-/// * `pins` — Input `pins` used by this operation.
+/// * `endpoint` — Wire endpoint coordinate being compared with placed pin coordinates.
+/// * `reference` — Placed component reference designator associated with a pin or symbol.
+/// * `pins` — Placed symbol-pin facts used to allow only local wire endpoint contact.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the geometry satisfies the condition checked by this helper.
 fn wire_endpoint_is_pin(endpoint: Point, reference: &str, pins: &[SchematicPinFact]) -> bool {
     pins.iter().any(|pin| {
         pin.reference == reference
@@ -4496,32 +4486,31 @@ fn wire_endpoint_is_pin(endpoint: Point, reference: &str, pins: &[SchematicPinFa
             ) <= GEOMETRY_TOLERANCE_MM
     })
 }
-/// Processes geo line using the supplied values and schematic data.
+/// Converts two schematic points into a `geo` line segment.
 ///
 /// # Arguments
 ///
-/// * `start` — Input `start` used by this operation.
-/// * `end` — Input `end` used by this operation.
+/// * `start` — Starting coordinate of the segment or curve, in millimetres.
+/// * `end` — Ending coordinate of the segment or curve, in millimetres.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// A `geo` line segment joining the supplied endpoints.
 fn geo_line(start: Point, end: Point) -> Line<f64> {
     Line::new(start, end)
 }
 
-/// Returns all point endpoints of a segment intersection, including both ends
-/// of a collinear overlap. `GeoRust` owns the intersection classification and
-/// construction; this adapter only converts to the schematic point type.
+/// Returns the geometric intersection points between a segment and a line defined by two endpoints.
+///
 /// # Arguments
 ///
-/// * `first` — Input `first` used by this operation.
-/// * `second_start` — Input `second start` used by this operation.
-/// * `second_end` — Input `second end` used by this operation.
+/// * `first` — First element index or geometric endpoint participating in the operation.
+/// * `second_start` — Schematic coordinate in millimetres.
+/// * `second_end` — Schematic coordinate in millimetres.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Normalized segment intersection points records or coordinates derived from the input.
 fn segment_intersection_points(
     first: Segment,
     second_start: Point,
@@ -4545,45 +4534,45 @@ fn segment_intersection_points(
         None => Vec::new(),
     }
 }
-/// Processes point on segment any using the supplied values and schematic data.
+/// Tests whether a point lies on the finite segment between two endpoints within the geometry tolerance.
 ///
 /// # Arguments
 ///
-/// * `point` — Input `point` used by this operation.
-/// * `start` — Input `start` used by this operation.
-/// * `end` — Input `end` used by this operation.
+/// * `point` — Schematic coordinate being tested, in millimetres.
+/// * `start` — Starting coordinate of the segment or curve, in millimetres.
+/// * `end` — Ending coordinate of the segment or curve, in millimetres.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the geometry satisfies the condition checked by this helper.
 fn point_on_segment_any(point: Point, start: Point, end: Point) -> bool {
     Euclidean.distance(&GeoPoint::new(point.x, point.y), &geo_line(start, end))
         <= GEOMETRY_TOLERANCE_MM
 }
-/// Processes point segment distance using the supplied values and schematic data.
+/// Calculates the shortest Euclidean distance from a point to a finite segment.
 ///
 /// # Arguments
 ///
-/// * `point` — Input `point` used by this operation.
-/// * `start` — Input `start` used by this operation.
-/// * `end` — Input `end` used by this operation.
+/// * `point` — Schematic coordinate being tested, in millimetres.
+/// * `start` — Starting coordinate of the segment or curve, in millimetres.
+/// * `end` — Ending coordinate of the segment or curve, in millimetres.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The shortest Euclidean distance in millimetres.
 fn point_segment_distance(point: Point, start: Point, end: Point) -> f64 {
     Euclidean.distance(&GeoPoint::new(point.x, point.y), &geo_line(start, end))
 }
-/// Processes point in polygon using the supplied values and schematic data.
+/// Tests whether a point lies inside a polygon or on its boundary.
 ///
 /// # Arguments
 ///
-/// * `point` — Input `point` used by this operation.
-/// * `polygon` — Input `polygon` used by this operation.
+/// * `point` — Schematic coordinate being tested, in millimetres.
+/// * `polygon` — Ordered polygon vertices in schematic millimetres.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the geometry satisfies the condition checked by this helper.
 fn point_in_polygon(point: Point, polygon: &[(f64, f64)]) -> bool {
     if polygon.len() < 3 {
         return false;
@@ -4604,16 +4593,16 @@ fn point_in_polygon(point: Point, polygon: &[(f64, f64)]) -> bool {
     geometry.contains(&query)
         || Euclidean.distance(&query, geometry.exterior()) <= GEOMETRY_TOLERANCE_MM
 }
-/// Processes check pin orientation using the supplied values and schematic data.
+/// Checks connected wire axes against the transformed orientation of placed symbol pins.
 ///
 /// # Arguments
 ///
-/// * `root` — Input `root` used by this operation.
-/// * `segments` — Input `segments` used by this operation.
+/// * `root` — Root S-expression node of the parsed schematic.
+/// * `segments` — Parsed wire segments used to determine geometry, topology, or obstacle intersections.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
 fn check_pin_orientation(root: &Node, segments: &[Segment]) -> Vec<Diagnostic> {
     let Some(library_symbols) = child_list(root, "lib_symbols") else {
         return Vec::new();
@@ -4622,17 +4611,17 @@ fn check_pin_orientation(root: &Node, segments: &[Segment]) -> Vec<Diagnostic> {
         .flat_map(|instance| check_instance_pin_orientation(instance, library_symbols, segments))
         .collect()
 }
-/// Processes check instance pin orientation using the supplied values and schematic data.
+/// Checks one placed symbol's connected pins against its resolved library pin orientation.
 ///
 /// # Arguments
 ///
-/// * `instance` — Input `instance` used by this operation.
-/// * `library_symbols` — Input `library symbols` used by this operation.
-/// * `segments` — Input `segments` used by this operation.
+/// * `instance` — Placed symbol instance node containing reference, transform, unit, and conversion metadata.
+/// * `library_symbols` — KiCad S-expression syntax-tree node.
+/// * `segments` — Parsed wire segments used to determine geometry, topology, or obstacle intersections.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
 fn check_instance_pin_orientation(
     instance: &Node,
     library_symbols: &Node,
@@ -4665,15 +4654,15 @@ fn check_instance_pin_orientation(
         .filter_map(|pin| pin_orientation_diagnostic(instance, pin, &transform, segments))
         .collect()
 }
-/// Processes check no connect markers using the supplied values and schematic data.
+/// Checks that explicit no-connect markers coincide with supported transformed pins.
 ///
 /// # Arguments
 ///
-/// * `root` — Input `root` used by this operation.
+/// * `root` — Root S-expression node of the parsed schematic.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
 fn check_no_connect_markers(root: &Node) -> Vec<Diagnostic> {
     let markers = collect_nodes(root, "no_connect");
     if markers.is_empty() {
@@ -4702,15 +4691,15 @@ fn check_no_connect_markers(root: &Node) -> Vec<Diagnostic> {
         })
         .collect()
 }
-/// Processes collect placed pin positions using the supplied values and schematic data.
+/// Resolves all placed symbol-pin coordinates when the required library geometry is available.
 ///
 /// # Arguments
 ///
-/// * `root` — Input `root` used by this operation.
+/// * `root` — Root S-expression node of the parsed schematic.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn collect_placed_pin_positions(root: &Node) -> Option<Vec<Point>> {
     let mut positions = Vec::new();
     let Some(library_symbols) = child_list(root, "lib_symbols") else {
@@ -4753,15 +4742,15 @@ fn collect_placed_pin_positions(root: &Node) -> Option<Vec<Point>> {
     }
     Some(positions)
 }
-/// Processes read symbol transform using the supplied values and schematic data.
+/// Reads a placed symbol's origin, rotation, mirror, unit, and conversion metadata.
 ///
 /// # Arguments
 ///
-/// * `instance` — Input `instance` used by this operation.
+/// * `instance` — Placed symbol instance node containing reference, transform, unit, and conversion metadata.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn read_symbol_transform(instance: &Node) -> Option<SymbolTransform> {
     let reference = children(instance, "property").find_map(|property| {
         let items = list_items(property)?;
@@ -4798,16 +4787,16 @@ fn read_symbol_transform(instance: &Node) -> Option<SymbolTransform> {
         convert,
     })
 }
-/// Processes instance integer using the supplied values and schematic data.
+/// Reads an unsigned integer property from a placed symbol instance.
 ///
 /// # Arguments
 ///
-/// * `instance` — Input `instance` used by this operation.
-/// * `name` — Input `name` used by this operation.
+/// * `instance` — Placed symbol instance node containing reference, transform, unit, and conversion metadata.
+/// * `name` — S-expression property name, label, or lookup key to read.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn instance_integer(instance: &Node, name: &str) -> Option<u32> {
     child_list(instance, name)
         .and_then(list_items)
@@ -4815,17 +4804,17 @@ fn instance_integer(instance: &Node, name: &str) -> Option<u32> {
         .and_then(atom_value)
         .and_then(|value| value.parse().ok())
 }
-/// Processes embedded symbol pins using the supplied values and schematic data.
+/// Selects the pin definitions belonging to the requested library unit and conversion.
 ///
 /// # Arguments
 ///
-/// * `library_symbol` — Input `library symbol` used by this operation.
-/// * `unit` — Input `unit` used by this operation.
-/// * `convert` — Input `convert` used by this operation.
+/// * `library_symbol` — KiCad S-expression syntax-tree node.
+/// * `unit` — Selected library symbol unit number.
+/// * `convert` — Selected library symbol conversion variant.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Normalized embedded symbol pins records or coordinates derived from the input.
 fn embedded_symbol_pins(library_symbol: &Node, unit: u32, convert: u32) -> Vec<&Node> {
     let mut pin_nodes = Vec::new();
     for sub_symbol in children(library_symbol, "symbol") {
@@ -4847,18 +4836,18 @@ fn embedded_symbol_pins(library_symbol: &Node, unit: u32, convert: u32) -> Vec<&
     }
     pin_nodes
 }
-/// Processes pin orientation diagnostic using the supplied values and schematic data.
+/// Builds a diagnostic when a wire direction conflicts with the transformed pin axis.
 ///
 /// # Arguments
 ///
-/// * `instance` — Input `instance` used by this operation.
-/// * `pin` — Input `pin` used by this operation.
-/// * `transform` — Input `transform` used by this operation.
-/// * `segments` — Input `segments` used by this operation.
+/// * `instance` — Placed symbol instance node containing reference, transform, unit, and conversion metadata.
+/// * `pin` — KiCad S-expression syntax-tree node.
+/// * `transform` — Resolved transform that maps library-local coordinates to the schematic sheet.
+/// * `segments` — Parsed wire segments used to determine geometry, topology, or obstacle intersections.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// A diagnostic when the supplied geometry violates the rule, or `None` when the geometry is acceptable.
 fn pin_orientation_diagnostic(
     instance: &Node,
     pin: &Node,
@@ -4916,29 +4905,29 @@ fn pin_orientation_diagnostic(
         span_of(instance),
     ))
 }
-/// Processes sub symbol unit convert using the supplied values and schematic data.
+/// Parses the unit and conversion suffixes from a library sub-symbol name.
 ///
 /// # Arguments
 ///
-/// * `name` — Input `name` used by this operation.
+/// * `name` — S-expression property name, label, or lookup key to read.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn sub_symbol_unit_convert(name: &str) -> Option<(u32, u32)> {
     let (prefix, convert) = name.rsplit_once('_')?;
     let (_, unit) = prefix.rsplit_once('_')?;
     Some((unit.parse().ok()?, convert.parse().ok()?))
 }
-/// Processes cardinal rotation using the supplied values and schematic data.
+/// Returns the nearest exact cardinal rotation when the supplied angle is a supported quarter-turn.
 ///
 /// # Arguments
 ///
-/// * `angle` — Input `angle` used by this operation.
+/// * `angle` — Rotation angle in degrees as serialized by KiCad.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn cardinal_rotation(angle: f64) -> Option<i32> {
     let normalized = angle.rem_euclid(FULL_ROTATION_DEGREES);
     [
@@ -4953,20 +4942,16 @@ fn cardinal_rotation(angle: f64) -> Option<i32> {
     })
 }
 
-/// Builds the common `KiCad` symbol-local to schematic-space linear transform.
+/// Builds the affine transform for a symbol's rotation and supported mirror state.
 ///
-/// `KiCad`'s symbol coordinates use a Y-up library frame while schematic sheet
-/// coordinates are Y-down. Kurbo applies any finite rotation and the supported
-/// mirror modes, avoiding a separate hand-written geometry path for diagonal
-/// symbol placements.
 /// # Arguments
 ///
-/// * `rotation_degrees` — Input `rotation degrees` used by this operation.
-/// * `mirror` — Input `mirror` used by this operation.
+/// * `rotation_degrees` — Placed symbol rotation in degrees.
+/// * `mirror` — Optional KiCad mirror mode for the placed symbol.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn symbol_transform_affine(rotation_degrees: f64, mirror: Option<&str>) -> Option<Affine> {
     if !rotation_degrees.is_finite() {
         return None;
@@ -4981,18 +4966,18 @@ fn symbol_transform_affine(rotation_degrees: f64, mirror: Option<&str>) -> Optio
 
     Some(Affine::FLIP_Y * Affine::rotate(rotation) * mirror)
 }
-/// Processes transform symbol point using the supplied values and schematic data.
+/// Transforms a library-local coordinate into schematic coordinates.
 ///
 /// # Arguments
 ///
-/// * `x` — Input `x` used by this operation.
-/// * `y` — Input `y` used by this operation.
-/// * `rotation_degrees` — Input `rotation degrees` used by this operation.
-/// * `mirror` — Input `mirror` used by this operation.
+/// * `x` — x to be used in this geometry or parsing operation.
+/// * `y` — y to be used in this geometry or parsing operation.
+/// * `rotation_degrees` — Placed symbol rotation in degrees.
+/// * `mirror` — Optional KiCad mirror mode for the placed symbol.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The transformed schematic coordinate in millimetres.
 fn transform_symbol_point(
     x: f64,
     y: f64,
@@ -5002,38 +4987,38 @@ fn transform_symbol_point(
     let point = symbol_transform_affine(rotation_degrees, mirror)? * CurvePoint::new(x, y);
     Some((point.x, point.y))
 }
-/// Stores indexedsegment data used by this crate.
+/// Wire segment paired with its stable index in the current analysis run.
 #[derive(Clone, Copy)]
 struct IndexedSegment {
-    /// Stores the `index` value.
+    /// Stable position of the segment in the current segment collection.
     index: usize,
-    /// Stores the `segment` value.
+    /// Wire segment geometry and source span.
     segment: Segment,
 }
 
 impl Cross for IndexedSegment {
     /// Defines the scalar type used by this crate.
     type Scalar = f64;
-    /// Processes line using the supplied values and schematic data.
+    /// Calculates line from the supplied schematic geometry or S-expression data.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
+    /// A `geo` line segment joining the supplied endpoints.
     fn line(&self) -> Line<f64> {
         geo_line(self.segment.start, self.segment.end)
     }
 }
-/// Processes check wire geometry using the supplied values and schematic data.
+/// Checks wire endpoint counts, direction, zero length, overlap, crossing, and unmarked T-junction rules.
 ///
 /// # Arguments
 ///
-/// * `root` — Input `root` used by this operation.
-/// * `segments` — Input `segments` used by this operation.
-/// * `junctions` — Input `junctions` used by this operation.
+/// * `root` — Root S-expression node of the parsed schematic.
+/// * `segments` — Parsed wire segments used to determine geometry, topology, or obstacle intersections.
+/// * `junctions` — Explicit schematic junction coordinates used when resolving wire connectivity.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
 fn check_wire_geometry(root: &Node, segments: &[Segment], junctions: &[Point]) -> Vec<Diagnostic> {
     let mut diagnostics = collect_invalid_wire_diagnostics(root);
     for segment in segments {
@@ -5130,15 +5115,15 @@ fn check_wire_geometry(root: &Node, segments: &[Segment], junctions: &[Point]) -
 
     diagnostics
 }
-/// Processes collect invalid wire diagnostics using the supplied values and schematic data.
+/// Reports malformed wire paths, including wires with invalid point counts or zero-length segments.
 ///
 /// # Arguments
 ///
-/// * `root` — Input `root` used by this operation.
+/// * `root` — Root S-expression node of the parsed schematic.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
 fn collect_invalid_wire_diagnostics(root: &Node) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     walk(root, &mut |node| {
@@ -5158,16 +5143,16 @@ fn collect_invalid_wire_diagnostics(root: &Node) -> Vec<Diagnostic> {
     });
     diagnostics
 }
-/// Processes check label wire clearance using the supplied values and schematic data.
+/// Detects intersections between visible label glyph bounds and wire interiors.
 ///
 /// # Arguments
 ///
-/// * `root` — Input `root` used by this operation.
-/// * `segments` — Input `segments` used by this operation.
+/// * `root` — Root S-expression node of the parsed schematic.
+/// * `segments` — Parsed wire segments used to determine geometry, topology, or obstacle intersections.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
 fn check_label_wire_clearance(root: &Node, segments: &[Segment]) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     for (kind, label, _point, span, node) in collect_label_nodes(root) {
@@ -5190,16 +5175,16 @@ fn check_label_wire_clearance(root: &Node, segments: &[Segment]) -> Vec<Diagnost
     }
     diagnostics
 }
-/// Processes check text box layout using the supplied values and schematic data.
+/// Validates text-box size, font settings, required geometry, and overlap with wires or other annotations.
 ///
 /// # Arguments
 ///
-/// * `root` — Input `root` used by this operation.
-/// * `segments` — Input `segments` used by this operation.
+/// * `root` — Root S-expression node of the parsed schematic.
+/// * `segments` — Parsed wire segments used to determine geometry, topology, or obstacle intersections.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
 fn check_text_box_layout(root: &Node, segments: &[Segment]) -> Vec<Diagnostic> {
     let mut diagnostics: Vec<_> = collect_nodes(root, "text")
         .into_iter()
@@ -5222,26 +5207,26 @@ fn check_text_box_layout(root: &Node, segments: &[Segment]) -> Vec<Diagnostic> {
     diagnostics.extend(check_text_box_interactions(&boxes, segments));
     diagnostics
 }
-/// Stores textboxrecord data used by this crate.
+/// Validated text-box bounds and source span used by the annotation interaction checks.
 #[derive(Clone, Debug)]
 struct TextBoxRecord {
-    /// Stores the `id` value.
+    /// Text-box identifier used in diagnostics.
     id: String,
-    /// Stores the `bounds` value.
+    /// Validated text-box rectangle in schematic millimetres.
     bounds: Bounds,
-    /// Stores the `span` value.
+    /// Original source byte span of the text-box expression.
     span: ByteSpan,
 }
-/// Processes inspect text box using the supplied values and schematic data.
+/// Parses one text box, validates its metrics, and returns the geometry record with any associated diagnostics.
 ///
 /// # Arguments
 ///
-/// * `node` — Input `node` used by this operation.
-/// * `index` — Input `index` used by this operation.
+/// * `node` — S-expression node whose properties, coordinates, or geometry are being decoded.
+/// * `index` — Zero-based index of the schematic item being inspected.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The inspect text box result derived from the schematic geometry.
 fn inspect_text_box(node: &Node, index: usize) -> (Option<TextBoxRecord>, Vec<Diagnostic>) {
     let (metrics, error) = read_text_box_metrics(node, index);
     let Some(metrics) = metrics else {
@@ -5281,32 +5266,32 @@ fn inspect_text_box(node: &Node, index: usize) -> (Option<TextBoxRecord>, Vec<Di
         diagnostics,
     )
 }
-/// Stores textboxmetrics data used by this crate.
+/// Parsed text-box label, geometry, font settings, padding, stroke, and source span.
 #[derive(Clone, Debug)]
 struct TextBoxMetrics {
-    /// Stores the `label` value.
+    /// Decoded text-box contents.
     label: String,
-    /// Stores the `bounds` value.
+    /// Parsed text-box rectangle in schematic millimetres.
     bounds: Bounds,
-    /// Stores the `font_size` value.
+    /// Text font size in millimetres.
     font_size: f64,
-    /// Stores the `padding` value.
+    /// Text-box padding in millimetres.
     padding: f64,
-    /// Stores the `stroke_width` value.
+    /// Border stroke width in millimetres.
     stroke_width: f64,
-    /// Stores the `span` value.
+    /// Original source byte span of the text-box expression.
     span: ByteSpan,
 }
-/// Processes read text box metrics using the supplied values and schematic data.
+/// Reads text-box content, font size, padding, stroke width, bounds, and source span.
 ///
 /// # Arguments
 ///
-/// * `node` — Input `node` used by this operation.
-/// * `index` — Input `index` used by this operation.
+/// * `node` — S-expression node whose properties, coordinates, or geometry are being decoded.
+/// * `index` — Zero-based index of the schematic item being inspected.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The read text box metrics result derived from the schematic geometry.
 fn read_text_box_metrics(
     node: &Node,
     index: usize,
@@ -5407,16 +5392,16 @@ fn read_text_box_metrics(
         None,
     )
 }
-/// Processes check text box interactions using the supplied values and schematic data.
+/// Finds overlaps between text boxes and intersections between text-box bounds and wire segments.
 ///
 /// # Arguments
 ///
-/// * `boxes` — Input `boxes` used by this operation.
-/// * `segments` — Input `segments` used by this operation.
+/// * `boxes` — boxes to be used in this geometry or parsing operation.
+/// * `segments` — Parsed wire segments used to determine geometry, topology, or obstacle intersections.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
 fn check_text_box_interactions(boxes: &[TextBoxRecord], segments: &[Segment]) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     for (index, first) in boxes.iter().enumerate() {
@@ -5442,15 +5427,15 @@ fn check_text_box_interactions(boxes: &[TextBoxRecord], segments: &[Segment]) ->
     }
     diagnostics
 }
-/// Processes check block annotation structure using the supplied values and schematic data.
+/// Checks that multiline text boxes have a visible border.
 ///
 /// # Arguments
 ///
-/// * `root` — Input `root` used by this operation.
+/// * `root` — Root S-expression node of the parsed schematic.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
 fn check_block_annotation_structure(root: &Node) -> Vec<Diagnostic> {
     collect_nodes(root, "text_box")
         .into_iter()
@@ -5473,28 +5458,28 @@ fn check_block_annotation_structure(root: &Node) -> Vec<Diagnostic> {
         })
         .collect()
 }
-/// Processes collect nodes using the supplied values and schematic data.
+/// Collects all descendant or direct child nodes with the requested S-expression head, according to the helper's traversal contract.
 ///
 /// # Arguments
 ///
-/// * `root` — Input `root` used by this operation.
-/// * `name` — Input `name` used by this operation.
+/// * `root` — Root S-expression node of the parsed schematic.
+/// * `name` — S-expression property name, label, or lookup key to read.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Borrowed syntax-tree nodes matching the requested S-expression head.
 fn collect_nodes<'a>(root: &'a Node, name: &'a str) -> Vec<&'a Node> {
     children(root, name).collect()
 }
-/// Processes collect label nodes using the supplied values and schematic data.
+/// Extracts label kind, text, anchor position, source span, and original syntax node.
 ///
 /// # Arguments
 ///
-/// * `root` — Input `root` used by this operation.
+/// * `root` — Root S-expression node of the parsed schematic.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Normalized label nodes records or coordinates derived from the input.
 fn collect_label_nodes(root: &Node) -> Vec<(String, String, Point, ByteSpan, &Node)> {
     let mut labels = Vec::new();
     for node in collect_nodes(root, "label")
@@ -5524,16 +5509,16 @@ fn collect_label_nodes(root: &Node) -> Vec<(String, String, Point, ByteSpan, &No
     }
     labels
 }
-/// Processes text visual bounds using the supplied values and schematic data.
+/// Estimates visible glyph bounds for a text value from its position, font effects, and justification.
 ///
 /// # Arguments
 ///
-/// * `value` — Input `value` used by this operation.
-/// * `node` — Input `node` used by this operation.
+/// * `value` — value to be used in this geometry or parsing operation.
+/// * `node` — S-expression node whose properties, coordinates, or geometry are being decoded.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn text_visual_bounds(value: &str, node: &Node) -> Option<Bounds> {
     let at = child_list(node, "at").and_then(list_items)?;
     let effects = child_list(node, "effects");
@@ -5604,13 +5589,13 @@ fn text_visual_bounds(value: &str, node: &Node) -> Option<Bounds> {
 const NEWSTROKE_GLYPH_LIMIT: u32 = 0x27ff;
 /// Defines the newstroke measure glyph constant.
 const NEWSTROKE_MEASURE_GLYPH: &str = "H";
-/// Processes newstroke sentinel using the supplied values and schematic data.
+/// Lazily constructs the reference glyph used to normalize NewStroke text metrics.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// A lazily initialized reference glyph and its cap-height measurement.
 fn newstroke_sentinel() -> &'static (Vec<VectorPoint>, f64) {
-    /// Defines the sentinel static value.
+    /// Lazily initialized glyph and cap-height reference used by NewStroke text measurements.
     static SENTINEL: OnceLock<(Vec<VectorPoint>, f64)> = OnceLock::new();
     SENTINEL.get_or_init(|| {
         let points = NewstrokeRenderer::render_text(NEWSTROKE_MEASURE_GLYPH, ());
@@ -5620,18 +5605,15 @@ fn newstroke_sentinel() -> &'static (Vec<VectorPoint>, f64) {
     })
 }
 
-/// Returns `NewStroke`'s total glyph advance normalized by its measured cap height.
+/// Measures NewStroke text width and height relative to the reference glyph.
 ///
-/// The upstream renderer exposes points rather than a text-measurement method.
-/// Appending a known glyph makes its translated start position equal to the
-/// preceding text's full advance, including spaces and trailing blank glyphs.
 /// # Arguments
 ///
-/// * `value` — Input `value` used by this operation.
+/// * `value` — value to be used in this geometry or parsing operation.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Estimated text width and height ratios relative to the reference glyph.
 fn newstroke_text_metrics_ratio(value: &str) -> (f64, f64) {
     let (sentinel, cap_height) = newstroke_sentinel();
     let Some(sentinel_first) = sentinel.first() else {
@@ -5674,17 +5656,17 @@ fn newstroke_text_metrics_ratio(value: &str) -> (f64, f64) {
         glyph_height / cap_height,
     )
 }
-/// Processes required text box size using the supplied values and schematic data.
+/// Calculates the minimum text-box width and height needed for the supplied text, font size, and padding.
 ///
 /// # Arguments
 ///
-/// * `value` — Input `value` used by this operation.
-/// * `font_size` — Input `font size` used by this operation.
-/// * `padding` — Input `padding` used by this operation.
+/// * `value` — value to be used in this geometry or parsing operation.
+/// * `font_size` — font size to be used in this geometry or parsing operation.
+/// * `padding` — padding to be used in this geometry or parsing operation.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Minimum text-box width and height in millimetres for the supplied text and padding.
 fn required_text_box_size(value: &str, font_size: f64, padding: f64) -> (f64, f64) {
     let lines: Vec<_> = value.lines().collect();
     let line_count = u32::try_from(lines.len().max(1)).unwrap_or(u32::MAX);
@@ -5697,35 +5679,35 @@ fn required_text_box_size(value: &str, font_size: f64, padding: f64) -> (f64, f6
         (f64::from(line_count) * font_size).mul_add(1.55, 2.0 * padding),
     )
 }
-/// Processes bounds overlap using the supplied values and schematic data.
+/// Tests whether two axis-aligned bounds overlap by more than the schematic geometry tolerance.
 ///
 /// # Arguments
 ///
-/// * `first` — Input `first` used by this operation.
-/// * `second` — Input `second` used by this operation.
+/// * `first` — First element index or geometric endpoint participating in the operation.
+/// * `second` — Second element index or geometric endpoint participating in the operation.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the geometry satisfies the condition checked by this helper.
 fn bounds_overlap(first: Bounds, second: Bounds) -> bool {
     (first.x + first.width).min(second.x + second.width) - first.x.max(second.x)
         > GEOMETRY_TOLERANCE_MM
         && (first.y + first.height).min(second.y + second.height) - first.y.max(second.y)
             > GEOMETRY_TOLERANCE_MM
 }
-/// Processes wire overlaps bounds using the supplied values and schematic data.
+/// Tests whether a wire segment intersects a rectangle, optionally requiring a strict interior crossing.
 ///
 /// # Arguments
 ///
-/// * `segment` — Input `segment` used by this operation.
-/// * `bounds` — Input `bounds` used by this operation.
-/// * `strict` — Input `strict` used by this operation.
+/// * `segment` — Wire segment being checked for obstacle intersection or clearance.
+/// * `bounds` — Axis-aligned rectangle or primitive bounds in schematic millimetres.
+/// * `strict` — Whether the rectangle test requires an interior crossing instead of allowing boundary contact.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the geometry satisfies the condition checked by this helper.
 fn wire_overlaps_bounds(segment: Segment, bounds: Bounds, strict: bool) -> bool {
-    /// Defines the tolerance constant.
+    /// Geometric tolerance used by the wire-to-bounds intersection test.
     const TOLERANCE: f64 = GEOMETRY_TOLERANCE_MM;
 
     let horizontal = (segment.start.y - segment.end.y).abs() < TOLERANCE;
@@ -5773,58 +5755,58 @@ fn wire_overlaps_bounds(segment: Segment, bounds: Bounds, strict: bool) -> bool 
 
     Euclidean.length(&clipped) > TOLERANCE
 }
-/// Processes line hits bounds using the supplied values and schematic data.
+/// Checks a wire segment against a rectangle, including boundary contact.
 ///
 /// # Arguments
 ///
-/// * `segment` — Input `segment` used by this operation.
-/// * `bounds` — Input `bounds` used by this operation.
+/// * `segment` — Wire segment being checked for obstacle intersection or clearance.
+/// * `bounds` — Axis-aligned rectangle or primitive bounds in schematic millimetres.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the geometry satisfies the condition checked by this helper.
 fn line_hits_bounds(segment: Segment, bounds: Bounds) -> bool {
     wire_overlaps_bounds(segment, bounds, false)
 }
-/// Processes strict line hits bounds using the supplied values and schematic data.
+/// Checks a wire segment against the interior of a rectangle without treating boundary-only contact as a hit.
 ///
 /// # Arguments
 ///
-/// * `segment` — Input `segment` used by this operation.
-/// * `bounds` — Input `bounds` used by this operation.
+/// * `segment` — Wire segment being checked for obstacle intersection or clearance.
+/// * `bounds` — Axis-aligned rectangle or primitive bounds in schematic millimetres.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the geometry satisfies the condition checked by this helper.
 fn strict_line_hits_bounds(segment: Segment, bounds: Bounds) -> bool {
     wire_overlaps_bounds(segment, bounds, true)
 }
-/// Processes at span using the supplied values and schematic data.
+/// Creates a built-in-rule diagnostic and associates it with the supplied source byte span.
 ///
 /// # Arguments
 ///
-/// * `code` — Input `code` used by this operation.
-/// * `message` — Input `message` used by this operation.
-/// * `span` — Input `span` used by this operation.
+/// * `code` — Rule identifier associated with the diagnostic.
+/// * `message` — User-facing diagnostic message.
+/// * `span` — Original source byte span to attach to the diagnostic.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The at span result derived from the schematic geometry.
 fn at_span(code: BuiltinRuleId, message: impl Into<String>, span: ByteSpan) -> Diagnostic {
     let mut diagnostic = Diagnostic::for_builtin_rule(code, Severity::Error, message);
     diagnostic.span = Some(span);
     diagnostic
 }
-/// Processes check label topology using the supplied values and schematic data.
+/// Checks label reuse, duplicate anchors, physical wire-island membership, and hierarchical wire-twig termination.
 ///
 /// # Arguments
 ///
-/// * `root` — Input `root` used by this operation.
-/// * `segments` — Input `segments` used by this operation.
+/// * `root` — Root S-expression node of the parsed schematic.
+/// * `segments` — Parsed wire segments used to determine geometry, topology, or obstacle intersections.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
 fn check_label_topology(root: &Node, segments: &[Segment]) -> Vec<Diagnostic> {
     let labels = collect_labels(root);
     let junctions = collect_points(root, "junction");
@@ -5898,17 +5880,17 @@ fn check_label_topology(root: &Node, segments: &[Segment]) -> Vec<Diagnostic> {
     }
     diagnostics
 }
-/// Processes wire components using the supplied values and schematic data.
+/// Builds physical wire-connected components from segment endpoints, junctions, and intermediate wire points.
 ///
 /// # Arguments
 ///
-/// * `segments` — Input `segments` used by this operation.
-/// * `points` — Input `points` used by this operation.
-/// * `junctions` — Input `junctions` used by this operation.
+/// * `segments` — Parsed wire segments used to determine geometry, topology, or obstacle intersections.
+/// * `points` — Ordered schematic-coordinate points defining a primitive or path.
+/// * `junctions` — Explicit schematic junction coordinates used when resolving wire connectivity.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// A coordinate-to-component map and endpoint-degree counts for the physical wire graph.
 fn wire_components(
     segments: &[Segment],
     points: &[Point],
@@ -5967,44 +5949,44 @@ fn wire_components(
 
     (component_ids, endpoint_degree)
 }
-/// Processes point key using the supplied values and schematic data.
+/// Formats a schematic point into the stable tolerance-normalized coordinate key used by physical topology lookups.
 ///
 /// # Arguments
 ///
-/// * `point` — Input `point` used by this operation.
+/// * `point` — Schematic coordinate being tested, in millimetres.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// A stable coordinate key used by physical wire-component lookup.
 fn point_key(point: Point) -> String {
     format!("{:.3}:{:.3}", point.x, point.y)
 }
 
-/// Returns the stable coordinate key used by physical wire-component lookup.
+/// Builds the coordinate key used to retrieve a physical wire component from a pin or wire endpoint position.
+///
 /// # Arguments
 ///
-/// * `x_mm` — Input `x mm` used by this operation.
-/// * `y_mm` — Input `y mm` used by this operation.
+/// * `x_mm` — x mm to be used in this geometry or parsing operation.
+/// * `y_mm` — y mm to be used in this geometry or parsing operation.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
-///
+/// A stable coordinate key used by physical wire-component lookup.
 #[must_use]
 pub fn physical_wire_component_key(x_mm: f64, y_mm: f64) -> String {
     point_key(Point { x: x_mm, y: y_mm })
 }
-/// Processes has unmarked wire endpoint using the supplied values and schematic data.
+/// Checks whether a point is another wire's endpoint without an explicit junction connecting the crossing.
 ///
 /// # Arguments
 ///
-/// * `point` — Input `point` used by this operation.
-/// * `segments` — Input `segments` used by this operation.
-/// * `junctions` — Input `junctions` used by this operation.
+/// * `point` — Schematic coordinate being tested, in millimetres.
+/// * `segments` — Parsed wire segments used to determine geometry, topology, or obstacle intersections.
+/// * `junctions` — Explicit schematic junction coordinates used when resolving wire connectivity.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the geometry satisfies the condition checked by this helper.
 fn has_unmarked_wire_endpoint(point: Point, segments: &[Segment], junctions: &[Point]) -> bool {
     let terminates_another_wire = segments.iter().any(|other| is_endpoint(point, *other));
     terminates_another_wire
@@ -6012,16 +5994,15 @@ fn has_unmarked_wire_endpoint(point: Point, segments: &[Segment], junctions: &[P
             .iter()
             .any(|junction| distance(*junction, point) < GEOMETRY_TOLERANCE_MM)
 }
-/// Processes physical wire component ids using the supplied values and schematic data.
+/// Returns the physical wire-component identifier for each normalized endpoint or junction coordinate in the schematic.
 ///
 /// # Arguments
 ///
-/// * `facts` — Input `facts` used by this operation.
+/// * `facts` — Normalized facts extracted from the schematic.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
-///
+/// A map from tolerance-normalized coordinates to physical wire-component identifiers.
 #[must_use]
 pub fn physical_wire_component_ids(facts: &SchematicFacts) -> BTreeMap<String, usize> {
     let segments: Vec<_> = facts
@@ -6071,15 +6052,15 @@ pub fn physical_wire_component_ids(facts: &SchematicFacts) -> BTreeMap<String, u
     points.dedup_by_key(|point| point_key(*point));
     wire_components(&segments, &points, &junctions).0
 }
-/// Processes check label text collisions using the supplied values and schematic data.
+/// Detects overlaps between label glyph bounds and other labels, visible fields, or annotation boxes.
 ///
 /// # Arguments
 ///
-/// * `root` — Input `root` used by this operation.
+/// * `root` — Root S-expression node of the parsed schematic.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
 fn check_label_text_collisions(root: &Node) -> Vec<Diagnostic> {
     let mut labels = Vec::new();
     for (kind, label, _point, span, node) in collect_label_nodes(root) {
@@ -6133,17 +6114,17 @@ fn check_label_text_collisions(root: &Node) -> Vec<Diagnostic> {
     }
     diagnostics
 }
-/// Processes check symbol field clearance using the supplied values and schematic data.
+/// Checks visible symbol fields against other fields, symbol bodies, wires, pins, labels, and annotation boxes.
 ///
 /// # Arguments
 ///
-/// * `root` — Input `root` used by this operation.
-/// * `segments` — Input `segments` used by this operation.
-/// * `facts` — Input `facts` used by this operation.
+/// * `root` — Root S-expression node of the parsed schematic.
+/// * `segments` — Parsed wire segments used to determine geometry, topology, or obstacle intersections.
+/// * `facts` — Normalized facts extracted from the schematic.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
 fn check_symbol_field_clearance(
     root: &Node,
     segments: &[Segment],
@@ -6245,15 +6226,15 @@ fn check_symbol_field_clearance(
     }
     diagnostics
 }
-/// Processes geo rect using the supplied values and schematic data.
+/// Converts axis-aligned schematic bounds into a `geo` rectangle.
 ///
 /// # Arguments
 ///
-/// * `bounds` — Input `bounds` used by this operation.
+/// * `bounds` — Axis-aligned rectangle or primitive bounds in schematic millimetres.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The geo rect result derived from the schematic geometry.
 fn geo_rect(bounds: Bounds) -> GeoRect<f64> {
     let opposite_x = bounds.x + bounds.width;
     let opposite_y = bounds.y + bounds.height;
@@ -6268,16 +6249,16 @@ fn geo_rect(bounds: Bounds) -> GeoRect<f64> {
         },
     )
 }
-/// Processes point in bounds using the supplied values and schematic data.
+/// Tests whether a point lies within schematic bounds, expanded by the geometry tolerance.
 ///
 /// # Arguments
 ///
-/// * `point` — Input `point` used by this operation.
-/// * `bounds` — Input `bounds` used by this operation.
+/// * `point` — Schematic coordinate being tested, in millimetres.
+/// * `bounds` — Axis-aligned rectangle or primitive bounds in schematic millimetres.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the geometry satisfies the condition checked by this helper.
 fn point_in_bounds(point: Point, bounds: Bounds) -> bool {
     let expanded = Bounds {
         x: bounds.x - GEOMETRY_TOLERANCE_MM,
@@ -6287,28 +6268,28 @@ fn point_in_bounds(point: Point, bounds: Bounds) -> bool {
     };
     geo_rect(expanded).contains(&GeoPoint::new(point.x, point.y))
 }
-/// Processes point bounds distance using the supplied values and schematic data.
+/// Calculates the Euclidean distance from a point to an axis-aligned bounds rectangle.
 ///
 /// # Arguments
 ///
-/// * `point` — Input `point` used by this operation.
-/// * `bounds` — Input `bounds` used by this operation.
+/// * `point` — Schematic coordinate being tested, in millimetres.
+/// * `bounds` — Axis-aligned rectangle or primitive bounds in schematic millimetres.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The shortest Euclidean distance in millimetres.
 fn point_bounds_distance(point: Point, bounds: Bounds) -> f64 {
     Euclidean.distance(&GeoPoint::new(point.x, point.y), &geo_rect(bounds))
 }
-/// Processes schematic polygon using the supplied values and schematic data.
+/// Converts a closed schematic primitive with at least three points into a polygon.
 ///
 /// # Arguments
 ///
-/// * `primitive` — Input `primitive` used by this operation.
+/// * `primitive` — Embedded or sheet-level primitive whose body and stroke are checked against the wire.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn schematic_polygon(primitive: &SchematicPrimitiveFact) -> Option<Polygon<f64>> {
     if !primitive.closed || primitive.points_mm.len() < 3 {
         return None;
@@ -6325,15 +6306,15 @@ fn schematic_polygon(primitive: &SchematicPrimitiveFact) -> Option<Polygon<f64>>
     }
     Some(Polygon::new(LineString::new(ring), Vec::new()))
 }
-/// Processes schematic path using the supplied values and schematic data.
+/// Converts a schematic primitive's path points into a `geo` line string.
 ///
 /// # Arguments
 ///
-/// * `primitive` — Input `primitive` used by this operation.
+/// * `primitive` — Embedded or sheet-level primitive whose body and stroke are checked against the wire.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The schematic path result derived from the schematic geometry.
 fn schematic_path(primitive: &SchematicPrimitiveFact) -> LineString<f64> {
     LineString::new(
         primitive
@@ -6343,16 +6324,16 @@ fn schematic_path(primitive: &SchematicPrimitiveFact) -> LineString<f64> {
             .collect(),
     )
 }
-/// Processes symbol primitive intersects bounds using the supplied values and schematic data.
+/// Tests whether the stroked geometry of a symbol primitive intersects the supplied bounds.
 ///
 /// # Arguments
 ///
-/// * `bounds` — Input `bounds` used by this operation.
-/// * `primitive` — Input `primitive` used by this operation.
+/// * `bounds` — Axis-aligned rectangle or primitive bounds in schematic millimetres.
+/// * `primitive` — Embedded or sheet-level primitive whose body and stroke are checked against the wire.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the geometry satisfies the condition checked by this helper.
 fn symbol_primitive_intersects_bounds(bounds: Bounds, primitive: &SchematicPrimitiveFact) -> bool {
     if let Some((center_x, center_y, radius)) = primitive.circle_mm {
         let center = Point {
@@ -6369,16 +6350,16 @@ fn symbol_primitive_intersects_bounds(bounds: Bounds, primitive: &SchematicPrimi
         |polygon| polygon.intersects(&rectangle),
     )
 }
-/// Processes symbol primitive contains bounds using the supplied values and schematic data.
+/// Tests whether the supplied bounds are contained within a closed symbol primitive's interior.
 ///
 /// # Arguments
 ///
-/// * `bounds` — Input `bounds` used by this operation.
-/// * `primitive` — Input `primitive` used by this operation.
+/// * `bounds` — Axis-aligned rectangle or primitive bounds in schematic millimetres.
+/// * `primitive` — Embedded or sheet-level primitive whose body and stroke are checked against the wire.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the geometry satisfies the condition checked by this helper.
 fn symbol_primitive_contains_bounds(bounds: Bounds, primitive: &SchematicPrimitiveFact) -> bool {
     if let Some((center_x, center_y, radius)) = primitive.circle_mm {
         let inner_radius = radius - primitive.stroke_width_mm / 2.0;
@@ -6417,27 +6398,27 @@ fn symbol_primitive_contains_bounds(bounds: Bounds, primitive: &SchematicPrimiti
 
     schematic_polygon(primitive).is_some_and(|polygon| polygon.contains(&geo_rect(bounds)))
 }
-/// Processes property is hidden using the supplied values and schematic data.
+/// Checks whether a symbol property has its KiCad hide flag enabled.
 ///
 /// # Arguments
 ///
-/// * `property` — Input `property` used by this operation.
+/// * `property` — Symbol property node whose visibility flag is being checked.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the geometry satisfies the condition checked by this helper.
 fn property_is_hidden(property: &Node) -> bool {
     child_list(property, "effects").is_some_and(|effects| child_list(effects, "hide").is_some())
 }
-/// Processes text box bounds using the supplied values and schematic data.
+/// Reads a text box's anchor and size and returns its axis-aligned bounds.
 ///
 /// # Arguments
 ///
-/// * `node` — Input `node` used by this operation.
+/// * `node` — S-expression node whose properties, coordinates, or geometry are being decoded.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn text_box_bounds(node: &Node) -> Option<Bounds> {
     let at = child_list(node, "at").and_then(list_items)?;
     let size = child_list(node, "size").and_then(list_items)?;
@@ -6448,15 +6429,15 @@ fn text_box_bounds(node: &Node) -> Option<Bounds> {
         height: number(size.get(2)?)?,
     })
 }
-/// Processes check label kind consistency using the supplied values and schematic data.
+/// Detects identical label text used with inconsistent local/global/hierarchical label kinds.
 ///
 /// # Arguments
 ///
-/// * `root` — Input `root` used by this operation.
+/// * `root` — Root S-expression node of the parsed schematic.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Diagnostics for geometry or topology violations found; an empty vector means no finding was emitted.
 fn check_label_kind_consistency(root: &Node) -> Vec<Diagnostic> {
     let mut label_kinds: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for (kind, label, _point, _span) in collect_labels(root) {
@@ -6478,16 +6459,12 @@ fn check_label_kind_consistency(root: &Node) -> Vec<Diagnostic> {
         })
         .collect()
 }
-/// Processes walk using the supplied values and schematic data.
+/// Visits a syntax-tree node and each nested child node in depth-first order.
 ///
 /// # Arguments
 ///
-/// * `node` — Input `node` used by this operation.
-/// * `visit` — Input `visit` used by this operation.
-///
-/// # Returns
-///
-/// The value produced by this operation.
+/// * `node` — S-expression node whose properties, coordinates, or geometry are being decoded.
+/// * `visit` — Callback invoked for each syntax-tree node during depth-first traversal.
 fn walk<'a>(node: &'a Node, visit: &mut impl FnMut(&'a Node)) {
     visit(node);
     if let Node::List { items, .. } = node {
@@ -6496,15 +6473,15 @@ fn walk<'a>(node: &'a Node, visit: &mut impl FnMut(&'a Node)) {
         }
     }
 }
-/// Processes list items using the supplied values and schematic data.
+/// Returns the child slice when the supplied syntax-tree node is a list.
 ///
 /// # Arguments
 ///
-/// * `node` — Input `node` used by this operation.
+/// * `node` — S-expression node whose properties, coordinates, or geometry are being decoded.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn list_items(node: &Node) -> Option<&[Node]> {
     if let Node::List { items, .. } = node {
         Some(items)
@@ -6512,15 +6489,15 @@ fn list_items(node: &Node) -> Option<&[Node]> {
         None
     }
 }
-/// Processes head using the supplied values and schematic data.
+/// Returns the leading symbol of a syntax-tree list node.
 ///
 /// # Arguments
 ///
-/// * `node` — Input `node` used by this operation.
+/// * `node` — S-expression node whose properties, coordinates, or geometry are being decoded.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn head(node: &Node) -> Option<&str> {
     let Node::List { items, .. } = node else {
         return None;
@@ -6534,31 +6511,31 @@ fn head(node: &Node) -> Option<&str> {
     };
     Some(value)
 }
-/// Processes children using the supplied values and schematic data.
+/// Iterates over direct child-list nodes whose head symbol matches the requested name.
 ///
 /// # Arguments
 ///
-/// * `node` — Input `node` used by this operation.
-/// * `name` — Input `name` used by this operation.
+/// * `node` — S-expression node whose properties, coordinates, or geometry are being decoded.
+/// * `name` — S-expression property name, label, or lookup key to read.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// An iterator over matching direct child-list nodes.
 fn children<'a>(node: &'a Node, name: &'a str) -> impl Iterator<Item = &'a Node> + 'a {
     list_items(node)
         .into_iter()
         .flatten()
         .filter(move |child| head(child) == Some(name))
 }
-/// Processes atom value using the supplied values and schematic data.
+/// Returns the decoded string value of a symbol or quoted atom.
 ///
 /// # Arguments
 ///
-/// * `node` — Input `node` used by this operation.
+/// * `node` — S-expression node whose properties, coordinates, or geometry are being decoded.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn atom_value(node: &Node) -> Option<&str> {
     let Node::Atom { atom, .. } = node else {
         return None;
@@ -6567,40 +6544,40 @@ fn atom_value(node: &Node) -> Option<&str> {
         Atom::Symbol(value) | Atom::Quoted(value) => Some(value.as_str()),
     }
 }
-/// Processes number using the supplied values and schematic data.
+/// Parses an atom as a floating-point number.
 ///
 /// # Arguments
 ///
-/// * `node` — Input `node` used by this operation.
+/// * `node` — S-expression node whose properties, coordinates, or geometry are being decoded.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn number(node: &Node) -> Option<f64> {
     atom_value(node)?.parse().ok()
 }
-/// Processes child list using the supplied values and schematic data.
+/// Returns the first direct child list with the requested head symbol.
 ///
 /// # Arguments
 ///
-/// * `node` — Input `node` used by this operation.
-/// * `name` — Input `name` used by this operation.
+/// * `node` — S-expression node whose properties, coordinates, or geometry are being decoded.
+/// * `name` — S-expression property name, label, or lookup key to read.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn child_list<'a>(node: &'a Node, name: &'a str) -> Option<&'a Node> {
     children(node, name).next()
 }
-/// Processes point from at using the supplied values and schematic data.
+/// Reads an `(x, y)` coordinate from an S-expression `at` node.
 ///
 /// # Arguments
 ///
-/// * `node` — Input `node` used by this operation.
+/// * `node` — S-expression node whose properties, coordinates, or geometry are being decoded.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The requested geometry or parsed value when the source data is sufficient, or `None` when it is absent or unsupported.
 fn point_from_at(node: &Node) -> Option<Point> {
     let at = child_list(node, "at")?;
     let items = list_items(at)?;
@@ -6609,29 +6586,29 @@ fn point_from_at(node: &Node) -> Option<Point> {
         y: number(items.get(2)?)?,
     })
 }
-/// Processes span of using the supplied values and schematic data.
+/// Returns the source byte span attached to an S-expression node.
 ///
 /// # Arguments
 ///
-/// * `node` — Input `node` used by this operation.
+/// * `node` — S-expression node whose properties, coordinates, or geometry are being decoded.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The span of result derived from the schematic geometry.
 const fn span_of(node: &Node) -> ByteSpan {
     match node {
         Node::List { span, .. } | Node::Atom { span, .. } => ByteSpan::new(span.start, span.end),
     }
 }
-/// Processes collect explicit wire stroke widths using the supplied values and schematic data.
+/// Collects explicit positive wire stroke widths, indexed by each wire's source offset.
 ///
 /// # Arguments
 ///
-/// * `root` — Input `root` used by this operation.
+/// * `root` — Root S-expression node of the parsed schematic.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// An ordered lookup map derived from the parsed schematic geometry.
 fn collect_explicit_wire_stroke_widths(root: &Node) -> BTreeMap<usize, f64> {
     let mut widths = BTreeMap::new();
     walk(root, &mut |node| {
@@ -6649,16 +6626,15 @@ fn collect_explicit_wire_stroke_widths(root: &Node) -> BTreeMap<usize, f64> {
     });
     widths
 }
-/// Processes collect segments using the supplied values and schematic data.
+/// Extracts wire segments and their source byte spans from a schematic syntax tree.
 ///
 /// # Arguments
 ///
-/// * `root` — Input `root` used by this operation.
+/// * `root` — Root S-expression node of the parsed schematic.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
-///
+/// Normalized segments records or coordinates derived from the input.
 #[must_use]
 pub fn collect_segments(root: &Node) -> Vec<Segment> {
     let mut segments = Vec::new();
@@ -6688,17 +6664,16 @@ pub fn collect_segments(root: &Node) -> Vec<Segment> {
     });
     segments
 }
-/// Processes collect points using the supplied values and schematic data.
+/// Collects coordinate points from all nodes with the requested S-expression head.
 ///
 /// # Arguments
 ///
-/// * `root` — Input `root` used by this operation.
-/// * `name` — Input `name` used by this operation.
+/// * `root` — Root S-expression node of the parsed schematic.
+/// * `name` — S-expression property name, label, or lookup key to read.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
-///
+/// Normalized points records or coordinates derived from the input.
 #[must_use]
 pub fn collect_points(root: &Node, name: &str) -> Vec<Point> {
     let mut points = Vec::new();
@@ -6711,15 +6686,15 @@ pub fn collect_points(root: &Node, name: &str) -> Vec<Point> {
     });
     points
 }
-/// Processes collect labels using the supplied values and schematic data.
+/// Extracts label kind, text, anchor coordinate, and source span from the schematic.
 ///
 /// # Arguments
 ///
-/// * `root` — Input `root` used by this operation.
+/// * `root` — Root S-expression node of the parsed schematic.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// Normalized labels records or coordinates derived from the input.
 fn collect_labels(root: &Node) -> Vec<(String, String, Point, ByteSpan)> {
     let mut labels = Vec::new();
     walk(root, &mut |node| {
@@ -6741,74 +6716,74 @@ fn collect_labels(root: &Node) -> Vec<(String, String, Point, ByteSpan)> {
     });
     labels
 }
-/// Processes point on segment using the supplied values and schematic data.
+/// Tests whether a point lies on the finite wire segment.
 ///
 /// # Arguments
 ///
-/// * `point` — Input `point` used by this operation.
-/// * `segment` — Input `segment` used by this operation.
+/// * `point` — Schematic coordinate being tested, in millimetres.
+/// * `segment` — Wire segment being checked for obstacle intersection or clearance.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the geometry satisfies the condition checked by this helper.
 fn point_on_segment(point: Point, segment: &Segment) -> bool {
     point_on_segment_any(point, segment.start, segment.end)
 }
-/// Processes is endpoint using the supplied values and schematic data.
+/// Tests whether a point coincides with either endpoint of a wire segment.
 ///
 /// # Arguments
 ///
-/// * `point` — Input `point` used by this operation.
-/// * `segment` — Input `segment` used by this operation.
+/// * `point` — Schematic coordinate being tested, in millimetres.
+/// * `segment` — Wire segment being checked for obstacle intersection or clearance.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// `true` when the geometry satisfies the condition checked by this helper.
 fn is_endpoint(point: Point, segment: Segment) -> bool {
     distance(point, segment.start) < GEOMETRY_TOLERANCE_MM
         || distance(point, segment.end) < GEOMETRY_TOLERANCE_MM
 }
-/// Processes distance using the supplied values and schematic data.
+/// Calculates Euclidean distance between two schematic points.
 ///
 /// # Arguments
 ///
-/// * `first` — Input `first` used by this operation.
-/// * `second` — Input `second` used by this operation.
+/// * `first` — First element index or geometric endpoint participating in the operation.
+/// * `second` — Second element index or geometric endpoint participating in the operation.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The shortest Euclidean distance in millimetres.
 fn distance(first: Point, second: Point) -> f64 {
     (first.x - second.x).hypot(first.y - second.y)
 }
-/// Processes at segment using the supplied values and schematic data.
+/// Creates a diagnostic associated with the source span and geometry of a wire segment.
 ///
 /// # Arguments
 ///
-/// * `code` — Input `code` used by this operation.
-/// * `message` — Input `message` used by this operation.
-/// * `segment` — Input `segment` used by this operation.
+/// * `code` — Rule identifier associated with the diagnostic.
+/// * `message` — User-facing diagnostic message.
+/// * `segment` — Wire segment being checked for obstacle intersection or clearance.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The at segment result derived from the schematic geometry.
 fn at_segment(code: BuiltinRuleId, message: &str, segment: Segment) -> Diagnostic {
     let mut diagnostic = Diagnostic::new(code, Severity::Error, message);
     diagnostic.span = Some(segment.span);
     diagnostic
 }
-/// Processes at point using the supplied values and schematic data.
+/// Creates a diagnostic associated with the supplied schematic coordinate and source span.
 ///
 /// # Arguments
 ///
-/// * `code` — Input `code` used by this operation.
-/// * `message` — Input `message` used by this operation.
-/// * `point` — Input `point` used by this operation.
-/// * `span` — Input `span` used by this operation.
+/// * `code` — Rule identifier associated with the diagnostic.
+/// * `message` — User-facing diagnostic message.
+/// * `point` — Schematic coordinate being tested, in millimetres.
+/// * `span` — Original source byte span to attach to the diagnostic.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The at point result derived from the schematic geometry.
 fn at_point(code: BuiltinRuleId, message: String, point: Point, span: ByteSpan) -> Diagnostic {
     let mut diagnostic = Diagnostic::new(code, Severity::Error, message);
     diagnostic.span = Some(span);
@@ -6819,27 +6794,26 @@ fn at_point(code: BuiltinRuleId, message: String, point: Point, span: ByteSpan) 
     diagnostic
 }
 #[cfg(test)]
-/// Contains the tests implementation and supporting types.
+/// Unit tests for schematic fact extraction, geometry, connectivity, and rule diagnostics.
 mod tests {
     #![allow(clippy::expect_used)]
     use super::run_builtin_rules;
     use kicad_clippy_parser::SchematicDocument;
     use kurbo::{ParamCurve, ParamCurveDeriv};
-    /// Processes document using the supplied values and schematic data.
+    /// Builds a minimal valid schematic document around the supplied S-expression body for geometry tests.
     ///
     /// # Arguments
     ///
-    /// * `body` — Input `body` used by this operation.
+    /// * `body` — S-expression items inserted under the generated `kicad_sch` root.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
+    /// The document result derived from the schematic geometry.
     fn document(body: &str) -> SchematicDocument {
         SchematicDocument::from_text("fixture.kicad_sch", format!("(kicad_sch {body})"))
             .expect("fixture parses")
     }
-    /// Processes sch013 checks both no connect marker diagonals using the supplied values and schematic data.
-    ///
+    /// Calculates sch013 checks both no connect marker diagonals from the supplied schematic geometry or S-expression data.
     #[test]
     fn sch013_checks_both_no_connect_marker_diagonals() {
         let document = document(
@@ -6853,8 +6827,7 @@ mod tests {
             item.code == "SCH013" && item.message.contains("no-connect marker nc-center")
         }));
     }
-    /// Processes sch013 uses project default line width for no connect marker pen using the supplied values and schematic data.
-    ///
+    /// Calculates sch013 uses project default line width for no connect marker pen from the supplied schematic geometry or S-expression data.
     #[test]
     fn sch013_uses_project_default_line_width_for_no_connect_marker_pen() {
         let schematic = document(
@@ -6882,8 +6855,7 @@ mod tests {
                 })
         );
     }
-    /// Processes sch013 does not expand no connect marker with an assumed pen width using the supplied values and schematic data.
-    ///
+    /// Calculates sch013 does not expand no connect marker with an assumed pen width from the supplied schematic geometry or S-expression data.
     #[test]
     fn sch013_does_not_expand_no_connect_marker_with_an_assumed_pen_width() {
         let document = document(
@@ -6899,8 +6871,7 @@ mod tests {
             })
         );
     }
-    /// Processes sch013 checks wire crossings of schematic bus lines using the supplied values and schematic data.
-    ///
+    /// Calculates sch013 checks wire crossings of schematic bus lines from the supplied schematic geometry or S-expression data.
     #[test]
     fn sch013_checks_wire_crossings_of_schematic_bus_lines() {
         let document = document(
@@ -6919,8 +6890,7 @@ mod tests {
                 .any(|item| { item.code == "SCH013" && item.message.contains("bus line") })
         );
     }
-    /// Processes sch013 allows wire endpoint at bus entry without exempting other crossings using the supplied values and schematic data.
-    ///
+    /// Calculates sch013 allows wire endpoint at bus entry without exempting other crossings from the supplied schematic geometry or S-expression data.
     #[test]
     fn sch013_allows_wire_endpoint_at_bus_entry_without_exempting_other_crossings() {
         let attached = document(
@@ -6958,8 +6928,7 @@ mod tests {
                 .any(|item| { item.code == "SCH013" && item.message.contains("bus entry") })
         );
     }
-    /// Processes sch013 checks hierarchical sheet frame away from sheet pins using the supplied values and schematic data.
-    ///
+    /// Calculates sch013 checks hierarchical sheet frame away from sheet pins from the supplied schematic geometry or S-expression data.
     #[test]
     fn sch013_checks_hierarchical_sheet_frame_away_from_sheet_pins() {
         let document = document(
@@ -6981,8 +6950,7 @@ mod tests {
             })
         );
     }
-    /// Processes sch013 allows wire endpoint at matching sheet pin using the supplied values and schematic data.
-    ///
+    /// Calculates sch013 allows wire endpoint at matching sheet pin from the supplied schematic geometry or S-expression data.
     #[test]
     fn sch013_allows_wire_endpoint_at_matching_sheet_pin() {
         let document = document(
@@ -7004,8 +6972,7 @@ mod tests {
             })
         );
     }
-    /// Processes sch013 sheet pin exemption does not allow wire to continue inside sheet using the supplied values and schematic data.
-    ///
+    /// Calculates sch013 sheet pin exemption does not allow wire to continue inside sheet from the supplied schematic geometry or S-expression data.
     #[test]
     fn sch013_sheet_pin_exemption_does_not_allow_wire_to_continue_inside_sheet() {
         let document = document(
@@ -7027,8 +6994,7 @@ mod tests {
             })
         );
     }
-    /// Processes sch013 checks enabled table external borders and column separators using the supplied values and schematic data.
-    ///
+    /// Calculates sch013 checks enabled table external borders and column separators from the supplied schematic geometry or S-expression data.
     #[test]
     fn sch013_checks_enabled_table_external_borders_and_column_separators() {
         let document = document(
@@ -7059,8 +7025,7 @@ mod tests {
                 .any(|item| { item.code == "SCH013" && item.message.contains("table separator") })
         );
     }
-    /// Processes sch013 checks cardinally rotated table borders and separators using the supplied values and schematic data.
-    ///
+    /// Calculates sch013 checks cardinally rotated table borders and separators from the supplied schematic geometry or S-expression data.
     #[test]
     fn sch013_checks_cardinally_rotated_table_borders_and_separators() {
         let fixtures = [
@@ -7093,8 +7058,7 @@ mod tests {
             );
         }
     }
-    /// Processes sch013 checks cardinally rotated table external borders using the supplied values and schematic data.
-    ///
+    /// Calculates sch013 checks cardinally rotated table external borders from the supplied schematic geometry or S-expression data.
     #[test]
     fn sch013_checks_cardinally_rotated_table_external_borders() {
         let fixtures = [
@@ -7128,8 +7092,7 @@ mod tests {
             );
         }
     }
-    /// Processes sch013 does not use unrotated table coordinates after rotation using the supplied values and schematic data.
-    ///
+    /// Calculates sch013 does not use unrotated table coordinates after rotation from the supplied schematic geometry or S-expression data.
     #[test]
     fn sch013_does_not_use_unrotated_table_coordinates_after_rotation() {
         let document = document(
@@ -7153,8 +7116,7 @@ mod tests {
                 .any(|item| { item.code == "SCH013" && item.message.contains("table") })
         );
     }
-    /// Processes sch013 skips tables with inconsistent cell rotations or positions using the supplied values and schematic data.
-    ///
+    /// Calculates sch013 skips tables with inconsistent cell rotations or positions from the supplied schematic geometry or S-expression data.
     #[test]
     fn sch013_skips_tables_with_inconsistent_cell_rotations_or_positions() {
         let mixed_rotations = document(
@@ -7199,8 +7161,7 @@ mod tests {
                 .any(|item| { item.code == "SCH013" && item.message.contains("table") })
         );
     }
-    /// Processes sch013 ignores disabled table strokes and merged cell separators using the supplied values and schematic data.
-    ///
+    /// Calculates sch013 ignores disabled table strokes and merged cell separators from the supplied schematic geometry or S-expression data.
     #[test]
     fn sch013_ignores_disabled_table_strokes_and_merged_cell_separators() {
         let no_strokes = document(
@@ -7245,8 +7206,7 @@ mod tests {
                 .any(|item| item.code == "SCH013" && item.message.contains("table"))
         );
     }
-    /// Processes sch013 checks table cell text with estimated glyph bounds using the supplied values and schematic data.
-    ///
+    /// Calculates sch013 checks table cell text with estimated glyph bounds from the supplied schematic geometry or S-expression data.
     #[test]
     fn sch013_checks_table_cell_text_with_estimated_glyph_bounds() {
         let document = document(
@@ -7267,8 +7227,7 @@ mod tests {
             item.code == "SCH013" && item.message.contains("free-standing schematic text")
         }));
     }
-    /// Processes sch013 uses reflected text bounds for 180 degree table cells using the supplied values and schematic data.
-    ///
+    /// Calculates sch013 uses reflected text bounds for 180 degree table cells from the supplied schematic geometry or S-expression data.
     #[test]
     fn sch013_uses_reflected_text_bounds_for_180_degree_table_cells() {
         let rotated = document(
@@ -7312,8 +7271,7 @@ mod tests {
                 })
         );
     }
-    /// Processes sch013 skips table cell text for unsupported non cardinal rotation using the supplied values and schematic data.
-    ///
+    /// Calculates sch013 skips table cell text for unsupported non cardinal rotation from the supplied schematic geometry or S-expression data.
     #[test]
     fn sch013_skips_table_cell_text_for_unsupported_non_cardinal_rotation() {
         let document = document(
@@ -7336,8 +7294,7 @@ mod tests {
             })
         );
     }
-    /// Processes geo rectangle clipping preserves wire overlap tolerance using the supplied values and schematic data.
-    ///
+    /// Calculates geo rectangle clipping preserves wire overlap tolerance from the supplied schematic geometry or S-expression data.
     #[test]
     fn geo_rectangle_clipping_preserves_wire_overlap_tolerance() {
         let bounds = super::Bounds {
@@ -7382,8 +7339,7 @@ mod tests {
             bounds,
         ));
     }
-    /// Processes analytic arc intersection detects a curve hit missed by its sampled chord using the supplied values and schematic data.
-    ///
+    /// Calculates analytic arc intersection detects a curve hit missed by its sampled chord from the supplied schematic geometry or S-expression data.
     #[test]
     fn analytic_arc_intersection_detects_a_curve_hit_missed_by_its_sampled_chord() {
         let arc = super::SchematicArcFact {
@@ -7466,8 +7422,7 @@ mod tests {
         assert!((intersections[0].x - wire.start.x).abs() < 1.0e-9);
         assert!((intersections[0].y - wire.start.y).abs() < 1.0e-9);
     }
-    /// Processes analytic arc intersection respects directed sweep and tangency using the supplied values and schematic data.
-    ///
+    /// Calculates analytic arc intersection respects directed sweep and tangency from the supplied schematic geometry or S-expression data.
     #[test]
     fn analytic_arc_intersection_respects_directed_sweep_and_tangency() {
         let arc = super::SchematicArcFact {
@@ -7503,8 +7458,7 @@ mod tests {
         assert!(tangent[0].x.abs() < 1.0e-9);
         assert!((tangent[0].y - 2.0).abs() < 1.0e-9);
     }
-    /// Processes analytic bezier intersection detects a curve hit missed by its flattened polyline using the supplied values and schematic data.
-    ///
+    /// Calculates analytic bezier intersection detects a curve hit missed by its flattened polyline from the supplied schematic geometry or S-expression data.
     #[test]
     fn analytic_bezier_intersection_detects_a_curve_hit_missed_by_its_flattened_polyline() {
         let controls = [(0.0, 0.0), (0.0, 10.0), (10.0, 10.0), (10.0, 0.0)];
@@ -7609,8 +7563,7 @@ mod tests {
             0.0,
         ));
     }
-    /// Processes kurbo circumcircle preserves arc direction and collinear fallback using the supplied values and schematic data.
-    ///
+    /// Calculates kurbo circumcircle preserves arc direction and collinear fallback from the supplied schematic geometry or S-expression data.
     #[test]
     fn kurbo_circumcircle_preserves_arc_direction_and_collinear_fallback() {
         let upper = super::sample_arc_through_three_points((-2.0, 0.0), (0.0, 2.0), (2.0, 0.0));
@@ -7626,8 +7579,7 @@ mod tests {
         let collinear = super::sample_arc_through_three_points((0.0, 0.0), (1.0, 0.0), (2.0, 0.0));
         assert_eq!(collinear, [(0.0, 0.0), (1.0, 0.0), (2.0, 0.0)]);
     }
-    /// Processes kurbo affine matches kicad cardinal symbol transforms using the supplied values and schematic data.
-    ///
+    /// Calculates kurbo affine matches kicad cardinal symbol transforms from the supplied schematic geometry or S-expression data.
     #[test]
     fn kurbo_affine_matches_kicad_cardinal_symbol_transforms() {
         let cases = [
@@ -7672,8 +7624,7 @@ mod tests {
           (property "Reference" "J1" (at 10 10 0) (effects (font (size 1 1))))
         )
     "#;
-    /// Processes non cardinal symbol rotation resolves embedded pin and primitive geometry using the supplied values and schematic data.
-    ///
+    /// Calculates non cardinal symbol rotation resolves embedded pin and primitive geometry from the supplied schematic geometry or S-expression data.
     #[test]
     fn non_cardinal_symbol_rotation_resolves_embedded_pin_and_primitive_geometry() {
         let source = EMBEDDED_PIN
@@ -7701,8 +7652,7 @@ mod tests {
                 .any(|item| item.code == "SCH005")
         );
     }
-    /// Processes sch013 detects wire crossing a non cardinal symbol body using the supplied values and schematic data.
-    ///
+    /// Calculates sch013 detects wire crossing a non cardinal symbol body from the supplied schematic geometry or S-expression data.
     #[test]
     fn sch013_detects_wire_crossing_a_non_cardinal_symbol_body() {
         let source = EMBEDDED_PIN
@@ -7717,8 +7667,7 @@ mod tests {
             item.code == "SCH013" && item.message.contains("penetrates symbol body J1")
         }));
     }
-    /// Processes sch015 accepts no connect marker on non cardinal symbol pin using the supplied values and schematic data.
-    ///
+    /// Calculates sch015 accepts no connect marker on non cardinal symbol pin from the supplied schematic geometry or S-expression data.
     #[test]
     fn sch015_accepts_no_connect_marker_on_non_cardinal_symbol_pin() {
         let source = EMBEDDED_PIN.replace("(at 10 10 0)", "(at 10 10 45)");
@@ -7736,8 +7685,7 @@ mod tests {
                 .any(|item| item.code == "SCH015")
         );
     }
-    /// Processes pin wire must follow the embedded pin axis using the supplied values and schematic data.
-    ///
+    /// Calculates pin wire must follow the embedded pin axis from the supplied schematic geometry or S-expression data.
     #[test]
     fn pin_wire_must_follow_the_embedded_pin_axis() {
         let doc = document(&format!(
@@ -7750,8 +7698,7 @@ mod tests {
                 .any(|item| item.code == "SCH005" && item.message.contains("J1 pin 1"))
         );
     }
-    /// Processes correctly aligned pin wire is accepted using the supplied values and schematic data.
-    ///
+    /// Calculates correctly aligned pin wire is accepted from the supplied schematic geometry or S-expression data.
     #[test]
     fn correctly_aligned_pin_wire_is_accepted() {
         let doc = document(&format!(
@@ -7764,8 +7711,7 @@ mod tests {
                 .any(|item| item.code == "SCH005")
         );
     }
-    /// Processes pin axis and position follow symbol rotation and mirroring using the supplied values and schematic data.
-    ///
+    /// Calculates pin axis and position follow symbol rotation and mirroring from the supplied schematic geometry or S-expression data.
     #[test]
     fn pin_axis_and_position_follow_symbol_rotation_and_mirroring() {
         let doc = document(
@@ -7791,16 +7737,14 @@ mod tests {
                 .any(|item| item.code == "SCH005")
         );
     }
-    /// Processes embedded library fields are not counted as placed components using the supplied values and schematic data.
-    ///
+    /// Calculates embedded library fields are not counted as placed components from the supplied schematic geometry or S-expression data.
     #[test]
     fn embedded_library_fields_are_not_counted_as_placed_components() {
         let doc = document(EMBEDDED_PIN);
         let run = run_builtin_rules(&doc);
         assert_eq!(run.components, 1);
     }
-    /// Processes no connect marker must coincide with a placed symbol pin using the supplied values and schematic data.
-    ///
+    /// Calculates no connect marker must coincide with a placed symbol pin from the supplied schematic geometry or S-expression data.
     #[test]
     fn no_connect_marker_must_coincide_with_a_placed_symbol_pin() {
         let doc = document(&format!(
@@ -7813,8 +7757,7 @@ mod tests {
                 .any(|item| item.code == "SCH015" && item.message.contains("does not coincide"))
         );
     }
-    /// Processes correctly placed no connect marker is accepted even for power symbols using the supplied values and schematic data.
-    ///
+    /// Calculates correctly placed no connect marker is accepted even for power symbols from the supplied schematic geometry or S-expression data.
     #[test]
     fn correctly_placed_no_connect_marker_is_accepted_even_for_power_symbols() {
         let power_symbol = EMBEDDED_PIN.replace("\"J1\"", "\"#PWR001\"");
@@ -7828,8 +7771,7 @@ mod tests {
                 .any(|item| item.code == "SCH015")
         );
     }
-    /// Processes quoted atoms use parser decoded escape sequences using the supplied values and schematic data.
-    ///
+    /// Calculates quoted atoms use parser decoded escape sequences from the supplied schematic geometry or S-expression data.
     #[test]
     fn quoted_atoms_use_parser_decoded_escape_sequences() {
         let doc = document(r#"(label "first\nsecond" (at 1 1 0))"#);
@@ -7838,8 +7780,7 @@ mod tests {
         assert_eq!(labels.len(), 1);
         assert_eq!(labels[0].1, "first\nsecond");
     }
-    /// Processes newstroke text height uses rendered glyph geometry using the supplied values and schematic data.
-    ///
+    /// Calculates newstroke text height uses rendered glyph geometry from the supplied schematic geometry or S-expression data.
     #[test]
     fn newstroke_text_height_uses_rendered_glyph_geometry() {
         let cap = super::newstroke_text_metrics_ratio("H").1;
@@ -7852,8 +7793,7 @@ mod tests {
         assert!(lowercase > 0.0 && lowercase <= cap);
         assert!((blank - cap).abs() < 0.001);
     }
-    /// Processes text bounds use kurbo for cardinal rotation and justification using the supplied values and schematic data.
-    ///
+    /// Calculates text bounds use kurbo for cardinal rotation and justification from the supplied schematic geometry or S-expression data.
     #[test]
     fn text_bounds_use_kurbo_for_cardinal_rotation_and_justification() {
         let (width, height) = super::newstroke_text_metrics_ratio("AB");
@@ -7931,8 +7871,7 @@ mod tests {
             assert!((bounds.height - expected_height).abs() < 0.001);
         }
     }
-    /// Processes text widths use kicad newstroke glyph advances using the supplied values and schematic data.
-    ///
+    /// Calculates text widths use kicad newstroke glyph advances from the supplied schematic geometry or S-expression data.
     #[test]
     fn text_widths_use_kicad_newstroke_glyph_advances() {
         let cap_height = 21.0;
@@ -7953,8 +7892,7 @@ mod tests {
             );
         }
     }
-    /// Processes unsupported unicode does not panic or shift newstroke metrics using the supplied values and schematic data.
-    ///
+    /// Calculates unsupported unicode does not panic or shift newstroke metrics from the supplied schematic geometry or S-expression data.
     #[test]
     fn unsupported_unicode_does_not_panic_or_shift_newstroke_metrics() {
         let supported = super::newstroke_text_metrics_ratio("AH");
@@ -7962,8 +7900,7 @@ mod tests {
         assert!((supported.0 - with_unsupported.0).abs() < 0.001);
         assert!((supported.1 - with_unsupported.1).abs() < 0.001);
     }
-    /// Processes sch013 detects wire crossing a top level sheet circle using the supplied values and schematic data.
-    ///
+    /// Calculates sch013 detects wire crossing a top level sheet circle from the supplied schematic geometry or S-expression data.
     #[test]
     fn sch013_detects_wire_crossing_a_top_level_sheet_circle() {
         let doc = document(
@@ -7977,8 +7914,7 @@ mod tests {
             item.code == "SCH013" && item.message.contains("sheet graphic circle")
         }));
     }
-    /// Processes sch013 detects wire crossing an embedded bitmap image using the supplied values and schematic data.
-    ///
+    /// Calculates sch013 detects wire crossing an embedded bitmap image from the supplied schematic geometry or S-expression data.
     #[test]
     fn sch013_detects_wire_crossing_an_embedded_bitmap_image() {
         let doc = document(
@@ -7990,8 +7926,7 @@ mod tests {
             item.code == "SCH013" && item.message.contains("embedded bitmap image")
         }));
     }
-    /// Processes sch013 uses rotated bitmap footprint instead of its axis aligned bounds using the supplied values and schematic data.
-    ///
+    /// Calculates sch013 uses rotated bitmap footprint instead of its axis aligned bounds from the supplied schematic geometry or S-expression data.
     #[test]
     fn sch013_uses_rotated_bitmap_footprint_instead_of_its_axis_aligned_bounds() {
         /// Defines the image constant.
@@ -8012,8 +7947,7 @@ mod tests {
             .iter()
             .any(|item| item.code == "SCH013" && item.message.contains("embedded bitmap image")));
     }
-    /// Processes diagonal wires are reported using the supplied values and schematic data.
-    ///
+    /// Calculates diagonal wires are reported from the supplied schematic geometry or S-expression data.
     #[test]
     fn diagonal_wires_are_reported() {
         let doc = document(r"(wire (pts (xy 0 0) (xy 2 2)))");
@@ -8024,8 +7958,7 @@ mod tests {
                 .any(|item| item.code == "SCH001")
         );
     }
-    /// Processes local labels must be reused using the supplied values and schematic data.
-    ///
+    /// Calculates local labels must be reused from the supplied schematic geometry or S-expression data.
     #[test]
     fn local_labels_must_be_reused() {
         let doc = document(r#"(label "ONE" (at 1 1 0) (effects (font (size 1 1))))"#);
@@ -8036,8 +7969,7 @@ mod tests {
                 .any(|item| item.code == "SCH002")
         );
     }
-    /// Processes repeated local label on one wire is rejected using the supplied values and schematic data.
-    ///
+    /// Calculates repeated local label on one wire is rejected from the supplied schematic geometry or S-expression data.
     #[test]
     fn repeated_local_label_on_one_wire_is_rejected() {
         let doc = document(
@@ -8047,8 +7979,7 @@ mod tests {
             item.code == "SCH002" && item.message.contains("one physical wire network")
         }));
     }
-    /// Processes repeated local label joins distinct wire islands using the supplied values and schematic data.
-    ///
+    /// Calculates repeated local label joins distinct wire islands from the supplied schematic geometry or S-expression data.
     #[test]
     fn repeated_local_label_joins_distinct_wire_islands() {
         let doc = document(
@@ -8078,8 +8009,7 @@ mod tests {
           (property "Reference" "Q1" (at 10 10 0) (effects (font (size 1 1))))
         )
     "#;
-    /// Processes wire obstacle uses actual triangle outline not its bounding box using the supplied values and schematic data.
-    ///
+    /// Evaluates wire obstacle uses actual triangle outline not its bounding box using the wire's geometry and the related schematic objects.
     #[test]
     fn wire_obstacle_uses_actual_triangle_outline_not_its_bounding_box() {
         let outside = document(&format!(
@@ -8102,8 +8032,7 @@ mod tests {
                 .any(|item| item.code == "SCH013" && item.message.contains("symbol body Q1"))
         );
     }
-    /// Processes sch013 checks free standing schematic text as a wire obstacle using the supplied values and schematic data.
-    ///
+    /// Calculates sch013 checks free standing schematic text as a wire obstacle from the supplied schematic geometry or S-expression data.
     #[test]
     fn sch013_checks_free_standing_schematic_text_as_a_wire_obstacle() {
         let obstructed = document(
@@ -8138,8 +8067,7 @@ mod tests {
             item.code == "SCH013" && item.message.contains("free-standing schematic text")
         }));
     }
-    /// Processes sch013 checks embedded symbol text and text box obstacles using the supplied values and schematic data.
-    ///
+    /// Calculates sch013 checks embedded symbol text and text box obstacles from the supplied schematic geometry or S-expression data.
     #[test]
     fn sch013_checks_embedded_symbol_text_and_text_box_obstacles() {
         let doc = document(
@@ -8184,8 +8112,7 @@ mod tests {
                 && item.message.contains("NOTE")
         }));
     }
-    /// Processes sch013 transforms embedded symbol text obstacles with symbol mirrors and rotation using the supplied values and schematic data.
-    ///
+    /// Calculates sch013 transforms embedded symbol text obstacles with symbol mirrors and rotation from the supplied schematic geometry or S-expression data.
     #[test]
     fn sch013_transforms_embedded_symbol_text_obstacles_with_symbol_mirrors_and_rotation() {
         let source = r#"
@@ -8213,8 +8140,7 @@ mod tests {
                 && item.message.contains("ROTATED")
         }));
     }
-    /// Processes sch013 checks declared stroke width for open sheet paths using the supplied values and schematic data.
-    ///
+    /// Calculates sch013 checks declared stroke width for open sheet paths from the supplied schematic geometry or S-expression data.
     #[test]
     fn sch013_checks_declared_stroke_width_for_open_sheet_paths() {
         let near = document(
@@ -8239,8 +8165,7 @@ mod tests {
             item.code == "SCH013" && item.message.contains("sheet graphic polyline")
         }));
     }
-    /// Processes sch013 checks declared stroke width for embedded symbol paths using the supplied values and schematic data.
-    ///
+    /// Calculates sch013 checks declared stroke width for embedded symbol paths from the supplied schematic geometry or S-expression data.
     #[test]
     fn sch013_checks_declared_stroke_width_for_embedded_symbol_paths() {
         /// Defines the embedded stroke symbol constant.
@@ -8277,8 +8202,7 @@ mod tests {
                 .any(|item| { item.code == "SCH013" && item.message.contains("symbol body U1") })
         );
     }
-    /// Processes sch013 checks embedded symbol arc and bezier stroke clearance using the supplied values and schematic data.
-    ///
+    /// Calculates sch013 checks embedded symbol arc and bezier stroke clearance from the supplied schematic geometry or S-expression data.
     #[test]
     fn sch013_checks_embedded_symbol_arc_and_bezier_stroke_clearance() {
         let arc = super::SchematicArcFact {
@@ -8366,8 +8290,7 @@ mod tests {
             0.0,
         ));
     }
-    /// Processes sch013 pin endpoint exemption is limited to local stroke contact using the supplied values and schematic data.
-    ///
+    /// Calculates sch013 pin endpoint exemption is limited to local stroke contact from the supplied schematic geometry or S-expression data.
     #[test]
     fn sch013_pin_endpoint_exemption_is_limited_to_local_stroke_contact() {
         let primitive = super::SchematicPrimitiveFact {
@@ -8396,8 +8319,7 @@ mod tests {
             0.0,
         ));
     }
-    /// Processes sch013 uses curve distance for bezier stroke clearance using the supplied values and schematic data.
-    ///
+    /// Calculates sch013 uses curve distance for bezier stroke clearance from the supplied schematic geometry or S-expression data.
     #[test]
     fn sch013_uses_curve_distance_for_bezier_stroke_clearance() {
         let controls = [(0.0, 0.0), (0.0, 10.0), (10.0, 10.0), (10.0, 0.0)];
@@ -8451,8 +8373,7 @@ mod tests {
             0.0
         ));
     }
-    /// Processes sch013 applies arc stroke clearance to the selected sweep using the supplied values and schematic data.
-    ///
+    /// Calculates sch013 applies arc stroke clearance to the selected sweep from the supplied schematic geometry or S-expression data.
     #[test]
     fn sch013_applies_arc_stroke_clearance_to_the_selected_sweep() {
         let arc = super::SchematicArcFact {
@@ -8498,8 +8419,7 @@ mod tests {
             0.0
         ));
     }
-    /// Processes wire obstacle uses exact intersections for top level three point arcs using the supplied values and schematic data.
-    ///
+    /// Evaluates wire obstacle uses exact intersections for top level three point arcs using the wire's geometry and the related schematic objects.
     #[test]
     fn wire_obstacle_uses_exact_intersections_for_top_level_three_point_arcs() {
         let doc = document(
@@ -8517,8 +8437,7 @@ mod tests {
             })
         );
     }
-    /// Processes wire obstacle uses exact intersections for top level cubic beziers using the supplied values and schematic data.
-    ///
+    /// Evaluates wire obstacle uses exact intersections for top level cubic beziers using the wire's geometry and the related schematic objects.
     #[test]
     fn wire_obstacle_uses_exact_intersections_for_top_level_cubic_beziers() {
         let doc = document(
@@ -8535,8 +8454,7 @@ mod tests {
             item.code == "SCH013" && item.message.contains("sheet graphic bezier")
         }));
     }
-    /// Processes wire obstacle detects wire near the true three point arc path using the supplied values and schematic data.
-    ///
+    /// Evaluates wire obstacle detects wire near the true three point arc path using the wire's geometry and the related schematic objects.
     #[test]
     fn wire_obstacle_detects_wire_near_the_true_three_point_arc_path() {
         let doc = document(
@@ -8562,8 +8480,7 @@ mod tests {
                 .any(|item| item.code == "SCH013" && item.message.contains("symbol body U1"))
         );
     }
-    /// Processes arc midpoint selects the correct sweep direction using the supplied values and schematic data.
-    ///
+    /// Calculates arc midpoint selects the correct sweep direction from the supplied schematic geometry or S-expression data.
     #[test]
     fn arc_midpoint_selects_the_correct_sweep_direction() {
         let doc = document(
@@ -8589,8 +8506,7 @@ mod tests {
                 .any(|item| item.code == "SCH013" && item.message.contains("symbol body U1"))
         );
     }
-    /// Processes wire obstacle detects actual cubic bezier curve using the supplied values and schematic data.
-    ///
+    /// Evaluates wire obstacle detects actual cubic bezier curve using the wire's geometry and the related schematic objects.
     #[test]
     fn wire_obstacle_detects_actual_cubic_bezier_curve() {
         let doc = document(
@@ -8618,8 +8534,7 @@ mod tests {
                 .any(|item| item.code == "SCH013" && item.message.contains("symbol body U1"))
         );
     }
-    /// Processes bezier control polygon is not treated as the curve using the supplied values and schematic data.
-    ///
+    /// Calculates bezier control polygon is not treated as the curve from the supplied schematic geometry or S-expression data.
     #[test]
     fn bezier_control_polygon_is_not_treated_as_the_curve() {
         let doc = document(
@@ -8647,8 +8562,7 @@ mod tests {
                 .any(|item| item.code == "SCH013" && item.message.contains("symbol body U1"))
         );
     }
-    /// Processes sch013 combines explicit wire and sheet graphic stroke widths using the supplied values and schematic data.
-    ///
+    /// Calculates sch013 combines explicit wire and sheet graphic stroke widths from the supplied schematic geometry or S-expression data.
     #[test]
     fn sch013_combines_explicit_wire_and_sheet_graphic_stroke_widths() {
         let combined = document(
@@ -8708,8 +8622,7 @@ mod tests {
             item.code == "SCH013" && item.message.contains("sheet graphic polyline")
         }));
     }
-    /// Processes sch013 uses project default wire width when no assignment override exists using the supplied values and schematic data.
-    ///
+    /// Calculates sch013 uses project default wire width when no assignment override exists from the supplied schematic geometry or S-expression data.
     #[test]
     fn sch013_uses_project_default_wire_width_when_no_assignment_override_exists() {
         let schematic = document(
@@ -8725,8 +8638,7 @@ mod tests {
             item.code == "SCH013" && item.message.contains("sheet graphic polyline")
         }));
     }
-    /// Processes sch013 does not apply project default when graphical assignments exist using the supplied values and schematic data.
-    ///
+    /// Calculates sch013 does not apply project default when graphical assignments exist from the supplied schematic geometry or S-expression data.
     #[test]
     fn sch013_does_not_apply_project_default_when_graphical_assignments_exist() {
         for assignment in [
@@ -8749,8 +8661,7 @@ mod tests {
             }));
         }
     }
-    /// Processes sch013 combines explicit wire and embedded symbol strokes using the supplied values and schematic data.
-    ///
+    /// Calculates sch013 combines explicit wire and embedded symbol strokes from the supplied schematic geometry or S-expression data.
     #[test]
     fn sch013_combines_explicit_wire_and_embedded_symbol_strokes() {
         let primitive = super::SchematicPrimitiveFact {
@@ -8780,8 +8691,7 @@ mod tests {
             0.2,
         ));
     }
-    /// Processes sch013 explicit wire width expands circle stroke ring using the supplied values and schematic data.
-    ///
+    /// Calculates sch013 explicit wire width expands circle stroke ring from the supplied schematic geometry or S-expression data.
     #[test]
     fn sch013_explicit_wire_width_expands_circle_stroke_ring() {
         let center = super::Point { x: 0.0, y: 0.0 };
@@ -8797,8 +8707,7 @@ mod tests {
             wire, center, 2.0, 0.2, 0.2
         ));
     }
-    /// Processes sch013 checks rotated ellipse stroke proximity and preserves clearance using the supplied values and schematic data.
-    ///
+    /// Calculates sch013 checks rotated ellipse stroke proximity and preserves clearance from the supplied schematic geometry or S-expression data.
     #[test]
     fn sch013_checks_rotated_ellipse_stroke_proximity_and_preserves_clearance() {
         let near_ellipse = document(
@@ -8833,8 +8742,7 @@ mod tests {
                 })
         );
     }
-    /// Processes sch013 checks elliptical arc stroke without blocking its interior using the supplied values and schematic data.
-    ///
+    /// Calculates sch013 checks elliptical arc stroke without blocking its interior from the supplied schematic geometry or S-expression data.
     #[test]
     fn sch013_checks_elliptical_arc_stroke_without_blocking_its_interior() {
         let on_arc = document(
@@ -8866,8 +8774,7 @@ mod tests {
                 })
         );
     }
-    /// Processes sch013 checks circle stroke proximity and preserves interior detection using the supplied values and schematic data.
-    ///
+    /// Calculates sch013 checks circle stroke proximity and preserves interior detection from the supplied schematic geometry or S-expression data.
     #[test]
     fn sch013_checks_circle_stroke_proximity_and_preserves_interior_detection() {
         let near_sheet_circle = document(
@@ -8971,8 +8878,7 @@ mod tests {
                 .any(|item| { item.code == "SCH013" && item.message.contains("symbol body U1") })
         );
     }
-    /// Processes wire obstacle detects circle primitive interiors using the supplied values and schematic data.
-    ///
+    /// Evaluates wire obstacle detects circle primitive interiors using the wire's geometry and the related schematic objects.
     #[test]
     fn wire_obstacle_detects_circle_primitive_interiors() {
         let doc = document(
@@ -8998,8 +8904,7 @@ mod tests {
                 .any(|item| item.code == "SCH013" && item.message.contains("symbol body U1"))
         );
     }
-    /// Processes wire may start at its intended symbol pin without body penetration using the supplied values and schematic data.
-    ///
+    /// Evaluates wire may start at its intended symbol pin without body penetration using the wire's geometry and the related schematic objects.
     #[test]
     fn wire_may_start_at_its_intended_symbol_pin_without_body_penetration() {
         let doc = document(
@@ -9027,8 +8932,7 @@ mod tests {
                 .any(|item| item.code == "SCH013" && item.message.contains("symbol body U2"))
         );
     }
-    /// Processes wire obstacle rejects intermediate pins visible fields and text boxes using the supplied values and schematic data.
-    ///
+    /// Evaluates wire obstacle rejects intermediate pins visible fields and text boxes using the wire's geometry and the related schematic objects.
     #[test]
     fn wire_obstacle_rejects_intermediate_pins_visible_fields_and_text_boxes() {
         let doc = document(
@@ -9070,8 +8974,7 @@ mod tests {
                 .any(|item| item.code == "SCH013" && item.message.contains("annotation text box"))
         );
     }
-    /// Processes sweep line reports crossing wires with the intersection location using the supplied values and schematic data.
-    ///
+    /// Calculates sweep line reports crossing wires with the intersection location from the supplied schematic geometry or S-expression data.
     #[test]
     fn sweep_line_reports_crossing_wires_with_the_intersection_location() {
         let doc = document(r"(wire (pts (xy 0 0) (xy 4 0))) (wire (pts (xy 2 -2) (xy 2 2)))");
@@ -9084,8 +8987,7 @@ mod tests {
         assert!((location.x_mm - 2.0).abs() < 0.001);
         assert!((location.y_mm - 0.0).abs() < 0.001);
     }
-    /// Processes sweep line requires an explicit marker for t junctions using the supplied values and schematic data.
-    ///
+    /// Calculates sweep line requires an explicit marker for t junctions from the supplied schematic geometry or S-expression data.
     #[test]
     fn sweep_line_requires_an_explicit_marker_for_t_junctions() {
         let missing = document(r"(wire (pts (xy 0 0) (xy 4 0))) (wire (pts (xy 2 0) (xy 2 2)))");
@@ -9106,8 +9008,7 @@ mod tests {
                 .any(|item| item.code == "SCH001" && item.message.contains("T-junction"))
         );
     }
-    /// Processes wire overlap is rejected using the supplied values and schematic data.
-    ///
+    /// Evaluates wire overlap is rejected using the wire's geometry and the related schematic objects.
     #[test]
     fn wire_overlap_is_rejected() {
         let doc = document(r"(wire (pts (xy 0 0) (xy 4 0))) (wire (pts (xy 2 0) (xy 6 0)))");
@@ -9118,8 +9019,7 @@ mod tests {
                 .any(|item| { item.code == "SCH001" && item.message.contains("overlap") })
         );
     }
-    /// Processes wire through label glyph is rejected using the supplied values and schematic data.
-    ///
+    /// Evaluates wire through label glyph is rejected using the wire's geometry and the related schematic objects.
     #[test]
     fn wire_through_label_glyph_is_rejected() {
         let doc = document(
@@ -9132,8 +9032,7 @@ mod tests {
                 .any(|item| item.code == "SCH003")
         );
     }
-    /// Processes undersized text box is rejected using the supplied values and schematic data.
-    ///
+    /// Calculates undersized text box is rejected from the supplied schematic geometry or S-expression data.
     #[test]
     fn undersized_text_box_is_rejected() {
         let doc = document(
@@ -9146,8 +9045,7 @@ mod tests {
                 .any(|item| item.code == "SCH008")
         );
     }
-    /// Processes free standing text is rejected using the supplied values and schematic data.
-    ///
+    /// Calculates free standing text is rejected from the supplied schematic geometry or S-expression data.
     #[test]
     fn free_standing_text_is_rejected() {
         let doc = document(r#"(text "note" (at 1 1 0) (effects (font (size 1 1))))"#);
@@ -9158,8 +9056,7 @@ mod tests {
                 .any(|item| item.code == "SCH008")
         );
     }
-    /// Processes multiline unbordered text box is rejected using the supplied values and schematic data.
-    ///
+    /// Calculates multiline unbordered text box is rejected from the supplied schematic geometry or S-expression data.
     #[test]
     fn multiline_unbordered_text_box_is_rejected() {
         let doc = document(
@@ -9172,8 +9069,7 @@ mod tests {
                 .any(|item| item.code == "SCH011")
         );
     }
-    /// Processes overlapping label glyphs are rejected using the supplied values and schematic data.
-    ///
+    /// Calculates overlapping label glyphs are rejected from the supplied schematic geometry or S-expression data.
     #[test]
     fn overlapping_label_glyphs_are_rejected() {
         let doc = document(
@@ -9186,8 +9082,7 @@ mod tests {
                 .any(|item| item.code == "SCH018")
         );
     }
-    /// Processes visible symbol fields may not overlap each other using the supplied values and schematic data.
-    ///
+    /// Calculates visible symbol fields may not overlap each other from the supplied schematic geometry or S-expression data.
     #[test]
     fn visible_symbol_fields_may_not_overlap_each_other() {
         let doc = document(
@@ -9206,8 +9101,7 @@ mod tests {
                     && item.message.contains("visible symbol fields overlap"))
         );
     }
-    /// Processes visible symbol fields may not overlap annotation boxes using the supplied values and schematic data.
-    ///
+    /// Calculates visible symbol fields may not overlap annotation boxes from the supplied schematic geometry or S-expression data.
     #[test]
     fn visible_symbol_fields_may_not_overlap_annotation_boxes() {
         let doc = document(
@@ -9227,8 +9121,7 @@ mod tests {
                 .any(|item| item.code == "SCH010" && item.message.contains("annotation text box"))
         );
     }
-    /// Processes visible reference field may not be embedded in symbol body using the supplied values and schematic data.
-    ///
+    /// Calculates visible reference field may not be embedded in symbol body from the supplied schematic geometry or S-expression data.
     #[test]
     fn visible_reference_field_may_not_be_embedded_in_symbol_body() {
         let doc = document(
@@ -9253,8 +9146,7 @@ mod tests {
                 .any(|item| item.code == "SCH010" && item.message.contains("own symbol body"))
         );
     }
-    /// Processes value field fully inside closed symbol body is allowed using the supplied values and schematic data.
-    ///
+    /// Calculates value field fully inside closed symbol body is allowed from the supplied schematic geometry or S-expression data.
     #[test]
     fn value_field_fully_inside_closed_symbol_body_is_allowed() {
         let doc = document(
@@ -9280,8 +9172,7 @@ mod tests {
                 .any(|item| item.code == "SCH010" && item.message.contains("Value"))
         );
     }
-    /// Processes visible symbol field may not overlap wire segment or pin using the supplied values and schematic data.
-    ///
+    /// Calculates visible symbol field may not overlap wire segment or pin from the supplied schematic geometry or S-expression data.
     #[test]
     fn visible_symbol_field_may_not_overlap_wire_segment_or_pin() {
         let doc = document(
@@ -9313,8 +9204,7 @@ mod tests {
                 .any(|item| item.code == "SCH010" && item.message.contains("overlaps pin U1.1"))
         );
     }
-    /// Processes visible symbol field may not overlap label glyph using the supplied values and schematic data.
-    ///
+    /// Calculates visible symbol field may not overlap label glyph from the supplied schematic geometry or S-expression data.
     #[test]
     fn visible_symbol_field_may_not_overlap_label_glyph() {
         let doc = document(
@@ -9332,8 +9222,7 @@ mod tests {
                 .any(|item| item.code == "SCH010" && item.message.contains("overlaps label"))
         );
     }
-    /// Processes separated visible symbol fields are accepted using the supplied values and schematic data.
-    ///
+    /// Calculates separated visible symbol fields are accepted from the supplied schematic geometry or S-expression data.
     #[test]
     fn separated_visible_symbol_fields_are_accepted() {
         let doc = document(
@@ -9351,8 +9240,7 @@ mod tests {
                 .any(|item| item.code == "SCH010")
         );
     }
-    /// Processes label glyph may not overlap symbol field using the supplied values and schematic data.
-    ///
+    /// Calculates label glyph may not overlap symbol field from the supplied schematic geometry or S-expression data.
     #[test]
     fn label_glyph_may_not_overlap_symbol_field() {
         let doc = document(
@@ -9365,8 +9253,7 @@ mod tests {
                 .any(|item| { item.code == "SCH018" && item.message.contains("symbol field") })
         );
     }
-    /// Processes label glyph may not overlap annotation box using the supplied values and schematic data.
-    ///
+    /// Calculates label glyph may not overlap annotation box from the supplied schematic geometry or S-expression data.
     #[test]
     fn label_glyph_may_not_overlap_annotation_box() {
         let doc = document(
@@ -9378,8 +9265,7 @@ mod tests {
             })
         );
     }
-    /// Processes same label cannot be local and hierarchical using the supplied values and schematic data.
-    ///
+    /// Calculates same label cannot be local and hierarchical from the supplied schematic geometry or S-expression data.
     #[test]
     fn same_label_cannot_be_local_and_hierarchical() {
         let doc = document(
