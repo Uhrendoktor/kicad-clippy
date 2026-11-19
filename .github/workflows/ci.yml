@@ -1,0 +1,164 @@
+name: CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust-quality:
+    name: Rust quality gates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref }}
+
+      - name: Install stable Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+          rustc --version
+          cargo --version
+
+      - name: Resolve workspace dependencies and refresh the lock file
+        run: cargo check --workspace --all-targets
+
+      - name: Apply rustfmt and normalize doc-comment spacing
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          python3 - <<'PY'
+          from pathlib import Path
+
+          for path in Path("crates").rglob("*.rs"):
+              lines = path.read_text(encoding="utf-8").splitlines()
+
+              # Put cfg(test) before the documentation attached to the test module.
+              index = 0
+              while index < len(lines):
+                  if lines[index].strip() == "#[cfg(test)]":
+                      cursor = index - 1
+                      while cursor >= 0 and not lines[cursor].strip():
+                          cursor -= 1
+                      if cursor >= 0 and lines[cursor].lstrip().startswith("///"):
+                          doc_start = cursor
+                          while doc_start > 0 and lines[doc_start - 1].lstrip().startswith("///"):
+                              doc_start -= 1
+                          docs = [line for line in lines[doc_start:index] if line.lstrip().startswith("///")]
+                          lines[doc_start:index + 1] = [lines[index], *docs]
+                          index = doc_start + len(docs) + 1
+                  index += 1
+
+              output = []
+              index = 0
+              while index < len(lines):
+                  if not lines[index].strip() and output and output[-1].lstrip().startswith("///"):
+                      following = index
+                      while following < len(lines) and not lines[following].strip():
+                          following += 1
+                      if following < len(lines) and not lines[following].lstrip().startswith("///"):
+                          index = following
+                          continue
+                  output.append(lines[index])
+                  index += 1
+              path.write_text("\n".join(output) + "\n", encoding="utf-8")
+          PY
+
+      - name: Commit formatting and documentation fixes
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add crates Cargo.lock
+          if ! git diff --cached --quiet; then
+            git commit -m "style: normalize strict Rust documentation"
+            git push origin "HEAD:${GITHUB_HEAD_REF}"
+          fi
+
+      - name: Verify locked dependencies
+        run: cargo fetch --locked
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Enforce Rust documentation contract
+        run: python3 scripts/check-rust-docs.py
+
+      - name: Enforce named numeric constants
+        run: python3 scripts/check-rust-magic-numbers.py
+
+      - name: Run strict Clippy
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+
+      - name: Run workspace tests
+        run: cargo test --workspace --all-features --locked
+
+      - name: Run documentation tests
+        run: cargo test --workspace --doc --locked
+
+      - name: Build release binary
+        run: cargo build --release --package kicad-clippy --locked
+
+  native-erc:
+    name: Native KiCad ERC smoke test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install stable KiCad CLI with schematic ERC support
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get -o Acquire::Retries=3 update
+          sudo apt-get install -y --no-install-recommends software-properties-common
+          ppa_added=0
+          for attempt in 1 2 3; do
+            if sudo add-apt-repository --yes ppa:kicad/kicad-10.0-releases; then
+              ppa_added=1
+              break
+            fi
+            echo "::warning::KiCad PPA registration attempt ${attempt}/3 failed; retrying."
+            sleep "$((attempt * 10))"
+          done
+          if [[ "$ppa_added" != "1" ]]; then
+            echo "::error::Could not register the KiCad development PPA after three attempts."
+            exit 1
+          fi
+          sudo apt-get -o Acquire::Retries=3 update
+          # The native smoke fixture has no library-backed symbols; install only the CLI and its runtime dependencies.
+          sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends kicad
+          CLI="$(command -v kicad-cli || command -v kicad-cli-nightly || true)"
+          if [[ -z "$CLI" ]]; then
+            echo "::error::KiCad development CLI was not installed."
+            exit 1
+          fi
+          echo "KICAD_CLI=$CLI" >> "$GITHUB_ENV"
+          "$CLI" version
+          "$CLI" sch erc --help
+
+      - name: Install stable Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install stable --profile minimal
+          rustc --version
+          cargo --version
+
+      - name: Run native ERC smoke test
+        run: bash scripts/validate-native-erc.sh
