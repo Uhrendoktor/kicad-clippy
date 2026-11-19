@@ -17,11 +17,11 @@ pub enum Severity {
 }
 
 impl Severity {
-    /// Returns the stable lowercase label used in text output.
+    /// Returns the lowercase severity token used by text and serialized output.
+    ///
     /// # Returns
     ///
-    /// The value produced by this operation.
-    ///
+    /// The stable lowercase token: `error`, `warning`, or `note`.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -80,17 +80,17 @@ pub struct Diagnostic {
 }
 
 impl Diagnostic {
-    /// Creates a diagnostic with optional context left empty.
+    /// Creates a diagnostic with the supplied code, severity, and message; source mapping and optional context start unset.
+    ///
     /// # Arguments
     ///
-    /// * `code` — Input `code` used by this operation.
-    /// * `severity` — Input `severity` used by this operation.
-    /// * `message` — Input `message` used by this operation.
+    /// * `code` — Stable diagnostic code, such as a native ERC identifier or a built-in `SCH` rule ID.
+    /// * `severity` — Severity to assign to the finding.
+    /// * `message` — Concise message shown to the user for this finding.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
-    ///
+    /// A diagnostic with empty source location, explanation, help, related-item list, and exclusion state.
     #[must_use]
     pub fn new(code: impl Into<String>, severity: Severity, message: impl Into<String>) -> Self {
         Self {
@@ -108,17 +108,17 @@ impl Diagnostic {
         }
     }
 
-    /// Creates a diagnostic for a built-in rule without repeating its string code.
+    /// Creates a diagnostic using a typed built-in rule ID, avoiding a duplicated string literal at the call site.
+    ///
     /// # Arguments
     ///
-    /// * `rule` — Input `rule` used by this operation.
-    /// * `severity` — Input `severity` used by this operation.
-    /// * `message` — Input `message` used by this operation.
+    /// * `rule` — Built-in rule identifier; its stable string code is stored in the diagnostic.
+    /// * `severity` — Severity to assign to the finding.
+    /// * `message` — Concise message shown to the user for this finding.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
-    ///
+    /// A diagnostic whose `code` field is the canonical code for `rule`.
     #[must_use]
     pub fn for_builtin_rule(
         rule: BuiltinRuleId,
@@ -128,23 +128,22 @@ impl Diagnostic {
         Self::new(rule, severity, message)
     }
 
-    /// Returns whether this diagnostic is an active error.
+    /// Determines whether this finding should make the lint run fail; excluded errors are inactive.
+    ///
     /// # Returns
     ///
-    /// The value produced by this operation.
-    ///
+    /// `true` only when severity is `Error` and the diagnostic is not excluded.
     #[must_use]
     pub const fn is_active_error(&self) -> bool {
         matches!(self.severity, Severity::Error) && !self.excluded
     }
 }
 #[cfg(test)]
-/// Contains the tests implementation and supporting types.
+/// Unit tests for diagnostic severity, exclusion handling, and built-in rule codes.
 mod tests {
     use super::{Diagnostic, Severity};
     use crate::BuiltinRuleId;
-    /// Processes excluded errors do not fail a run using the supplied values and schematic data.
-    ///
+    /// Verifies that excluded errors do not fail a run behaves as required.
     #[test]
     fn excluded_errors_do_not_fail_a_run() {
         let mut diagnostic = Diagnostic::new("ERC/EXCLUDED", Severity::Error, "ignored");
@@ -152,8 +151,7 @@ mod tests {
 
         assert!(!diagnostic.is_active_error());
     }
-    /// Processes builtin diagnostic keeps the stable external code using the supplied values and schematic data.
-    ///
+    /// Verifies that builtin diagnostic keeps the stable external code behaves as required.
     #[test]
     fn builtin_diagnostic_keeps_the_stable_external_code() {
         let diagnostic = Diagnostic::for_builtin_rule(

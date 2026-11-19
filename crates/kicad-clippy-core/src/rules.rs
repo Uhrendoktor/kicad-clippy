@@ -37,20 +37,20 @@ pub struct RuleDescriptor {
 }
 
 impl RuleDescriptor {
-    /// Creates a descriptor with no external documentation or tags.
+    /// Creates a rule descriptor with the supplied identifying text and default level; documentation URL and tags are initially empty.
+    ///
     /// # Arguments
     ///
-    /// * `id` — Input `id` used by this operation.
-    /// * `name` — Input `name` used by this operation.
-    /// * `category` — Input `category` used by this operation.
-    /// * `summary` — Input `summary` used by this operation.
-    /// * `explanation` — Input `explanation` used by this operation.
-    /// * `default_level` — Input `default level` used by this operation.
+    /// * `id` — Stable rule identifier used as the registry lookup key.
+    /// * `name` — Text value stored in the corresponding field.
+    /// * `category` — Text value stored in the corresponding field.
+    /// * `summary` — Text value stored in the corresponding field.
+    /// * `explanation` — Text value stored in the corresponding field.
+    /// * `default_level` — default level supplied by the caller.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
-    ///
+    /// An empty rule registry ready to accept descriptors.
     #[must_use]
     pub fn new(
         id: impl Into<String>,
@@ -81,34 +81,34 @@ pub struct RuleRegistryError(pub String);
 /// Deterministic catalogue of rule metadata.
 #[derive(Clone, Debug, Default)]
 pub struct RuleRegistry {
-    /// Stores the `rules` value.
-    /// Stores the `rules` value.
+    /// Rule descriptors keyed by stable ID; the ordered map keeps catalogue iteration deterministic.
     rules: BTreeMap<String, RuleDescriptor>,
 }
 
 impl RuleRegistry {
-    /// Creates an empty registry.
+    /// Creates a rule descriptor with the supplied identifying text and default level; documentation URL and tags are initially empty.
+    ///
     /// # Returns
     ///
-    /// The value produced by this operation.
-    ///
+    /// An empty rule registry ready to accept descriptors.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Registers a unique rule descriptor.
+    /// Inserts a descriptor under its stable ID. Existing IDs are rejected so one rule cannot silently replace another.
     ///
-    /// # Errors
-    ///
-    /// Returns [`RuleRegistryError`] when another rule already uses the identifier.
     /// # Arguments
     ///
-    /// * `descriptor` — Input `descriptor` used by this operation.
+    /// * `descriptor` — Complete rule metadata record to insert into the catalogue.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
+    /// `Ok(())` after insertion, or `RuleRegistryError` when the ID is already registered.
+    ///
+    /// # Errors
+    ///
+    /// Returns `RuleRegistryError` when another descriptor already uses the same identifier.
     pub fn register(&mut self, descriptor: RuleDescriptor) -> Result<(), RuleRegistryError> {
         match self.rules.entry(descriptor.id.clone()) {
             Entry::Vacant(entry) => {
@@ -119,57 +119,58 @@ impl RuleRegistry {
         }
     }
 
-    /// Looks up a descriptor by its stable identifier.
+    /// Looks up a rule descriptor by its stable ID without changing the catalogue.
+    ///
     /// # Arguments
     ///
-    /// * `id` — Input `id` used by this operation.
+    /// * `id` — Stable rule identifier used as the registry lookup key.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
-    ///
+    /// A borrowed descriptor when `id` exists, or `None` when it is not registered.
     #[must_use]
     pub fn get(&self, id: &str) -> Option<&RuleDescriptor> {
         self.rules.get(id)
     }
 
-    /// Iterates descriptors in stable identifier order.
+    /// Returns descriptors in lexicographic identifier order, as provided by the underlying `BTreeMap`.
+    ///
     /// # Returns
     ///
-    /// The value produced by this operation.
+    /// An iterator over all registered descriptors in stable ID order.
     pub fn iter(&self) -> impl Iterator<Item = &RuleDescriptor> {
         self.rules.values()
     }
 
-    /// Returns the number of registered descriptors.
+    /// Returns the number of distinct rule descriptors currently registered.
+    ///
     /// # Returns
     ///
-    /// The value produced by this operation.
-    ///
+    /// The current number of registered descriptors.
     #[must_use]
     pub fn len(&self) -> usize {
         self.rules.len()
     }
 
-    /// Returns whether no descriptors are registered.
+    /// Reports whether the registry contains any rule descriptors.
+    ///
     /// # Returns
     ///
-    /// The value produced by this operation.
-    ///
+    /// `true` when no descriptors have been registered.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.rules.is_empty()
     }
 }
 #[cfg(test)]
-/// Contains the tests implementation and supporting types.
+/// Unit tests for rule descriptor construction, lookup, ordering, and duplicate rejection.
 mod tests {
     use super::{RuleDescriptor, RuleLevel, RuleRegistry};
-    /// Processes sample rule using the supplied values and schematic data.
+    /// Builds a representative SCH001 descriptor used by the registry unit tests.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
+    /// A fixed SCH001 descriptor used as test data.
     fn sample_rule() -> RuleDescriptor {
         RuleDescriptor::new(
             "SCH001",
@@ -180,8 +181,7 @@ mod tests {
             RuleLevel::Deny,
         )
     }
-    /// Processes registry is deterministic and rejects duplicate ids using the supplied values and schematic data.
-    ///
+    /// Verifies that registry is deterministic and rejects duplicate ids behaves as required.
     #[test]
     fn registry_is_deterministic_and_rejects_duplicate_ids() {
         let mut registry = RuleRegistry::new();

@@ -10,25 +10,26 @@ use thiserror::Error;
 /// A parsed schematic retaining both its original source and lossless CST.
 #[derive(Debug)]
 pub struct SchematicDocument {
-    /// Stores the `source` value.
+    /// Original path and text buffer used to resolve source locations.
     source: SourceFile,
-    /// Stores the `cst` value.
+    /// Lossless parsed S-expression tree, including source spans for every node.
     cst: CstDocument,
 }
 
 impl SchematicDocument {
-    /// Reads and parses a schematic from disk.
+    /// Reads a UTF-8 schematic file and delegates parsing while retaining the file path for diagnostics.
     ///
-    /// # Errors
-    ///
-    /// Returns [`SchematicParseError`] when the file cannot be read, parsed, or validated as a schematic.
     /// # Arguments
     ///
-    /// * `path` — Input `path` used by this operation.
+    /// * `path` — Path associated with the source text.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
+    /// The parsed schematic document, or a read, syntax, root-kind, or lossless-source error.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the file cannot be read, the S-expression is invalid, the root is not `kicad_sch`, or the source text cannot be preserved losslessly.
     pub fn from_path(path: impl AsRef<Path>) -> Result<Self, SchematicParseError> {
         let path = path.as_ref().to_path_buf();
         let text = fs::read_to_string(&path).map_err(|source| SchematicParseError::Io {
@@ -39,19 +40,20 @@ impl SchematicDocument {
         Self::from_text(path, text)
     }
 
-    /// Parses schematic text while retaining the caller-supplied path for diagnostics.
+    /// Parses one S-expression, requires a `kicad_sch` root, preserves the exact source text, and decodes quoted atom values.
     ///
-    /// # Errors
-    ///
-    /// Returns [`SchematicParseError::Syntax`] for malformed input or [`SchematicParseError::WrongRoot`] for a non-schematic root.
     /// # Arguments
     ///
-    /// * `path` — Input `path` used by this operation.
-    /// * `text` — Input `text` used by this operation.
+    /// * `path` — Path associated with the source text.
+    /// * `text` — Original UTF-8 source text; its byte positions are used by `ByteSpan`.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
+    /// The parsed schematic retaining both the original source and the decoded concrete syntax tree, or a parsing/validation error.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the file cannot be read, the S-expression is invalid, the root is not `kicad_sch`, or the source text cannot be preserved losslessly.
     pub fn from_text(
         path: impl Into<PathBuf>,
         text: impl Into<String>,
@@ -86,31 +88,31 @@ impl SchematicDocument {
         })
     }
 
-    /// Returns the original source path and shared text buffer.
+    /// Returns the source path and original text buffer associated with this parsed schematic.
+    ///
     /// # Returns
     ///
-    /// The value produced by this operation.
-    ///
+    /// The source file object containing the original path and text.
     #[must_use]
     pub const fn source(&self) -> &SourceFile {
         &self.source
     }
 
-    /// Returns the lossless concrete syntax tree.
+    /// Returns the lossless concrete syntax tree for the parsed schematic.
+    ///
     /// # Returns
     ///
-    /// The value produced by this operation.
-    ///
+    /// The lossless parsed S-expression document.
     #[must_use]
     pub const fn cst(&self) -> &CstDocument {
         &self.cst
     }
 
-    /// Returns the byte span of the top-level schematic expression.
+    /// Returns the byte span of the top-level schematic expression when the document has a list root.
+    ///
     /// # Returns
     ///
-    /// The value produced by this operation.
-    ///
+    /// The top-level expression's byte span, or `None` when no list root exists.
     #[must_use]
     pub fn root_span(&self) -> Option<ByteSpan> {
         match self.cst.nodes.first() {
@@ -119,16 +121,16 @@ impl SchematicDocument {
         }
     }
 }
-/// Processes unescape quoted atoms using the supplied values and schematic data.
+/// Walks the syntax tree and decodes quoted atom values from their original source tokens without changing the retained lossless source.
 ///
 /// # Arguments
 ///
-/// * `nodes` — Input `nodes` used by this operation.
-/// * `source` — Input `source` used by this operation.
+/// * `nodes` — S-expression nodes whose quoted atom payloads should be decoded in place.
+/// * `source` — Original source text used to decode quoted S-expression tokens by byte span.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// No return value; quoted atom payloads in `nodes` are updated in place.
 fn unescape_quoted_atoms(nodes: &mut [Node], source: &str) {
     for node in nodes {
         match node {
@@ -149,15 +151,15 @@ fn unescape_quoted_atoms(nodes: &mut [Node], source: &str) {
         }
     }
 }
-/// Processes root name using the supplied values and schematic data.
+/// Returns the symbol naming the root S-expression when the first syntax-tree node is a well-formed list.
 ///
 /// # Arguments
 ///
-/// * `document` — Input `document` used by this operation.
+/// * `document` — Parsed schematic document whose source path or syntax tree is requested.
 ///
 /// # Returns
 ///
-/// The value produced by this operation.
+/// The root symbol name, or `None` when the syntax tree has no valid list root.
 fn root_name(document: &CstDocument) -> Option<&str> {
     let Node::List { items, .. } = document.nodes.first()? else {
         return None;
@@ -210,25 +212,24 @@ pub enum SchematicParseError {
     },
 }
 #[cfg(test)]
-/// Contains the tests implementation and supporting types.
+/// Unit tests for schematic-root validation, escape decoding, and lossless source retention.
 mod tests {
     use std::error::Error;
 
     use super::SchematicDocument;
     use kicad_clippy_core::ByteSpan;
-    /// Defines the schematic constant.
+    /// Minimal valid schematic S-expression used by the parser tests.
     const SCHEMATIC: &str =
         "(kicad_sch (version 20250101) (generator eeschema) (uuid \"root-id\"))";
-    /// Processes parses only a kicad schematic root using the supplied values and schematic data.
+    /// Verifies that parses only a kicad schematic root behaves as required.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
+    /// The requested operation's result, or an error describing the failure.
     ///
     /// # Errors
     ///
-    /// Returns an error when the operation cannot complete with the supplied input.
-    ///
+    /// Returns an error when the file cannot be read, the S-expression is invalid, the root is not `kicad_sch`, or the source text cannot be preserved losslessly.
     #[test]
     fn parses_only_a_kicad_schematic_root() -> Result<(), Box<dyn Error>> {
         let document = SchematicDocument::from_text("fixture.kicad_sch", SCHEMATIC)?;
@@ -245,16 +246,15 @@ mod tests {
         }
         Ok(())
     }
-    /// Processes unescapes quoted atoms and preserves lossless source using the supplied values and schematic data.
+    /// Verifies that unescapes quoted atoms and preserves lossless source behaves as required.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
+    /// The requested operation's result, or an error describing the failure.
     ///
     /// # Errors
     ///
-    /// Returns an error when the operation cannot complete with the supplied input.
-    ///
+    /// Returns an error when the file cannot be read, the S-expression is invalid, the root is not `kicad_sch`, or the source text cannot be preserved losslessly.
     #[test]
     fn unescapes_quoted_atoms_and_preserves_lossless_source() -> Result<(), Box<dyn Error>> {
         use kiutils_sexpr::{Atom, Node};
@@ -285,8 +285,7 @@ mod tests {
         assert_eq!(quoted_value(3), Some("say \"ok\""));
         Ok(())
     }
-    /// Processes rejects non schematic roots using the supplied values and schematic data.
-    ///
+    /// Verifies that rejects non schematic roots behaves as required.
     #[test]
     fn rejects_non_schematic_roots() {
         let result =
@@ -294,8 +293,7 @@ mod tests {
 
         assert!(result.is_err());
     }
-    /// Processes rejects malformed sexpressions using the supplied values and schematic data.
-    ///
+    /// Verifies that rejects malformed sexpressions behaves as required.
     #[test]
     fn rejects_malformed_sexpressions() {
         let result = SchematicDocument::from_text("broken.kicad_sch", "(kicad_sch (version");

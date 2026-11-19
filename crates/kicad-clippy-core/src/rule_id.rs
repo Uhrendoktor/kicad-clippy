@@ -7,49 +7,49 @@ use std::{fmt, str::FromStr};
 /// the public, serialized diagnostic code (for example, `SCH001`).
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum BuiltinRuleId {
-    /// Represents the `Sch001` case.
+    /// Represents the `SCH001` rule: Checks wire endpoints, orthogonal routing, zero-length segments, overlaps, crossings, and unmarked T-junctions.
     Sch001,
-    /// Represents the `Sch002` case.
+    /// Represents the `SCH002` rule: Checks label identity and connectivity using physical wire islands and hierarchical twig termination.
     Sch002,
-    /// Represents the `Sch003` case.
+    /// Represents the `SCH003` rule: Detects label glyphs that overlap wire interiors.
     Sch003,
-    /// Represents the `Sch004` case.
+    /// Represents the `SCH004` rule: Validates profile-declared physical pin connectivity and separation contracts.
     Sch004,
-    /// Represents the `Sch005` case.
+    /// Represents the `SCH005` rule: Checks that connected wires align with the axis of the embedded symbol pin.
     Sch005,
-    /// Represents the `Sch006` case.
+    /// Represents the `SCH006` rule: Enforces minimum spacing between the placed origins of group members.
     Sch006,
-    /// Represents the `Sch007` case.
+    /// Represents the `SCH007` rule: Checks that profile-declared members match the native KiCad schematic group.
     Sch007,
-    /// Represents the `Sch008` case.
+    /// Represents the `SCH008` rule: Checks annotation text-box geometry, required margins, overlap, and wire penetration.
     Sch008,
-    /// Represents the `Sch009` case.
+    /// Represents the `SCH009` rule: Checks the containment of group members and associated schematic geometry.
     Sch009,
-    /// Represents the `Sch010` case.
+    /// Represents the `SCH010` rule: Checks visible symbol-field bounds against nearby fields, symbols, wires, pins, labels, and annotation boxes.
     Sch010,
-    /// Represents the `Sch011` case.
+    /// Represents the `SCH011` rule: Requires multiline block annotations to have a visible border.
     Sch011,
-    /// Represents the `Sch012` case.
+    /// Represents the `SCH012` rule: Checks group content against a frame's configured inset clearance.
     Sch012,
-    /// Represents the `Sch013` case.
+    /// Represents the `SCH013` rule: Checks wire clearance from schematic obstacles using resolved physical geometry and effective widths.
     Sch013,
-    /// Represents the `Sch014` case.
+    /// Represents the `SCH014` rule: Validates profile-declared shared pin/net contracts using the exported netlist.
     Sch014,
-    /// Represents the `Sch015` case.
+    /// Represents the `SCH015` rule: Checks explicit no-connect markers against transformed embedded symbol pins.
     Sch015,
-    /// Represents the `Sch016` case.
+    /// Represents the `SCH016` rule: Checks a group's total in-frame wire length against its declared budget.
     Sch016,
-    /// Represents the `Sch017` case.
+    /// Represents the `SCH017` rule: Validates group membership, description references, and documentation evidence.
     Sch017,
-    /// Represents the `Sch018` case.
+    /// Represents the `SCH018` rule: Detects overlap between visible label glyph bounds.
     Sch018,
-    /// Represents the `Sch019` case.
+    /// Represents the `SCH019` rule: Detects reuse of the same label text with inconsistent label kinds.
     Sch019,
-    /// Represents the `Sch020` case.
+    /// Represents the `SCH020` rule: Checks profile-declared component roles, purposes, and rationale text.
     Sch020,
-    /// Represents the `Sch021` case.
+    /// Represents the `SCH021` rule: Reserved stable rule identifier; no built-in check is currently assigned.
     Sch021,
-    /// Represents the `Sch022` case.
+    /// Represents the `SCH022` rule: Reserved stable rule identifier; no built-in check is currently assigned.
     Sch022,
 }
 
@@ -80,11 +80,11 @@ impl BuiltinRuleId {
         Self::Sch022,
     ];
 
-    /// Returns the stable external code for this rule.
+    /// Returns the canonical external code for this built-in rule, preserving the stable `SCHnnn` identifier.
+    ///
     /// # Returns
     ///
-    /// The value produced by this operation.
-    ///
+    /// The canonical string code for this rule, such as `SCH001`.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -113,15 +113,15 @@ impl BuiltinRuleId {
         }
     }
 
-    /// Parses a stable built-in rule code without accepting unknown identifiers.
+    /// Looks up an exact built-in rule code. Unknown strings are not converted into a built-in identifier.
+    ///
     /// # Arguments
     ///
-    /// * `value` — Input `value` used by this operation.
+    /// * `value` — Input value to parse or convert.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
-    ///
+    /// The matching built-in rule ID, or `None` when `value` is not a known code.
     #[must_use]
     pub fn parse(value: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|id| id.as_str() == value)
@@ -129,51 +129,51 @@ impl BuiltinRuleId {
 }
 
 impl fmt::Display for BuiltinRuleId {
-    /// Processes fmt using the supplied values and schematic data.
+    /// Writes this rule's canonical `SCHnnn` code to the supplied formatter.
     ///
     /// # Arguments
     ///
-    /// * `formatter` — Input `formatter` used by this operation.
+    /// * `formatter` — Formatter receiving the stable textual representation.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
+    /// A formatting result indicating whether the formatter accepted the code.
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(self.as_str())
     }
 }
 
 impl From<BuiltinRuleId> for String {
-    /// Processes from using the supplied values and schematic data.
+    /// Converts the typed built-in rule identifier to its canonical owned string code.
     ///
     /// # Arguments
     ///
-    /// * `value` — Input `value` used by this operation.
+    /// * `value` — Input value to parse or convert.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
+    /// An owned `String` containing the canonical `SCHnnn` code.
     fn from(value: BuiltinRuleId) -> Self {
         value.as_str().to_owned()
     }
 }
 
 impl FromStr for BuiltinRuleId {
-    /// Defines the err type used by this crate.
+    /// Error returned when a string does not match any built-in rule identifier.
     type Err = UnknownBuiltinRuleId;
-    /// Processes from str using the supplied values and schematic data.
+    /// Parses an exact built-in rule code and rejects identifiers that are not present in the rule catalogue.
     ///
     /// # Arguments
     ///
-    /// * `value` — Input `value` used by this operation.
+    /// * `value` — Input value to parse or convert.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
+    /// The matching rule ID, or `UnknownBuiltinRuleId` when the code is unrecognized.
     ///
     /// # Errors
     ///
-    /// Returns an error when the operation cannot complete with the supplied input.
+    /// Returns `UnknownBuiltinRuleId` when the supplied code is not a built-in rule identifier.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         Self::parse(value).ok_or_else(|| UnknownBuiltinRuleId(value.to_owned()))
     }
@@ -187,15 +187,15 @@ pub struct UnknownBuiltinRuleId(
 );
 
 impl fmt::Display for UnknownBuiltinRuleId {
-    /// Processes fmt using the supplied values and schematic data.
+    /// Writes this rule's canonical `SCHnnn` code to the supplied formatter.
     ///
     /// # Arguments
     ///
-    /// * `formatter` — Input `formatter` used by this operation.
+    /// * `formatter` — Formatter receiving the stable textual representation.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
+    /// A formatting result indicating whether the formatter accepted the code.
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(formatter, "unknown built-in rule identifier {:?}", self.0)
     }
@@ -203,13 +203,12 @@ impl fmt::Display for UnknownBuiltinRuleId {
 
 impl std::error::Error for UnknownBuiltinRuleId {}
 #[cfg(test)]
-/// Contains the tests implementation and supporting types.
+/// Unit tests for stable built-in rule-code parsing and formatting.
 mod tests {
     use std::str::FromStr;
 
     use super::BuiltinRuleId;
-    /// Processes every builtin rule has a unique round trippable code using the supplied values and schematic data.
-    ///
+    /// Verifies that every builtin rule has a unique round trippable code behaves as required.
     #[test]
     fn every_builtin_rule_has_a_unique_round_trippable_code() {
         let codes: std::collections::BTreeSet<_> = BuiltinRuleId::ALL
@@ -221,8 +220,7 @@ mod tests {
             assert_eq!(BuiltinRuleId::from_str(id.as_str()), Ok(id));
         }
     }
-    /// Processes unknown codes are not silently treated as builtin rules using the supplied values and schematic data.
-    ///
+    /// Verifies that unknown codes are not silently treated as builtin rules behaves as required.
     #[test]
     fn unknown_codes_are_not_silently_treated_as_builtin_rules() {
         assert!(BuiltinRuleId::parse("SCH999").is_none());

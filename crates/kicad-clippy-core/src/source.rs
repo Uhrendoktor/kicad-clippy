@@ -15,26 +15,26 @@ pub struct ByteSpan {
 }
 
 impl ByteSpan {
-    /// Creates a byte range. Validate it against a source before slicing.
+    /// Stores the caller's path and original text, sharing the text buffer through `Arc`.
+    ///
     /// # Arguments
     ///
-    /// * `start` — Input `start` used by this operation.
-    /// * `end` — Input `end` used by this operation.
+    /// * `start` — First byte offset included in the half-open source range.
+    /// * `end` — First byte offset after the half-open source range.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
-    ///
+    /// A byte span with the supplied start and end offsets.
     #[must_use]
     pub const fn new(start: usize, end: usize) -> Self {
         Self { start, end }
     }
 
-    /// Returns whether the range is empty.
+    /// Reports whether the span contains no bytes.
+    ///
     /// # Returns
     ///
-    /// The value produced by this operation.
-    ///
+    /// `true` when `start` equals `end`.
     #[must_use]
     pub const fn is_empty(self) -> bool {
         self.start == self.end
@@ -48,23 +48,23 @@ impl ByteSpan {
 /// maintaining a second line index here.
 #[derive(Clone, Debug)]
 pub struct SourceFile {
-    /// Stores the `path` value.
+    /// Filesystem path associated with the original source text.
     path: PathBuf,
-    /// Stores the `text` value.
+    /// Reference-counted original UTF-8 buffer used to resolve byte spans.
     text: Arc<str>,
 }
 
 impl SourceFile {
-    /// Retains the original source without constructing a duplicate line index.
+    /// Stores the caller's path and original text, sharing the text buffer through `Arc`.
+    ///
     /// # Arguments
     ///
-    /// * `path` — Input `path` used by this operation.
-    /// * `text` — Input `text` used by this operation.
+    /// * `path` — Path associated with the source text.
+    /// * `text` — Original UTF-8 source text; its byte positions are used by `ByteSpan`.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
-    ///
+    /// A byte span with the supplied start and end offsets.
     #[must_use]
     pub fn new(path: impl Into<PathBuf>, text: impl Into<String>) -> Self {
         Self {
@@ -73,56 +73,55 @@ impl SourceFile {
         }
     }
 
-    /// Returns the source path supplied by the caller.
+    /// Returns the path associated with this source buffer.
+    ///
     /// # Returns
     ///
-    /// The value produced by this operation.
-    ///
+    /// A borrowed path to the original source file.
     #[must_use]
     pub fn path(&self) -> &Path {
         &self.path
     }
 
-    /// Returns the original UTF-8 source text.
+    /// Borrows the original UTF-8 source text without allocating a copy.
+    ///
     /// # Returns
     ///
-    /// The value produced by this operation.
-    ///
+    /// A borrowed view of the original UTF-8 text.
     #[must_use]
     pub fn text(&self) -> &str {
         &self.text
     }
 
-    /// Clones the shared source buffer without copying its contents.
+    /// Clones the reference-counted source buffer without duplicating its contents.
+    ///
     /// # Returns
     ///
-    /// The value produced by this operation.
-    ///
+    /// A cloned `Arc<str>` pointing to the same source allocation.
     #[must_use]
     pub fn shared_text(&self) -> Arc<str> {
         Arc::clone(&self.text)
     }
 
-    /// Returns the source slice covered by a valid byte span.
+    /// Returns the source substring only when both offsets are valid UTF-8 boundaries and the range lies within the source.
+    ///
     /// # Arguments
     ///
-    /// * `span` — Input `span` used by this operation.
+    /// * `span` — Half-open byte range to slice from the original source.
     ///
     /// # Returns
     ///
-    /// The value produced by this operation.
-    ///
+    /// The requested substring when the span is in bounds and aligned to UTF-8 character boundaries; otherwise `None`.
     #[must_use]
     pub fn slice(&self, span: ByteSpan) -> Option<&str> {
         self.text.get(span.start..span.end)
     }
 }
 #[cfg(test)]
-/// Contains the tests implementation and supporting types.
+/// Unit tests for half-open byte spans and UTF-8-safe source slicing.
 mod tests {
     use super::{ByteSpan, SourceFile};
-    /// Processes slices only valid half open utf8 ranges using the supplied values and schematic data.
-    ///
+    /// Verifies that slices only valid half open utf8 ranges behaves as required.
     #[test]
     fn slices_only_valid_half_open_utf8_ranges() {
         let source = SourceFile::new("slice.kicad_sch", "café schematic");
