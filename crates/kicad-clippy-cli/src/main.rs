@@ -890,7 +890,7 @@ fn render_diagnostic(
 ///
 /// # Errors
 ///
-/// Returns `CliError::`KiCad`CliNotFound` when neither an explicit path, `KICAD_CLI`, nor a callable `kicad-cli` executable can be resolved.
+/// Returns `CliError::KiCadCliNotFound` when neither an explicit path, `KICAD_CLI`, nor a callable `kicad-cli` executable can be resolved.
 fn resolve_kicad_cli(explicit: Option<PathBuf>) -> Result<PathBuf, CliError> {
     if let Some(path) = explicit {
         return Ok(path);
@@ -957,7 +957,7 @@ mod tests {
             None
         );
     }
-    /// Builds a valid project-settings fixture with Default, HighSpeed, Critical, and Inheriting netclasses and empty assignment lists.
+    /// Builds a valid project-settings fixture with `Default`, `HighSpeed`, `Critical`, and `Inheriting` netclasses and empty assignment lists.
     ///
     /// # Returns
     ///
