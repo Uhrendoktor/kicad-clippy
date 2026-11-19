@@ -16,9 +16,7 @@ use std::{
 };
 
 use clap::{Parser, Subcommand, ValueEnum};
-use kicad_clippy_core::{
-    Diagnostic, RulePolicy, Severity, SourceFile, builtin_rule_registry,
-};
+use kicad_clippy_core::{Diagnostic, RulePolicy, Severity, SourceFile, builtin_rule_registry};
 use kicad_clippy_erc::{Netlist, NetlistError, export_netlist, run_native_erc};
 use kicad_clippy_parser::SchematicDocument;
 use kicad_clippy_rules::{
@@ -264,10 +262,7 @@ fn lint(
     if strict && profile_path.is_none() {
         return Err(CliError::StrictNeedsProfile);
     }
-    let rule_policy = policy_path
-        .as_deref()
-        .map(load_rule_policy)
-        .transpose()?;
+    let rule_policy = policy_path.as_deref().map(load_rule_policy).transpose()?;
     let policy_registry = rule_policy
         .as_ref()
         .map(|_| builtin_rule_registry())
