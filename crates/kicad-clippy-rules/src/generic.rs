@@ -78,7 +78,7 @@ const MAX_BITMAP_DIMENSION_PIXELS: u32 = 1_000_000;
 /// Minimum triangle area accepted for stable circular-arc reconstruction, in square millimetres.
 const MINIMUM_CURVE_TRIANGLE_AREA_MM2: f64 = 2.5e-10;
 /// Number of subdivision intervals used to sample an elliptical arc.
-const ELLIPSE_ARC_SUBDIVISION_STEPS: usize = 20;
+const ELLIPSE_ARC_SUBDIVISION_STEPS: u8 = 20;
 /// Factor used to convert a full dimension into a half dimension.
 const HALF_DIMENSION_FACTOR: f64 = 0.5;
 /// Number of decimal places used in stable coordinate keys.
