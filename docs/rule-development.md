@@ -35,7 +35,7 @@ Levels are:
 
 ## Execution model
 
-The in-process rule engine is implemented. `RuleEngine` collects schematic facts, wire segments and junctions once, builds an immutable `RuleContext`, then executes registered `RulePass` implementations in stable name order. Duplicate pass names are rejected. The built-in checks currently run as geometry/pin-placement, label/topology, and annotation/field passes. A pass may emit diagnostics for several rule IDs; a rule ID does not need its own one-to-one implementation module.
+The in-process rule engine is implemented. `RuleEngine` collects schematic facts, wire segments and junctions once, builds an immutable `RuleContext`, then executes registered `RulePass` implementations in stable name order. Duplicate pass names are rejected. The built-in checks currently run as geometry/pin-placement, label/topology, and annotation/field passes. A pass may orchestrate several rule modules and emit diagnostics for several rule IDs. The built-in source layout nevertheless keeps each rule's implementation in a dedicated file named for its stable identifier.
 
 The current shared context exposes the parsed document, schematic facts, segments and junctions. The longer-term analysis phases remain:
 
@@ -51,6 +51,9 @@ Rules receive immutable context and return normalized diagnostics. They do not m
 
 The in-process `RulePass` extension point is available to Rust crates that can link to `kicad-clippy-rules`. It is not yet a versioned third-party compatibility contract: the trait/context, options, analysis dependencies, diagnostic compatibility policy and resource limits still need formalization. Dynamic libraries or WASM rule packs remain deferred until those contracts are stable.
 
+## Source layout
+
+Every built-in identifier has a dedicated implementation file. Schematic geometry and label checks live in `crates/kicad-clippy-rules/src/rules/schNNN.rs`; profile-backed connectivity, group, component-intent, and decoupling checks live in `crates/kicad-clippy-rules/src/profile_rules/schNNN.rs`. The shared `generic.rs` module owns normalized schematic facts and common geometry helpers, while `metadata.rs` owns the profile data model and validation orchestration. Keep rule-specific diagnostics and helpers in the matching `schNNN.rs` module, and move a helper to the shared parent only when more than one rule depends on it.
 ## Tests required for each rule
 
 Each rule should include:

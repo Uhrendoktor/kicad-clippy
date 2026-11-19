@@ -47,9 +47,9 @@ pub enum BuiltinRuleId {
     Sch019,
     /// Represents the `SCH020` rule: Checks profile-declared component roles, purposes, and rationale text.
     Sch020,
-    /// Represents the `SCH021` rule: Reserved stable rule identifier; no built-in check is currently assigned.
+    /// Represents the `SCH021` rule: Checks strict component metadata and role-specific electrical connection contracts.
     Sch021,
-    /// Represents the `SCH022` rule: Reserved stable rule identifier; no built-in check is currently assigned.
+    /// Represents the `SCH022` rule: Verifies decoupling target pins, capacitor terminals, return nets, and shared target clusters.
     Sch022,
 }
 

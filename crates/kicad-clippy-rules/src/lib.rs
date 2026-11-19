@@ -7,9 +7,14 @@ use std::collections::{BTreeMap, btree_map::Entry};
 use kicad_clippy_core::Diagnostic;
 use kicad_clippy_parser::SchematicDocument;
 use thiserror::Error;
-/// Extracts normalized schematic facts and implements geometry, pin-orientation, label-topology, text-layout, and wire-obstacle rule passes.
+
+/// Dimensionless multiplier representing one half.
+pub(crate) const HALF_FACTOR: f64 = 0.5;
+/// Factor used when a dimension applies symmetrically to both sides of an object.
+pub(crate) const TWO_SIDED_FACTOR: f64 = 2.0;
+/// Extracts shared schematic facts and orchestrates the dedicated geometry, connectivity, layout, and obstacle rule modules.
 mod generic;
-/// Loads and validates component-intent profiles, including physical connectivity, group containment, clearance, and decoupling contracts.
+/// Defines the shared project-profile schema and orchestrates its dedicated connectivity, group, component-intent, and decoupling validators.
 mod metadata;
 
 pub use generic::{
