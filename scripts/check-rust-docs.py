@@ -58,11 +58,13 @@ def parse_signature(lines: list[str], index: int, name: str) -> tuple[list[str],
         return None
     arguments = split_top_level(source[opening + 1 : closing])
     suffix = source[closing + 1 :]
-    arrow = suffix.find("->")
+    body_start = suffix.find("{")
+    signature_suffix = suffix[:body_start] if body_start >= 0 else suffix
+    arrow = signature_suffix.find("->")
     return_type = None
     if arrow >= 0:
-        value = suffix[arrow + 2 :]
-        stops = [position for position in (value.find("{"), value.find("where"), value.find(";")) if position >= 0]
+        value = signature_suffix[arrow + 2 :]
+        stops = [position for position in (value.find("where"), value.find(";")) if position >= 0]
         if stops:
             value = value[: min(stops)]
         return_type = re.sub(r"\s+", " ", value.strip())
