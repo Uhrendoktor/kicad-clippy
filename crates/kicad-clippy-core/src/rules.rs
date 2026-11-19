@@ -161,9 +161,8 @@ impl RuleRegistry {
         self.rules.is_empty()
     }
 }
-/// Contains the tests implementation and supporting types.
-
 #[cfg(test)]
+/// Contains the tests implementation and supporting types.
 mod tests {
     use super::{RuleDescriptor, RuleLevel, RuleRegistry};
     /// Processes sample rule using the supplied values and schematic data.
@@ -183,7 +182,6 @@ mod tests {
     }
     /// Processes registry is deterministic and rejects duplicate ids using the supplied values and schematic data.
     ///
-
     #[test]
     fn registry_is_deterministic_and_rejects_duplicate_ids() {
         let mut registry = RuleRegistry::new();

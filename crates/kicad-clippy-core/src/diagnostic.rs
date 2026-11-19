@@ -138,15 +138,13 @@ impl Diagnostic {
         matches!(self.severity, Severity::Error) && !self.excluded
     }
 }
-/// Contains the tests implementation and supporting types.
-
 #[cfg(test)]
+/// Contains the tests implementation and supporting types.
 mod tests {
     use super::{Diagnostic, Severity};
     use crate::BuiltinRuleId;
     /// Processes excluded errors do not fail a run using the supplied values and schematic data.
     ///
-
     #[test]
     fn excluded_errors_do_not_fail_a_run() {
         let mut diagnostic = Diagnostic::new("ERC/EXCLUDED", Severity::Error, "ignored");
@@ -156,7 +154,6 @@ mod tests {
     }
     /// Processes builtin diagnostic keeps the stable external code using the supplied values and schematic data.
     ///
-
     #[test]
     fn builtin_diagnostic_keeps_the_stable_external_code() {
         let diagnostic = Diagnostic::for_builtin_rule(

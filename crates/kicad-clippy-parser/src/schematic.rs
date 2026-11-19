@@ -209,9 +209,8 @@ pub enum SchematicParseError {
         path: PathBuf,
     },
 }
-/// Contains the tests implementation and supporting types.
-
 #[cfg(test)]
+/// Contains the tests implementation and supporting types.
 mod tests {
     use std::error::Error;
 
@@ -230,7 +229,6 @@ mod tests {
     ///
     /// Returns an error when the operation cannot complete with the supplied input.
     ///
-
     #[test]
     fn parses_only_a_kicad_schematic_root() -> Result<(), Box<dyn Error>> {
         let document = SchematicDocument::from_text("fixture.kicad_sch", SCHEMATIC)?;
@@ -257,7 +255,6 @@ mod tests {
     ///
     /// Returns an error when the operation cannot complete with the supplied input.
     ///
-
     #[test]
     fn unescapes_quoted_atoms_and_preserves_lossless_source() -> Result<(), Box<dyn Error>> {
         use kiutils_sexpr::{Atom, Node};
@@ -290,7 +287,6 @@ mod tests {
     }
     /// Processes rejects non schematic roots using the supplied values and schematic data.
     ///
-
     #[test]
     fn rejects_non_schematic_roots() {
         let result =
@@ -300,7 +296,6 @@ mod tests {
     }
     /// Processes rejects malformed sexpressions using the supplied values and schematic data.
     ///
-
     #[test]
     fn rejects_malformed_sexpressions() {
         let result = SchematicDocument::from_text("broken.kicad_sch", "(kicad_sch (version");

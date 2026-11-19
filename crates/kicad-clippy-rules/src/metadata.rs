@@ -3477,9 +3477,8 @@ pub enum MetadataError {
     #[error("unsupported lint profile schema version {0}; expected 1")]
     UnsupportedVersion(u32),
 }
-/// Contains the tests implementation and supporting types.
-
 #[cfg(test)]
+/// Contains the tests implementation and supporting types.
 mod tests {
     #![allow(clippy::expect_used)]
     use std::collections::BTreeMap;
@@ -3528,7 +3527,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn physical_wire_group_accepts_connected_pins_without_labels() {
         let schematic = direct_wire_schematic("(wire (pts (xy 10 10) (xy 20 10)))");
@@ -3549,7 +3547,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn physical_wire_group_rejects_disconnected_islands_even_when_labels_match() {
         let schematic = direct_wire_schematic(
@@ -3574,7 +3571,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn physical_wire_group_rejects_invalid_missing_and_unwired_pins() {
         let schematic = direct_wire_schematic("(wire (pts (xy 10 10) (xy 15 10)))");
@@ -3610,7 +3606,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn physical_wire_group_rejects_duplicate_pins_and_empty_names() {
         let schematic = direct_wire_schematic("(wire (pts (xy 10 10) (xy 20 10)))");
@@ -3641,7 +3636,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn common_pin_group_accepts_one_named_label_on_a_shared_wire_network() {
         let schematic = direct_wire_schematic(
@@ -3667,7 +3661,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn common_pin_group_rejects_disconnected_label_joined_islands() {
         let schematic = direct_wire_schematic(
@@ -3696,7 +3689,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn common_pin_group_allows_label_joined_islands_when_wire_connection_is_not_required() {
         let schematic = direct_wire_schematic(
@@ -3724,7 +3716,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn common_pin_group_rejects_duplicate_and_unresolvable_pin_references() {
         let schematic = direct_wire_schematic(
@@ -3758,7 +3749,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn direct_wire_pair_does_not_connect_at_an_unmarked_crossing() {
         let schematic = direct_wire_schematic(
@@ -3786,7 +3776,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn direct_wire_pair_connects_at_a_crossing_with_an_explicit_junction() {
         let schematic = direct_wire_schematic(
@@ -3858,7 +3847,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn direct_wire_pair_does_not_connect_through_an_unmarked_t_junction() {
         let schematic = direct_wire_t_junction_schematic(false);
@@ -3879,7 +3867,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn direct_wire_pair_connects_through_a_marked_t_junction() {
         let schematic = direct_wire_t_junction_schematic(true);
@@ -3900,7 +3887,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn common_pin_group_enforces_exactly_one_matching_label() {
         let schematic = direct_wire_schematic(
@@ -3962,7 +3948,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn common_pin_group_can_require_one_exported_kicad_net() {
         let schematic = direct_wire_schematic(
@@ -3989,7 +3974,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn common_pin_group_rejects_different_exported_kicad_nets() {
         let schematic = direct_wire_schematic(
@@ -4016,7 +4000,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn common_pin_group_reports_pins_missing_from_exported_netlist() {
         let schematic = direct_wire_schematic(
@@ -4040,7 +4023,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn common_pin_group_warns_when_requested_netlist_is_not_supplied() {
         let schematic = direct_wire_schematic(
@@ -4068,7 +4050,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn common_pin_group_requires_a_label_on_each_physical_pin_network() {
         let schematic = direct_wire_schematic(r"(wire (pts (xy 10 10) (xy 20 10)))");
@@ -4099,7 +4080,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn direct_wire_pair_passes_when_pins_share_a_continuous_wire() {
         let schematic = direct_wire_schematic(r"(wire (pts (xy 10 10) (xy 20 10)))");
@@ -4120,7 +4100,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn direct_wire_pair_rejects_label_joined_islands() {
         let schematic = direct_wire_schematic(
@@ -4148,7 +4127,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn direct_wire_pair_rejects_label_anchors_and_forbidden_local_labels() {
         let schematic = direct_wire_schematic(
@@ -4181,7 +4159,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn forbidden_direct_wire_label_is_ignored_on_unrelated_wire_islands() {
         let schematic = direct_wire_schematic(
@@ -4208,7 +4185,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn direct_wire_pair_requires_both_pin_anchors_to_touch_wire_segments() {
         let schematic = direct_wire_schematic("");
@@ -4241,7 +4217,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn resistor_roles_require_their_named_connection_contract() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4266,7 +4241,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn incomplete_resistor_role_contract_is_reported() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4291,7 +4265,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn group_member_origins_must_be_inside_the_declared_schematic_frame() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4321,7 +4294,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn group_member_origin_outside_the_declared_schematic_frame_is_reported() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4351,7 +4323,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn group_pin_outside_frame_is_reported_even_when_symbol_origin_is_inside() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4390,7 +4361,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn group_visible_field_bounds_must_be_inside_the_frame() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4421,7 +4391,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn group_description_text_box_must_be_inside_the_frame() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4455,7 +4424,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn missing_group_frame_uuid_is_reported() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4485,7 +4453,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn group_frame_clearance_accepts_member_and_description_inside_margin() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4517,7 +4484,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn group_frame_clearance_reports_symbol_origin_near_frame_edge() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4549,7 +4515,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn group_frame_clearance_checks_transformed_member_pin_coordinates() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4590,7 +4555,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn group_frame_clearance_accepts_member_pins_inside_the_configured_inset() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4631,7 +4595,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn group_frame_clearance_checks_visible_member_field_bounds() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4665,7 +4628,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn group_frame_clearance_accepts_visible_member_fields_inside_the_configured_inset() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4699,7 +4661,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn group_frame_clearance_reports_description_box_near_frame_edge() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4731,7 +4692,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn group_wire_compactness_uses_only_segments_wholly_inside_its_frame() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4763,7 +4723,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn group_wire_compactness_warns_when_normalized_budget_is_exceeded() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4798,7 +4757,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn group_wire_compactness_requires_a_frame_and_positive_budget() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4839,7 +4797,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn group_minimum_member_origin_spacing_is_enforced() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4870,7 +4827,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn group_member_origin_spacing_at_or_above_minimum_is_accepted() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4901,7 +4857,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn group_minimum_member_origin_spacing_must_be_positive_and_finite() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4930,7 +4885,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn profile_group_can_be_bound_to_native_kicad_group_membership() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4960,7 +4914,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn native_kicad_group_must_include_profile_component_members() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -4991,7 +4944,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn missing_native_kicad_group_uuid_is_reported() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -5021,7 +4973,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn group_evidence_and_component_purpose_must_match_rendered_description() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -5046,7 +4997,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn group_without_evidence_or_purpose_phrases_is_rejected() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -5068,7 +5018,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn separate_wire_pair_accepts_disconnected_islands_even_when_labels_match() {
         let schematic = direct_wire_schematic(
@@ -5096,7 +5045,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn separate_wire_pair_rejects_pins_on_the_same_physical_wire_network() {
         let schematic = direct_wire_schematic(r"(wire (pts (xy 10 10) (xy 20 10)))");
@@ -5117,7 +5065,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn separate_wire_pair_can_require_distinct_exported_nets() {
         let schematic = direct_wire_schematic(
@@ -5164,7 +5111,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn separate_wire_pair_warns_when_requested_netlist_is_unavailable() {
         let schematic = direct_wire_schematic(
@@ -5189,7 +5135,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn group_symbol_body_primitive_must_be_inside_frame() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -5231,7 +5176,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn group_symbol_body_primitive_must_maintain_frame_clearance() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -5273,7 +5217,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn group_wire_label_and_annotation_geometry_must_be_inside_frame() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -5324,7 +5267,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn group_wire_labels_must_maintain_configured_frame_clearance() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -5366,7 +5308,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn group_frame_contains_free_standing_wires_labels_and_plain_text() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -5418,7 +5359,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn group_frame_clearance_covers_free_standing_wires_labels_and_plain_text() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -5472,7 +5412,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn group_frame_contains_free_standing_vector_graphics() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -5517,7 +5456,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn group_frame_clearance_covers_free_standing_vector_graphics() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -5566,7 +5504,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn group_frame_contains_embedded_bitmap_image_bounds() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -5606,7 +5543,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn group_frame_clearance_covers_embedded_bitmap_image_bounds() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -5648,7 +5584,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn bitmap_bounds_use_legacy_resolution_migration_for_old_schematics() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -5737,7 +5672,6 @@ mod tests {
     }
     /// Processes declared component pin nets are verified against the exported netlist using the supplied values and schematic data.
     ///
-
     #[test]
     fn declared_component_pin_nets_are_verified_against_the_exported_netlist() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -5758,7 +5692,6 @@ mod tests {
     }
     /// Processes incorrect or missing component pin nets are reported using the supplied values and schematic data.
     ///
-
     #[test]
     fn incorrect_or_missing_component_pin_nets_are_reported() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -5791,7 +5724,6 @@ mod tests {
     }
     /// Processes connector pin nets are verified from pin numbered connections using the supplied values and schematic data.
     ///
-
     #[test]
     fn connector_pin_nets_are_verified_from_pin_numbered_connections() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -5822,7 +5754,6 @@ mod tests {
     }
     /// Processes decoupling terminals are checked against exported pin nets using the supplied values and schematic data.
     ///
-
     #[test]
     fn decoupling_terminals_are_checked_against_exported_pin_nets() {
         let schematic = kicad_clippy_parser::SchematicDocument::from_text(
@@ -5849,7 +5780,6 @@ mod tests {
     }
     /// Processes decoupling intent preserves pin and terminal mapping using the supplied values and schematic data.
     ///
-
     #[test]
     fn decoupling_intent_preserves_pin_and_terminal_mapping() {
         let json = r#"{"schema_version":1,"mode":"strict","components":{"C1":{"kind":"capacitor","role":"decoupling","function":"Local bypass","rationale":"Minimize loop area","decoupling":{"target_pin":"U1.21","target_terminal":"1","return_terminal":"2","return_net":"GND","cluster":"U1.VREG_1V2"}}}}"#;

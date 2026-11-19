@@ -88,7 +88,6 @@ const JPEG_JFIF_MINIMUM_SEGMENT_BYTES: usize = 12;
 /// Defines the point type used by this crate.
 pub type Point = Coord<f64>;
 /// Stores segment data used by this crate.
-
 #[derive(Clone, Copy, Debug)]
 pub struct Segment {
     /// Stores the `start` value.
@@ -112,7 +111,6 @@ pub struct SchematicArcFact {
     pub sweep_rad: f64,
 }
 /// Stores bounds data used by this crate.
-
 #[derive(Clone, Copy, Debug)]
 struct Bounds {
     /// Stores the `x` value.
@@ -125,7 +123,6 @@ struct Bounds {
     height: f64,
 }
 /// Stores componentfact data used by this crate.
-
 #[derive(Clone, Debug)]
 pub struct ComponentFact {
     /// Stores the `reference` value.
@@ -136,7 +133,6 @@ pub struct ComponentFact {
     pub position_mm: Option<(f64, f64)>,
 }
 /// Stores schematicgroupfact data used by this crate.
-
 #[derive(Clone, Debug)]
 pub struct SchematicGroupFact {
     /// Name shown by the native `KiCad` group.
@@ -147,7 +143,6 @@ pub struct SchematicGroupFact {
     pub member_uuids: BTreeSet<String>,
 }
 /// Stores schematicframefact data used by this crate.
-
 #[derive(Clone, Debug)]
 pub struct SchematicFrameFact {
     /// UUID of the top-level schematic rectangle.
@@ -156,7 +151,6 @@ pub struct SchematicFrameFact {
     pub bounds_mm: (f64, f64, f64, f64),
 }
 /// Stores schematicwirefact data used by this crate.
-
 #[derive(Clone, Copy, Debug)]
 pub struct SchematicWireFact {
     /// First endpoint of the wire segment in millimetres.
@@ -167,7 +161,6 @@ pub struct SchematicWireFact {
     pub span_start: usize,
 }
 /// Stores schematicpinfact data used by this crate.
-
 #[derive(Clone, Debug)]
 pub struct SchematicPinFact {
     /// Placed-symbol reference.
@@ -178,7 +171,6 @@ pub struct SchematicPinFact {
     pub position_mm: (f64, f64),
 }
 /// Stores schematicfieldfact data used by this crate.
-
 #[derive(Clone, Debug)]
 pub struct SchematicFieldFact {
     /// Placed-symbol reference.
@@ -189,7 +181,6 @@ pub struct SchematicFieldFact {
     pub bounds_mm: (f64, f64, f64, f64),
 }
 /// Stores schematicprimitivefact data used by this crate.
-
 #[derive(Clone, Debug)]
 pub struct SchematicPrimitiveFact {
     /// Placed-symbol reference that owns this primitive.
@@ -243,7 +234,6 @@ pub struct SchematicNoConnectFact {
     pub half_size_mm: f64,
 }
 /// Stores schematicsymboltextfact data used by this crate.
-
 #[derive(Clone, Debug)]
 pub struct SchematicSymbolTextFact {
     /// Placed-symbol reference that owns the text.
@@ -256,7 +246,6 @@ pub struct SchematicSymbolTextFact {
     pub bounds_mm: (f64, f64, f64, f64),
 }
 /// Stores schematiclabelfact data used by this crate.
-
 #[derive(Clone, Debug)]
 pub struct SchematicLabelFact {
     /// Label form: `local`, `hierarchical_label`, or `global_label`.
@@ -269,7 +258,6 @@ pub struct SchematicLabelFact {
     pub bounds_mm: Option<(f64, f64, f64, f64)>,
 }
 /// Stores textboxfact data used by this crate.
-
 #[derive(Clone, Debug)]
 pub struct TextBoxFact {
     /// UUID of the schematic text box.
@@ -332,7 +320,6 @@ pub struct SchematicImageFact {
     pub corners_mm: Option<[(f64, f64); 4]>,
 }
 /// Stores schematicfacts data used by this crate.
-
 #[derive(Clone, Debug, Default)]
 pub struct SchematicFacts {
     /// Placed symbol instances.
@@ -694,7 +681,6 @@ fn collect_sheet_graphic_facts(root: &Node) -> Vec<SchematicGraphicFact> {
 /// Defines the default table stroke width mm constant.
 const DEFAULT_TABLE_STROKE_WIDTH_MM: f64 = 0.1524;
 /// Stores schematictablelayout data used by this crate.
-
 #[derive(Clone, Debug)]
 struct SchematicTableLayout {
     /// Stores the `uuid` value.
@@ -1353,7 +1339,6 @@ fn collect_sheet_image_facts(root: &Node) -> Vec<SchematicImageFact> {
         .collect()
 }
 /// Stores bitmapimagemetadata data used by this crate.
-
 #[derive(Clone, Copy, Debug)]
 struct BitmapImageMetadata {
     /// Stores the `width_pixels` value.
@@ -3022,7 +3007,6 @@ pub fn run_builtin_rules(document: &SchematicDocument) -> RuleRun {
 ///
 /// The value produced by this operation.
 ///
-
 #[must_use]
 pub fn run_geometry_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
     let Some(root) = context.document().cst().nodes.first() else {
@@ -3087,7 +3071,6 @@ fn schematic_has_graphical_netclass_assignments(root: &Node) -> bool {
 ///
 /// The value produced by this operation.
 ///
-
 #[must_use]
 pub fn run_label_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
     let Some(root) = context.document().cst().nodes.first() else {
@@ -3109,7 +3092,6 @@ pub fn run_label_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
 ///
 /// The value produced by this operation.
 ///
-
 #[must_use]
 pub fn run_annotation_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
     let Some(root) = context.document().cst().nodes.first() else {
@@ -3147,7 +3129,6 @@ impl PinAxis {
     }
 }
 /// Stores symboltransform data used by this crate.
-
 #[derive(Clone, Debug)]
 struct SymbolTransform {
     /// Stores the `reference` value.
@@ -3419,7 +3400,6 @@ fn no_connect_marker_obstacle_diagnostics(
         .collect()
 }
 /// Stores wireobstaclestrokewidths data used by this crate.
-
 #[derive(Clone, Copy)]
 struct WireObstacleStrokeWidths {
     /// Stores the `wire_mm` value.
@@ -4964,7 +4944,6 @@ fn transform_symbol_point(
     Some((point.x, point.y))
 }
 /// Stores indexedsegment data used by this crate.
-
 #[derive(Clone, Copy)]
 struct IndexedSegment {
     /// Stores the `index` value.
@@ -5185,7 +5164,6 @@ fn check_text_box_layout(root: &Node, segments: &[Segment]) -> Vec<Diagnostic> {
     diagnostics
 }
 /// Stores textboxrecord data used by this crate.
-
 #[derive(Clone, Debug)]
 struct TextBoxRecord {
     /// Stores the `id` value.
@@ -5245,7 +5223,6 @@ fn inspect_text_box(node: &Node, index: usize) -> (Option<TextBoxRecord>, Vec<Di
     )
 }
 /// Stores textboxmetrics data used by this crate.
-
 #[derive(Clone, Debug)]
 struct TextBoxMetrics {
     /// Stores the `label` value.
@@ -5986,7 +5963,6 @@ fn has_unmarked_wire_endpoint(point: Point, segments: &[Segment], junctions: &[P
 ///
 /// The value produced by this operation.
 ///
-
 #[must_use]
 pub fn physical_wire_component_ids(facts: &SchematicFacts) -> BTreeMap<String, usize> {
     let segments: Vec<_> = facts
@@ -6624,7 +6600,6 @@ fn collect_explicit_wire_stroke_widths(root: &Node) -> BTreeMap<usize, f64> {
 ///
 /// The value produced by this operation.
 ///
-
 #[must_use]
 pub fn collect_segments(root: &Node) -> Vec<Segment> {
     let mut segments = Vec::new();
@@ -6665,7 +6640,6 @@ pub fn collect_segments(root: &Node) -> Vec<Segment> {
 ///
 /// The value produced by this operation.
 ///
-
 #[must_use]
 pub fn collect_points(root: &Node, name: &str) -> Vec<Point> {
     let mut points = Vec::new();
@@ -6785,9 +6759,8 @@ fn at_point(code: BuiltinRuleId, message: String, point: Point, span: ByteSpan) 
     });
     diagnostic
 }
-/// Contains the tests implementation and supporting types.
-
 #[cfg(test)]
+/// Contains the tests implementation and supporting types.
 mod tests {
     #![allow(clippy::expect_used)]
     use super::run_builtin_rules;
@@ -6808,7 +6781,6 @@ mod tests {
     }
     /// Processes sch013 checks both no connect marker diagonals using the supplied values and schematic data.
     ///
-
     #[test]
     fn sch013_checks_both_no_connect_marker_diagonals() {
         let document = document(
@@ -6824,7 +6796,6 @@ mod tests {
     }
     /// Processes sch013 uses project default line width for no connect marker pen using the supplied values and schematic data.
     ///
-
     #[test]
     fn sch013_uses_project_default_line_width_for_no_connect_marker_pen() {
         let schematic = document(
@@ -6854,7 +6825,6 @@ mod tests {
     }
     /// Processes sch013 does not expand no connect marker with an assumed pen width using the supplied values and schematic data.
     ///
-
     #[test]
     fn sch013_does_not_expand_no_connect_marker_with_an_assumed_pen_width() {
         let document = document(
@@ -6872,7 +6842,6 @@ mod tests {
     }
     /// Processes sch013 checks wire crossings of schematic bus lines using the supplied values and schematic data.
     ///
-
     #[test]
     fn sch013_checks_wire_crossings_of_schematic_bus_lines() {
         let document = document(
@@ -6893,7 +6862,6 @@ mod tests {
     }
     /// Processes sch013 allows wire endpoint at bus entry without exempting other crossings using the supplied values and schematic data.
     ///
-
     #[test]
     fn sch013_allows_wire_endpoint_at_bus_entry_without_exempting_other_crossings() {
         let attached = document(
@@ -6933,7 +6901,6 @@ mod tests {
     }
     /// Processes sch013 checks hierarchical sheet frame away from sheet pins using the supplied values and schematic data.
     ///
-
     #[test]
     fn sch013_checks_hierarchical_sheet_frame_away_from_sheet_pins() {
         let document = document(
@@ -6957,7 +6924,6 @@ mod tests {
     }
     /// Processes sch013 allows wire endpoint at matching sheet pin using the supplied values and schematic data.
     ///
-
     #[test]
     fn sch013_allows_wire_endpoint_at_matching_sheet_pin() {
         let document = document(
@@ -6981,7 +6947,6 @@ mod tests {
     }
     /// Processes sch013 sheet pin exemption does not allow wire to continue inside sheet using the supplied values and schematic data.
     ///
-
     #[test]
     fn sch013_sheet_pin_exemption_does_not_allow_wire_to_continue_inside_sheet() {
         let document = document(
@@ -7005,7 +6970,6 @@ mod tests {
     }
     /// Processes sch013 checks enabled table external borders and column separators using the supplied values and schematic data.
     ///
-
     #[test]
     fn sch013_checks_enabled_table_external_borders_and_column_separators() {
         let document = document(
@@ -7038,7 +7002,6 @@ mod tests {
     }
     /// Processes sch013 checks cardinally rotated table borders and separators using the supplied values and schematic data.
     ///
-
     #[test]
     fn sch013_checks_cardinally_rotated_table_borders_and_separators() {
         let fixtures = [
@@ -7073,7 +7036,6 @@ mod tests {
     }
     /// Processes sch013 checks cardinally rotated table external borders using the supplied values and schematic data.
     ///
-
     #[test]
     fn sch013_checks_cardinally_rotated_table_external_borders() {
         let fixtures = [
@@ -7109,7 +7071,6 @@ mod tests {
     }
     /// Processes sch013 does not use unrotated table coordinates after rotation using the supplied values and schematic data.
     ///
-
     #[test]
     fn sch013_does_not_use_unrotated_table_coordinates_after_rotation() {
         let document = document(
@@ -7135,7 +7096,6 @@ mod tests {
     }
     /// Processes sch013 skips tables with inconsistent cell rotations or positions using the supplied values and schematic data.
     ///
-
     #[test]
     fn sch013_skips_tables_with_inconsistent_cell_rotations_or_positions() {
         let mixed_rotations = document(
@@ -7182,7 +7142,6 @@ mod tests {
     }
     /// Processes sch013 ignores disabled table strokes and merged cell separators using the supplied values and schematic data.
     ///
-
     #[test]
     fn sch013_ignores_disabled_table_strokes_and_merged_cell_separators() {
         let no_strokes = document(
@@ -7229,7 +7188,6 @@ mod tests {
     }
     /// Processes sch013 checks table cell text with estimated glyph bounds using the supplied values and schematic data.
     ///
-
     #[test]
     fn sch013_checks_table_cell_text_with_estimated_glyph_bounds() {
         let document = document(
@@ -7252,7 +7210,6 @@ mod tests {
     }
     /// Processes sch013 uses reflected text bounds for 180 degree table cells using the supplied values and schematic data.
     ///
-
     #[test]
     fn sch013_uses_reflected_text_bounds_for_180_degree_table_cells() {
         let rotated = document(
@@ -7298,7 +7255,6 @@ mod tests {
     }
     /// Processes sch013 skips table cell text for unsupported non cardinal rotation using the supplied values and schematic data.
     ///
-
     #[test]
     fn sch013_skips_table_cell_text_for_unsupported_non_cardinal_rotation() {
         let document = document(
@@ -7323,7 +7279,6 @@ mod tests {
     }
     /// Processes geo rectangle clipping preserves wire overlap tolerance using the supplied values and schematic data.
     ///
-
     #[test]
     fn geo_rectangle_clipping_preserves_wire_overlap_tolerance() {
         let bounds = super::Bounds {
@@ -7370,7 +7325,6 @@ mod tests {
     }
     /// Processes analytic arc intersection detects a curve hit missed by its sampled chord using the supplied values and schematic data.
     ///
-
     #[test]
     fn analytic_arc_intersection_detects_a_curve_hit_missed_by_its_sampled_chord() {
         let arc = super::SchematicArcFact {
@@ -7455,7 +7409,6 @@ mod tests {
     }
     /// Processes analytic arc intersection respects directed sweep and tangency using the supplied values and schematic data.
     ///
-
     #[test]
     fn analytic_arc_intersection_respects_directed_sweep_and_tangency() {
         let arc = super::SchematicArcFact {
@@ -7493,7 +7446,6 @@ mod tests {
     }
     /// Processes analytic bezier intersection detects a curve hit missed by its flattened polyline using the supplied values and schematic data.
     ///
-
     #[test]
     fn analytic_bezier_intersection_detects_a_curve_hit_missed_by_its_flattened_polyline() {
         let controls = [(0.0, 0.0), (0.0, 10.0), (10.0, 10.0), (10.0, 0.0)];
@@ -7600,7 +7552,6 @@ mod tests {
     }
     /// Processes kurbo circumcircle preserves arc direction and collinear fallback using the supplied values and schematic data.
     ///
-
     #[test]
     fn kurbo_circumcircle_preserves_arc_direction_and_collinear_fallback() {
         let upper = super::sample_arc_through_three_points((-2.0, 0.0), (0.0, 2.0), (2.0, 0.0));
@@ -7618,7 +7569,6 @@ mod tests {
     }
     /// Processes kurbo affine matches kicad cardinal symbol transforms using the supplied values and schematic data.
     ///
-
     #[test]
     fn kurbo_affine_matches_kicad_cardinal_symbol_transforms() {
         let cases = [
@@ -7665,7 +7615,6 @@ mod tests {
     "#;
     /// Processes non cardinal symbol rotation resolves embedded pin and primitive geometry using the supplied values and schematic data.
     ///
-
     #[test]
     fn non_cardinal_symbol_rotation_resolves_embedded_pin_and_primitive_geometry() {
         let source = EMBEDDED_PIN
@@ -7695,7 +7644,6 @@ mod tests {
     }
     /// Processes sch013 detects wire crossing a non cardinal symbol body using the supplied values and schematic data.
     ///
-
     #[test]
     fn sch013_detects_wire_crossing_a_non_cardinal_symbol_body() {
         let source = EMBEDDED_PIN
@@ -7712,7 +7660,6 @@ mod tests {
     }
     /// Processes sch015 accepts no connect marker on non cardinal symbol pin using the supplied values and schematic data.
     ///
-
     #[test]
     fn sch015_accepts_no_connect_marker_on_non_cardinal_symbol_pin() {
         let source = EMBEDDED_PIN.replace("(at 10 10 0)", "(at 10 10 45)");
@@ -7732,7 +7679,6 @@ mod tests {
     }
     /// Processes pin wire must follow the embedded pin axis using the supplied values and schematic data.
     ///
-
     #[test]
     fn pin_wire_must_follow_the_embedded_pin_axis() {
         let doc = document(&format!(
@@ -7747,7 +7693,6 @@ mod tests {
     }
     /// Processes correctly aligned pin wire is accepted using the supplied values and schematic data.
     ///
-
     #[test]
     fn correctly_aligned_pin_wire_is_accepted() {
         let doc = document(&format!(
@@ -7762,7 +7707,6 @@ mod tests {
     }
     /// Processes pin axis and position follow symbol rotation and mirroring using the supplied values and schematic data.
     ///
-
     #[test]
     fn pin_axis_and_position_follow_symbol_rotation_and_mirroring() {
         let doc = document(
@@ -7790,7 +7734,6 @@ mod tests {
     }
     /// Processes embedded library fields are not counted as placed components using the supplied values and schematic data.
     ///
-
     #[test]
     fn embedded_library_fields_are_not_counted_as_placed_components() {
         let doc = document(EMBEDDED_PIN);
@@ -7799,7 +7742,6 @@ mod tests {
     }
     /// Processes no connect marker must coincide with a placed symbol pin using the supplied values and schematic data.
     ///
-
     #[test]
     fn no_connect_marker_must_coincide_with_a_placed_symbol_pin() {
         let doc = document(&format!(
@@ -7814,7 +7756,6 @@ mod tests {
     }
     /// Processes correctly placed no connect marker is accepted even for power symbols using the supplied values and schematic data.
     ///
-
     #[test]
     fn correctly_placed_no_connect_marker_is_accepted_even_for_power_symbols() {
         let power_symbol = EMBEDDED_PIN.replace("\"J1\"", "\"#PWR001\"");
@@ -7830,7 +7771,6 @@ mod tests {
     }
     /// Processes quoted atoms use parser decoded escape sequences using the supplied values and schematic data.
     ///
-
     #[test]
     fn quoted_atoms_use_parser_decoded_escape_sequences() {
         let doc = document(r#"(label "first\nsecond" (at 1 1 0))"#);
@@ -7841,7 +7781,6 @@ mod tests {
     }
     /// Processes newstroke text height uses rendered glyph geometry using the supplied values and schematic data.
     ///
-
     #[test]
     fn newstroke_text_height_uses_rendered_glyph_geometry() {
         let cap = super::newstroke_text_metrics_ratio("H").1;
@@ -7856,7 +7795,6 @@ mod tests {
     }
     /// Processes text bounds use kurbo for cardinal rotation and justification using the supplied values and schematic data.
     ///
-
     #[test]
     fn text_bounds_use_kurbo_for_cardinal_rotation_and_justification() {
         let (width, height) = super::newstroke_text_metrics_ratio("AB");
@@ -7936,7 +7874,6 @@ mod tests {
     }
     /// Processes text widths use kicad newstroke glyph advances using the supplied values and schematic data.
     ///
-
     #[test]
     fn text_widths_use_kicad_newstroke_glyph_advances() {
         let cap_height = 21.0;
@@ -7959,7 +7896,6 @@ mod tests {
     }
     /// Processes unsupported unicode does not panic or shift newstroke metrics using the supplied values and schematic data.
     ///
-
     #[test]
     fn unsupported_unicode_does_not_panic_or_shift_newstroke_metrics() {
         let supported = super::newstroke_text_metrics_ratio("AH");
@@ -7969,7 +7905,6 @@ mod tests {
     }
     /// Processes sch013 detects wire crossing a top level sheet circle using the supplied values and schematic data.
     ///
-
     #[test]
     fn sch013_detects_wire_crossing_a_top_level_sheet_circle() {
         let doc = document(
@@ -7985,7 +7920,6 @@ mod tests {
     }
     /// Processes sch013 detects wire crossing an embedded bitmap image using the supplied values and schematic data.
     ///
-
     #[test]
     fn sch013_detects_wire_crossing_an_embedded_bitmap_image() {
         let doc = document(
@@ -7999,7 +7933,6 @@ mod tests {
     }
     /// Processes sch013 uses rotated bitmap footprint instead of its axis aligned bounds using the supplied values and schematic data.
     ///
-
     #[test]
     fn sch013_uses_rotated_bitmap_footprint_instead_of_its_axis_aligned_bounds() {
         /// Defines the image constant.
@@ -8022,7 +7955,6 @@ mod tests {
     }
     /// Processes diagonal wires are reported using the supplied values and schematic data.
     ///
-
     #[test]
     fn diagonal_wires_are_reported() {
         let doc = document(r"(wire (pts (xy 0 0) (xy 2 2)))");
@@ -8035,7 +7967,6 @@ mod tests {
     }
     /// Processes local labels must be reused using the supplied values and schematic data.
     ///
-
     #[test]
     fn local_labels_must_be_reused() {
         let doc = document(r#"(label "ONE" (at 1 1 0) (effects (font (size 1 1))))"#);
@@ -8048,7 +7979,6 @@ mod tests {
     }
     /// Processes repeated local label on one wire is rejected using the supplied values and schematic data.
     ///
-
     #[test]
     fn repeated_local_label_on_one_wire_is_rejected() {
         let doc = document(
@@ -8060,7 +7990,6 @@ mod tests {
     }
     /// Processes repeated local label joins distinct wire islands using the supplied values and schematic data.
     ///
-
     #[test]
     fn repeated_local_label_joins_distinct_wire_islands() {
         let doc = document(
@@ -8092,7 +8021,6 @@ mod tests {
     "#;
     /// Processes wire obstacle uses actual triangle outline not its bounding box using the supplied values and schematic data.
     ///
-
     #[test]
     fn wire_obstacle_uses_actual_triangle_outline_not_its_bounding_box() {
         let outside = document(&format!(
@@ -8117,7 +8045,6 @@ mod tests {
     }
     /// Processes sch013 checks free standing schematic text as a wire obstacle using the supplied values and schematic data.
     ///
-
     #[test]
     fn sch013_checks_free_standing_schematic_text_as_a_wire_obstacle() {
         let obstructed = document(
@@ -8154,7 +8081,6 @@ mod tests {
     }
     /// Processes sch013 checks embedded symbol text and text box obstacles using the supplied values and schematic data.
     ///
-
     #[test]
     fn sch013_checks_embedded_symbol_text_and_text_box_obstacles() {
         let doc = document(
@@ -8201,7 +8127,6 @@ mod tests {
     }
     /// Processes sch013 transforms embedded symbol text obstacles with symbol mirrors and rotation using the supplied values and schematic data.
     ///
-
     #[test]
     fn sch013_transforms_embedded_symbol_text_obstacles_with_symbol_mirrors_and_rotation() {
         let source = r#"
@@ -8231,7 +8156,6 @@ mod tests {
     }
     /// Processes sch013 checks declared stroke width for open sheet paths using the supplied values and schematic data.
     ///
-
     #[test]
     fn sch013_checks_declared_stroke_width_for_open_sheet_paths() {
         let near = document(
@@ -8258,7 +8182,6 @@ mod tests {
     }
     /// Processes sch013 checks declared stroke width for embedded symbol paths using the supplied values and schematic data.
     ///
-
     #[test]
     fn sch013_checks_declared_stroke_width_for_embedded_symbol_paths() {
         /// Defines the embedded stroke symbol constant.
@@ -8297,7 +8220,6 @@ mod tests {
     }
     /// Processes sch013 checks embedded symbol arc and bezier stroke clearance using the supplied values and schematic data.
     ///
-
     #[test]
     fn sch013_checks_embedded_symbol_arc_and_bezier_stroke_clearance() {
         let arc = super::SchematicArcFact {
@@ -8387,7 +8309,6 @@ mod tests {
     }
     /// Processes sch013 pin endpoint exemption is limited to local stroke contact using the supplied values and schematic data.
     ///
-
     #[test]
     fn sch013_pin_endpoint_exemption_is_limited_to_local_stroke_contact() {
         let primitive = super::SchematicPrimitiveFact {
@@ -8418,7 +8339,6 @@ mod tests {
     }
     /// Processes sch013 uses curve distance for bezier stroke clearance using the supplied values and schematic data.
     ///
-
     #[test]
     fn sch013_uses_curve_distance_for_bezier_stroke_clearance() {
         let controls = [(0.0, 0.0), (0.0, 10.0), (10.0, 10.0), (10.0, 0.0)];
@@ -8474,7 +8394,6 @@ mod tests {
     }
     /// Processes sch013 applies arc stroke clearance to the selected sweep using the supplied values and schematic data.
     ///
-
     #[test]
     fn sch013_applies_arc_stroke_clearance_to_the_selected_sweep() {
         let arc = super::SchematicArcFact {
@@ -8522,7 +8441,6 @@ mod tests {
     }
     /// Processes wire obstacle uses exact intersections for top level three point arcs using the supplied values and schematic data.
     ///
-
     #[test]
     fn wire_obstacle_uses_exact_intersections_for_top_level_three_point_arcs() {
         let doc = document(
@@ -8542,7 +8460,6 @@ mod tests {
     }
     /// Processes wire obstacle uses exact intersections for top level cubic beziers using the supplied values and schematic data.
     ///
-
     #[test]
     fn wire_obstacle_uses_exact_intersections_for_top_level_cubic_beziers() {
         let doc = document(
@@ -8561,7 +8478,6 @@ mod tests {
     }
     /// Processes wire obstacle detects wire near the true three point arc path using the supplied values and schematic data.
     ///
-
     #[test]
     fn wire_obstacle_detects_wire_near_the_true_three_point_arc_path() {
         let doc = document(
@@ -8589,7 +8505,6 @@ mod tests {
     }
     /// Processes arc midpoint selects the correct sweep direction using the supplied values and schematic data.
     ///
-
     #[test]
     fn arc_midpoint_selects_the_correct_sweep_direction() {
         let doc = document(
@@ -8617,7 +8532,6 @@ mod tests {
     }
     /// Processes wire obstacle detects actual cubic bezier curve using the supplied values and schematic data.
     ///
-
     #[test]
     fn wire_obstacle_detects_actual_cubic_bezier_curve() {
         let doc = document(
@@ -8647,7 +8561,6 @@ mod tests {
     }
     /// Processes bezier control polygon is not treated as the curve using the supplied values and schematic data.
     ///
-
     #[test]
     fn bezier_control_polygon_is_not_treated_as_the_curve() {
         let doc = document(
@@ -8677,7 +8590,6 @@ mod tests {
     }
     /// Processes sch013 combines explicit wire and sheet graphic stroke widths using the supplied values and schematic data.
     ///
-
     #[test]
     fn sch013_combines_explicit_wire_and_sheet_graphic_stroke_widths() {
         let combined = document(
@@ -8739,7 +8651,6 @@ mod tests {
     }
     /// Processes sch013 uses project default wire width when no assignment override exists using the supplied values and schematic data.
     ///
-
     #[test]
     fn sch013_uses_project_default_wire_width_when_no_assignment_override_exists() {
         let schematic = document(
@@ -8757,7 +8668,6 @@ mod tests {
     }
     /// Processes sch013 does not apply project default when graphical assignments exist using the supplied values and schematic data.
     ///
-
     #[test]
     fn sch013_does_not_apply_project_default_when_graphical_assignments_exist() {
         for assignment in [
@@ -8782,7 +8692,6 @@ mod tests {
     }
     /// Processes sch013 combines explicit wire and embedded symbol strokes using the supplied values and schematic data.
     ///
-
     #[test]
     fn sch013_combines_explicit_wire_and_embedded_symbol_strokes() {
         let primitive = super::SchematicPrimitiveFact {
@@ -8814,7 +8723,6 @@ mod tests {
     }
     /// Processes sch013 explicit wire width expands circle stroke ring using the supplied values and schematic data.
     ///
-
     #[test]
     fn sch013_explicit_wire_width_expands_circle_stroke_ring() {
         let center = super::Point { x: 0.0, y: 0.0 };
@@ -8832,7 +8740,6 @@ mod tests {
     }
     /// Processes sch013 checks rotated ellipse stroke proximity and preserves clearance using the supplied values and schematic data.
     ///
-
     #[test]
     fn sch013_checks_rotated_ellipse_stroke_proximity_and_preserves_clearance() {
         let near_ellipse = document(
@@ -8869,7 +8776,6 @@ mod tests {
     }
     /// Processes sch013 checks elliptical arc stroke without blocking its interior using the supplied values and schematic data.
     ///
-
     #[test]
     fn sch013_checks_elliptical_arc_stroke_without_blocking_its_interior() {
         let on_arc = document(
@@ -8903,7 +8809,6 @@ mod tests {
     }
     /// Processes sch013 checks circle stroke proximity and preserves interior detection using the supplied values and schematic data.
     ///
-
     #[test]
     fn sch013_checks_circle_stroke_proximity_and_preserves_interior_detection() {
         let near_sheet_circle = document(
@@ -9009,7 +8914,6 @@ mod tests {
     }
     /// Processes wire obstacle detects circle primitive interiors using the supplied values and schematic data.
     ///
-
     #[test]
     fn wire_obstacle_detects_circle_primitive_interiors() {
         let doc = document(
@@ -9037,7 +8941,6 @@ mod tests {
     }
     /// Processes wire may start at its intended symbol pin without body penetration using the supplied values and schematic data.
     ///
-
     #[test]
     fn wire_may_start_at_its_intended_symbol_pin_without_body_penetration() {
         let doc = document(
@@ -9067,7 +8970,6 @@ mod tests {
     }
     /// Processes wire obstacle rejects intermediate pins visible fields and text boxes using the supplied values and schematic data.
     ///
-
     #[test]
     fn wire_obstacle_rejects_intermediate_pins_visible_fields_and_text_boxes() {
         let doc = document(
@@ -9111,7 +9013,6 @@ mod tests {
     }
     /// Processes sweep line reports crossing wires with the intersection location using the supplied values and schematic data.
     ///
-
     #[test]
     fn sweep_line_reports_crossing_wires_with_the_intersection_location() {
         let doc = document(r"(wire (pts (xy 0 0) (xy 4 0))) (wire (pts (xy 2 -2) (xy 2 2)))");
@@ -9126,7 +9027,6 @@ mod tests {
     }
     /// Processes sweep line requires an explicit marker for t junctions using the supplied values and schematic data.
     ///
-
     #[test]
     fn sweep_line_requires_an_explicit_marker_for_t_junctions() {
         let missing = document(r"(wire (pts (xy 0 0) (xy 4 0))) (wire (pts (xy 2 0) (xy 2 2)))");
@@ -9149,7 +9049,6 @@ mod tests {
     }
     /// Processes wire overlap is rejected using the supplied values and schematic data.
     ///
-
     #[test]
     fn wire_overlap_is_rejected() {
         let doc = document(r"(wire (pts (xy 0 0) (xy 4 0))) (wire (pts (xy 2 0) (xy 6 0)))");
@@ -9162,7 +9061,6 @@ mod tests {
     }
     /// Processes wire through label glyph is rejected using the supplied values and schematic data.
     ///
-
     #[test]
     fn wire_through_label_glyph_is_rejected() {
         let doc = document(
@@ -9177,7 +9075,6 @@ mod tests {
     }
     /// Processes undersized text box is rejected using the supplied values and schematic data.
     ///
-
     #[test]
     fn undersized_text_box_is_rejected() {
         let doc = document(
@@ -9192,7 +9089,6 @@ mod tests {
     }
     /// Processes free standing text is rejected using the supplied values and schematic data.
     ///
-
     #[test]
     fn free_standing_text_is_rejected() {
         let doc = document(r#"(text "note" (at 1 1 0) (effects (font (size 1 1))))"#);
@@ -9205,7 +9101,6 @@ mod tests {
     }
     /// Processes multiline unbordered text box is rejected using the supplied values and schematic data.
     ///
-
     #[test]
     fn multiline_unbordered_text_box_is_rejected() {
         let doc = document(
@@ -9220,7 +9115,6 @@ mod tests {
     }
     /// Processes overlapping label glyphs are rejected using the supplied values and schematic data.
     ///
-
     #[test]
     fn overlapping_label_glyphs_are_rejected() {
         let doc = document(
@@ -9235,7 +9129,6 @@ mod tests {
     }
     /// Processes visible symbol fields may not overlap each other using the supplied values and schematic data.
     ///
-
     #[test]
     fn visible_symbol_fields_may_not_overlap_each_other() {
         let doc = document(
@@ -9256,7 +9149,6 @@ mod tests {
     }
     /// Processes visible symbol fields may not overlap annotation boxes using the supplied values and schematic data.
     ///
-
     #[test]
     fn visible_symbol_fields_may_not_overlap_annotation_boxes() {
         let doc = document(
@@ -9278,7 +9170,6 @@ mod tests {
     }
     /// Processes visible reference field may not be embedded in symbol body using the supplied values and schematic data.
     ///
-
     #[test]
     fn visible_reference_field_may_not_be_embedded_in_symbol_body() {
         let doc = document(
@@ -9305,7 +9196,6 @@ mod tests {
     }
     /// Processes value field fully inside closed symbol body is allowed using the supplied values and schematic data.
     ///
-
     #[test]
     fn value_field_fully_inside_closed_symbol_body_is_allowed() {
         let doc = document(
@@ -9333,7 +9223,6 @@ mod tests {
     }
     /// Processes visible symbol field may not overlap wire segment or pin using the supplied values and schematic data.
     ///
-
     #[test]
     fn visible_symbol_field_may_not_overlap_wire_segment_or_pin() {
         let doc = document(
@@ -9367,7 +9256,6 @@ mod tests {
     }
     /// Processes visible symbol field may not overlap label glyph using the supplied values and schematic data.
     ///
-
     #[test]
     fn visible_symbol_field_may_not_overlap_label_glyph() {
         let doc = document(
@@ -9387,7 +9275,6 @@ mod tests {
     }
     /// Processes separated visible symbol fields are accepted using the supplied values and schematic data.
     ///
-
     #[test]
     fn separated_visible_symbol_fields_are_accepted() {
         let doc = document(
@@ -9407,7 +9294,6 @@ mod tests {
     }
     /// Processes label glyph may not overlap symbol field using the supplied values and schematic data.
     ///
-
     #[test]
     fn label_glyph_may_not_overlap_symbol_field() {
         let doc = document(
@@ -9422,7 +9308,6 @@ mod tests {
     }
     /// Processes label glyph may not overlap annotation box using the supplied values and schematic data.
     ///
-
     #[test]
     fn label_glyph_may_not_overlap_annotation_box() {
         let doc = document(
@@ -9436,7 +9321,6 @@ mod tests {
     }
     /// Processes same label cannot be local and hierarchical using the supplied values and schematic data.
     ///
-
     #[test]
     fn same_label_cannot_be_local_and_hierarchical() {
         let doc = document(

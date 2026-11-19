@@ -307,9 +307,8 @@ fn parse_schematic_location(item: &Value) -> Option<SchematicLocation> {
 fn string_member(value: &Value, key: &str) -> Option<String> {
     value.get(key)?.as_str().map(ToOwned::to_owned)
 }
-/// Contains the tests implementation and supporting types.
-
 #[cfg(test)]
+/// Contains the tests implementation and supporting types.
 mod tests {
     use std::{error::Error, path::Path};
 
@@ -357,7 +356,6 @@ mod tests {
     ///
     /// Returns an error when the operation cannot complete with the supplied input.
     ///
-
     #[test]
     fn reads_sheet_nested_violations_and_preserves_item_context() -> Result<(), Box<dyn Error>> {
         let report = parse_erc_json(ERC_REPORT, Path::new("fixture.kicad_sch"))?;
@@ -389,7 +387,6 @@ mod tests {
     ///
     /// Returns an error when the operation cannot complete with the supplied input.
     ///
-
     #[test]
     fn rejects_a_drc_shaped_top_level_violations_array() {
         let drc_shaped = br#"{"violations":[{"severity":"error"}]}"#;
@@ -406,7 +403,6 @@ mod tests {
     ///
     /// Returns an error when the operation cannot complete with the supplied input.
     ///
-
     #[test]
     fn excluded_errors_are_retained_but_do_not_fail_the_report() -> Result<(), Box<dyn Error>> {
         let contents = br#"{

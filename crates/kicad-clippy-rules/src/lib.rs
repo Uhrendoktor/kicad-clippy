@@ -318,9 +318,8 @@ impl RuleEngine {
         self.passes.is_empty()
     }
 }
-/// Contains the tests implementation and supporting types.
-
 #[cfg(test)]
+/// Contains the tests implementation and supporting types.
 mod tests {
     use std::error::Error;
 
@@ -364,7 +363,6 @@ mod tests {
     ///
     /// Returns an error when the operation cannot complete with the supplied input.
     ///
-
     #[test]
     fn external_passes_share_context_and_run_deterministically() -> Result<(), Box<dyn Error>> {
         let document = SchematicDocument::from_text("fixture.kicad_sch", "(kicad_sch)")?;
@@ -388,7 +386,6 @@ mod tests {
     ///
     /// Returns an error when the operation cannot complete with the supplied input.
     ///
-
     #[test]
     fn duplicate_pass_names_are_rejected() -> Result<(), Box<dyn Error>> {
         let mut engine = RuleEngine::new();
@@ -409,7 +406,6 @@ mod tests {
     ///
     /// Returns an error when the operation cannot complete with the supplied input.
     ///
-
     #[test]
     fn built_in_engine_registers_and_runs_its_passes() -> Result<(), Box<dyn Error>> {
         let document = SchematicDocument::from_text("fixture.kicad_sch", "(kicad_sch)")?;

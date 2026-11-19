@@ -117,14 +117,12 @@ impl SourceFile {
         self.text.get(span.start..span.end)
     }
 }
-/// Contains the tests implementation and supporting types.
-
 #[cfg(test)]
+/// Contains the tests implementation and supporting types.
 mod tests {
     use super::{ByteSpan, SourceFile};
     /// Processes slices only valid half open utf8 ranges using the supplied values and schematic data.
     ///
-
     #[test]
     fn slices_only_valid_half_open_utf8_ranges() {
         let source = SourceFile::new("slice.kicad_sch", "café schematic");

@@ -202,16 +202,14 @@ impl fmt::Display for UnknownBuiltinRuleId {
 }
 
 impl std::error::Error for UnknownBuiltinRuleId {}
-/// Contains the tests implementation and supporting types.
-
 #[cfg(test)]
+/// Contains the tests implementation and supporting types.
 mod tests {
     use std::str::FromStr;
 
     use super::BuiltinRuleId;
     /// Processes every builtin rule has a unique round trippable code using the supplied values and schematic data.
     ///
-
     #[test]
     fn every_builtin_rule_has_a_unique_round_trippable_code() {
         let codes: std::collections::BTreeSet<_> = BuiltinRuleId::ALL
@@ -225,7 +223,6 @@ mod tests {
     }
     /// Processes unknown codes are not silently treated as builtin rules using the supplied values and schematic data.
     ///
-
     #[test]
     fn unknown_codes_are_not_silently_treated_as_builtin_rules() {
         assert!(BuiltinRuleId::parse("SCH999").is_none());

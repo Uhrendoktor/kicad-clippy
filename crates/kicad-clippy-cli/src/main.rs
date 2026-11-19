@@ -35,7 +35,6 @@ struct Cli {
     command: Commands,
 }
 /// Represents the supported commands alternatives.
-
 #[derive(Debug, Subcommand)]
 enum Commands {
     /// Parse a schematic and run `KiCad`'s native Electrical Rules Checker.
@@ -63,7 +62,6 @@ enum Commands {
     },
 }
 /// Represents the supported outputformat alternatives.
-
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum OutputFormat {
     /// Human-readable diagnostics.
@@ -72,7 +70,6 @@ enum OutputFormat {
     Json,
 }
 /// Represents the supported clierror alternatives.
-
 #[derive(Debug, Error)]
 enum CliError {
     /// Represents the `Schematic` case.
@@ -101,7 +98,6 @@ enum CliError {
     Io(#[from] io::Error),
 }
 /// Stores lintoutput data used by this crate.
-
 #[derive(Debug, Serialize)]
 struct LintOutput {
     /// Stores the `schema_version` value.
@@ -122,7 +118,6 @@ struct LintOutput {
     summary: Summary,
 }
 /// Stores summary data used by this crate.
-
 #[derive(Debug, Serialize)]
 struct Summary {
     /// Stores the `errors` value.
@@ -909,9 +904,8 @@ fn resolve_kicad_cli(explicit: Option<PathBuf>) -> Result<PathBuf, CliError> {
 
     Err(CliError::KiCadCliNotFound)
 }
-/// Contains the tests implementation and supporting types.
-
 #[cfg(test)]
+/// Contains the tests implementation and supporting types.
 mod tests {
     use kicad_clippy_core::{Diagnostic, Severity};
 
@@ -928,7 +922,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn project_default_schematic_line_width_reads_mils() {
         let project = serde_json::json!({
@@ -950,7 +943,6 @@ mod tests {
     ///
     /// The value produced by this operation.
     ///
-
     #[test]
     fn project_default_schematic_line_width_stays_unknown_when_missing_or_invalid() {
         let missing = serde_json::json!({"schematic": {"drawing": {}}});
@@ -993,7 +985,6 @@ mod tests {
     }
     /// Processes overlapping patterns and explicit assignments use class priority using the supplied values and schematic data.
     ///
-
     #[test]
     fn overlapping_patterns_and_explicit_assignments_use_class_priority() {
         let mut project = project_fixture();
@@ -1024,7 +1015,6 @@ mod tests {
     }
     /// Processes class without wire width inherits the project default using the supplied values and schematic data.
     ///
-
     #[test]
     fn class_without_wire_width_inherits_the_project_default() {
         let mut project = project_fixture();
@@ -1049,7 +1039,6 @@ mod tests {
     }
     /// Processes committed chain netclass is applied to member nets using the supplied values and schematic data.
     ///
-
     #[test]
     fn committed_chain_netclass_is_applied_to_member_nets() {
         let mut project = project_fixture();
@@ -1078,7 +1067,6 @@ mod tests {
     }
     /// Processes inconsistent or unmodeled assignments remain unknown using the supplied values and schematic data.
     ///
-
     #[test]
     fn inconsistent_or_unmodeled_assignments_remain_unknown() {
         let mut project = project_fixture();
@@ -1116,7 +1104,6 @@ mod tests {
     }
     /// Processes per wire width requires one unambiguous physical component net using the supplied values and schematic data.
     ///
-
     #[test]
     fn per_wire_width_requires_one_unambiguous_physical_component_net() {
         use kicad_clippy_erc::{NetlistNode, PinRef};
@@ -1209,7 +1196,6 @@ mod tests {
     }
     /// Processes schematic netclass directives suppress project only width inference using the supplied values and schematic data.
     ///
-
     #[test]
     fn schematic_netclass_directives_suppress_project_only_width_inference() {
         let project = project_fixture();
@@ -1221,7 +1207,6 @@ mod tests {
     }
     /// Processes summary counts only active errors using the supplied values and schematic data.
     ///
-
     #[test]
     fn summary_counts_only_active_errors() {
         let mut excluded = Diagnostic::new("ERC/EXCLUDED", Severity::Error, "ignored");

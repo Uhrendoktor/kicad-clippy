@@ -447,9 +447,8 @@ fn atom_value(node: &Node, source: &str) -> Option<String> {
         .get(span.start..span.end)
         .map(|value| value.trim_matches('"').to_owned())
 }
-/// Contains the tests implementation and supporting types.
-
 #[cfg(test)]
+/// Contains the tests implementation and supporting types.
 mod tests {
     #![allow(clippy::expect_used)]
     use super::parse_netlist_sexpr;
@@ -477,7 +476,6 @@ mod tests {
     )"#;
     /// Processes maps component pins to exported net names using the supplied values and schematic data.
     ///
-
     #[test]
     fn maps_component_pins_to_exported_net_names() {
         let netlist = parse_netlist_sexpr(NETLIST).expect("valid fixture");
@@ -499,7 +497,6 @@ mod tests {
     }
     /// Processes rejects a pin assigned to two nets using the supplied values and schematic data.
     ///
-
     #[test]
     fn rejects_a_pin_assigned_to_two_nets() {
         let duplicate = r#"(export (nets
