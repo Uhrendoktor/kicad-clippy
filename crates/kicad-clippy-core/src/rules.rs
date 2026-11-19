@@ -73,7 +73,7 @@ impl RulePolicy {
 
     /// Applies the selected named preset and explicit overrides to built-in diagnostics.
     ///
-    /// External diagnostics, including native KiCad ERC findings, are retained
+    /// External diagnostics, including native `KiCad` ERC findings, are retained
     /// without severity changes. An `allow` policy removes the matching built-in
     /// findings; `warn` and `deny` set their effective severities.
     ///
