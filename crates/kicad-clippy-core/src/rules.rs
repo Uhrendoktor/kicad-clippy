@@ -1,4 +1,7 @@
-use crate::{diagnostic::{Diagnostic, Severity}, rule_id::BuiltinRuleId};
+use crate::{
+    diagnostic::{Diagnostic, Severity},
+    rule_id::BuiltinRuleId,
+};
 use std::collections::{BTreeMap, btree_map::Entry};
 
 use serde::{Deserialize, Serialize};
@@ -565,8 +568,8 @@ mod tests {
     ///
     /// Returns a policy error if the descriptor defaults cannot be resolved.
     #[test]
-    fn policy_uses_descriptor_defaults_for_unspecified_rules()
-    -> Result<(), super::RulePolicyError> {
+    fn policy_uses_descriptor_defaults_for_unspecified_rules() -> Result<(), super::RulePolicyError>
+    {
         use crate::diagnostic::{Diagnostic, Severity};
 
         let registry = super::builtin_rule_registry().unwrap_or_default();
