@@ -472,12 +472,12 @@ mod tests {
                 .get(id.as_str())
                 .ok_or_else(|| super::RuleRegistryError(id.as_str().to_owned()))?;
             assert_eq!(descriptor.id, id.as_str());
-            assert!(!descriptor.name.trim().is_empty());
-            assert!(!descriptor.category.trim().is_empty());
-            assert!(!descriptor.summary.trim().is_empty());
-            assert!(!descriptor.explanation.trim().is_empty());
+            assert_ne!(descriptor.name.trim(), "");
+            assert_ne!(descriptor.category.trim(), "");
+            assert_ne!(descriptor.summary.trim(), "");
+            assert_ne!(descriptor.explanation.trim(), "");
             assert!(descriptor.documentation_url.is_some());
-            assert!(!descriptor.tags.is_empty());
+            assert_ne!(descriptor.tags.len(), 0);
         }
         Ok(())
     }
