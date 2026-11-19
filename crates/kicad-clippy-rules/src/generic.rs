@@ -22,16 +22,80 @@ use kurbo::{
     PathSeg as CurvePathSeg, Point as CurvePoint, Rect as CurveRect, Shape, Triangle, Vec2,
     flatten as flatten_curve_path,
 };
-use petgraph::unionfind::UnionFind;
 use vector_text_core::{Point as VectorPoint, Renderer};
 use vector_text_newstroke::NewstrokeRenderer;
 
 use crate::{RuleContext, RulePass};
 
+/// Disjoint-set forest used to resolve connected physical wire components.
+#[derive(Debug)]
+struct DisjointSet {
+    /// Parent index for each disjoint-set element.
+    parents: Vec<usize>,
+    /// Number of elements in each root's tree.
+    sizes: Vec<usize>,
+}
+
+impl DisjointSet {
+    /// Creates one disjoint set for each index in the supplied range.
+    ///
+    /// # Arguments
+    ///
+    /// * `length` — Number of elements to initialize.
+    ///
+    /// # Returns
+    ///
+    /// A disjoint-set forest containing `length` independent elements.
+    fn new(length: usize) -> Self {
+        Self {
+            parents: (0..length).collect(),
+            sizes: vec![1; length],
+        }
+    }
+
+    /// Merges the sets containing the two supplied element indices.
+    ///
+    /// # Arguments
+    ///
+    /// * `first` — First element index.
+    /// * `second` — Second element index.
+    fn union(&mut self, first: usize, second: usize) {
+        let mut first_root = self.find(first);
+        let mut second_root = self.find(second);
+        if first_root == second_root {
+            return;
+        }
+        if self.sizes[first_root] < self.sizes[second_root] {
+            std::mem::swap(&mut first_root, &mut second_root);
+        }
+        self.parents[second_root] = first_root;
+        self.sizes[first_root] += self.sizes[second_root];
+    }
+
+    /// Returns the representative root for the supplied element index.
+    ///
+    /// # Arguments
+    ///
+    /// * `index` — Element index whose representative is requested.
+    ///
+    /// # Returns
+    ///
+    /// The representative root index for the element's current set.
+    fn find(&mut self, index: usize) -> usize {
+        let parent = self.parents[index];
+        if parent != index {
+            let root = self.find(parent);
+            self.parents[index] = root;
+        }
+        self.parents[index]
+    }
+}
+
+
 /// Coordinate equality tolerance used for schematic geometry, in millimetres.
-pub(super) const GEOMETRY_TOLERANCE_MM: f64 = 0.001;
+pub const GEOMETRY_TOLERANCE_MM: f64 = 0.001;
 /// Additional clearance applied when testing wire-to-obstacle spacing, in millimetres.
-pub(super) const STROKE_CLEARANCE_MARGIN_MM: f64 = 0.01;
+pub const STROKE_CLEARANCE_MARGIN_MM: f64 = 0.01;
 /// Floating-point epsilon used to bound geometric numerical error.
 const GEOMETRY_NUMERIC_EPSILON: f64 = 1.0e-9;
 /// Number of degrees in a complete turn.
@@ -61,9 +125,9 @@ const CARDINAL_ROTATION_DEGREES_WITH_WRAP: [f64; 5] = [
 const DEFAULT_BITMAP_IMAGE_PPI: u32 = 300;
 /// Floating-point form of the default bitmap resolution, in pixels per inch.
 const DEFAULT_BITMAP_IMAGE_PPI_F64: f64 = 300.0;
-/// KiCad format version that introduced the legacy bitmap resolution behavior.
+/// `KiCad` format version that introduced the legacy bitmap resolution behavior.
 const LEGACY_BITMAP_PPI_FORMAT_VERSION: u32 = 20_230_121;
-/// KiCad format version that migrated bitmap resolution handling.
+/// `KiCad` format version that migrated bitmap resolution handling.
 const MIGRATED_BITMAP_PPI_FORMAT_VERSION: u32 = 20_260_623;
 /// Millimetres in one inch.
 const MILLIMETRES_PER_INCH: f64 = 25.4;
@@ -81,8 +145,6 @@ const MINIMUM_CURVE_TRIANGLE_AREA_MM2: f64 = 2.5e-10;
 const ELLIPSE_ARC_SUBDIVISION_STEPS: u8 = 20;
 /// Factor used to convert a full dimension into a half dimension.
 const HALF_DIMENSION_FACTOR: f64 = 0.5;
-/// Number of decimal places used in stable coordinate keys.
-const COORDINATE_KEY_DECIMAL_PLACES: usize = 3;
 /// Minimum JPEG JFIF application-segment payload length, in bytes.
 const JPEG_JFIF_MINIMUM_SEGMENT_BYTES: usize = 12;
 /// Defines the point type used by this crate.
@@ -963,7 +1025,7 @@ fn table_line_fact(
     end: (f64, f64),
     stroke_width_mm: f64,
 ) -> SchematicGraphicFact {
-    let margin = stroke_width_mm * HALF_DIMENSION_FACTOR + STROKE_CLEARANCE_MARGIN_MM;
+    let margin = stroke_width_mm.mul_add(HALF_DIMENSION_FACTOR, STROKE_CLEARANCE_MARGIN_MM);
     SchematicGraphicFact {
         kind: kind.to_owned(),
         uuid: uuid.map(str::to_owned),
@@ -1152,7 +1214,7 @@ fn collect_sheet_table_stroke_facts(root: &Node) -> Vec<SchematicGraphicFact> {
 /// The value produced by this operation.
 fn sheet_graphic_bounds(node: &Node, kind: &str) -> Option<(f64, f64, f64, f64)> {
     let stroke_margin =
-        symbol_primitive_stroke_width(node) * HALF_DIMENSION_FACTOR + STROKE_CLEARANCE_MARGIN_MM;
+        symbol_primitive_stroke_width(node).mul_add(HALF_DIMENSION_FACTOR, STROKE_CLEARANCE_MARGIN_MM);
     if kind == "circle" {
         let center = child_list(node, "center").and_then(list_items)?;
         let radius = child_list(node, "radius")
@@ -1321,10 +1383,10 @@ fn collect_sheet_image_facts(root: &Node) -> Vec<SchematicImageFact> {
                         f64::from(metadata.ppi)
                     };
                     let width = f64::from(metadata.width_pixels) * MILLIMETRES_PER_INCH
-                        / f64::from(ppi)
+                        / ppi
                         * scale;
                     let height = f64::from(metadata.height_pixels) * MILLIMETRES_PER_INCH
-                        / f64::from(ppi)
+                        / ppi
                         * scale;
                     rotated_bitmap_image_geometry(position, width, height, orientation)
                 });
@@ -5863,7 +5925,7 @@ fn wire_components(
         .enumerate()
         .map(|(index, point)| (point_key(*point), index))
         .collect();
-    let mut components = UnionFind::<usize>::new(points.len());
+    let mut components = DisjointSet::new(points.len());
     let mut endpoint_degree: BTreeMap<String, usize> = BTreeMap::new();
 
     for segment in segments {

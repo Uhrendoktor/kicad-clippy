@@ -32,8 +32,8 @@ jobs:
           rustc --version
           cargo --version
 
-      - name: Verify locked dependencies
-        run: cargo fetch --locked
+      - name: Resolve workspace dependencies and refresh the lock file
+        run: cargo check --workspace --all-targets
 
       - name: Apply rustfmt and normalize doc-comment spacing
         shell: bash
@@ -84,11 +84,14 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add crates
+          git add crates Cargo.lock
           if ! git diff --cached --quiet; then
             git commit -m "style: normalize strict Rust documentation"
             git push origin "HEAD:${GITHUB_HEAD_REF}"
           fi
+
+      - name: Verify locked dependencies
+        run: cargo fetch --locked
 
       - name: Check formatting
         run: cargo fmt --all -- --check

@@ -529,21 +529,50 @@ fn validate_direct_wire_pair(
         protected_components.extend(second_component);
     }
 
-    for (pin_ref, point) in [(&pair.first, first_point), (&pair.second, second_point)] {
+    append_direct_wire_pair_label_diagnostics(pair, facts, &mut diagnostics);
+    (diagnostics, protected_components)
+}
+
+/// Adds diagnostics for non-global labels attached to either direct-wire pin anchor.
+///
+/// # Arguments
+///
+/// * `pair` — Direct-wire pair whose endpoint anchors are being checked.
+/// * `facts` — Schematic facts containing the resolved label positions.
+/// * `diagnostics` — Diagnostic collection to extend with any invalid label overlaps.
+fn append_direct_wire_pair_label_diagnostics(
+    pair: &DirectWirePair,
+    facts: &SchematicFacts,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let endpoints = [
+        (pair.first.as_str(), pair.first.rsplit_once('.')),
+        (pair.second.as_str(), pair.second.rsplit_once('.')),
+    ];
+    for (pin_reference, parsed_reference) in endpoints {
+        let Some((reference, number)) = parsed_reference else {
+            continue;
+        };
+        let Some(pin) = facts
+            .pins
+            .iter()
+            .find(|pin| pin.reference == reference && pin.number == number)
+        else {
+            continue;
+        };
         for label in &facts.labels {
-            if label.kind != "global_label" && same_wire_point(label.position_mm, point) {
+            if label.kind != "global_label" && same_wire_point(label.position_mm, pin.position_mm) {
                 diagnostics.push(Diagnostic::for_builtin_rule(
                     BuiltinRuleId::Sch004,
                     Severity::Error,
                     format!(
-                        "direct-wire pin {pin_ref} shares its anchor with {} {:?}; use a continuous wire-only connection",
+                        "direct-wire pin {pin_reference} shares its anchor with {} {:?}; use a continuous wire-only connection",
                         label.kind, label.name
                     ),
                 ));
             }
         }
     }
-    (diagnostics, protected_components)
 }
 /// Processes validate forbidden direct wire labels using the supplied values and schematic data.
 ///
