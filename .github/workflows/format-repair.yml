@@ -1,0 +1,65 @@
+name: One-time Rust formatting repair
+
+on:
+  push:
+    branches:
+      - feature/rust-schematic-rules-netlist-clippyfix
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  format-and-dispatch:
+    name: Format source and dispatch strict CI
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Install stable Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt
+          rustc --version
+          cargo --version
+
+      - name: Normalize trailing documentation spacing and format source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          declaration = re.compile(r"^\s*(?:(?:pub(?:\([^)]*\))?)\s+)?(?:(?:async|const|unsafe)\s+)*(?:fn|struct|enum|trait|union|type|const|static|mod)\b")
+          for path in Path("crates").rglob("*.rs"):
+              lines = path.read_text(encoding="utf-8").splitlines()
+              index = 0
+              while index < len(lines):
+                  if declaration.match(lines[index]):
+                      while index > 0 and lines[index - 1].strip() in ("", "///"):
+                          if lines[index - 1].strip() == "///" and (index < 2 or not lines[index - 2].lstrip().startswith("///")):
+                              break
+                          del lines[index - 1]
+                          index -= 1
+                  index += 1
+              path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+          PY
+          cargo fmt --all
+          cargo fmt --all -- --check
+
+      - name: Commit formatting and request validation of the formatted head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add crates
+          if ! git diff --cached --quiet; then
+            git commit -m "style: format documented Rust source"
+            git push origin "HEAD:${BRANCH}"
+          fi
+          gh api --method POST "/repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/dispatches" -f ref="${BRANCH}"

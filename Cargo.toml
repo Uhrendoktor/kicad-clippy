@@ -15,6 +15,8 @@ edition = "2024"
 license = "MIT"
 repository = "https://github.com/Uhrendoktor/kicad-clippy"
 rust-version = "1.85"
+keywords = ["kicad", "schematic", "lint"]
+categories = ["development-tools"]
 
 [workspace.dependencies]
 clap = { version = "4.5", features = ["derive"] }
