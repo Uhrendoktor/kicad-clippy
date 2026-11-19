@@ -6,14 +6,10 @@ use kiutils_sexpr::Node;
 use super::at_span;
 use super::atom_value;
 use super::bounds_overlap;
-use super::check_label_text_collisions;
 use super::children;
 use super::collect_label_nodes;
 use super::collect_nodes;
-use super::fn;
 use super::list_items;
-use super::property_is_hidden;
-use super::text_box_bounds;
 use super::text_visual_bounds;
 
 /// Detects overlaps between label glyph bounds and other labels, visible fields, or annotation boxes.

@@ -4,7 +4,6 @@ use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::Diagnostic;
 use kicad_clippy_core::Severity;
 use kicad_clippy_erc::Netlist;
-use kicad_clippy_erc::PinRef;
 use kicad_clippy_parser::SchematicDocument;
 use serde::Deserialize;
 use serde::Serialize;
@@ -12,11 +11,6 @@ use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
-use super::ComponentKind;
-use super::ComponentRole;
-use super::LintProfile;
-use super::ProfileMode;
-use super::SchematicFacts;
 use thiserror::Error;
 
 /// Checks `SCH004` profile-declared physical pin-connectivity and wire-separation contracts.
@@ -31,7 +25,7 @@ mod sch006;
 #[path = "profile_rules/sch007.rs"]
 mod sch007;
 
-/// Checks `SCH009` containment of group members and their associated schematic geometry.
+/// Checks `SCH009` containment of group members and associated schematic geometry.
 #[path = "profile_rules/sch009.rs"]
 mod sch009;
 
@@ -408,6 +402,7 @@ impl LintProfile {
         ));
         diagnostics
     }
+}
 /// Validates every group-intent declaration in the profile.
 ///
 /// # Arguments
@@ -659,12 +654,12 @@ pub enum MetadataError {
 /// Exercises profile deserialization and validation for physical connectivity, group geometry, component intent, and decoupling contracts.
 mod tests {
     #![allow(clippy::expect_used)]
+    use std::collections::BTreeMap;
 
+    use kicad_clippy_core::Severity;
+    use kicad_clippy_erc::{Netlist, PinRef};
 
-
-
-
-
+    use super::{ComponentKind, ComponentRole, LintProfile, ProfileMode, SchematicFacts};
     /// Builds a minimal schematic fixture with two placed one-pin symbols and appends the supplied serialized wire and label expressions.
     ///
     /// # Arguments

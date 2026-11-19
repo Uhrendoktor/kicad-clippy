@@ -4,27 +4,21 @@ use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::ByteSpan;
 use kicad_clippy_core::Diagnostic;
 use kiutils_sexpr::Node;
+use super::Bounds;
+use super::GEOMETRY_TOLERANCE_MM;
+use super::Segment;
+use super::TEXT_BOX_EQUAL_PADDING_MM;
+use super::UNBORDERED_TEXT_BOX_EXTRA_WIDTH_MM;
 use super::at_span;
 use super::atom_value;
 use super::bounds_overlap;
-use super::Bounds;
-use super::check_text_box_interactions;
-use super::check_text_box_layout;
 use super::child_list;
 use super::collect_nodes;
-use super::fn;
-use super::GEOMETRY_TOLERANCE_MM;
-use super::inspect_text_box;
 use super::line_hits_bounds;
 use super::list_items;
 use super::number;
-use super::read_text_box_metrics;
 use super::required_text_box_size;
-use super::Segment;
-use super::TEXT_BOX_EQUAL_PADDING_MM;
-use super::TextBoxMetrics;
-use super::TextBoxRecord;
-use super::UNBORDERED_TEXT_BOX_EXTRA_WIDTH_MM;
+use super::span_of;
 
 /// Validates text-box size, font settings, required geometry, and overlap with wires or other annotations.
 ///

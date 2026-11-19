@@ -7,32 +7,30 @@ use std::collections::BTreeSet;
 use super::ComponentIntent;
 use super::ComponentKind;
 use super::LintProfile;
-use super::validate_role_contract;
 use thiserror::Error;
 
-    /// Reports profile entries whose reference designators do not identify placed symbols in the schematic.
-    ///
-    /// # Arguments
-    ///
-    /// * `profile` — Loaded profile whose component declarations and strict-mode exemptions are checked.
+/// Reports profile entries whose reference designators do not identify placed symbols in the schematic.
+///
+/// # Arguments
+///
+/// * `profile` — Loaded profile whose component declarations and strict-mode exemptions are checked.
 /// * `references` — Set of schematic reference designators used to verify profile membership.
-    ///
-    /// # Returns
-    ///
-    /// Diagnostics for profile component references that do not resolve to placed symbols in the schematic.
-    pub(super) pub(super) fn validate_profile_references(profile: &LintProfile, references: &BTreeSet<String>) -> Vec<Diagnostic> {
-        profile.components
-            .keys()
-            .filter(|reference| !references.contains(*reference))
-            .map(|reference| {
-                Diagnostic::for_builtin_rule(
-                    BuiltinRuleId::Sch021,
-                    Severity::Error,
-                    format!("profile metadata references missing component {reference}"),
-                )
-            })
-            .collect()
-    }
+///
+/// # Returns
+///
+/// Diagnostics for profile component references that do not resolve to placed symbols in the schematic.
+pub(super) fn validate_profile_references(profile: &LintProfile, references: &BTreeSet<String>) -> Vec<Diagnostic> {
+    profile.components
+        .keys()
+        .filter(|reference| !references.contains(*reference))
+        .map(|reference| {
+            Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch021,
+                Severity::Error,
+                format!("profile metadata references missing component {reference}"),
+            )
+        })
+        .collect()
 }
 
 /// Checks that the declared component role has the required electrical connections.

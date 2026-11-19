@@ -3,14 +3,13 @@
 use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::Diagnostic;
 use kiutils_sexpr::Node;
+use super::GEOMETRY_TOLERANCE_MM;
 use super::at_point;
-use super::check_no_connect_markers;
 use super::collect_nodes;
 use super::collect_placed_pin_positions;
 use super::distance;
-use super::fn;
-use super::GEOMETRY_TOLERANCE_MM;
 use super::point_from_at;
+use super::span_of;
 
 /// Checks that explicit no-connect markers coincide with supported transformed pins.
 ///

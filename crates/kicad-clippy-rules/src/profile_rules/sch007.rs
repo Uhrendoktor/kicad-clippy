@@ -1,11 +1,10 @@
 //! Checks `SCH007` consistency between profile group membership and native `KiCad` groups.
 
+use crate::generic::SchematicFacts;
 use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::Diagnostic;
 use kicad_clippy_core::Severity;
 use super::GroupIntent;
-use super::SchematicFacts;
-use super::validate_kicad_group_membership;
 use thiserror::Error;
 
 /// Checks that the profile's member references match the schematic's explicit `KiCad` group membership.

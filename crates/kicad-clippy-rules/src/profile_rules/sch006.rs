@@ -1,12 +1,11 @@
 //! Checks `SCH006` minimum spacing between functional-group member symbols.
 
 use crate::generic::GEOMETRY_TOLERANCE_MM;
+use crate::generic::SchematicFacts;
 use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::Diagnostic;
 use kicad_clippy_core::Severity;
 use super::GroupIntent;
-use super::SchematicFacts;
-use super::validate_group_spacing;
 use thiserror::Error;
 
 /// Checks that a group's member symbols satisfy the spacing constraints declared by the profile.

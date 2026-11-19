@@ -5,8 +5,6 @@ use kicad_clippy_core::Diagnostic;
 use kicad_clippy_core::Severity;
 use std::collections::BTreeSet;
 use super::GroupIntent;
-use super::validate_group_evidence;
-use super::validate_group_members;
 use thiserror::Error;
 
 /// Checks that the group contains the evidence required by its declared evidence level.

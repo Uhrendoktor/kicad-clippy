@@ -1,28 +1,25 @@
 //! Checks `SCH001` wire endpoints, segment geometry, overlaps, crossings, and unmarked junctions.
 
-use geo::algorithm::sweep::Cross;
-use geo::algorithm::sweep::Intersections;
 use geo::Line;
 use geo::LineIntersection;
+use geo::algorithm::sweep::Cross;
+use geo::algorithm::sweep::Intersections;
 use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::Diagnostic;
 use kicad_clippy_core::RelatedLocation;
 use kicad_clippy_core::SchematicLocation;
 use kiutils_sexpr::Node;
+use super::GEOMETRY_TOLERANCE_MM;
+use super::Point;
+use super::Segment;
 use super::at_segment;
 use super::at_span;
-use super::check_wire_geometry;
 use super::child_list;
 use super::children;
 use super::distance;
-use super::fn;
-use super::geo_line;
-use super::GEOMETRY_TOLERANCE_MM;
-use super::IndexedSegment;
 use super::is_endpoint;
-use super::Point;
 use super::sch013::geo_line;
-use super::Segment;
+use super::span_of;
 
 /// Wire segment paired with its stable index in the current analysis run.
 #[derive(Clone, Copy)]

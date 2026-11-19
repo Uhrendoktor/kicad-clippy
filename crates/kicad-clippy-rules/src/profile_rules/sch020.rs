@@ -4,7 +4,6 @@ use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::Diagnostic;
 use kicad_clippy_core::Severity;
 use super::GroupIntent;
-use super::validate_group_phrase;
 use thiserror::Error;
 
 /// Checks that member component roles and purposes are consistent with the group's description.

@@ -6,9 +6,7 @@ use kicad_clippy_core::Severity;
 use kiutils_sexpr::Node;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use super::check_label_kind_consistency;
 use super::collect_labels;
-use super::fn;
 
 /// Detects identical label text used with inconsistent local/global/hierarchical label kinds.
 ///

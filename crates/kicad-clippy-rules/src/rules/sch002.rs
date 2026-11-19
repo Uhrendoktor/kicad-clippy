@@ -7,24 +7,17 @@ use kicad_clippy_core::Diagnostic;
 use kicad_clippy_core::Severity;
 use kiutils_sexpr::Node;
 use std::collections::BTreeMap;
-use super::at_point;
-use super::check_label_topology;
-use super::collect_labels;
-use super::collect_points;
 use super::DisjointSet;
-use super::distance;
-use super::fn;
 use super::GEOMETRY_TOLERANCE_MM;
-use super::has_unmarked_wire_endpoint;
-use super::is_endpoint;
-use super::physical_wire_component_ids;
-use super::physical_wire_component_key;
-use super::point_key;
-use super::point_on_segment;
 use super::Point;
 use super::SchematicFacts;
 use super::Segment;
-use super::wire_components;
+use super::at_point;
+use super::collect_labels;
+use super::collect_points;
+use super::distance;
+use super::is_endpoint;
+use super::point_on_segment;
 
 /// Checks label reuse, duplicate anchors, physical wire-island membership, and hierarchical wire-twig termination.
 ///

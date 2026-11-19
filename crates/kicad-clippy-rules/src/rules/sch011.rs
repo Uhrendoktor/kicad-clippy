@@ -6,12 +6,11 @@ use kicad_clippy_core::Diagnostic;
 use kiutils_sexpr::Node;
 use super::at_span;
 use super::atom_value;
-use super::check_block_annotation_structure;
 use super::child_list;
 use super::collect_nodes;
-use super::fn;
 use super::list_items;
 use super::number;
+use super::span_of;
 
 /// Checks that multiline text boxes have a visible border.
 ///

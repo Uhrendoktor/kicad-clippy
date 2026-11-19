@@ -54,6 +54,7 @@ The in-process `RulePass` extension point is available to Rust crates that can l
 ## Source layout
 
 Every built-in identifier has a dedicated implementation file. Schematic geometry and label checks live in `crates/kicad-clippy-rules/src/rules/schNNN.rs`; profile-backed connectivity, group, component-intent, and decoupling checks live in `crates/kicad-clippy-rules/src/profile_rules/schNNN.rs`. The shared `generic.rs` module owns normalized schematic facts and common geometry helpers, while `metadata.rs` owns the profile data model and validation orchestration. Keep rule-specific diagnostics and helpers in the matching `schNNN.rs` module, and move a helper to the shared parent only when more than one rule depends on it.
+
 ## Tests required for each rule
 
 Each rule should include:
