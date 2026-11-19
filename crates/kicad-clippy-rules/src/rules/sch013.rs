@@ -408,6 +408,131 @@ fn intermediate_pin_obstacle_diagnostics(
 /// # Returns
 ///
 /// SCH013 diagnostics for collisions with symbol primitives, text, buses, frames, tables, pins, images, and no-connect markers.
+/// Checks one wire against selected-unit embedded symbol primitives.
+///
+/// A symbol is reported at most once per wire, even when multiple selected-unit
+/// primitives from that symbol are intersected. This preserves the historical
+/// diagnostic aggregation behavior.
+///
+/// # Arguments
+///
+/// * `wire_index` — Stable index of the wire within the current segment collection.
+/// * `segment` — Wire segment being checked.
+/// * `facts` — Normalized schematic facts containing embedded symbol primitives and pin anchors.
+/// * `wire_stroke_width_mm` — Effective stroke width for this wire, in millimetres.
+///
+/// # Returns
+///
+/// SCH013 diagnostics for symbol bodies penetrated by the wire.
+fn symbol_primitive_obstacle_diagnostics(
+    wire_index: usize,
+    segment: Segment,
+    facts: &SchematicFacts,
+    wire_stroke_width_mm: f64,
+) -> Vec<Diagnostic> {
+    let mut reported_symbols = BTreeSet::new();
+    let mut diagnostics = Vec::new();
+    for primitive in &facts.symbol_primitives {
+        if !reported_symbols.contains(&primitive.reference)
+            && wire_crosses_symbol_primitive_with_wire_stroke(
+                segment,
+                primitive,
+                &facts.pins,
+                wire_stroke_width_mm,
+            )
+        {
+            reported_symbols.insert(primitive.reference.clone());
+            diagnostics.push(at_segment(
+                BuiltinRuleId::Sch013,
+                &format!(
+                    "wire {wire_index} penetrates symbol body {}",
+                    primitive.reference
+                ),
+                segment,
+            ));
+        }
+    }
+    diagnostics
+}
+
+/// Checks one wire against top-level schematic vector graphics.
+///
+/// # Arguments
+///
+/// * `wire_index` — Stable index of the wire within the current segment collection.
+/// * `segment` — Wire segment being checked.
+/// * `facts` — Normalized schematic facts containing top-level graphic primitives.
+/// * `wire_stroke_width_mm` — Effective stroke width for this wire, in millimetres.
+///
+/// # Returns
+///
+/// SCH013 diagnostics for sheet graphics penetrated or approached within the combined stroke envelope.
+fn sheet_graphic_obstacle_diagnostics(
+    wire_index: usize,
+    segment: Segment,
+    facts: &SchematicFacts,
+    wire_stroke_width_mm: f64,
+) -> Vec<Diagnostic> {
+    facts
+        .graphics
+        .iter()
+        .filter(|graphic| {
+            wire_crosses_sheet_graphic_with_wire_stroke(
+                segment,
+                graphic,
+                wire_stroke_width_mm,
+            )
+        })
+        .map(|graphic| {
+            at_segment(
+                BuiltinRuleId::Sch013,
+                &format!(
+                    "wire {wire_index} penetrates sheet graphic {} {:?}",
+                    graphic.kind, graphic.uuid
+                ),
+                segment,
+            )
+        })
+        .collect()
+}
+
+/// Checks one wire against the actual quadrilateral footprint of embedded bitmap images.
+///
+/// # Arguments
+///
+/// * `wire_index` — Stable index of the wire within the current segment collection.
+/// * `segment` — Wire segment being checked.
+/// * `facts` — Normalized schematic facts containing the orientation-aware bitmap image corners.
+///
+/// # Returns
+///
+/// SCH013 diagnostics for embedded PNG/JPEG images whose footprint is crossed by the wire.
+fn bitmap_image_obstacle_diagnostics(
+    wire_index: usize,
+    segment: Segment,
+    facts: &SchematicFacts,
+) -> Vec<Diagnostic> {
+    facts
+        .images
+        .iter()
+        .filter(|image| {
+            image
+                .corners_mm
+                .is_some_and(|corners| wire_crosses_bitmap_image(segment, &corners))
+        })
+        .map(|image| {
+            at_segment(
+                BuiltinRuleId::Sch013,
+                &format!(
+                    "wire {wire_index} penetrates embedded bitmap image {:?}",
+                    image.uuid
+                ),
+                segment,
+            )
+        })
+        .collect()
+}
+
 pub(super) fn check_wire_obstacles(
     root: &Node,
     segments: &[Segment],
@@ -430,40 +555,18 @@ pub(super) fn check_wire_obstacles(
             .copied()
             .or(default_wire_stroke_width_mm)
             .unwrap_or(0.0);
-        let mut reported_symbols = BTreeSet::new();
-        for primitive in &facts.symbol_primitives {
-            if !reported_symbols.contains(&primitive.reference)
-                && wire_crosses_symbol_primitive_with_wire_stroke(
-                    *segment,
-                    primitive,
-                    &facts.pins,
-                    wire_stroke_width_mm,
-                )
-            {
-                reported_symbols.insert(primitive.reference.clone());
-                diagnostics.push(at_segment(
-                    BuiltinRuleId::Sch013,
-                    &format!(
-                        "wire {wire_index} penetrates symbol body {}",
-                        primitive.reference
-                    ),
-                    *segment,
-                ));
-            }
-        }
-        for graphic in &facts.graphics {
-            if wire_crosses_sheet_graphic_with_wire_stroke(*segment, graphic, wire_stroke_width_mm)
-            {
-                diagnostics.push(at_segment(
-                    BuiltinRuleId::Sch013,
-                    &format!(
-                        "wire {wire_index} penetrates sheet graphic {} {:?}",
-                        graphic.kind, graphic.uuid
-                    ),
-                    *segment,
-                ));
-            }
-        }
+        diagnostics.extend(symbol_primitive_obstacle_diagnostics(
+            wire_index,
+            *segment,
+            facts,
+            wire_stroke_width_mm,
+        ));
+        diagnostics.extend(sheet_graphic_obstacle_diagnostics(
+            wire_index,
+            *segment,
+            facts,
+            wire_stroke_width_mm,
+        ));
         diagnostics.extend(sheet_table_bus_obstacle_diagnostics(
             wire_index,
             *segment,
@@ -476,21 +579,11 @@ pub(super) fn check_wire_obstacles(
                 no_connect_marker_pen_mm: default_marker_pen_width_mm,
             },
         ));
-        for image in &facts.images {
-            if image
-                .corners_mm
-                .is_some_and(|corners| wire_crosses_bitmap_image(*segment, &corners))
-            {
-                diagnostics.push(at_segment(
-                    BuiltinRuleId::Sch013,
-                    &format!(
-                        "wire {wire_index} penetrates embedded bitmap image {:?}",
-                        image.uuid
-                    ),
-                    *segment,
-                ));
-            }
-        }
+        diagnostics.extend(bitmap_image_obstacle_diagnostics(
+            wire_index,
+            *segment,
+            facts,
+        ));
         diagnostics.extend(wire_text_annotation_obstacle_diagnostics(
             wire_index,
             *segment,
