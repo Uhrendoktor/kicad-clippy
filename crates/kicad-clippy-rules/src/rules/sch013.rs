@@ -11,7 +11,6 @@ use super::SchematicArcFact;
 use super::SchematicBusObstacleFact;
 use super::SchematicFacts;
 use super::SchematicGraphicFact;
-use super::SchematicNoConnectFact;
 use super::SchematicPinFact;
 use super::SchematicPrimitiveFact;
 use super::SchematicSheetFact;

@@ -1,6 +1,7 @@
 //! Electrical marker and combined sheet/table/bus obstacle checks for SCH013.
 
 use super::*;
+use super::super::SchematicNoConnectFact;
 
 /// Tests whether a wire intersects either diagonal stroke of a no-connect marker.
 ///
@@ -126,7 +127,7 @@ pub(super) struct WireObstacleStrokeWidths {
 /// # Returns
 ///
 /// Combined SCH013 diagnostics for sheet frames, table strokes, buses, and no-connect markers near the wire.
-pub(super) fn sheet_table_super::graphics::bus_obstacle_diagnostics(
+pub(super) fn sheet_table_bus_obstacle_diagnostics(
     wire_index: usize,
     segment: Segment,
     sheets: &[SchematicSheetFact],
@@ -144,7 +145,7 @@ pub(super) fn sheet_table_super::graphics::bus_obstacle_diagnostics(
         table_strokes,
         wire_stroke_width_mm,
     ));
-    diagnostics.extend(bus_obstacle_diagnostics(
+    diagnostics.extend(super::graphics::bus_obstacle_diagnostics(
         wire_index,
         segment,
         bus_obstacles,
