@@ -143,7 +143,7 @@ impl Diagnostic {
 mod tests {
     use super::{Diagnostic, Severity};
     use crate::BuiltinRuleId;
-    /// Verifies that excluded errors do not fail a run behaves as required.
+    /// Confirms excluded error diagnostics are retained but do not count as active errors.
     #[test]
     fn excluded_errors_do_not_fail_a_run() {
         let mut diagnostic = Diagnostic::new("ERC/EXCLUDED", Severity::Error, "ignored");
@@ -151,7 +151,7 @@ mod tests {
 
         assert!(!diagnostic.is_active_error());
     }
-    /// Verifies that builtin diagnostic keeps the stable external code behaves as required.
+    /// Confirms a diagnostic created from `BuiltinRuleId` stores the corresponding canonical `SCHnnn` code.
     #[test]
     fn builtin_diagnostic_keeps_the_stable_external_code() {
         let diagnostic = Diagnostic::for_builtin_rule(

@@ -1035,7 +1035,7 @@ fn cumulative_positions(origin: f64, sizes: &[f64]) -> Vec<f64> {
 ///
 /// # Returns
 ///
-/// The table line fact result derived from the schematic geometry.
+/// A non-closed `SchematicGraphicFact` with the two endpoints and bounds expanded by half the declared stroke width plus the safety margin.
 fn table_line_fact(
     kind: &str,
     uuid: Option<&str>,
@@ -3184,11 +3184,11 @@ enum PinAxis {
 }
 
 impl PinAxis {
-    /// Calculates as str from the supplied schematic geometry or S-expression data.
+    /// Returns the lowercase orientation token (`horizontal` or `vertical`) used when describing the pin's permitted wire axis.
     ///
     /// # Returns
     ///
-    /// The as str result derived from the schematic geometry.
+    /// The lowercase axis token: `horizontal` for an X-parallel pin or `vertical` for a Y-parallel pin.
     const fn as_str(self) -> &'static str {
         match self {
             Self::Horizontal => "horizontal",
@@ -3912,7 +3912,7 @@ fn segment_bezier_intersection_points(
 ///
 /// # Returns
 ///
-/// The cubic bezier path segment result derived from the schematic geometry.
+/// A Kurbo cubic Bézier path segment constructed from the four supplied control points.
 fn cubic_bezier_path_segment(control_points: [(f64, f64); 4]) -> CurvePathSeg {
     CurvePathSeg::Cubic(CurveCubicBez::new(
         CurvePoint::new(control_points[0].0, control_points[0].1),
@@ -5024,7 +5024,7 @@ struct IndexedSegment {
 impl Cross for IndexedSegment {
     /// Floating-point scalar used for geometric coordinates, distances, and stroke measurements.
     type Scalar = f64;
-    /// Calculates line from the supplied schematic geometry or S-expression data.
+    /// Returns a `geo` line segment joining this indexed wire segment's start and end coordinates.
     ///
     /// # Returns
     ///
@@ -5251,7 +5251,7 @@ struct TextBoxRecord {
 ///
 /// # Returns
 ///
-/// The inspect text box result derived from the schematic geometry.
+/// The parsed text-box record and any associated diagnostics; the record is `None` when required geometry or font metrics are missing or invalid.
 fn inspect_text_box(node: &Node, index: usize) -> (Option<TextBoxRecord>, Vec<Diagnostic>) {
     let (metrics, error) = read_text_box_metrics(node, index);
     let Some(metrics) = metrics else {
@@ -5317,7 +5317,7 @@ struct TextBoxMetrics {
 ///
 /// # Returns
 ///
-/// The read text box metrics result derived from the schematic geometry.
+/// Validated text-box content, font, padding, stroke, bounds, and source span, or `None` with one diagnostic when a required field is malformed or unavailable.
 fn read_text_box_metrics(
     node: &Node,
     index: usize,
@@ -6266,7 +6266,7 @@ fn check_symbol_field_clearance(
 ///
 /// # Returns
 ///
-/// The geo rect result derived from the schematic geometry.
+/// A normalized `geo::Rect<f64>` enclosing the supplied schematic bounds, with the lesser coordinates as its minimum corner.
 fn geo_rect(bounds: Bounds) -> GeoRect<f64> {
     let opposite_x = bounds.x + bounds.width;
     let opposite_y = bounds.y + bounds.height;
@@ -6346,7 +6346,7 @@ fn schematic_polygon(primitive: &SchematicPrimitiveFact) -> Option<Polygon<f64>>
 ///
 /// # Returns
 ///
-/// The schematic path result derived from the schematic geometry.
+/// A `geo::LineString<f64>` containing the primitive's ordered sheet-coordinate points.
 fn schematic_path(primitive: &SchematicPrimitiveFact) -> LineString<f64> {
     LineString::new(
         primitive
@@ -6626,7 +6626,7 @@ fn point_from_at(node: &Node) -> Option<Point> {
 ///
 /// # Returns
 ///
-/// The span of result derived from the schematic geometry.
+/// The half-open byte range recorded on this S-expression node in the original source buffer.
 const fn span_of(node: &Node) -> ByteSpan {
     match node {
         Node::List { span, .. } | Node::Atom { span, .. } => ByteSpan::new(span.start, span.end),
@@ -6832,7 +6832,7 @@ mod tests {
     use super::{HALF_FACTOR, run_builtin_rules};
     use kicad_clippy_parser::SchematicDocument;
     use kurbo::{ParamCurve, ParamCurveDeriv};
-    /// Builds a minimal valid schematic document around the supplied S-expression body for geometry tests.
+    /// Builds a minimal valid schematic fixture by wrapping the supplied S-expression items in a `kicad_sch` root.
     ///
     /// # Arguments
     ///
@@ -6840,12 +6840,12 @@ mod tests {
     ///
     /// # Returns
     ///
-    /// The document result derived from the schematic geometry.
+    /// A parsed `SchematicDocument` containing the supplied S-expression body under a minimal valid `kicad_sch` root.
     fn document(body: &str) -> SchematicDocument {
         SchematicDocument::from_text("fixture.kicad_sch", format!("(kicad_sch {body})"))
             .expect("fixture parses")
     }
-    /// Calculates sch013 checks both no connect marker diagonals from the supplied schematic geometry or S-expression data.
+    /// Confirms SCH013 reports a wire whose stroke envelope intersects either diagonal of a no-connect marker.
     #[test]
     fn sch013_checks_both_no_connect_marker_diagonals() {
         let document = document(
@@ -6859,7 +6859,7 @@ mod tests {
             item.code == "SCH013" && item.message.contains("no-connect marker nc-center")
         }));
     }
-    /// Calculates sch013 uses project default line width for no connect marker pen from the supplied schematic geometry or S-expression data.
+    /// Confirms the marker's stroke envelope uses the project's default schematic line width when that setting is available.
     #[test]
     fn sch013_uses_project_default_line_width_for_no_connect_marker_pen() {
         let schematic = document(
@@ -6887,7 +6887,7 @@ mod tests {
                 })
         );
     }
-    /// Calculates sch013 does not expand no connect marker with an assumed pen width from the supplied schematic geometry or S-expression data.
+    /// Confirms SCH013 does not invent a marker pen width when the project does not supply one.
     #[test]
     fn sch013_does_not_expand_no_connect_marker_with_an_assumed_pen_width() {
         let document = document(
@@ -6903,7 +6903,7 @@ mod tests {
             })
         );
     }
-    /// Calculates sch013 checks wire crossings of schematic bus lines from the supplied schematic geometry or S-expression data.
+    /// Confirms SCH013 reports a wire that crosses a schematic bus line.
     #[test]
     fn sch013_checks_wire_crossings_of_schematic_bus_lines() {
         let document = document(
@@ -6922,7 +6922,7 @@ mod tests {
                 .any(|item| { item.code == "SCH013" && item.message.contains("bus line") })
         );
     }
-    /// Calculates sch013 allows wire endpoint at bus entry without exempting other crossings from the supplied schematic geometry or S-expression data.
+    /// Confirms a wire may terminate at a bus entry while crossings at other points on the same bus remain violations.
     #[test]
     fn sch013_allows_wire_endpoint_at_bus_entry_without_exempting_other_crossings() {
         let attached = document(
@@ -6960,7 +6960,7 @@ mod tests {
                 .any(|item| { item.code == "SCH013" && item.message.contains("bus entry") })
         );
     }
-    /// Calculates sch013 checks hierarchical sheet frame away from sheet pins from the supplied schematic geometry or S-expression data.
+    /// Confirms a hierarchical sheet-frame stroke is treated as an obstacle away from its declared sheet pins.
     #[test]
     fn sch013_checks_hierarchical_sheet_frame_away_from_sheet_pins() {
         let document = document(
@@ -6982,7 +6982,7 @@ mod tests {
             })
         );
     }
-    /// Calculates sch013 allows wire endpoint at matching sheet pin from the supplied schematic geometry or S-expression data.
+    /// Confirms a wire endpoint at the corresponding hierarchical sheet pin is an allowed frame contact.
     #[test]
     fn sch013_allows_wire_endpoint_at_matching_sheet_pin() {
         let document = document(
@@ -7004,7 +7004,7 @@ mod tests {
             })
         );
     }
-    /// Calculates sch013 sheet pin exemption does not allow wire to continue inside sheet from the supplied schematic geometry or S-expression data.
+    /// Confirms the sheet-pin endpoint exception does not exempt a wire segment that continues through the frame.
     #[test]
     fn sch013_sheet_pin_exemption_does_not_allow_wire_to_continue_inside_sheet() {
         let document = document(
@@ -7026,7 +7026,7 @@ mod tests {
             })
         );
     }
-    /// Calculates sch013 checks enabled table external borders and column separators from the supplied schematic geometry or S-expression data.
+    /// Confirms enabled table outer borders and column separators participate in wire-obstacle checks.
     #[test]
     fn sch013_checks_enabled_table_external_borders_and_column_separators() {
         let document = document(
@@ -7057,7 +7057,7 @@ mod tests {
                 .any(|item| { item.code == "SCH013" && item.message.contains("table separator") })
         );
     }
-    /// Calculates sch013 checks cardinally rotated table borders and separators from the supplied schematic geometry or S-expression data.
+    /// Confirms table borders and separators are transformed before testing wires against a cardinally rotated table.
     #[test]
     fn sch013_checks_cardinally_rotated_table_borders_and_separators() {
         let fixtures = [
@@ -7090,7 +7090,7 @@ mod tests {
             );
         }
     }
-    /// Calculates sch013 checks cardinally rotated table external borders from the supplied schematic geometry or S-expression data.
+    /// Confirms the outer border of a cardinally rotated table is tested at its transformed sheet coordinates.
     #[test]
     fn sch013_checks_cardinally_rotated_table_external_borders() {
         let fixtures = [
@@ -7124,7 +7124,7 @@ mod tests {
             );
         }
     }
-    /// Calculates sch013 does not use unrotated table coordinates after rotation from the supplied schematic geometry or S-expression data.
+    /// Confirms rotated table obstacle checks use transformed coordinates rather than the unrotated cell layout.
     #[test]
     fn sch013_does_not_use_unrotated_table_coordinates_after_rotation() {
         let document = document(
@@ -7148,7 +7148,7 @@ mod tests {
                 .any(|item| { item.code == "SCH013" && item.message.contains("table") })
         );
     }
-    /// Calculates sch013 skips tables with inconsistent cell rotations or positions from the supplied schematic geometry or S-expression data.
+    /// Confirms inconsistent cell rotations or positions cause table geometry to be skipped instead of guessed.
     #[test]
     fn sch013_skips_tables_with_inconsistent_cell_rotations_or_positions() {
         let mixed_rotations = document(
@@ -7193,7 +7193,7 @@ mod tests {
                 .any(|item| { item.code == "SCH013" && item.message.contains("table") })
         );
     }
-    /// Calculates sch013 ignores disabled table strokes and merged cell separators from the supplied schematic geometry or S-expression data.
+    /// Confirms disabled table strokes and separators hidden by merged cells do not block wires.
     #[test]
     fn sch013_ignores_disabled_table_strokes_and_merged_cell_separators() {
         let no_strokes = document(
@@ -7238,7 +7238,7 @@ mod tests {
                 .any(|item| item.code == "SCH013" && item.message.contains("table"))
         );
     }
-    /// Calculates sch013 checks table cell text with estimated glyph bounds from the supplied schematic geometry or S-expression data.
+    /// Confirms visible table-cell text is checked using estimated rendered glyph bounds.
     #[test]
     fn sch013_checks_table_cell_text_with_estimated_glyph_bounds() {
         let document = document(
@@ -7259,7 +7259,7 @@ mod tests {
             item.code == "SCH013" && item.message.contains("free-standing schematic text")
         }));
     }
-    /// Calculates sch013 uses reflected text bounds for 180 degree table cells from the supplied schematic geometry or S-expression data.
+    /// Confirms table-cell glyph bounds are reflected correctly when the cell text is rotated by 180 degrees.
     #[test]
     fn sch013_uses_reflected_text_bounds_for_180_degree_table_cells() {
         let rotated = document(
@@ -7303,7 +7303,7 @@ mod tests {
                 })
         );
     }
-    /// Calculates sch013 skips table cell text for unsupported non cardinal rotation from the supplied schematic geometry or S-expression data.
+    /// Confirms cells with unsupported non-cardinal text angles are skipped rather than assigned guessed glyph bounds.
     #[test]
     fn sch013_skips_table_cell_text_for_unsupported_non_cardinal_rotation() {
         let document = document(
@@ -7326,7 +7326,7 @@ mod tests {
             })
         );
     }
-    /// Calculates geo rectangle clipping preserves wire overlap tolerance from the supplied schematic geometry or S-expression data.
+    /// Confirms clipping a wire to a rectangle preserves the geometry tolerance at the rectangle boundary.
     #[test]
     fn geo_rectangle_clipping_preserves_wire_overlap_tolerance() {
         let bounds = super::Bounds {
@@ -7371,7 +7371,7 @@ mod tests {
             bounds,
         ));
     }
-    /// Calculates analytic arc intersection detects a curve hit missed by its sampled chord from the supplied schematic geometry or S-expression data.
+    /// Confirms the analytic arc intersection finds a hit that the sampled chord approximation misses.
     #[test]
     fn analytic_arc_intersection_detects_a_curve_hit_missed_by_its_sampled_chord() {
         let arc = super::SchematicArcFact {
@@ -7454,7 +7454,7 @@ mod tests {
         assert!((intersections[0].x - wire.start.x).abs() < 1.0e-9);
         assert!((intersections[0].y - wire.start.y).abs() < 1.0e-9);
     }
-    /// Calculates analytic arc intersection respects directed sweep and tangency from the supplied schematic geometry or S-expression data.
+    /// Confirms arc intersection respects the selected sweep direction and includes tangential contact.
     #[test]
     fn analytic_arc_intersection_respects_directed_sweep_and_tangency() {
         let arc = super::SchematicArcFact {
@@ -7490,7 +7490,7 @@ mod tests {
         assert!(tangent[0].x.abs() < 1.0e-9);
         assert!((tangent[0].y - 2.0).abs() < 1.0e-9);
     }
-    /// Calculates analytic bezier intersection detects a curve hit missed by its flattened polyline from the supplied schematic geometry or S-expression data.
+    /// Confirms analytic Bézier intersection detects a hit missed by its flattened polyline approximation.
     #[test]
     fn analytic_bezier_intersection_detects_a_curve_hit_missed_by_its_flattened_polyline() {
         let controls = [(0.0, 0.0), (0.0, 10.0), (10.0, 10.0), (10.0, 0.0)];
@@ -7595,7 +7595,7 @@ mod tests {
             0.0,
         ));
     }
-    /// Calculates kurbo circumcircle preserves arc direction and collinear fallback from the supplied schematic geometry or S-expression data.
+    /// Confirms circumcircle reconstruction preserves the requested arc direction and handles collinear control points without inventing a circle.
     #[test]
     fn kurbo_circumcircle_preserves_arc_direction_and_collinear_fallback() {
         let upper = super::sample_arc_through_three_points((-2.0, 0.0), (0.0, 2.0), (2.0, 0.0));
@@ -7611,7 +7611,7 @@ mod tests {
         let collinear = super::sample_arc_through_three_points((0.0, 0.0), (1.0, 0.0), (2.0, 0.0));
         assert_eq!(collinear, [(0.0, 0.0), (1.0, 0.0), (2.0, 0.0)]);
     }
-    /// Calculates kurbo affine matches kicad cardinal symbol transforms from the supplied schematic geometry or S-expression data.
+    /// Confirms the affine transform matches KiCad's rotation and mirror coordinates for cardinal symbol orientations.
     #[test]
     fn kurbo_affine_matches_kicad_cardinal_symbol_transforms() {
         let cases = [
@@ -7656,7 +7656,7 @@ mod tests {
           (property "Reference" "J1" (at 10 10 0) (effects (font (size 1 1))))
         )
     "#;
-    /// Calculates non cardinal symbol rotation resolves embedded pin and primitive geometry from the supplied schematic geometry or S-expression data.
+    /// Confirms non-cardinal symbol rotations are applied when resolving embedded pin and primitive positions.
     #[test]
     fn non_cardinal_symbol_rotation_resolves_embedded_pin_and_primitive_geometry() {
         let source = EMBEDDED_PIN
@@ -7687,7 +7687,7 @@ mod tests {
                 .any(|item| item.code == "SCH005")
         );
     }
-    /// Calculates sch013 detects wire crossing a non cardinal symbol body from the supplied schematic geometry or S-expression data.
+    /// Confirms SCH013 reports a wire crossing a placed symbol body at a non-cardinal rotation.
     #[test]
     fn sch013_detects_wire_crossing_a_non_cardinal_symbol_body() {
         let source = EMBEDDED_PIN
@@ -7702,7 +7702,7 @@ mod tests {
             item.code == "SCH013" && item.message.contains("penetrates symbol body J1")
         }));
     }
-    /// Calculates sch015 accepts no connect marker on non cardinal symbol pin from the supplied schematic geometry or S-expression data.
+    /// Confirms SCH015 accepts a marker placed on a transformed symbol pin at a non-cardinal rotation.
     #[test]
     fn sch015_accepts_no_connect_marker_on_non_cardinal_symbol_pin() {
         let source = EMBEDDED_PIN.replace("(at 10 10 0)", "(at 10 10 45)");
@@ -7720,7 +7720,7 @@ mod tests {
                 .any(|item| item.code == "SCH015")
         );
     }
-    /// Calculates pin wire must follow the embedded pin axis from the supplied schematic geometry or S-expression data.
+    /// Confirms pin-orientation validation rejects a wire attached along the wrong axis of an embedded symbol pin.
     #[test]
     fn pin_wire_must_follow_the_embedded_pin_axis() {
         let doc = document(&format!(
@@ -7733,7 +7733,7 @@ mod tests {
                 .any(|item| item.code == "SCH005" && item.message.contains("J1 pin 1"))
         );
     }
-    /// Calculates correctly aligned pin wire is accepted from the supplied schematic geometry or S-expression data.
+    /// Confirms a wire aligned with the embedded pin's declared axis produces no SCH005 diagnostic.
     #[test]
     fn correctly_aligned_pin_wire_is_accepted() {
         let doc = document(&format!(
@@ -7746,7 +7746,7 @@ mod tests {
                 .any(|item| item.code == "SCH005")
         );
     }
-    /// Calculates pin axis and position follow symbol rotation and mirroring from the supplied schematic geometry or S-expression data.
+    /// Confirms both the pin's position and electrical axis follow the placed symbol's rotation and mirror transform.
     #[test]
     fn pin_axis_and_position_follow_symbol_rotation_and_mirroring() {
         let doc = document(
@@ -7772,14 +7772,14 @@ mod tests {
                 .any(|item| item.code == "SCH005")
         );
     }
-    /// Calculates embedded library fields are not counted as placed components from the supplied schematic geometry or S-expression data.
+    /// Confirms fields embedded in a library definition are not counted as placed symbol instances.
     #[test]
     fn embedded_library_fields_are_not_counted_as_placed_components() {
         let doc = document(EMBEDDED_PIN);
         let run = run_builtin_rules(&doc);
         assert_eq!(run.components, 1);
     }
-    /// Calculates no connect marker must coincide with a placed symbol pin from the supplied schematic geometry or S-expression data.
+    /// Confirms a no-connect marker away from every placed symbol-pin anchor produces SCH015.
     #[test]
     fn no_connect_marker_must_coincide_with_a_placed_symbol_pin() {
         let doc = document(&format!(
@@ -7792,7 +7792,7 @@ mod tests {
                 .any(|item| item.code == "SCH015" && item.message.contains("does not coincide"))
         );
     }
-    /// Calculates correctly placed no connect marker is accepted even for power symbols from the supplied schematic geometry or S-expression data.
+    /// Confirms a no-connect marker at a valid power-symbol pin is accepted.
     #[test]
     fn correctly_placed_no_connect_marker_is_accepted_even_for_power_symbols() {
         let power_symbol = EMBEDDED_PIN.replace("\"J1\"", "\"#PWR001\"");
@@ -7806,7 +7806,7 @@ mod tests {
                 .any(|item| item.code == "SCH015")
         );
     }
-    /// Calculates quoted atoms use parser decoded escape sequences from the supplied schematic geometry or S-expression data.
+    /// Confirms property readers receive decoded quoted-atom escapes while the lossless CST retains the original source.
     #[test]
     fn quoted_atoms_use_parser_decoded_escape_sequences() {
         let doc = document(r#"(label "first\nsecond" (at 1 1 0))"#);
@@ -7815,7 +7815,7 @@ mod tests {
         assert_eq!(labels.len(), 1);
         assert_eq!(labels[0].1, "first\nsecond");
     }
-    /// Calculates newstroke text height uses rendered glyph geometry from the supplied schematic geometry or S-expression data.
+    /// Confirms NewStroke text height is derived from rendered glyph metrics rather than assumed equal to the requested font size.
     #[test]
     fn newstroke_text_height_uses_rendered_glyph_geometry() {
         let cap = super::newstroke_text_metrics_ratio("H").1;
@@ -7828,7 +7828,7 @@ mod tests {
         assert!(lowercase > 0.0 && lowercase <= cap);
         assert!((blank - cap).abs() < 0.001);
     }
-    /// Calculates text bounds use kurbo for cardinal rotation and justification from the supplied schematic geometry or S-expression data.
+    /// Confirms text bounds account for cardinal rotation and horizontal/vertical justification.
     #[test]
     fn text_bounds_use_kurbo_for_cardinal_rotation_and_justification() {
         let (width, height) = super::newstroke_text_metrics_ratio("AB");
@@ -7906,7 +7906,7 @@ mod tests {
             assert!((bounds.height - expected_height).abs() < 0.001);
         }
     }
-    /// Calculates text widths use kicad newstroke glyph advances from the supplied schematic geometry or S-expression data.
+    /// Confirms text width is calculated from KiCad NewStroke glyph advances.
     #[test]
     fn text_widths_use_kicad_newstroke_glyph_advances() {
         let cap_height = 21.0;
@@ -7927,7 +7927,7 @@ mod tests {
             );
         }
     }
-    /// Calculates unsupported unicode does not panic or shift newstroke metrics from the supplied schematic geometry or S-expression data.
+    /// Confirms unsupported Unicode glyphs neither panic nor alter the measured advances of later supported glyphs.
     #[test]
     fn unsupported_unicode_does_not_panic_or_shift_newstroke_metrics() {
         let supported = super::newstroke_text_metrics_ratio("AH");
@@ -7935,7 +7935,7 @@ mod tests {
         assert!((supported.0 - with_unsupported.0).abs() < 0.001);
         assert!((supported.1 - with_unsupported.1).abs() < 0.001);
     }
-    /// Calculates sch013 detects wire crossing a top level sheet circle from the supplied schematic geometry or S-expression data.
+    /// Confirms SCH013 reports a wire intersecting the stroked circumference of a top-level sheet circle.
     #[test]
     fn sch013_detects_wire_crossing_a_top_level_sheet_circle() {
         let doc = document(
@@ -7949,7 +7949,7 @@ mod tests {
             item.code == "SCH013" && item.message.contains("sheet graphic circle")
         }));
     }
-    /// Calculates sch013 detects wire crossing an embedded bitmap image from the supplied schematic geometry or S-expression data.
+    /// Confirms SCH013 reports a wire passing through an embedded bitmap image's footprint.
     #[test]
     fn sch013_detects_wire_crossing_an_embedded_bitmap_image() {
         let doc = document(
@@ -7961,7 +7961,7 @@ mod tests {
             item.code == "SCH013" && item.message.contains("embedded bitmap image")
         }));
     }
-    /// Calculates sch013 uses rotated bitmap footprint instead of its axis aligned bounds from the supplied schematic geometry or S-expression data.
+    /// Confirms SCH013 uses the rotated bitmap quadrilateral rather than the larger axis-aligned bounding box.
     #[test]
     fn sch013_uses_rotated_bitmap_footprint_instead_of_its_axis_aligned_bounds() {
         /// Defines the image constant.
@@ -7982,7 +7982,7 @@ mod tests {
             .iter()
             .any(|item| item.code == "SCH013" && item.message.contains("embedded bitmap image")));
     }
-    /// Calculates diagonal wires are reported from the supplied schematic geometry or S-expression data.
+    /// Confirms a diagonal wire segment is reported by SCH001 instead of being accepted as an orthogonal schematic wire.
     #[test]
     fn diagonal_wires_are_reported() {
         let doc = document(r"(wire (pts (xy 0 0) (xy 2 2)))");
@@ -7993,7 +7993,7 @@ mod tests {
                 .any(|item| item.code == "SCH001")
         );
     }
-    /// Calculates local labels must be reused from the supplied schematic geometry or S-expression data.
+    /// Confirms matching local labels establish the expected connection between otherwise separate wire islands.
     #[test]
     fn local_labels_must_be_reused() {
         let doc = document(r#"(label "ONE" (at 1 1 0) (effects (font (size 1 1))))"#);
@@ -8004,7 +8004,7 @@ mod tests {
                 .any(|item| item.code == "SCH002")
         );
     }
-    /// Calculates repeated local label on one wire is rejected from the supplied schematic geometry or S-expression data.
+    /// Confirms repeating the same local label on one physical wire component is reported as a duplicate.
     #[test]
     fn repeated_local_label_on_one_wire_is_rejected() {
         let doc = document(
@@ -8014,7 +8014,7 @@ mod tests {
             item.code == "SCH002" && item.message.contains("one physical wire network")
         }));
     }
-    /// Calculates repeated local label joins distinct wire islands from the supplied schematic geometry or S-expression data.
+    /// Confirms reusing a local label on distinct wire islands is treated as an electrical connection.
     #[test]
     fn repeated_local_label_joins_distinct_wire_islands() {
         let doc = document(
@@ -8067,7 +8067,7 @@ mod tests {
                 .any(|item| item.code == "SCH013" && item.message.contains("symbol body Q1"))
         );
     }
-    /// Calculates sch013 checks free standing schematic text as a wire obstacle from the supplied schematic geometry or S-expression data.
+    /// Confirms SCH013 checks ordinary sheet text as an obstacle to wire strokes.
     #[test]
     fn sch013_checks_free_standing_schematic_text_as_a_wire_obstacle() {
         let obstructed = document(
@@ -8102,7 +8102,7 @@ mod tests {
             item.code == "SCH013" && item.message.contains("free-standing schematic text")
         }));
     }
-    /// Calculates sch013 checks embedded symbol text and text box obstacles from the supplied schematic geometry or S-expression data.
+    /// Confirms SCH013 checks both library-embedded text and standalone annotation text boxes.
     #[test]
     fn sch013_checks_embedded_symbol_text_and_text_box_obstacles() {
         let doc = document(
@@ -8147,7 +8147,7 @@ mod tests {
                 && item.message.contains("NOTE")
         }));
     }
-    /// Calculates sch013 transforms embedded symbol text obstacles with symbol mirrors and rotation from the supplied schematic geometry or S-expression data.
+    /// Confirms embedded text obstacle bounds follow the placed symbol's mirror and rotation transform.
     #[test]
     fn sch013_transforms_embedded_symbol_text_obstacles_with_symbol_mirrors_and_rotation() {
         let source = r#"
@@ -8175,7 +8175,7 @@ mod tests {
                 && item.message.contains("ROTATED")
         }));
     }
-    /// Calculates sch013 checks declared stroke width for open sheet paths from the supplied schematic geometry or S-expression data.
+    /// Confirms SCH013 uses the declared line width when testing an open sheet-level path.
     #[test]
     fn sch013_checks_declared_stroke_width_for_open_sheet_paths() {
         let near = document(
@@ -8200,7 +8200,7 @@ mod tests {
             item.code == "SCH013" && item.message.contains("sheet graphic polyline")
         }));
     }
-    /// Calculates sch013 checks declared stroke width for embedded symbol paths from the supplied schematic geometry or S-expression data.
+    /// Confirms SCH013 uses the declared line width when testing a path embedded in a symbol.
     #[test]
     fn sch013_checks_declared_stroke_width_for_embedded_symbol_paths() {
         /// Defines the embedded stroke symbol constant.
@@ -8237,7 +8237,7 @@ mod tests {
                 .any(|item| { item.code == "SCH013" && item.message.contains("symbol body U1") })
         );
     }
-    /// Calculates sch013 checks embedded symbol arc and bezier stroke clearance from the supplied schematic geometry or S-expression data.
+    /// Confirms SCH013 computes clearance from the stroked geometry of embedded arcs and Bézier curves.
     #[test]
     fn sch013_checks_embedded_symbol_arc_and_bezier_stroke_clearance() {
         let arc = super::SchematicArcFact {
@@ -8325,7 +8325,7 @@ mod tests {
             0.0,
         ));
     }
-    /// Calculates sch013 pin endpoint exemption is limited to local stroke contact from the supplied schematic geometry or S-expression data.
+    /// Confirms a pin endpoint exemption covers only the local contact region and does not hide a later wire collision.
     #[test]
     fn sch013_pin_endpoint_exemption_is_limited_to_local_stroke_contact() {
         let primitive = super::SchematicPrimitiveFact {
@@ -8354,7 +8354,7 @@ mod tests {
             0.0,
         ));
     }
-    /// Calculates sch013 uses curve distance for bezier stroke clearance from the supplied schematic geometry or S-expression data.
+    /// Confirms Bézier stroke clearance is based on distance to the curve rather than its control polygon.
     #[test]
     fn sch013_uses_curve_distance_for_bezier_stroke_clearance() {
         let controls = [(0.0, 0.0), (0.0, 10.0), (10.0, 10.0), (10.0, 0.0)];
@@ -8408,7 +8408,7 @@ mod tests {
             0.0
         ));
     }
-    /// Calculates sch013 applies arc stroke clearance to the selected sweep from the supplied schematic geometry or S-expression data.
+    /// Confirms arc stroke clearance is checked only along the selected directed sweep.
     #[test]
     fn sch013_applies_arc_stroke_clearance_to_the_selected_sweep() {
         let arc = super::SchematicArcFact {
@@ -8515,7 +8515,7 @@ mod tests {
                 .any(|item| item.code == "SCH013" && item.message.contains("symbol body U1"))
         );
     }
-    /// Calculates arc midpoint selects the correct sweep direction from the supplied schematic geometry or S-expression data.
+    /// Confirms the midpoint determines whether a three-point arc follows the clockwise or counter-clockwise sweep.
     #[test]
     fn arc_midpoint_selects_the_correct_sweep_direction() {
         let doc = document(
@@ -8569,7 +8569,7 @@ mod tests {
                 .any(|item| item.code == "SCH013" && item.message.contains("symbol body U1"))
         );
     }
-    /// Calculates bezier control polygon is not treated as the curve from the supplied schematic geometry or S-expression data.
+    /// Confirms collision checks do not treat the Bézier control polygon as part of the rendered curve.
     #[test]
     fn bezier_control_polygon_is_not_treated_as_the_curve() {
         let doc = document(
@@ -8597,7 +8597,7 @@ mod tests {
                 .any(|item| item.code == "SCH013" && item.message.contains("symbol body U1"))
         );
     }
-    /// Calculates sch013 combines explicit wire and sheet graphic stroke widths from the supplied schematic geometry or S-expression data.
+    /// Confirms SCH013 combines the wire's explicit width with the sheet graphic's declared stroke width.
     #[test]
     fn sch013_combines_explicit_wire_and_sheet_graphic_stroke_widths() {
         let combined = document(
@@ -8657,7 +8657,7 @@ mod tests {
             item.code == "SCH013" && item.message.contains("sheet graphic polyline")
         }));
     }
-    /// Calculates sch013 uses project default wire width when no assignment override exists from the supplied schematic geometry or S-expression data.
+    /// Confirms SCH013 applies the project default netclass width when no more-specific assignment overrides it.
     #[test]
     fn sch013_uses_project_default_wire_width_when_no_assignment_override_exists() {
         let schematic = document(
@@ -8673,7 +8673,7 @@ mod tests {
             item.code == "SCH013" && item.message.contains("sheet graphic polyline")
         }));
     }
-    /// Calculates sch013 does not apply project default when graphical assignments exist from the supplied schematic geometry or S-expression data.
+    /// Confirms schematic-local netclass assignments suppress project-only default-width inference.
     #[test]
     fn sch013_does_not_apply_project_default_when_graphical_assignments_exist() {
         for assignment in [
@@ -8696,7 +8696,7 @@ mod tests {
             }));
         }
     }
-    /// Calculates sch013 combines explicit wire and embedded symbol strokes from the supplied schematic geometry or S-expression data.
+    /// Confirms SCH013 checks the combined stroke envelopes of a wire and an embedded symbol primitive.
     #[test]
     fn sch013_combines_explicit_wire_and_embedded_symbol_strokes() {
         let primitive = super::SchematicPrimitiveFact {
@@ -8726,7 +8726,7 @@ mod tests {
             0.2,
         ));
     }
-    /// Calculates sch013 explicit wire width expands circle stroke ring from the supplied schematic geometry or S-expression data.
+    /// Confirms increasing the explicit wire width expands the collision envelope around a circle's stroke.
     #[test]
     fn sch013_explicit_wire_width_expands_circle_stroke_ring() {
         let center = super::Point { x: 0.0, y: 0.0 };
@@ -8742,7 +8742,7 @@ mod tests {
             wire, center, 2.0, 0.2, 0.2
         ));
     }
-    /// Calculates sch013 checks rotated ellipse stroke proximity and preserves clearance from the supplied schematic geometry or S-expression data.
+    /// Confirms SCH013 measures distance to a rotated ellipse stroke while preserving the required interior clearance.
     #[test]
     fn sch013_checks_rotated_ellipse_stroke_proximity_and_preserves_clearance() {
         let near_ellipse = document(
@@ -8777,7 +8777,7 @@ mod tests {
                 })
         );
     }
-    /// Calculates sch013 checks elliptical arc stroke without blocking its interior from the supplied schematic geometry or S-expression data.
+    /// Confirms SCH013 checks the stroked elliptical arc without treating its empty interior as an obstacle.
     #[test]
     fn sch013_checks_elliptical_arc_stroke_without_blocking_its_interior() {
         let on_arc = document(
@@ -8809,7 +8809,7 @@ mod tests {
                 })
         );
     }
-    /// Calculates sch013 checks circle stroke proximity and preserves interior detection from the supplied schematic geometry or S-expression data.
+    /// Confirms SCH013 distinguishes proximity to a circle's stroke from crossing the circle's interior.
     #[test]
     fn sch013_checks_circle_stroke_proximity_and_preserves_interior_detection() {
         let near_sheet_circle = document(
@@ -9009,7 +9009,7 @@ mod tests {
                 .any(|item| item.code == "SCH013" && item.message.contains("annotation text box"))
         );
     }
-    /// Calculates sweep line reports crossing wires with the intersection location from the supplied schematic geometry or S-expression data.
+    /// Confirms crossing wire segments produce a diagnostic containing the intersection coordinate.
     #[test]
     fn sweep_line_reports_crossing_wires_with_the_intersection_location() {
         let doc = document(r"(wire (pts (xy 0 0) (xy 4 0))) (wire (pts (xy 2 -2) (xy 2 2)))");
@@ -9022,7 +9022,7 @@ mod tests {
         assert!((location.x_mm - 2.0).abs() < 0.001);
         assert!((location.y_mm - 0.0).abs() < 0.001);
     }
-    /// Calculates sweep line requires an explicit marker for t junctions from the supplied schematic geometry or S-expression data.
+    /// Confirms a T-junction is reported unless an explicit junction marker is placed at the branch point.
     #[test]
     fn sweep_line_requires_an_explicit_marker_for_t_junctions() {
         let missing = document(r"(wire (pts (xy 0 0) (xy 4 0))) (wire (pts (xy 2 0) (xy 2 2)))");
@@ -9067,7 +9067,7 @@ mod tests {
                 .any(|item| item.code == "SCH003")
         );
     }
-    /// Calculates undersized text box is rejected from the supplied schematic geometry or S-expression data.
+    /// Confirms SCH008 rejects a text box whose dimensions cannot contain the rendered text and padding.
     #[test]
     fn undersized_text_box_is_rejected() {
         let doc = document(
@@ -9080,7 +9080,7 @@ mod tests {
                 .any(|item| item.code == "SCH008")
         );
     }
-    /// Calculates free standing text is rejected from the supplied schematic geometry or S-expression data.
+    /// Confirms standalone text without the required annotation container is reported by the layout rules.
     #[test]
     fn free_standing_text_is_rejected() {
         let doc = document(r#"(text "note" (at 1 1 0) (effects (font (size 1 1))))"#);
@@ -9091,7 +9091,7 @@ mod tests {
                 .any(|item| item.code == "SCH008")
         );
     }
-    /// Calculates multiline unbordered text box is rejected from the supplied schematic geometry or S-expression data.
+    /// Confirms SCH011 rejects a multiline block annotation that has no visible border.
     #[test]
     fn multiline_unbordered_text_box_is_rejected() {
         let doc = document(
@@ -9104,7 +9104,7 @@ mod tests {
                 .any(|item| item.code == "SCH011")
         );
     }
-    /// Calculates overlapping label glyphs are rejected from the supplied schematic geometry or S-expression data.
+    /// Confirms overlapping rendered label glyphs produce an annotation-collision diagnostic.
     #[test]
     fn overlapping_label_glyphs_are_rejected() {
         let doc = document(
@@ -9117,7 +9117,7 @@ mod tests {
                 .any(|item| item.code == "SCH018")
         );
     }
-    /// Calculates visible symbol fields may not overlap each other from the supplied schematic geometry or S-expression data.
+    /// Confirms visible reference/value fields on placed symbols cannot overlap one another.
     #[test]
     fn visible_symbol_fields_may_not_overlap_each_other() {
         let doc = document(
@@ -9136,7 +9136,7 @@ mod tests {
                     && item.message.contains("visible symbol fields overlap"))
         );
     }
-    /// Calculates visible symbol fields may not overlap annotation boxes from the supplied schematic geometry or S-expression data.
+    /// Confirms visible symbol fields cannot overlap standalone annotation text boxes.
     #[test]
     fn visible_symbol_fields_may_not_overlap_annotation_boxes() {
         let doc = document(
@@ -9156,7 +9156,7 @@ mod tests {
                 .any(|item| item.code == "SCH010" && item.message.contains("annotation text box"))
         );
     }
-    /// Calculates visible reference field may not be embedded in symbol body from the supplied schematic geometry or S-expression data.
+    /// Confirms a visible reference field embedded inside its own symbol body is reported.
     #[test]
     fn visible_reference_field_may_not_be_embedded_in_symbol_body() {
         let doc = document(
@@ -9181,7 +9181,7 @@ mod tests {
                 .any(|item| item.code == "SCH010" && item.message.contains("own symbol body"))
         );
     }
-    /// Calculates value field fully inside closed symbol body is allowed from the supplied schematic geometry or S-expression data.
+    /// Confirms a value field fully enclosed by a closed symbol outline is accepted.
     #[test]
     fn value_field_fully_inside_closed_symbol_body_is_allowed() {
         let doc = document(
@@ -9207,7 +9207,7 @@ mod tests {
                 .any(|item| item.code == "SCH010" && item.message.contains("Value"))
         );
     }
-    /// Calculates visible symbol field may not overlap wire segment or pin from the supplied schematic geometry or S-expression data.
+    /// Confirms a visible reference/value field cannot overlap a wire segment or another component's pin.
     #[test]
     fn visible_symbol_field_may_not_overlap_wire_segment_or_pin() {
         let doc = document(
@@ -9239,7 +9239,7 @@ mod tests {
                 .any(|item| item.code == "SCH010" && item.message.contains("overlaps pin U1.1"))
         );
     }
-    /// Calculates visible symbol field may not overlap label glyph from the supplied schematic geometry or S-expression data.
+    /// Confirms a visible symbol field cannot overlap a rendered label glyph.
     #[test]
     fn visible_symbol_field_may_not_overlap_label_glyph() {
         let doc = document(
@@ -9257,7 +9257,7 @@ mod tests {
                 .any(|item| item.code == "SCH010" && item.message.contains("overlaps label"))
         );
     }
-    /// Calculates separated visible symbol fields are accepted from the supplied schematic geometry or S-expression data.
+    /// Confirms symbol fields with non-overlapping rendered bounds pass the field-clearance check.
     #[test]
     fn separated_visible_symbol_fields_are_accepted() {
         let doc = document(
@@ -9275,7 +9275,7 @@ mod tests {
                 .any(|item| item.code == "SCH010")
         );
     }
-    /// Calculates label glyph may not overlap symbol field from the supplied schematic geometry or S-expression data.
+    /// Confirms a rendered label glyph cannot overlap a visible symbol field.
     #[test]
     fn label_glyph_may_not_overlap_symbol_field() {
         let doc = document(
@@ -9288,7 +9288,7 @@ mod tests {
                 .any(|item| { item.code == "SCH018" && item.message.contains("symbol field") })
         );
     }
-    /// Calculates label glyph may not overlap annotation box from the supplied schematic geometry or S-expression data.
+    /// Confirms a rendered label glyph cannot overlap a text-box annotation.
     #[test]
     fn label_glyph_may_not_overlap_annotation_box() {
         let doc = document(
@@ -9300,7 +9300,7 @@ mod tests {
             })
         );
     }
-    /// Calculates same label cannot be local and hierarchical from the supplied schematic geometry or S-expression data.
+    /// Confirms reusing one label name as both local and hierarchical is reported as a label-kind conflict.
     #[test]
     fn same_label_cannot_be_local_and_hierarchical() {
         let doc = document(

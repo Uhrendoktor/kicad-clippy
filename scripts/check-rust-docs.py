@@ -9,6 +9,10 @@ SOURCE_ROOT = ROOT / "crates"
 
 PLACEHOLDER_DOC_PATTERNS = (
     r"behaves as required",
+    r"from the supplied schematic geometry or S-expression data",
+    r"result derived from the schematic geometry",
+    r"Calculates .* from the supplied schematic geometry",
+    r"Verifies that .* behaves as required",
     r"using the supplied values and schematic data",
     r"Calculates (?:name|run) from the supplied schematic geometry or S-expression data",
     r"The name result derived from the schematic geometry",
