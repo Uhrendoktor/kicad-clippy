@@ -76,6 +76,24 @@ enum OutputFormat {
     /// Structured JSON diagnostics.
     Json,
 }
+/// Inputs required to run one schematic lint invocation.
+struct LintOptions<'a> {
+    /// Requested diagnostic output encoding.
+    format: OutputFormat,
+    /// Whether native KiCad ERC should be skipped.
+    skip_erc: bool,
+    /// Optional explicit path to the KiCad CLI executable.
+    explicit_cli: Option<PathBuf>,
+    /// Optional KiCad project file providing schematic and netclass settings.
+    project_path: Option<&'a Path>,
+    /// Optional JSON component-intent profile, consumed during profile validation.
+    profile_path: Option<PathBuf>,
+    /// Optional TOML rule policy, borrowed because policy loading does not consume the path.
+    policy_path: Option<&'a Path>,
+    /// Whether complete component-intent metadata is required.
+    strict: bool,
+}
+
 /// Errors that can prevent a lint command from completing.
 #[derive(Debug, Error)]
 enum CliError {
@@ -219,13 +237,15 @@ fn execute(cli: Cli) -> Result<ExitCode, CliError> {
             strict,
         } => lint(
             &schematic,
-            format,
-            skip_erc,
-            kicad_cli,
-            project.as_deref(),
-            profile,
-            policy,
-            strict,
+            LintOptions {
+                format,
+                skip_erc,
+                explicit_cli: kicad_cli,
+                project_path: project.as_deref(),
+                profile_path: profile,
+                policy_path: policy.as_deref(),
+                strict,
+            },
         ),
     }
 }
@@ -234,13 +254,7 @@ fn execute(cli: Cli) -> Result<ExitCode, CliError> {
 /// # Arguments
 ///
 /// * `schematic_path` — Path to the `.kicad_sch` file being analyzed.
-/// * `format` — Requested diagnostic output format (`text` or `json`).
-/// * `skip_erc` — Whether native ERC should be skipped; project/netlist processing may still require the CLI.
-/// * `explicit_cli` — Optional explicit path to `kicad-cli`; it takes precedence over PATH lookup.
-/// * `project_path` — Optional `KiCad` project file providing netclass and schematic drawing settings.
-/// * `profile_path` — Optional component-intent profile JSON file.
-/// * `policy_path` — Optional TOML rule policy selecting a preset and per-rule level overrides.
-/// * `strict` — Whether the profile must provide all required component-intent metadata.
+/// * `options` — Format, ERC, project, profile, policy, and strict-mode inputs for this invocation.
 ///
 /// # Returns
 ///
@@ -251,14 +265,17 @@ fn execute(cli: Cli) -> Result<ExitCode, CliError> {
 /// Returns `CliError` for schematic parsing, project/profile decoding, native ERC/netlist failures, or output serialization/writing.
 fn lint(
     schematic_path: &Path,
-    format: OutputFormat,
-    skip_erc: bool,
-    explicit_cli: Option<PathBuf>,
-    project_path: Option<&Path>,
-    profile_path: Option<PathBuf>,
-    policy_path: Option<PathBuf>,
-    strict: bool,
+    options: LintOptions<'_>,
 ) -> Result<ExitCode, CliError> {
+    let LintOptions {
+        format,
+        skip_erc,
+        explicit_cli,
+        project_path,
+        profile_path,
+        policy_path,
+        strict,
+    } = options;
     if strict && profile_path.is_none() {
         return Err(CliError::StrictNeedsProfile);
     }
