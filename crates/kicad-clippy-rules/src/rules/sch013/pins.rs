@@ -1,6 +1,6 @@
 //! Pin-intersection obstacle checks for SCH013.
 
-use super::*;
+use super::{at_segment, is_endpoint, point_on_segment_any, BuiltinRuleId, Diagnostic, Point, SchematicPinFact, Segment};
 
 /// Finds wires that pass through a placed pin that is not a permitted endpoint contact.
 ///

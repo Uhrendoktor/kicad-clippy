@@ -1,7 +1,8 @@
 //! Electrical marker and combined sheet/table/bus obstacle checks for SCH013.
 
 use super::super::SchematicNoConnectFact;
-use super::*;
+use super::{at_segment, segment_intersection_points, wire_within_sampled_path_stroke, BuiltinRuleId, Diagnostic, Point, SchematicBusObstacleFact, SchematicGraphicFact, SchematicSheetFact, Segment};
+use super::super::SchematicNoConnectFact;
 
 /// Tests whether a wire intersects either diagonal stroke of a no-connect marker.
 ///

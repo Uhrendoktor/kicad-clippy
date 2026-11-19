@@ -1,6 +1,6 @@
 //! Annotation and text-family obstacle checks for SCH013.
 
-use super::*;
+use super::{at_segment, strict_line_hits_bounds, Bounds, BuiltinRuleId, ByteSpan, Diagnostic, SchematicFacts, SchematicSymbolTextFact, Segment};
 
 /// Finds wire crossings or clearance violations against transformed embedded-symbol text.
 ///
