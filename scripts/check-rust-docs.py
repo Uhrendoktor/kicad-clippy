@@ -10,6 +10,7 @@ SOURCE_ROOT = ROOT / "crates"
 PLACEHOLDER_DOC_PATTERNS = (
     r"behaves as required",
     r"from the supplied schematic geometry or S-expression data",
+    r"The result derived from the supplied KiCad report data",
     r"result derived from the schematic geometry",
     r"Calculates .* from the supplied schematic geometry",
     r"Verifies that .* behaves as required",

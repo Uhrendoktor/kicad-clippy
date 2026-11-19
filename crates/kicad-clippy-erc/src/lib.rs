@@ -347,11 +347,11 @@ mod tests {
     ///
     /// # Returns
     ///
-    /// The result derived from the supplied KiCad report data.
+    /// `Ok(())` when nested sheet violations are normalized and their item locations are retained as related diagnostic context.
     ///
     /// # Errors
     ///
-    /// Returns an error when KiCad execution, file access, JSON/S-expression decoding, or netlist consistency checks fail.
+    /// Propagates `Json` for malformed report bytes or `InvalidReport` when the required sheet/violation structure is absent or malformed.
     #[test]
     fn reads_sheet_nested_violations_and_preserves_item_context() -> Result<(), Box<dyn Error>> {
         let report = parse_erc_json(ERC_REPORT, Path::new("fixture.kicad_sch"))?;
@@ -384,11 +384,11 @@ mod tests {
     ///
     /// # Returns
     ///
-    /// The result derived from the supplied KiCad report data.
+    /// `Ok(())` when the excluded violation remains in the report but `has_errors()` returns `false`.
     ///
     /// # Errors
     ///
-    /// Returns an error when KiCad execution, file access, JSON/S-expression decoding, or netlist consistency checks fail.
+    /// Propagates `Json` for malformed report bytes or `InvalidReport` when the required sheet/violation structure is absent or malformed.
     #[test]
     fn excluded_errors_are_retained_but_do_not_fail_the_report() -> Result<(), Box<dyn Error>> {
         let contents = br#"{
