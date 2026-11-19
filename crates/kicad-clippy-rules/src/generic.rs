@@ -142,8 +142,28 @@ const MAX_BITMAP_DIMENSION_PIXELS: u32 = 1_000_000;
 const MINIMUM_CURVE_TRIANGLE_AREA_MM2: f64 = 2.5e-10;
 /// Number of subdivision intervals used to sample an elliptical arc.
 const ELLIPSE_ARC_SUBDIVISION_STEPS: u8 = 20;
+/// Millimetres represented by one mil.
+pub const MILLIMETRES_PER_MIL: f64 = 0.0254;
 /// Factor used to convert a full dimension into a half dimension.
-const HALF_DIMENSION_FACTOR: f64 = 0.5;
+pub(super) const HALF_DIMENSION_FACTOR: f64 = 0.5;
+/// Factor used when a dimension applies symmetrically to both sides of an object.
+pub(super) const TWO_SIDED_FACTOR: f64 = 2.0;
+/// Default stroke width for embedded symbol primitives, in millimetres.
+const DEFAULT_SYMBOL_PRIMITIVE_STROKE_WIDTH_MM: f64 = 0.254;
+/// Full fixed X-marker dimension specified by KiCad, in mils.
+const NO_CONNECT_MARKER_SIZE_MILS: f64 = 48.0;
+/// Minimum extra width required by an unbordered single-line annotation, in millimetres.
+const UNBORDERED_TEXT_BOX_EXTRA_WIDTH_MM: f64 = 10.16;
+/// Required equal inset on each side of a serialized KiCad text box, in millimetres.
+const TEXT_BOX_EQUAL_PADDING_MM: f64 = 1.27;
+/// Width factor used to leave room for rendered glyph overhang.
+const TEXT_GLYPH_WIDTH_SAFETY_FACTOR: f64 = 1.30;
+/// Line-height factor used when estimating multiline Newstroke text bounds.
+const TEXT_LINE_HEIGHT_SAFETY_FACTOR: f64 = 1.55;
+/// Floating-point round-off bound measured in machine epsilons.
+const FLOATING_POINT_ROUNDOFF_ULPS: f64 = 64.0;
+/// Bounds expansion applied across both sides of a rectangle, in millimetres.
+const TWO_SIDED_GEOMETRY_TOLERANCE_MM: f64 = TWO_SIDED_FACTOR * GEOMETRY_TOLERANCE_MM;
 /// Minimum JPEG JFIF application-segment payload length, in bytes.
 const JPEG_JFIF_MINIMUM_SEGMENT_BYTES: usize = 12;
 /// Defines the point type used by this crate.
@@ -1280,8 +1300,8 @@ fn rotated_bitmap_image_geometry(
         .rem_euclid(FULL_ROTATION_DEGREES)
         .to_radians();
     let (sin, cos) = radians.sin_cos();
-    let half_width = width_mm / 2.0;
-    let half_height = height_mm / 2.0;
+    let half_width = width_mm * HALF_DIMENSION_FACTOR;
+    let half_height = height_mm * HALF_DIMENSION_FACTOR;
     let corners = [
         (-half_width, -half_height),
         (half_width, -half_height),
@@ -1976,7 +1996,7 @@ fn object_reference(node: &Node, prefix: &str) -> String {
         )
 }
 /// Half-width of KiCad's fixed-size no-connect X marker, in millimetres.
-const NO_CONNECT_MARKER_HALF_SIZE_MM: f64 = 48.0 * 0.0254 / 2.0;
+const NO_CONNECT_MARKER_HALF_SIZE_MM: f64 = NO_CONNECT_MARKER_SIZE_MILS * MILLIMETRES_PER_MIL * HALF_DIMENSION_FACTOR;
 
 /// Collects fixed-size no-connect marker geometry without assuming an unavailable per-marker pen width.
 ///
@@ -2521,7 +2541,7 @@ fn symbol_primitive_stroke_width(node: &Node) -> f64 {
         .and_then(|items| items.get(1))
         .and_then(number)
         .filter(|width| width.is_finite() && width.abs() > GEOMETRY_TOLERANCE_MM)
-        .map_or(0.254, f64::abs)
+        .map_or(DEFAULT_SYMBOL_PRIMITIVE_STROKE_WIDTH_MM, f64::abs)
 }
 /// Reads the two corners of a rectangle primitive from its S-expression.
 ///
@@ -2819,7 +2839,7 @@ fn ellipse_primitive_points(node: &Node, is_arc: bool) -> Option<Vec<(f64, f64)>
             .and_then(number)
             .unwrap_or(QUARTER_ROTATION_DEGREES)
     } else {
-        360.0
+        FULL_ROTATION_DEGREES
     };
     if !start_degrees.is_finite() || !end_degrees.is_finite() {
         return None;
@@ -3790,8 +3810,8 @@ fn segment_arc_intersection_points(wire: Segment, arc: SchematicArcFact) -> Vec<
 
     // Bound only floating-point roundoff in the quadratic discriminant; this is
     // not a geometric clearance tolerance.
-    let roundoff = (64.0 * f64::EPSILON * half_b.abs())
-        .mul_add(half_b.abs(), (64.0 * f64::EPSILON) * a_times_c.abs());
+    let roundoff = (FLOATING_POINT_ROUNDOFF_ULPS * f64::EPSILON * half_b.abs())
+        .mul_add(half_b.abs(), (FLOATING_POINT_ROUNDOFF_ULPS * f64::EPSILON) * a_times_c.abs());
     let discriminant = if discriminant < 0.0 {
         if discriminant < -roundoff {
             return Vec::new();
@@ -4956,7 +4976,7 @@ fn symbol_transform_affine(rotation_degrees: f64, mirror: Option<&str>) -> Optio
     if !rotation_degrees.is_finite() {
         return None;
     }
-    let rotation = rotation_degrees.rem_euclid(360.0).to_radians();
+    let rotation = rotation_degrees.rem_euclid(FULL_ROTATION_DEGREES).to_radians();
     let mirror = match mirror {
         Some("x") => Affine::FLIP_Y,
         Some("y") => Affine::FLIP_X,
@@ -5247,12 +5267,12 @@ fn inspect_text_box(node: &Node, index: usize) -> (Option<TextBoxRecord>, Vec<Di
         ));
     }
     if metrics.stroke_width <= 0.0
-        && metrics.bounds.width + GEOMETRY_TOLERANCE_MM < required_width + 10.16
+        && metrics.bounds.width + GEOMETRY_TOLERANCE_MM < required_width + UNBORDERED_TEXT_BOX_EXTRA_WIDTH_MM
     {
         diagnostics.push(at_span(BuiltinRuleId::Sch008,
             format!(
                 "unbordered text_box {index} needs at least {:.2} mm width for reliable single-line rendering",
-                required_width + 10.16
+                required_width + UNBORDERED_TEXT_BOX_EXTRA_WIDTH_MM
             ),
             metrics.span,
         ));
@@ -5342,13 +5362,13 @@ fn read_text_box_metrics(
     if pads.len() != 4
         || pads
             .iter()
-            .any(|pad| (pad - 1.27).abs() > GEOMETRY_TOLERANCE_MM)
+            .any(|pad| (pad - TEXT_BOX_EQUAL_PADDING_MM).abs() > GEOMETRY_TOLERANCE_MM)
     {
         return (
             None,
             Some(at_span(
                 BuiltinRuleId::Sch008,
-                format!("text_box {index} must have 1.27 mm equal padding"),
+                format!("text_box {index} must have {TEXT_BOX_EQUAL_PADDING_MM:.2} mm equal padding"),
                 span,
             )),
         );
@@ -5675,8 +5695,8 @@ fn required_text_box_size(value: &str, font_size: f64, padding: f64) -> (f64, f6
         .map(|line| newstroke_text_metrics_ratio(line).0 * font_size)
         .fold(0.0_f64, f64::max);
     (
-        2.0_f64.mul_add(padding, (max_width * 1.30).max(font_size)),
-        (f64::from(line_count) * font_size).mul_add(1.55, 2.0 * padding),
+        TWO_SIDED_FACTOR.mul_add(padding, (max_width * TEXT_GLYPH_WIDTH_SAFETY_FACTOR).max(font_size)),
+        (f64::from(line_count) * font_size).mul_add(TEXT_LINE_HEIGHT_SAFETY_FACTOR, TWO_SIDED_FACTOR * padding),
     )
 }
 /// Tests whether two axis-aligned bounds overlap by more than the schematic geometry tolerance.
@@ -6263,8 +6283,8 @@ fn point_in_bounds(point: Point, bounds: Bounds) -> bool {
     let expanded = Bounds {
         x: bounds.x - GEOMETRY_TOLERANCE_MM,
         y: bounds.y - GEOMETRY_TOLERANCE_MM,
-        width: bounds.width + 0.002,
-        height: bounds.height + 0.002,
+        width: bounds.width + TWO_SIDED_GEOMETRY_TOLERANCE_MM,
+        height: bounds.height + TWO_SIDED_GEOMETRY_TOLERANCE_MM,
     };
     geo_rect(expanded).contains(&GeoPoint::new(point.x, point.y))
 }
@@ -6341,7 +6361,7 @@ fn symbol_primitive_intersects_bounds(bounds: Bounds, primitive: &SchematicPrimi
             y: center_y,
         };
         return point_bounds_distance(center, bounds)
-            <= radius + primitive.stroke_width_mm / 2.0 + GEOMETRY_TOLERANCE_MM;
+            <= radius + primitive.stroke_width_mm * HALF_DIMENSION_FACTOR + GEOMETRY_TOLERANCE_MM;
     }
 
     let rectangle = geo_rect(bounds);
@@ -6362,7 +6382,7 @@ fn symbol_primitive_intersects_bounds(bounds: Bounds, primitive: &SchematicPrimi
 /// `true` when the geometry satisfies the condition checked by this helper.
 fn symbol_primitive_contains_bounds(bounds: Bounds, primitive: &SchematicPrimitiveFact) -> bool {
     if let Some((center_x, center_y, radius)) = primitive.circle_mm {
-        let inner_radius = radius - primitive.stroke_width_mm / 2.0;
+        let inner_radius = radius - primitive.stroke_width_mm * HALF_DIMENSION_FACTOR;
         if inner_radius <= 0.0 {
             return false;
         }

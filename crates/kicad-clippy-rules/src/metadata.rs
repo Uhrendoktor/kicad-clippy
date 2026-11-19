@@ -11,7 +11,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::generic::{
-    GEOMETRY_TOLERANCE_MM, STROKE_CLEARANCE_MARGIN_MM, SchematicFacts, physical_wire_component_ids,
+    GEOMETRY_TOLERANCE_MM, HALF_DIMENSION_FACTOR, STROKE_CLEARANCE_MARGIN_MM, SchematicFacts,
+    TWO_SIDED_FACTOR, physical_wire_component_ids,
 };
 
 /// Currently supported project-profile schema version.
@@ -21,7 +22,6 @@ const MINIMUM_PIN_GROUP_SIZE: usize = 2;
 /// Decimal precision used in stable coordinate keys.
 const COORDINATE_KEY_DECIMAL_PLACES: usize = 3;
 /// Multiplier converting half-clearance to clearance on both sides.
-const BOTH_SIDES_FACTOR: f64 = 2.0;
 /// Maximum normalized wire-compactness score.
 const MAX_COMPACTNESS_SCORE: f64 = 1.0;
 /// Dimensionless tolerance for comparing normalized scores.
@@ -1625,7 +1625,7 @@ fn symbol_primitive_inside_frame(
     clearance: f64,
 ) -> bool {
     let stroke_margin = if primitive.stroke_width_mm.is_finite() {
-        primitive.stroke_width_mm.abs() / 2.0
+        primitive.stroke_width_mm.abs() * HALF_DIMENSION_FACTOR
     } else {
         0.0
     };
@@ -2130,7 +2130,7 @@ fn validate_frame_clearance(
         )];
     }
     let (left, top, right, bottom) = bounds;
-    if right - left < BOTH_SIDES_FACTOR * clearance || bottom - top < BOTH_SIDES_FACTOR * clearance
+    if right - left < TWO_SIDED_FACTOR * clearance || bottom - top < BOTH_SIDES_FACTOR * clearance
     {
         return vec![Diagnostic::for_builtin_rule(
             BuiltinRuleId::Sch012,

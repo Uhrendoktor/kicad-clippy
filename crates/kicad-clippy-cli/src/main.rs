@@ -21,14 +21,12 @@ use kicad_clippy_erc::{Netlist, NetlistError, export_netlist, run_native_erc};
 use kicad_clippy_parser::SchematicDocument;
 use kicad_clippy_rules::{
     LintProfile, ProfileMode, RuleEngine, SchematicFacts, physical_wire_component_ids,
-    physical_wire_component_key,
+    physical_wire_component_key, MILLIMETRES_PER_MIL,
 };
 use miette::{LabeledSpan, MietteDiagnostic, NamedSource, Report, Severity as RenderSeverity};
 use serde::Serialize;
 use thiserror::Error;
 
-/// Millimetres represented by one mil.
-const MILLIMETRES_PER_MIL: f64 = 0.0254;
 /// `KiCad`'s default netclass wire width, in mils.
 const DEFAULT_NETCLASS_WIRE_WIDTH_MILS: f64 = 6.0;
 
