@@ -263,10 +263,7 @@ fn execute(cli: Cli) -> Result<ExitCode, CliError> {
 /// # Errors
 ///
 /// Returns `CliError` for schematic parsing, project/profile decoding, native ERC/netlist failures, or output serialization/writing.
-fn lint(
-    schematic_path: &Path,
-    options: LintOptions<'_>,
-) -> Result<ExitCode, CliError> {
+fn lint(schematic_path: &Path, options: LintOptions<'_>) -> Result<ExitCode, CliError> {
     let LintOptions {
         format,
         skip_erc,
