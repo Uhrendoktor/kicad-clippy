@@ -20,8 +20,8 @@ use kicad_clippy_core::{Diagnostic, Severity, SourceFile};
 use kicad_clippy_erc::{Netlist, NetlistError, export_netlist, run_native_erc};
 use kicad_clippy_parser::SchematicDocument;
 use kicad_clippy_rules::{
-    LintProfile, ProfileMode, RuleEngine, SchematicFacts, physical_wire_component_ids,
-    physical_wire_component_key, MILLIMETRES_PER_MIL,
+    LintProfile, MILLIMETRES_PER_MIL, ProfileMode, RuleEngine, SchematicFacts,
+    physical_wire_component_ids, physical_wire_component_key,
 };
 use miette::{LabeledSpan, MietteDiagnostic, NamedSource, Report, Severity as RenderSeverity};
 use serde::Serialize;

@@ -1223,8 +1223,8 @@ fn collect_sheet_table_stroke_facts(root: &Node) -> Vec<SchematicGraphicFact> {
 ///
 /// The graphic's axis-aligned sheet bounds expanded by half its stroke width; `None` when the primitive geometry cannot be decoded.
 fn sheet_graphic_bounds(node: &Node, kind: &str) -> Option<(f64, f64, f64, f64)> {
-    let stroke_margin = symbol_primitive_stroke_width(node)
-        .mul_add(HALF_FACTOR, STROKE_CLEARANCE_MARGIN_MM);
+    let stroke_margin =
+        symbol_primitive_stroke_width(node).mul_add(HALF_FACTOR, STROKE_CLEARANCE_MARGIN_MM);
     if kind == "circle" {
         let center = child_list(node, "center").and_then(list_items)?;
         let radius = child_list(node, "radius")
@@ -1996,7 +1996,8 @@ fn object_reference(node: &Node, prefix: &str) -> String {
         )
 }
 /// Half-width of KiCad's fixed-size no-connect X marker, in millimetres.
-const NO_CONNECT_MARKER_HALF_SIZE_MM: f64 = NO_CONNECT_MARKER_SIZE_MILS * MILLIMETRES_PER_MIL * HALF_FACTOR;
+const NO_CONNECT_MARKER_HALF_SIZE_MM: f64 =
+    NO_CONNECT_MARKER_SIZE_MILS * MILLIMETRES_PER_MIL * HALF_FACTOR;
 
 /// Collects fixed-size no-connect marker geometry without assuming an unavailable per-marker pen width.
 ///
@@ -3810,8 +3811,10 @@ fn segment_arc_intersection_points(wire: Segment, arc: SchematicArcFact) -> Vec<
 
     // Bound only floating-point roundoff in the quadratic discriminant; this is
     // not a geometric clearance tolerance.
-    let roundoff = (FLOATING_POINT_ROUNDOFF_ULPS * f64::EPSILON * half_b.abs())
-        .mul_add(half_b.abs(), (FLOATING_POINT_ROUNDOFF_ULPS * f64::EPSILON) * a_times_c.abs());
+    let roundoff = (FLOATING_POINT_ROUNDOFF_ULPS * f64::EPSILON * half_b.abs()).mul_add(
+        half_b.abs(),
+        (FLOATING_POINT_ROUNDOFF_ULPS * f64::EPSILON) * a_times_c.abs(),
+    );
     let discriminant = if discriminant < 0.0 {
         if discriminant < -roundoff {
             return Vec::new();
@@ -4976,7 +4979,9 @@ fn symbol_transform_affine(rotation_degrees: f64, mirror: Option<&str>) -> Optio
     if !rotation_degrees.is_finite() {
         return None;
     }
-    let rotation = rotation_degrees.rem_euclid(FULL_ROTATION_DEGREES).to_radians();
+    let rotation = rotation_degrees
+        .rem_euclid(FULL_ROTATION_DEGREES)
+        .to_radians();
     let mirror = match mirror {
         Some("x") => Affine::FLIP_Y,
         Some("y") => Affine::FLIP_X,
@@ -5267,7 +5272,8 @@ fn inspect_text_box(node: &Node, index: usize) -> (Option<TextBoxRecord>, Vec<Di
         ));
     }
     if metrics.stroke_width <= 0.0
-        && metrics.bounds.width + GEOMETRY_TOLERANCE_MM < required_width + UNBORDERED_TEXT_BOX_EXTRA_WIDTH_MM
+        && metrics.bounds.width + GEOMETRY_TOLERANCE_MM
+            < required_width + UNBORDERED_TEXT_BOX_EXTRA_WIDTH_MM
     {
         diagnostics.push(at_span(BuiltinRuleId::Sch008,
             format!(
@@ -5368,7 +5374,9 @@ fn read_text_box_metrics(
             None,
             Some(at_span(
                 BuiltinRuleId::Sch008,
-                format!("text_box {index} must have {TEXT_BOX_EQUAL_PADDING_MM:.2} mm equal padding"),
+                format!(
+                    "text_box {index} must have {TEXT_BOX_EQUAL_PADDING_MM:.2} mm equal padding"
+                ),
                 span,
             )),
         );
@@ -5695,8 +5703,12 @@ fn required_text_box_size(value: &str, font_size: f64, padding: f64) -> (f64, f6
         .map(|line| newstroke_text_metrics_ratio(line).0 * font_size)
         .fold(0.0_f64, f64::max);
     (
-        TWO_SIDED_FACTOR.mul_add(padding, (max_width * TEXT_GLYPH_WIDTH_SAFETY_FACTOR).max(font_size)),
-        (f64::from(line_count) * font_size).mul_add(TEXT_LINE_HEIGHT_SAFETY_FACTOR, TWO_SIDED_FACTOR * padding),
+        TWO_SIDED_FACTOR.mul_add(
+            padding,
+            (max_width * TEXT_GLYPH_WIDTH_SAFETY_FACTOR).max(font_size),
+        ),
+        (f64::from(line_count) * font_size)
+            .mul_add(TEXT_LINE_HEIGHT_SAFETY_FACTOR, TWO_SIDED_FACTOR * padding),
     )
 }
 /// Tests whether two axis-aligned bounds overlap by more than the schematic geometry tolerance.
@@ -6817,7 +6829,7 @@ fn at_point(code: BuiltinRuleId, message: String, point: Point, span: ByteSpan) 
 /// Unit tests for schematic fact extraction, geometry, connectivity, and rule diagnostics.
 mod tests {
     #![allow(clippy::expect_used)]
-    use super::{run_builtin_rules, HALF_FACTOR};
+    use super::{HALF_FACTOR, run_builtin_rules};
     use kicad_clippy_parser::SchematicDocument;
     use kurbo::{ParamCurve, ParamCurveDeriv};
     /// Builds a minimal valid schematic document around the supplied S-expression body for geometry tests.
@@ -7662,7 +7674,10 @@ mod tests {
 
         assert_eq!(facts.symbol_primitives.len(), 1);
         let rotated_corner = facts.symbol_primitives[0].points_mm[1];
-        let expected_corner = (10.0 + 2.0 * HALF_FACTOR.sqrt(), 10.0 - 2.0 * HALF_FACTOR.sqrt());
+        let expected_corner = (
+            10.0 + 2.0 * HALF_FACTOR.sqrt(),
+            10.0 - 2.0 * HALF_FACTOR.sqrt(),
+        );
         assert!((rotated_corner.0 - expected_corner.0).abs() < 0.001);
         assert!((rotated_corner.1 - expected_corner.1).abs() < 0.001);
         assert!(

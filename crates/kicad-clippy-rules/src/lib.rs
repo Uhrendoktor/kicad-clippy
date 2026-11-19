@@ -13,11 +13,11 @@ mod generic;
 mod metadata;
 
 pub use generic::{
-    ComponentFact, RuleRun, SchematicArcFact, SchematicFacts, SchematicFieldFact,
-    SchematicFrameFact, SchematicGraphicFact, SchematicGroupFact, SchematicImageFact,
-    SchematicLabelFact, SchematicPinFact, SchematicPrimitiveFact, SchematicSymbolTextFact,
-    SchematicTextFact, SchematicWireFact, TextBoxFact, physical_wire_component_ids,
-    physical_wire_component_key, run_builtin_rules, MILLIMETRES_PER_MIL,
+    ComponentFact, MILLIMETRES_PER_MIL, RuleRun, SchematicArcFact, SchematicFacts,
+    SchematicFieldFact, SchematicFrameFact, SchematicGraphicFact, SchematicGroupFact,
+    SchematicImageFact, SchematicLabelFact, SchematicPinFact, SchematicPrimitiveFact,
+    SchematicSymbolTextFact, SchematicTextFact, SchematicWireFact, TextBoxFact,
+    physical_wire_component_ids, physical_wire_component_key, run_builtin_rules,
 };
 pub use metadata::{
     CommonPinNetGroup, ComponentIntent, ComponentKind, ComponentPurpose, ComponentRole,
