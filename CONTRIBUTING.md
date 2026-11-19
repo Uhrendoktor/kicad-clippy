@@ -44,6 +44,14 @@ All workspace crates inherit the lint policy from the root manifest. Do not add 
 - Preserve source spans and original schematic text; do not canonicalize source as a side effect of linting.
 - Keep physical schematic coordinates distinct from source byte offsets.
 
+## Documentation and lint policy
+
+- Every Rust function and method, including private helpers and tests, must have a doc comment.
+- Document every named argument under `# Arguments`, every explicit non-unit return type under `# Returns`, and fallible functions under `# Errors`.
+- Document structs, enums, traits, modules, constants, static values, enum variants, and named fields.
+- Physical units, geometry tolerances, algorithm thresholds, file-format defaults, and conversion factors must be named constants. Do not repeat values such as `0.001` inline.
+- The workspace denies Clippy `all`, `pedantic`, `nursery`, and `cargo` groups. Restriction lints are selected individually.
+
 ## Tests
 
 Add focused unit tests and fixtures for changed behavior. For parser and ERC changes, include malformed and boundary cases. For diagnostics, assert stable identifiers, severity, messages, sheet paths, UUIDs, coordinates, and exclusion handling rather than checking only result counts.

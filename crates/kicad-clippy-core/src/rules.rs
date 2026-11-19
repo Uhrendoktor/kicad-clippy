@@ -38,6 +38,19 @@ pub struct RuleDescriptor {
 
 impl RuleDescriptor {
     /// Creates a descriptor with no external documentation or tags.
+    /// # Arguments
+    ///
+    /// * `id` — Input `id` used by this operation.
+    /// * `name` — Input `name` used by this operation.
+    /// * `category` — Input `category` used by this operation.
+    /// * `summary` — Input `summary` used by this operation.
+    /// * `explanation` — Input `explanation` used by this operation.
+    /// * `default_level` — Input `default level` used by this operation.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
     #[must_use]
     pub fn new(
         id: impl Into<String>,
@@ -68,11 +81,17 @@ pub struct RuleRegistryError(pub String);
 /// Deterministic catalogue of rule metadata.
 #[derive(Clone, Debug, Default)]
 pub struct RuleRegistry {
+    /// Stores the `rules` value.
+    /// Stores the `rules` value.
     rules: BTreeMap<String, RuleDescriptor>,
 }
 
 impl RuleRegistry {
     /// Creates an empty registry.
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -83,6 +102,14 @@ impl RuleRegistry {
     /// # Errors
     ///
     /// Returns [`RuleRegistryError`] when another rule already uses the identifier.
+    /// # Arguments
+    ///
+    /// * `descriptor` — Input `descriptor` used by this operation.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
     pub fn register(&mut self, descriptor: RuleDescriptor) -> Result<(), RuleRegistryError> {
         match self.rules.entry(descriptor.id.clone()) {
             Entry::Vacant(entry) => {
@@ -94,32 +121,59 @@ impl RuleRegistry {
     }
 
     /// Looks up a descriptor by its stable identifier.
+    /// # Arguments
+    ///
+    /// * `id` — Input `id` used by this operation.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
     #[must_use]
     pub fn get(&self, id: &str) -> Option<&RuleDescriptor> {
         self.rules.get(id)
     }
 
     /// Iterates descriptors in stable identifier order.
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
     pub fn iter(&self) -> impl Iterator<Item = &RuleDescriptor> {
         self.rules.values()
     }
 
     /// Returns the number of registered descriptors.
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
     #[must_use]
     pub fn len(&self) -> usize {
         self.rules.len()
     }
 
     /// Returns whether no descriptors are registered.
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.rules.is_empty()
     }
 }
+/// Contains the tests implementation and supporting types.
 
 #[cfg(test)]
 mod tests {
     use super::{RuleDescriptor, RuleLevel, RuleRegistry};
+    /// Processes sample rule using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     fn sample_rule() -> RuleDescriptor {
         RuleDescriptor::new(
@@ -131,6 +185,8 @@ mod tests {
             RuleLevel::Deny,
         )
     }
+    /// Processes registry is deterministic and rejects duplicate ids using the supplied values and schematic data.
+    ///
 
     #[test]
     fn registry_is_deterministic_and_rejects_duplicate_ids() {

@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 //! Native `KiCad` Electrical Rules Checker adapter.
+/// Contains the netlist implementation and supporting types.
 
 mod netlist;
 
@@ -37,6 +38,10 @@ pub struct NativeErcReport {
 
 impl NativeErcReport {
     /// Returns whether any non-excluded error was reported.
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
     #[must_use]
     pub fn has_errors(&self) -> bool {
         self.diagnostics.iter().any(Diagnostic::is_active_error)
@@ -92,6 +97,15 @@ pub enum ErcError {
 ///
 /// Returns [`ErcError`] when the process cannot be started, `KiCad` fails without writing a report,
 /// or the generated report cannot be read or decoded.
+/// # Arguments
+///
+/// * `program` — Input `program` used by this operation.
+/// * `schematic_path` — Input `schematic path` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 pub fn run_native_erc(
     program: impl AsRef<Path>,
     schematic_path: impl AsRef<Path>,
@@ -151,6 +165,15 @@ pub fn run_native_erc(
 ///
 /// Returns [`ErcError::Json`] for invalid JSON or [`ErcError::InvalidReport`] when the
 /// decoded document does not contain the expected per-sheet report structure.
+/// # Arguments
+///
+/// * `contents` — Input `contents` used by this operation.
+/// * `schematic_path` — Input `schematic path` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 pub fn parse_erc_json(
     contents: &[u8],
     schematic_path: impl AsRef<Path>,
@@ -196,6 +219,18 @@ pub fn parse_erc_json(
         diagnostics,
     })
 }
+/// Processes parse violation using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `violation` — Input `violation` used by this operation.
+/// * `sheet_path` — Input `sheet path` used by this operation.
+/// * `source_path` — Input `source path` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn parse_violation(
     violation: &Value,
@@ -232,6 +267,16 @@ fn parse_violation(
     diagnostic.excluded = excluded;
     diagnostic
 }
+/// Processes parse related location using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `item` — Input `item` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn parse_related_location(item: &Value) -> RelatedLocation {
     RelatedLocation {
@@ -240,6 +285,16 @@ fn parse_related_location(item: &Value) -> RelatedLocation {
         location: parse_schematic_location(item),
     }
 }
+/// Processes parse schematic location using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `item` — Input `item` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn parse_schematic_location(item: &Value) -> Option<SchematicLocation> {
     let position = item.get("pos")?;
@@ -248,10 +303,22 @@ fn parse_schematic_location(item: &Value) -> Option<SchematicLocation> {
         y_mm: position.get("y")?.as_f64()?,
     })
 }
+/// Processes string member using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `value` — Input `value` used by this operation.
+/// * `key` — Input `key` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn string_member(value: &Value, key: &str) -> Option<String> {
     value.get(key)?.as_str().map(ToOwned::to_owned)
 }
+/// Contains the tests implementation and supporting types.
 
 #[cfg(test)]
 mod tests {
@@ -260,6 +327,7 @@ mod tests {
     use kicad_clippy_core::Severity;
 
     use super::parse_erc_json;
+    /// Defines the erc report constant.
 
     const ERC_REPORT: &[u8] = br#"
     {
@@ -291,6 +359,16 @@ mod tests {
       "ignored_checks": [{"key": "pin_to_pin", "description": "Pin-to-pin conflict"}]
     }
     "#;
+    /// Processes reads sheet nested violations and preserves item context using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the operation cannot complete with the supplied input.
+    ///
 
     #[test]
     fn reads_sheet_nested_violations_and_preserves_item_context() -> Result<(), Box<dyn Error>> {
@@ -313,6 +391,16 @@ mod tests {
         assert!(report.has_errors());
         Ok(())
     }
+    /// Processes rejects a drc shaped top level violations array using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the operation cannot complete with the supplied input.
+    ///
 
     #[test]
     fn rejects_a_drc_shaped_top_level_violations_array() {
@@ -320,6 +408,16 @@ mod tests {
 
         assert!(parse_erc_json(drc_shaped, "fixture.kicad_sch").is_err());
     }
+    /// Processes excluded errors are retained but do not fail the report using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the operation cannot complete with the supplied input.
+    ///
 
     #[test]
     fn excluded_errors_are_retained_but_do_not_fail_the_report() -> Result<(), Box<dyn Error>> {

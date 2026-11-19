@@ -75,6 +75,15 @@ pub struct Netlist {
 
 impl Netlist {
     /// Returns the net name connected to a component pin.
+    /// # Arguments
+    ///
+    /// * `reference` — Input `reference` used by this operation.
+    /// * `pin` — Input `pin` used by this operation.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
     #[must_use]
     pub fn net_for_pin(&self, reference: &str, pin: &str) -> Option<&str> {
         self.pin_nets
@@ -86,6 +95,14 @@ impl Netlist {
     }
 
     /// Returns the pins attached to a named net.
+    /// # Arguments
+    ///
+    /// * `name` — Input `name` used by this operation.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
     #[must_use]
     pub fn pins_on_net(&self, name: &str) -> Option<&[NetlistNode]> {
         self.nets.get(name).map(|net| net.nodes.as_slice())
@@ -145,6 +162,15 @@ pub enum NetlistError {
 ///
 /// Returns `NetlistError` when `KiCad` cannot be started, the command fails,
 /// or the generated netlist cannot be read or parsed.
+/// # Arguments
+///
+/// * `program` — Input `program` used by this operation.
+/// * `schematic_path` — Input `schematic path` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 pub fn export_netlist(
     program: impl AsRef<Path>,
     schematic_path: impl AsRef<Path>,
@@ -193,6 +219,14 @@ pub fn export_netlist(
 ///
 /// Returns `NetlistError` for malformed S-expressions, wrong roots,
 /// missing required fields, or duplicate component-pin assignments.
+/// # Arguments
+///
+/// * `contents` — Input `contents` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 pub fn parse_netlist_sexpr(contents: &str) -> Result<Netlist, NetlistError> {
     let document = parse_one(contents)?;
     let root = document
@@ -277,6 +311,18 @@ pub fn parse_netlist_sexpr(contents: &str) -> Result<Netlist, NetlistError> {
     }
     Ok(netlist)
 }
+/// Processes process details using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `stdout` — Input `stdout` used by this operation.
+/// * `stderr` — Input `stderr` used by this operation.
+/// * `fallback` — Input `fallback` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn process_details(stdout: &[u8], stderr: &[u8], fallback: &str) -> String {
     let stdout = String::from_utf8_lossy(stdout);
@@ -287,6 +333,17 @@ fn process_details(stdout: &[u8], stderr: &[u8], fallback: &str) -> String {
         .collect::<Vec<_>>()
         .join("\n")
 }
+/// Processes missing field using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `field` — Input `field` used by this operation.
+/// * `context` — Input `context` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn missing_field(field: &str, context: &str) -> NetlistError {
     NetlistError::MissingField {
@@ -294,6 +351,16 @@ fn missing_field(field: &str, context: &str) -> NetlistError {
         context: context.to_owned(),
     }
 }
+/// Processes list items using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `node` — Input `node` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn list_items(node: &Node) -> Option<&[Node]> {
     if let Node::List { items, .. } = node {
@@ -302,6 +369,16 @@ fn list_items(node: &Node) -> Option<&[Node]> {
         None
     }
 }
+/// Processes head using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `node` — Input `node` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn head(node: &Node) -> Option<&str> {
     let Node::List { items, .. } = node else {
@@ -316,6 +393,17 @@ fn head(node: &Node) -> Option<&str> {
     };
     Some(value)
 }
+/// Processes children using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `node` — Input `node` used by this operation.
+/// * `name` — Input `name` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn children<'a>(node: &'a Node, name: &str) -> impl Iterator<Item = &'a Node> + 'a {
     let name = name.to_owned();
@@ -324,16 +412,50 @@ fn children<'a>(node: &'a Node, name: &str) -> impl Iterator<Item = &'a Node> + 
         .flatten()
         .filter(move |child| head(child) == Some(name.as_str()))
 }
+/// Processes child list using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `node` — Input `node` used by this operation.
+/// * `name` — Input `name` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn child_list<'a>(node: &'a Node, name: &str) -> Option<&'a Node> {
     children(node, name).next()
 }
+/// Processes child value using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `node` — Input `node` used by this operation.
+/// * `name` — Input `name` used by this operation.
+/// * `source` — Input `source` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn child_value(node: &Node, name: &str, source: &str) -> Option<String> {
     let child = child_list(node, name)?;
     let items = list_items(child)?;
     atom_value(items.get(1)?, source)
 }
+/// Processes atom value using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `node` — Input `node` used by this operation.
+/// * `source` — Input `source` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn atom_value(node: &Node, source: &str) -> Option<String> {
     let Node::Atom { span, .. } = node else {
@@ -343,12 +465,14 @@ fn atom_value(node: &Node, source: &str) -> Option<String> {
         .get(span.start..span.end)
         .map(|value| value.trim_matches('"').to_owned())
 }
+/// Contains the tests implementation and supporting types.
 
 #[cfg(test)]
 mod tests {
     #![allow(clippy::expect_used)]
     use super::parse_netlist_sexpr;
     use std::collections::BTreeSet;
+    /// Defines the netlist constant.
 
     const NETLIST: &str = r#"(export
       (components
@@ -370,6 +494,8 @@ mod tests {
         )
       )
     )"#;
+    /// Processes maps component pins to exported net names using the supplied values and schematic data.
+    ///
 
     #[test]
     fn maps_component_pins_to_exported_net_names() {
@@ -390,6 +516,8 @@ mod tests {
         assert_eq!(netlist.components["C1"].value.as_deref(), Some("100n"));
         assert_eq!(netlist.components["U1"].lib_id.as_deref(), Some("MyLib:U"));
     }
+    /// Processes rejects a pin assigned to two nets using the supplied values and schematic data.
+    ///
 
     #[test]
     fn rejects_a_pin_assigned_to_two_nets() {

@@ -21,13 +21,20 @@ use miette::{LabeledSpan, MietteDiagnostic, NamedSource, Report, Severity as Ren
 use serde::Serialize;
 use thiserror::Error;
 
+/// Millimetres represented by one mil.
+const MILLIMETRES_PER_MIL: f64 = 0.0254;
+/// KiCad's default netclass wire width, in mils.
+const DEFAULT_NETCLASS_WIRE_WIDTH_MILS: f64 = 6.0;
+
 /// Clippy-inspired checks for `KiCad` schematic source files.
 #[derive(Debug, Parser)]
 #[command(version, about, long_about = None)]
 struct Cli {
+    /// Stores the `command` value.
     #[command(subcommand)]
     command: Commands,
 }
+/// Represents the supported commands alternatives.
 
 #[derive(Debug, Subcommand)]
 enum Commands {
@@ -55,6 +62,7 @@ enum Commands {
         strict: bool,
     },
 }
+/// Represents the supported outputformat alternatives.
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum OutputFormat {
@@ -63,48 +71,81 @@ enum OutputFormat {
     /// Structured JSON diagnostics.
     Json,
 }
+/// Represents the supported clierror alternatives.
 
 #[derive(Debug, Error)]
 enum CliError {
+    /// Represents the `Schematic` case.
     #[error(transparent)]
     Schematic(#[from] kicad_clippy_parser::SchematicParseError),
+    /// Represents the `Erc` case.
     #[error(transparent)]
     Erc(#[from] kicad_clippy_erc::ErcError),
+    /// Represents the `KiCadCliNotFound` case.
     #[error("KiCad CLI was not found; install KiCad or pass --kicad-cli PATH")]
     KiCadCliNotFound,
+    /// Represents the `Metadata` case.
     #[error(transparent)]
     Metadata(#[from] kicad_clippy_rules::MetadataError),
+    /// Represents the `Netlist` case.
     #[error(transparent)]
     Netlist(#[from] NetlistError),
+    /// Represents the `StrictNeedsProfile` case.
     #[error("--strict requires --profile FILE")]
     StrictNeedsProfile,
+    /// Represents the `Json` case.
     #[error("failed to serialize JSON output: {0}")]
     Json(#[from] serde_json::Error),
+    /// Represents the `Io` case.
     #[error("failed to write CLI output: {0}")]
     Io(#[from] io::Error),
 }
+/// Stores lintoutput data used by this crate.
 
 #[derive(Debug, Serialize)]
 struct LintOutput {
+    /// Stores the `schema_version` value.
     schema_version: &'static str,
+    /// Stores the `tool_version` value.
     tool_version: &'static str,
+    /// Stores the `schematic` value.
     schematic: String,
+    /// Stores the `syntax_valid` value.
     syntax_valid: bool,
+    /// Stores the `erc_skipped` value.
     erc_skipped: bool,
+    /// Stores the `kicad_version` value.
     kicad_version: Option<String>,
+    /// Stores the `diagnostics` value.
     diagnostics: Vec<Diagnostic>,
+    /// Stores the `summary` value.
     summary: Summary,
 }
+/// Stores summary data used by this crate.
 
 #[derive(Debug, Serialize)]
 struct Summary {
+    /// Stores the `errors` value.
     errors: usize,
+    /// Stores the `warnings` value.
     warnings: usize,
+    /// Stores the `notes` value.
     notes: usize,
+    /// Stores the `excluded` value.
     excluded: usize,
 }
 
 impl Summary {
+    /// Processes from diagnostics using the supplied values and schematic data.
+    ///
+    /// # Arguments
+    ///
+    /// * `diagnostics` — Input `diagnostics` used by this operation.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
     fn from_diagnostics(diagnostics: &[Diagnostic]) -> Self {
         Self {
             errors: diagnostics
@@ -128,6 +169,12 @@ impl Summary {
         }
     }
 }
+/// Processes main using the supplied values and schematic data.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn main() -> ExitCode {
     match execute(Cli::parse()) {
@@ -138,6 +185,20 @@ fn main() -> ExitCode {
         }
     }
 }
+/// Processes execute using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `cli` — Input `cli` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
+/// # Errors
+///
+/// Returns an error when the operation cannot complete with the supplied input.
+///
 
 fn execute(cli: Cli) -> Result<ExitCode, CliError> {
     match cli.command {
@@ -160,6 +221,26 @@ fn execute(cli: Cli) -> Result<ExitCode, CliError> {
         ),
     }
 }
+/// Processes lint using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `schematic_path` — Input `schematic path` used by this operation.
+/// * `format` — Input `format` used by this operation.
+/// * `skip_erc` — Input `skip erc` used by this operation.
+/// * `explicit_cli` — Input `explicit cli` used by this operation.
+/// * `project_path` — Input `project path` used by this operation.
+/// * `profile_path` — Input `profile path` used by this operation.
+/// * `strict` — Input `strict` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
+/// # Errors
+///
+/// Returns an error when the operation cannot complete with the supplied input.
+///
 
 fn lint(
     schematic_path: &Path,
@@ -257,11 +338,35 @@ fn lint(
         Ok(ExitCode::SUCCESS)
     }
 }
+/// Processes project settings from project using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `project_path` — Input `project path` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
+/// # Errors
+///
+/// Returns an error when the operation cannot complete with the supplied input.
+///
 
 fn project_settings_from_project(project_path: &Path) -> Result<serde_json::Value, CliError> {
     let contents = fs::read_to_string(project_path)?;
     Ok(serde_json::from_str(&contents)?)
 }
+/// Processes project default schematic line stroke width mm using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `project` — Input `project` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn project_default_schematic_line_stroke_width_mm(project: &serde_json::Value) -> Option<f64> {
     let width_mils = project
@@ -269,9 +374,21 @@ fn project_default_schematic_line_stroke_width_mm(project: &serde_json::Value) -
         .get("drawing")?
         .get("default_line_thickness")?
         .as_f64()?;
-    let width_mm = width_mils * 0.0254;
+    let width_mm = width_mils * MILLIMETRES_PER_MIL;
     (width_mm.is_finite() && width_mm > 0.0).then_some(width_mm)
 }
+/// Processes project wire stroke widths mm using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `project` — Input `project` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+/// * `netlist` — Input `netlist` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn project_wire_stroke_widths_mm(
     project: &serde_json::Value,
@@ -344,6 +461,17 @@ fn project_wire_stroke_widths_mm(
     }
     widths_by_wire
 }
+/// Processes netlist pin coordinates are complete using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `facts` — Input `facts` used by this operation.
+/// * `netlist` — Input `netlist` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn netlist_pin_coordinates_are_complete(facts: &SchematicFacts, netlist: &Netlist) -> bool {
     let schematic_pin_refs = facts
@@ -358,8 +486,21 @@ fn netlist_pin_coordinates_are_complete(facts: &SchematicFacts, netlist: &Netlis
             || schematic_pin_refs.contains(&(pin_ref.reference.as_str(), pin_ref.pin.as_str()))
     })
 }
+/// Defines the projectnetclassdefinitions type used by this crate.
 
 type ProjectNetclassDefinitions = BTreeMap<String, (i64, Option<f64>)>;
+/// Processes project netclass wire width mm using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `project` — Input `project` used by this operation.
+/// * `netlist` — Input `netlist` used by this operation.
+/// * `net_name` — Input `net name` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn project_netclass_wire_width_mm(
     project: &serde_json::Value,
@@ -384,6 +525,16 @@ fn project_netclass_wire_width_mm(
         .min_by(|first, second| first.0.cmp(&second.0).then_with(|| first.1.cmp(second.1)));
     Some(selected.map_or(default_width_mm, |(_, _, width_mm)| width_mm))
 }
+/// Processes project netclass definitions using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `settings` — Input `settings` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn project_netclass_definitions(
     settings: &serde_json::Map<String, serde_json::Value>,
@@ -405,13 +556,25 @@ fn project_netclass_definitions(
         let width_mils = class
             .get("wire_width")
             .and_then(serde_json::Value::as_f64)
-            .or_else(|| (name == "Default").then_some(6.0));
-        let width_mm = width_mils.map(|width| width * 0.0254);
+            .or_else(|| (name == "Default").then_some(DEFAULT_NETCLASS_WIRE_WIDTH_MILS));
+        let width_mm = width_mils.map(|width| width * MILLIMETRES_PER_MIL);
         let width_mm = width_mm.filter(|width| width.is_finite() && *width > 0.0);
         classes.insert(name, (priority, width_mm));
     }
     Some(classes)
 }
+/// Processes project netclass candidates using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `settings` — Input `settings` used by this operation.
+/// * `netlist` — Input `netlist` used by this operation.
+/// * `net_name` — Input `net name` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn project_netclass_candidates(
     settings: &serde_json::Map<String, serde_json::Value>,
@@ -424,6 +587,18 @@ fn project_netclass_candidates(
     add_chain_netclass_assignments(settings, netlist, net_name, &mut candidates)?;
     Some(candidates)
 }
+/// Processes add explicit netclass assignments using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `settings` — Input `settings` used by this operation.
+/// * `net_name` — Input `net name` used by this operation.
+/// * `candidates` — Input `candidates` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn add_explicit_netclass_assignments(
     settings: &serde_json::Map<String, serde_json::Value>,
@@ -443,6 +618,18 @@ fn add_explicit_netclass_assignments(
     }
     Some(())
 }
+/// Processes add pattern netclass assignments using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `settings` — Input `settings` used by this operation.
+/// * `net_name` — Input `net name` used by this operation.
+/// * `candidates` — Input `candidates` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn add_pattern_netclass_assignments(
     settings: &serde_json::Map<String, serde_json::Value>,
@@ -475,6 +662,19 @@ fn add_pattern_netclass_assignments(
     }
     Some(())
 }
+/// Processes add chain netclass assignments using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `settings` — Input `settings` used by this operation.
+/// * `netlist` — Input `netlist` used by this operation.
+/// * `net_name` — Input `net name` used by this operation.
+/// * `candidates` — Input `candidates` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn add_chain_netclass_assignments(
     settings: &serde_json::Map<String, serde_json::Value>,
@@ -509,6 +709,18 @@ fn add_chain_netclass_assignments(
     }
     Some(())
 }
+/// Processes exported netclass matches using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `exported_class` — Input `exported class` used by this operation.
+/// * `net_name` — Input `net name` used by this operation.
+/// * `candidates` — Input `candidates` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn exported_netclass_matches(
     exported_class: &str,
@@ -523,6 +735,17 @@ fn exported_netclass_matches(
         candidates.len() == 1 && candidates.contains(exported_class)
     }
 }
+/// Processes wildcard pattern matches using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `pattern` — Input `pattern` used by this operation.
+/// * `candidate` — Input `candidate` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn wildcard_pattern_matches(pattern: &str, candidate: &str) -> bool {
     let pattern: Vec<char> = pattern.chars().collect();
@@ -552,6 +775,21 @@ fn wildcard_pattern_matches(pattern: &str, candidate: &str) -> bool {
     }
     previous[candidate.len()]
 }
+/// Processes render text using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `output` — Input `output` used by this operation.
+/// * `source` — Input `source` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
+/// # Errors
+///
+/// Returns an error when the operation cannot complete with the supplied input.
+///
 
 fn render_text(output: &LintOutput, source: &SourceFile) -> Result<(), io::Error> {
     let mut stdout = io::stdout().lock();
@@ -585,6 +823,22 @@ fn render_text(output: &LintOutput, source: &SourceFile) -> Result<(), io::Error
     writeln!(stdout, "Built-in schematic rules: active")?;
     Ok(())
 }
+/// Processes render diagnostic using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `stdout` — Input `stdout` used by this operation.
+/// * `diagnostic` — Input `diagnostic` used by this operation.
+/// * `source` — Input `source` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
+/// # Errors
+///
+/// Returns an error when the operation cannot complete with the supplied input.
+///
 
 fn render_diagnostic(
     stdout: &mut impl Write,
@@ -661,6 +915,20 @@ fn render_diagnostic(
     writeln!(stdout, "{report:?}")?;
     Ok(())
 }
+/// Processes resolve kicad cli using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `explicit` — Input `explicit` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
+/// # Errors
+///
+/// Returns an error when the operation cannot complete with the supplied input.
+///
 
 fn resolve_kicad_cli(explicit: Option<PathBuf>) -> Result<PathBuf, CliError> {
     if let Some(path) = explicit {
@@ -679,6 +947,7 @@ fn resolve_kicad_cli(explicit: Option<PathBuf>) -> Result<PathBuf, CliError> {
 
     Err(CliError::KiCadCliNotFound)
 }
+/// Contains the tests implementation and supporting types.
 
 #[cfg(test)]
 mod tests {
@@ -691,6 +960,12 @@ mod tests {
     use kicad_clippy_erc::Netlist;
     use kicad_clippy_rules::SchematicFacts;
     use std::collections::{BTreeMap, BTreeSet};
+    /// Processes project default schematic line width reads mils using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn project_default_schematic_line_width_reads_mils() {
@@ -707,6 +982,12 @@ mod tests {
                 .is_some_and(|width| (width - 0.1524).abs() < 1.0e-12)
         );
     }
+    /// Processes project default schematic line width stays unknown when missing or invalid using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn project_default_schematic_line_width_stays_unknown_when_missing_or_invalid() {
@@ -728,6 +1009,12 @@ mod tests {
             None
         );
     }
+    /// Processes project fixture using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     fn project_fixture() -> serde_json::Value {
         serde_json::json!({
@@ -744,6 +1031,8 @@ mod tests {
             }
         })
     }
+    /// Processes overlapping patterns and explicit assignments use class priority using the supplied values and schematic data.
+    ///
 
     #[test]
     fn overlapping_patterns_and_explicit_assignments_use_class_priority() {
@@ -773,6 +1062,8 @@ mod tests {
         assert!(wildcard_pattern_matches("/USB?", "/USB1"));
         assert!(!wildcard_pattern_matches("/USB?", "/USB12"));
     }
+    /// Processes class without wire width inherits the project default using the supplied values and schematic data.
+    ///
 
     #[test]
     fn class_without_wire_width_inherits_the_project_default() {
@@ -796,6 +1087,8 @@ mod tests {
             Some(0.2032)
         );
     }
+    /// Processes committed chain netclass is applied to member nets using the supplied values and schematic data.
+    ///
 
     #[test]
     fn committed_chain_netclass_is_applied_to_member_nets() {
@@ -823,6 +1116,8 @@ mod tests {
             Some(0.4572)
         );
     }
+    /// Processes inconsistent or unmodeled assignments remain unknown using the supplied values and schematic data.
+    ///
 
     #[test]
     fn inconsistent_or_unmodeled_assignments_remain_unknown() {
@@ -859,6 +1154,8 @@ mod tests {
             None
         );
     }
+    /// Processes per wire width requires one unambiguous physical component net using the supplied values and schematic data.
+    ///
 
     #[test]
     fn per_wire_width_requires_one_unambiguous_physical_component_net() {
@@ -950,6 +1247,8 @@ mod tests {
         );
         assert!(project_wire_stroke_widths_mm(&project, &conflicting_facts, &netlist).is_empty());
     }
+    /// Processes schematic netclass directives suppress project only width inference using the supplied values and schematic data.
+    ///
 
     #[test]
     fn schematic_netclass_directives_suppress_project_only_width_inference() {
@@ -960,6 +1259,8 @@ mod tests {
         };
         assert!(project_wire_stroke_widths_mm(&project, &facts, &Netlist::default()).is_empty());
     }
+    /// Processes summary counts only active errors using the supplied values and schematic data.
+    ///
 
     #[test]
     fn summary_counts_only_active_errors() {

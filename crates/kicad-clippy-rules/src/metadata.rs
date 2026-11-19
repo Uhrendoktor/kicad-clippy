@@ -10,7 +10,23 @@ use kicad_clippy_parser::SchematicDocument;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::generic::{SchematicFacts, physical_wire_component_ids};
+use crate::generic::{
+    GEOMETRY_TOLERANCE_MM, STROKE_CLEARANCE_MARGIN_MM, SchematicFacts,
+    physical_wire_component_ids,
+};
+
+/// Currently supported project-profile schema version.
+const SUPPORTED_PROFILE_SCHEMA_VERSION: u32 = 1;
+/// Minimum number of distinct pins required in a group contract.
+const MINIMUM_PIN_GROUP_SIZE: usize = 2;
+/// Decimal precision used in stable coordinate keys.
+const COORDINATE_KEY_DECIMAL_PLACES: usize = 3;
+/// Multiplier converting half-clearance to clearance on both sides.
+const BOTH_SIDES_FACTOR: f64 = 2.0;
+/// Maximum normalized wire-compactness score.
+const MAX_COMPACTNESS_SCORE: f64 = 1.0;
+/// Dimensionless tolerance for comparing normalized scores.
+const SCORE_COMPARISON_EPSILON: f64 = 0.001;
 
 /// Profile enforcement mode.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -27,24 +43,39 @@ pub enum ProfileMode {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ComponentKind {
+    /// Represents the `Capacitor` case.
     Capacitor,
+    /// Represents the `Resistor` case.
     Resistor,
+    /// Represents the `Diode` case.
     Diode,
+    /// Represents the `Inductor` case.
     Inductor,
+    /// Represents the `Transistor` case.
     Transistor,
+    /// Represents the `Connector` case.
     Connector,
+    /// Represents the `IntegratedCircuit` case.
     IntegratedCircuit,
+    /// Represents the `Fuse` case.
     Fuse,
+    /// Represents the `FerriteBead` case.
     FerriteBead,
+    /// Represents the `Crystal` case.
     Crystal,
+    /// Represents the `Switch` case.
     Switch,
+    /// Represents the `Other` case.
     Other,
 }
 
 /// Extensible component role, such as `decoupling`, `bulk`, `pull_up`, `clamp`, or `load_switch`.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(transparent)]
-pub struct ComponentRole(pub String);
+pub struct ComponentRole(
+    /// Extensible component role identifier.
+    pub String,
+);
 
 /// Pin-specific intent for a decoupling capacitor.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -236,22 +267,47 @@ impl LintProfile {
     ///
     /// # Errors
     /// Returns an I/O or JSON decoding error.
+    /// # Arguments
+    ///
+    /// * `path` — Input `path` used by this operation.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
     pub fn from_path(path: impl AsRef<Path>) -> Result<Self, MetadataError> {
         let content = fs::read_to_string(path).map_err(MetadataError::Io)?;
         let profile: Self = serde_json::from_str(&content).map_err(MetadataError::Json)?;
-        if profile.schema_version != 1 {
+        if profile.schema_version != SUPPORTED_PROFILE_SCHEMA_VERSION {
             return Err(MetadataError::UnsupportedVersion(profile.schema_version));
         }
         Ok(profile)
     }
 
     /// Validate declared intent against placed components in the schematic.
+    /// # Arguments
+    ///
+    /// * `document` — Input `document` used by this operation.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
     #[must_use]
     pub fn validate(&self, document: &SchematicDocument) -> Vec<Diagnostic> {
         self.validate_with_netlist(document, None)
     }
 
     /// Validate declared intent against the schematic and an exported `KiCad` netlist.
+    /// # Arguments
+    ///
+    /// * `document` — Input `document` used by this operation.
+    /// * `netlist` — Input `netlist` used by this operation.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
     #[must_use]
     pub fn validate_with_netlist(
         &self,
@@ -305,6 +361,16 @@ impl LintProfile {
         ));
         diagnostics
     }
+    /// Processes validate profile references using the supplied values and schematic data.
+    ///
+    /// # Arguments
+    ///
+    /// * `references` — Input `references` used by this operation.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     fn validate_profile_references(&self, references: &BTreeSet<String>) -> Vec<Diagnostic> {
         self.components
@@ -320,6 +386,18 @@ impl LintProfile {
             .collect()
     }
 }
+/// Processes validate direct wire connectivity using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `pairs` — Input `pairs` used by this operation.
+/// * `forbidden_labels` — Input `forbidden labels` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_direct_wire_connectivity(
     pairs: &[DirectWirePair],
@@ -347,6 +425,18 @@ fn validate_direct_wire_connectivity(
     ));
     diagnostics
 }
+/// Processes validate direct wire pair using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `pair` — Input `pair` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+/// * `component_ids` — Input `component ids` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_direct_wire_pair(
     pair: &DirectWirePair,
@@ -417,8 +507,8 @@ fn validate_direct_wire_pair(
         ));
     }
     if first_attached && second_attached {
-        let first_key = format!("{:.3}:{:.3}", first_point.0, first_point.1);
-        let second_key = format!("{:.3}:{:.3}", second_point.0, second_point.1);
+        let first_key = format!("{:.*}:{:.*}", COORDINATE_KEY_DECIMAL_PLACES, first_point.0, COORDINATE_KEY_DECIMAL_PLACES, first_point.1);
+        let second_key = format!("{:.*}:{:.*}", COORDINATE_KEY_DECIMAL_PLACES, second_point.0, COORDINATE_KEY_DECIMAL_PLACES, second_point.1);
         let first_component = component_ids.get(&first_key).copied();
         let second_component = component_ids.get(&second_key).copied();
         if first_component != second_component {
@@ -451,6 +541,19 @@ fn validate_direct_wire_pair(
     }
     (diagnostics, protected_components)
 }
+/// Processes validate forbidden direct wire labels using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `forbidden_labels` — Input `forbidden labels` used by this operation.
+/// * `protected_components` — Input `protected components` used by this operation.
+/// * `component_ids` — Input `component ids` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_forbidden_direct_wire_labels(
     forbidden_labels: &BTreeSet<String>,
@@ -463,7 +566,7 @@ fn validate_forbidden_direct_wire_labels(
         if label.kind != "label" || !forbidden_labels.contains(&label.name) {
             return false;
         }
-        let key = format!("{:.3}:{:.3}", label.position_mm.0, label.position_mm.1);
+        let key = format!("{:.*}:{:.*}", COORDINATE_KEY_DECIMAL_PLACES, label.position_mm.0, COORDINATE_KEY_DECIMAL_PLACES, label.position_mm.1);
         component_ids
             .get(&key)
             .is_some_and(|component| protected_components.contains(component))
@@ -479,6 +582,18 @@ fn validate_forbidden_direct_wire_labels(
     }
     diagnostics
 }
+/// Processes validate common pin groups using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `groups` — Input `groups` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+/// * `netlist` — Input `netlist` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_common_pin_groups(
     groups: &[CommonPinNetGroup],
@@ -496,6 +611,18 @@ fn validate_common_pin_groups(
     }
     diagnostics
 }
+/// Processes validate common pin group using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group` — Input `group` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+/// * `component_ids` — Input `component ids` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_common_pin_group(
     group: &CommonPinNetGroup,
@@ -531,6 +658,17 @@ fn validate_common_pin_group(
     }
     diagnostics
 }
+/// Processes validate common pin group netlist using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group` — Input `group` used by this operation.
+/// * `netlist` — Input `netlist` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_common_pin_group_netlist(
     group: &CommonPinNetGroup,
@@ -586,6 +724,17 @@ fn validate_common_pin_group_netlist(
     }
     diagnostics
 }
+/// Processes validate physical wire groups using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `groups` — Input `groups` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_physical_wire_groups(
     groups: &[PhysicalWireGroup],
@@ -600,6 +749,18 @@ fn validate_physical_wire_groups(
         .flat_map(|group| validate_physical_wire_group(group, facts, &component_ids))
         .collect()
 }
+/// Processes validate physical wire group using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group` — Input `group` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+/// * `component_ids` — Input `component ids` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_physical_wire_group(
     group: &PhysicalWireGroup,
@@ -614,7 +775,7 @@ fn validate_physical_wire_group(
             "physical wire group must have a non-empty name",
         )];
     }
-    if group.pins.len() < 2 || unique_pins.len() != group.pins.len() {
+    if group.pins.len() < MINIMUM_PIN_GROUP_SIZE || unique_pins.len() != group.pins.len() {
         return vec![Diagnostic::for_builtin_rule(
             BuiltinRuleId::Sch004,
             Severity::Error,
@@ -662,7 +823,7 @@ fn validate_physical_wire_group(
             ));
             continue;
         }
-        let key = format!("{:.3}:{:.3}", pin.position_mm.0, pin.position_mm.1);
+        let key = format!("{:.*}:{:.*}", COORDINATE_KEY_DECIMAL_PLACES, pin.position_mm.0, COORDINATE_KEY_DECIMAL_PLACES, pin.position_mm.1);
         if let Some(component) = component_ids.get(&key).copied() {
             roots.insert(component);
         } else {
@@ -689,6 +850,17 @@ fn validate_physical_wire_group(
     }
     diagnostics
 }
+/// Processes invalid physical wire reference using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group_name` — Input `group name` used by this operation.
+/// * `pin_ref` — Input `pin ref` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn invalid_physical_wire_reference(group_name: &str, pin_ref: &str) -> Diagnostic {
     Diagnostic::for_builtin_rule(
@@ -697,6 +869,18 @@ fn invalid_physical_wire_reference(group_name: &str, pin_ref: &str) -> Diagnosti
         format!("physical wire group {group_name:?} contains invalid pin reference {pin_ref:?}"),
     )
 }
+/// Processes validate separate wire pairs using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `pairs` — Input `pairs` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+/// * `netlist` — Input `netlist` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_separate_wire_pairs(
     pairs: &[SeparateWirePair],
@@ -718,6 +902,19 @@ fn validate_separate_wire_pairs(
     }
     diagnostics
 }
+/// Processes validate separate wire pair using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `pair` — Input `pair` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+/// * `component_ids` — Input `component ids` used by this operation.
+/// * `netlist` — Input `netlist` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_separate_wire_pair(
     pair: &SeparateWirePair,
@@ -768,7 +965,7 @@ fn validate_separate_wire_pair(
         if !point_is_on_wire(point, facts) {
             return None;
         }
-        let key = format!("{:.3}:{:.3}", point.0, point.1);
+        let key = format!("{:.*}:{:.*}", COORDINATE_KEY_DECIMAL_PLACES, point.0, COORDINATE_KEY_DECIMAL_PLACES, point.1);
         component_ids.get(&key).copied()
     };
     let first_component = physical_component(first_pin.position_mm);
@@ -822,13 +1019,23 @@ fn validate_separate_wire_pair(
     }
     diagnostics
 }
+/// Processes common pin group configuration error using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group` — Input `group` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn common_pin_group_configuration_error(group: &CommonPinNetGroup) -> Option<Diagnostic> {
     let group_name = group.name.trim();
     let unique_pins: BTreeSet<_> = group.pins.iter().collect();
     let message = if group_name.is_empty() {
         Some("common pin group must define a non-empty expected label/net name".to_owned())
-    } else if group.pins.len() < 2 || unique_pins.len() != group.pins.len() {
+    } else if group.pins.len() < MINIMUM_PIN_GROUP_SIZE || unique_pins.len() != group.pins.len() {
         Some(format!(
             "common pin group {group_name:?} must list at least two distinct REF.PIN entries"
         ))
@@ -839,6 +1046,18 @@ fn common_pin_group_configuration_error(group: &CommonPinNetGroup) -> Option<Dia
         Diagnostic::for_builtin_rule(BuiltinRuleId::Sch004, Severity::Error, message)
     })
 }
+/// Processes resolve common pin group components using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group` — Input `group` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+/// * `component_ids` — Input `component ids` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn resolve_common_pin_group_components(
     group: &CommonPinNetGroup,
@@ -882,7 +1101,7 @@ fn resolve_common_pin_group_components(
             ));
             continue;
         }
-        let key = format!("{:.3}:{:.3}", pin.position_mm.0, pin.position_mm.1);
+        let key = format!("{:.*}:{:.*}", COORDINATE_KEY_DECIMAL_PLACES, pin.position_mm.0, COORDINATE_KEY_DECIMAL_PLACES, pin.position_mm.1);
         let Some(component) = component_ids.get(&key).copied() else {
             diagnostics.push(Diagnostic::for_builtin_rule(
                 BuiltinRuleId::Sch004,
@@ -905,6 +1124,17 @@ fn resolve_common_pin_group_components(
     }
     (roots, diagnostics)
 }
+/// Processes invalid common pin reference using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group_name` — Input `group name` used by this operation.
+/// * `pin_ref` — Input `pin ref` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn invalid_common_pin_reference(group_name: &str, pin_ref: &str) -> Diagnostic {
     Diagnostic::for_builtin_rule(
@@ -913,6 +1143,19 @@ fn invalid_common_pin_reference(group_name: &str, pin_ref: &str) -> Diagnostic {
         format!("common pin group {group_name:?} contains invalid pin reference {pin_ref:?}"),
     )
 }
+/// Processes common pin group label count using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group` — Input `group` used by this operation.
+/// * `roots` — Input `roots` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+/// * `component_ids` — Input `component ids` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn common_pin_group_label_count(
     group: &CommonPinNetGroup,
@@ -927,13 +1170,26 @@ fn common_pin_group_label_count(
             if label.name != group.name.trim() {
                 return false;
             }
-            let key = format!("{:.3}:{:.3}", label.position_mm.0, label.position_mm.1);
+            let key = format!("{:.*}:{:.*}", COORDINATE_KEY_DECIMAL_PLACES, label.position_mm.0, COORDINATE_KEY_DECIMAL_PLACES, label.position_mm.1);
             component_ids
                 .get(&key)
                 .is_some_and(|component| roots.contains(component))
         })
         .count()
 }
+/// Processes component has label using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `component` — Input `component` used by this operation.
+/// * `expected_name` — Input `expected name` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+/// * `component_ids` — Input `component ids` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn component_has_label(
     component: usize,
@@ -945,31 +1201,64 @@ fn component_has_label(
         if label.name != expected_name {
             return false;
         }
-        let key = format!("{:.3}:{:.3}", label.position_mm.0, label.position_mm.1);
+        let key = format!("{:.*}:{:.*}", COORDINATE_KEY_DECIMAL_PLACES, label.position_mm.0, COORDINATE_KEY_DECIMAL_PLACES, label.position_mm.1);
         component_ids.get(&key) == Some(&component)
     })
 }
+/// Processes point is on wire using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `point` — Input `point` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn point_is_on_wire(point: (f64, f64), facts: &SchematicFacts) -> bool {
     facts.wires.iter().any(|wire| {
-        let horizontal = (wire.start_mm.1 - wire.end_mm.1).abs() <= 0.001;
+        let horizontal = (wire.start_mm.1 - wire.end_mm.1).abs() <= GEOMETRY_TOLERANCE_MM;
         if horizontal {
-            (point.1 - wire.start_mm.1).abs() <= 0.001
-                && point.0 >= wire.start_mm.0.min(wire.end_mm.0) - 0.001
-                && point.0 <= wire.start_mm.0.max(wire.end_mm.0) + 0.001
-        } else if (wire.start_mm.0 - wire.end_mm.0).abs() <= 0.001 {
-            (point.0 - wire.start_mm.0).abs() <= 0.001
-                && point.1 >= wire.start_mm.1.min(wire.end_mm.1) - 0.001
-                && point.1 <= wire.start_mm.1.max(wire.end_mm.1) + 0.001
+            (point.1 - wire.start_mm.1).abs() <= GEOMETRY_TOLERANCE_MM
+                && point.0 >= wire.start_mm.0.min(wire.end_mm.0) - GEOMETRY_TOLERANCE_MM
+                && point.0 <= wire.start_mm.0.max(wire.end_mm.0) + GEOMETRY_TOLERANCE_MM
+        } else if (wire.start_mm.0 - wire.end_mm.0).abs() <= GEOMETRY_TOLERANCE_MM {
+            (point.0 - wire.start_mm.0).abs() <= GEOMETRY_TOLERANCE_MM
+                && point.1 >= wire.start_mm.1.min(wire.end_mm.1) - GEOMETRY_TOLERANCE_MM
+                && point.1 <= wire.start_mm.1.max(wire.end_mm.1) + GEOMETRY_TOLERANCE_MM
         } else {
             false
         }
     })
 }
+/// Processes same wire point using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `first` — Input `first` used by this operation.
+/// * `second` — Input `second` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn same_wire_point(first: (f64, f64), second: (f64, f64)) -> bool {
-    (first.0 - second.0).abs() <= 0.001 && (first.1 - second.1).abs() <= 0.001
+    (first.0 - second.0).abs() <= GEOMETRY_TOLERANCE_MM && (first.1 - second.1).abs() <= GEOMETRY_TOLERANCE_MM
 }
+/// Processes validate groups using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `groups` — Input `groups` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_groups(
     groups: &BTreeMap<String, GroupIntent>,
@@ -986,6 +1275,19 @@ fn validate_groups(
     }
     diagnostics
 }
+/// Processes validate group using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group_id` — Input `group id` used by this operation.
+/// * `group` — Input `group` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+/// * `references` — Input `references` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_group(
     group_id: &str,
@@ -1023,6 +1325,18 @@ fn validate_group(
     ));
     diagnostics
 }
+/// Processes validate group containment using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group_id` — Input `group id` used by this operation.
+/// * `group` — Input `group` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_group_containment(
     group_id: &str,
@@ -1110,6 +1424,20 @@ fn validate_group_containment(
     ));
     diagnostics
 }
+/// Processes validate group pin containment using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group_id` — Input `group id` used by this operation.
+/// * `group` — Input `group` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+/// * `frame_uuid` — Input `frame uuid` used by this operation.
+/// * `frame_bounds` — Input `frame bounds` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_group_pin_containment(
     group_id: &str,
@@ -1135,6 +1463,20 @@ fn validate_group_pin_containment(
         })
         .collect()
 }
+/// Processes validate group field containment using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group_id` — Input `group id` used by this operation.
+/// * `group` — Input `group` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+/// * `frame_uuid` — Input `frame uuid` used by this operation.
+/// * `frame_bounds` — Input `frame bounds` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_group_field_containment(
     group_id: &str,
@@ -1160,6 +1502,20 @@ fn validate_group_field_containment(
         })
         .collect()
 }
+/// Processes validate group description containment using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group_id` — Input `group id` used by this operation.
+/// * `group` — Input `group` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+/// * `frame_uuid` — Input `frame uuid` used by this operation.
+/// * `frame_bounds` — Input `frame bounds` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_group_description_containment(
     group_id: &str,
@@ -1190,6 +1546,20 @@ fn validate_group_description_containment(
         ),
     )]
 }
+/// Processes validate group symbol primitive containment using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group_id` — Input `group id` used by this operation.
+/// * `group` — Input `group` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+/// * `frame_uuid` — Input `frame uuid` used by this operation.
+/// * `frame_bounds` — Input `frame bounds` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_group_symbol_primitive_containment(
     group_id: &str,
@@ -1215,6 +1585,18 @@ fn validate_group_symbol_primitive_containment(
         })
         .collect()
 }
+/// Processes symbol primitive inside frame using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `primitive` — Input `primitive` used by this operation.
+/// * `frame_bounds` — Input `frame bounds` used by this operation.
+/// * `clearance` — Input `clearance` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn symbol_primitive_inside_frame(
     primitive: &crate::generic::SchematicPrimitiveFact,
@@ -1226,7 +1608,7 @@ fn symbol_primitive_inside_frame(
     } else {
         0.0
     };
-    let margin = clearance + stroke_margin + 0.01;
+    let margin = clearance + stroke_margin + STROKE_CLEARANCE_MARGIN_MM;
     if let Some((center_x, center_y, radius)) = primitive.circle_mm {
         let radius = radius.abs();
         return rectangle_inside_frame_with_clearance(
@@ -1246,6 +1628,17 @@ fn symbol_primitive_inside_frame(
             .iter()
             .all(|point| point_inside_frame_with_clearance(frame_bounds, *point, margin))
 }
+/// Processes group wire components using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group` — Input `group` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn group_wire_components(
     group: &GroupIntent,
@@ -1258,12 +1651,24 @@ fn group_wire_components(
         .filter(|pin| group.members.contains(&pin.reference))
         .filter(|pin| point_is_on_wire(pin.position_mm, facts))
         .filter_map(|pin| {
-            let key = format!("{:.3}:{:.3}", pin.position_mm.0, pin.position_mm.1);
+            let key = format!("{:.*}:{:.*}", COORDINATE_KEY_DECIMAL_PLACES, pin.position_mm.0, COORDINATE_KEY_DECIMAL_PLACES, pin.position_mm.1);
             component_ids.get(&key).copied()
         })
         .collect();
     (component_ids, member_components)
 }
+/// Processes wire belongs to group using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `wire` — Input `wire` used by this operation.
+/// * `component_ids` — Input `component ids` used by this operation.
+/// * `member_components` — Input `member components` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn wire_belongs_to_group(
     wire: &crate::generic::SchematicWireFact,
@@ -1278,6 +1683,20 @@ fn wire_belongs_to_group(
     .filter_map(|(x, y)| component_ids.get(&format!("{x:.3}:{y:.3}")))
     .any(|component| member_components.contains(component))
 }
+/// Processes validate group wire containment using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group_id` — Input `group id` used by this operation.
+/// * `group` — Input `group` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+/// * `frame_uuid` — Input `frame uuid` used by this operation.
+/// * `frame_bounds` — Input `frame bounds` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_group_wire_containment(
     group_id: &str,
@@ -1310,6 +1729,20 @@ fn validate_group_wire_containment(
         })
         .collect()
 }
+/// Processes validate group label containment using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group_id` — Input `group id` used by this operation.
+/// * `group` — Input `group` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+/// * `frame_uuid` — Input `frame uuid` used by this operation.
+/// * `frame_bounds` — Input `frame bounds` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_group_label_containment(
     group_id: &str,
@@ -1323,7 +1756,7 @@ fn validate_group_label_containment(
         .labels
         .iter()
         .filter(|label| {
-            let key = format!("{:.3}:{:.3}", label.position_mm.0, label.position_mm.1);
+            let key = format!("{:.*}:{:.*}", COORDINATE_KEY_DECIMAL_PLACES, label.position_mm.0, COORDINATE_KEY_DECIMAL_PLACES, label.position_mm.1);
             let member_wire_label = component_ids
                 .get(&key)
                 .is_some_and(|component| member_components.contains(component));
@@ -1351,6 +1784,20 @@ fn validate_group_label_containment(
         })
         .collect()
 }
+/// Processes validate group annotation box containment using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group_id` — Input `group id` used by this operation.
+/// * `group` — Input `group` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+/// * `frame_uuid` — Input `frame uuid` used by this operation.
+/// * `frame_bounds` — Input `frame bounds` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_group_annotation_box_containment(
     group_id: &str,
@@ -1380,6 +1827,19 @@ fn validate_group_annotation_box_containment(
         })
         .collect()
 }
+/// Processes validate group plain text containment using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group_id` — Input `group id` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+/// * `frame_uuid` — Input `frame uuid` used by this operation.
+/// * `frame_bounds` — Input `frame bounds` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_group_plain_text_containment(
     group_id: &str,
@@ -1407,6 +1867,19 @@ fn validate_group_plain_text_containment(
         })
         .collect()
 }
+/// Processes validate group graphic containment using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group_id` — Input `group id` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+/// * `frame_uuid` — Input `frame uuid` used by this operation.
+/// * `frame_bounds` — Input `frame bounds` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_group_graphic_containment(
     group_id: &str,
@@ -1435,6 +1908,19 @@ fn validate_group_graphic_containment(
         })
         .collect()
 }
+/// Processes validate group image containment using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group_id` — Input `group id` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+/// * `frame_uuid` — Input `frame uuid` used by this operation.
+/// * `frame_bounds` — Input `frame bounds` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_group_image_containment(
     group_id: &str,
@@ -1462,6 +1948,17 @@ fn validate_group_image_containment(
         })
         .collect()
 }
+/// Processes wire overlaps frame using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `wire` — Input `wire` used by this operation.
+/// * `frame_bounds` — Input `frame bounds` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn wire_overlaps_frame(
     wire: &crate::generic::SchematicWireFact,
@@ -1470,16 +1967,16 @@ fn wire_overlaps_frame(
     let (x1, y1) = wire.start_mm;
     let (x2, y2) = wire.end_mm;
     let (left, top, right, bottom) = frame_bounds;
-    if (y1 - y2).abs() < 0.001 {
-        y1 >= top - 0.001
-            && y1 <= bottom + 0.001
-            && x1.min(x2) <= right + 0.001
-            && x1.max(x2) >= left - 0.001
-    } else if (x1 - x2).abs() < 0.001 {
-        x1 >= left - 0.001
-            && x1 <= right + 0.001
-            && y1.min(y2) <= bottom + 0.001
-            && y1.max(y2) >= top - 0.001
+    if (y1 - y2).abs() < GEOMETRY_TOLERANCE_MM {
+        y1 >= top - GEOMETRY_TOLERANCE_MM
+            && y1 <= bottom + GEOMETRY_TOLERANCE_MM
+            && x1.min(x2) <= right + GEOMETRY_TOLERANCE_MM
+            && x1.max(x2) >= left - GEOMETRY_TOLERANCE_MM
+    } else if (x1 - x2).abs() < GEOMETRY_TOLERANCE_MM {
+        x1 >= left - GEOMETRY_TOLERANCE_MM
+            && x1 <= right + GEOMETRY_TOLERANCE_MM
+            && y1.min(y2) <= bottom + GEOMETRY_TOLERANCE_MM
+            && y1.max(y2) >= top - GEOMETRY_TOLERANCE_MM
     } else {
         rectangles_overlap(
             (x1.min(x2), y1.min(y2), x1.max(x2), y1.max(y2)),
@@ -1487,52 +1984,107 @@ fn wire_overlaps_frame(
         )
     }
 }
+/// Processes rectangles overlap using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `first` — Input `first` used by this operation.
+/// * `second` — Input `second` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn rectangles_overlap(first: (f64, f64, f64, f64), second: (f64, f64, f64, f64)) -> bool {
-    first.0 <= second.2 + 0.001
-        && first.2 >= second.0 - 0.001
-        && first.1 <= second.3 + 0.001
-        && first.3 >= second.1 - 0.001
+    first.0 <= second.2 + GEOMETRY_TOLERANCE_MM
+        && first.2 >= second.0 - GEOMETRY_TOLERANCE_MM
+        && first.1 <= second.3 + GEOMETRY_TOLERANCE_MM
+        && first.3 >= second.1 - GEOMETRY_TOLERANCE_MM
 }
+/// Processes point inside frame with clearance using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `clearance` — Input `clearance` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn point_inside_frame_with_clearance(
     (left, top, right, bottom): (f64, f64, f64, f64),
     (x, y): (f64, f64),
     clearance: f64,
 ) -> bool {
-    x >= left + clearance - 0.001
-        && x <= right - clearance + 0.001
-        && y >= top + clearance - 0.001
-        && y <= bottom - clearance + 0.001
+    x >= left + clearance - GEOMETRY_TOLERANCE_MM
+        && x <= right - clearance + GEOMETRY_TOLERANCE_MM
+        && y >= top + clearance - GEOMETRY_TOLERANCE_MM
+        && y <= bottom - clearance + GEOMETRY_TOLERANCE_MM
 }
+/// Processes rectangle inside frame with clearance using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `clearance` — Input `clearance` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn rectangle_inside_frame_with_clearance(
     (rect_left, rect_top, rect_right, rect_bottom): (f64, f64, f64, f64),
     (left, top, right, bottom): (f64, f64, f64, f64),
     clearance: f64,
 ) -> bool {
-    rect_left >= left + clearance - 0.001
-        && rect_top >= top + clearance - 0.001
-        && rect_right <= right - clearance + 0.001
-        && rect_bottom <= bottom - clearance + 0.001
+    rect_left >= left + clearance - GEOMETRY_TOLERANCE_MM
+        && rect_top >= top + clearance - GEOMETRY_TOLERANCE_MM
+        && rect_right <= right - clearance + GEOMETRY_TOLERANCE_MM
+        && rect_bottom <= bottom - clearance + GEOMETRY_TOLERANCE_MM
 }
+/// Processes point inside frame using the supplied values and schematic data.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn point_inside_frame(
     (left, top, right, bottom): (f64, f64, f64, f64),
     (x, y): (f64, f64),
 ) -> bool {
-    x >= left - 0.001 && x <= right + 0.001 && y >= top - 0.001 && y <= bottom + 0.001
+    x >= left - GEOMETRY_TOLERANCE_MM && x <= right + GEOMETRY_TOLERANCE_MM && y >= top - GEOMETRY_TOLERANCE_MM && y <= bottom + GEOMETRY_TOLERANCE_MM
 }
+/// Processes rectangle inside frame using the supplied values and schematic data.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn rectangle_inside_frame(
     (rect_left, rect_top, rect_right, rect_bottom): (f64, f64, f64, f64),
     (left, top, right, bottom): (f64, f64, f64, f64),
 ) -> bool {
-    rect_left >= left - 0.001
-        && rect_top >= top - 0.001
-        && rect_right <= right + 0.001
-        && rect_bottom <= bottom + 0.001
+    rect_left >= left - GEOMETRY_TOLERANCE_MM
+        && rect_top >= top - GEOMETRY_TOLERANCE_MM
+        && rect_right <= right + GEOMETRY_TOLERANCE_MM
+        && rect_bottom <= bottom + GEOMETRY_TOLERANCE_MM
 }
+/// Processes validate frame clearance using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group_id` — Input `group id` used by this operation.
+/// * `group` — Input `group` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_frame_clearance(
     group_id: &str,
@@ -1572,7 +2124,7 @@ fn validate_frame_clearance(
         )];
     }
     let (left, top, right, bottom) = bounds;
-    if right - left < 2.0 * clearance || bottom - top < 2.0 * clearance {
+    if right - left < BOTH_SIDES_FACTOR * clearance || bottom - top < BOTH_SIDES_FACTOR * clearance {
         return vec![Diagnostic::for_builtin_rule(
             BuiltinRuleId::Sch012,
             Severity::Error,
@@ -1615,6 +2167,12 @@ fn validate_frame_clearance(
     ));
     diagnostics
 }
+/// Processes valid frame bounds using the supplied values and schematic data.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn valid_frame_bounds((left, top, right, bottom): (f64, f64, f64, f64)) -> bool {
     left < right
@@ -1623,6 +2181,21 @@ fn valid_frame_bounds((left, top, right, bottom): (f64, f64, f64, f64)) -> bool 
             .iter()
             .all(|value| value.is_finite())
 }
+/// Processes validate member frame clearance using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group_id` — Input `group id` used by this operation.
+/// * `group` — Input `group` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+/// * `frame_uuid` — Input `frame uuid` used by this operation.
+/// * `bounds` — Input `bounds` used by this operation.
+/// * `clearance` — Input `clearance` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_member_frame_clearance(
     group_id: &str,
@@ -1652,10 +2225,10 @@ fn validate_member_frame_clearance(
             ));
             continue;
         };
-        let inside_clearance = x_mm >= left + clearance - 0.001
-            && x_mm <= right - clearance + 0.001
-            && y_mm >= top + clearance - 0.001
-            && y_mm <= bottom - clearance + 0.001;
+        let inside_clearance = x_mm >= left + clearance - GEOMETRY_TOLERANCE_MM
+            && x_mm <= right - clearance + GEOMETRY_TOLERANCE_MM
+            && y_mm >= top + clearance - GEOMETRY_TOLERANCE_MM
+            && y_mm <= bottom - clearance + GEOMETRY_TOLERANCE_MM;
         if !inside_clearance {
             diagnostics.push(Diagnostic::for_builtin_rule(
                     BuiltinRuleId::Sch012,
@@ -1668,6 +2241,21 @@ fn validate_member_frame_clearance(
     }
     diagnostics
 }
+/// Processes validate member pin frame clearance using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group_id` — Input `group id` used by this operation.
+/// * `group` — Input `group` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+/// * `frame_uuid` — Input `frame uuid` used by this operation.
+/// * `bounds` — Input `bounds` used by this operation.
+/// * `clearance` — Input `clearance` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_member_pin_frame_clearance(
     group_id: &str,
@@ -1685,10 +2273,10 @@ fn validate_member_pin_frame_clearance(
         .filter(|pin| group.members.contains(&pin.reference))
     {
         let (x_mm, y_mm) = pin.position_mm;
-        let inside_clearance = x_mm >= left + clearance - 0.001
-            && x_mm <= right - clearance + 0.001
-            && y_mm >= top + clearance - 0.001
-            && y_mm <= bottom - clearance + 0.001;
+        let inside_clearance = x_mm >= left + clearance - GEOMETRY_TOLERANCE_MM
+            && x_mm <= right - clearance + GEOMETRY_TOLERANCE_MM
+            && y_mm >= top + clearance - GEOMETRY_TOLERANCE_MM
+            && y_mm <= bottom - clearance + GEOMETRY_TOLERANCE_MM;
         if !inside_clearance {
             diagnostics.push(Diagnostic::for_builtin_rule(
                     BuiltinRuleId::Sch012,
@@ -1702,6 +2290,21 @@ fn validate_member_pin_frame_clearance(
     }
     diagnostics
 }
+/// Processes validate member field frame clearance using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group_id` — Input `group id` used by this operation.
+/// * `group` — Input `group` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+/// * `frame_uuid` — Input `frame uuid` used by this operation.
+/// * `bounds` — Input `bounds` used by this operation.
+/// * `clearance` — Input `clearance` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_member_field_frame_clearance(
     group_id: &str,
@@ -1719,10 +2322,10 @@ fn validate_member_field_frame_clearance(
         .filter(|field| group.members.contains(&field.reference))
     {
         let (field_left, field_top, field_right, field_bottom) = field.bounds_mm;
-        let inside_clearance = field_left >= left + clearance - 0.001
-            && field_top >= top + clearance - 0.001
-            && field_right <= right - clearance + 0.001
-            && field_bottom <= bottom - clearance + 0.001;
+        let inside_clearance = field_left >= left + clearance - GEOMETRY_TOLERANCE_MM
+            && field_top >= top + clearance - GEOMETRY_TOLERANCE_MM
+            && field_right <= right - clearance + GEOMETRY_TOLERANCE_MM
+            && field_bottom <= bottom - clearance + GEOMETRY_TOLERANCE_MM;
         if !inside_clearance {
             diagnostics.push(Diagnostic::for_builtin_rule(
                     BuiltinRuleId::Sch012,
@@ -1736,6 +2339,21 @@ fn validate_member_field_frame_clearance(
     }
     diagnostics
 }
+/// Processes validate group symbol primitive clearance using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group_id` — Input `group id` used by this operation.
+/// * `group` — Input `group` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+/// * `frame_uuid` — Input `frame uuid` used by this operation.
+/// * `frame_bounds` — Input `frame bounds` used by this operation.
+/// * `clearance` — Input `clearance` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_group_symbol_primitive_clearance(
     group_id: &str,
@@ -1762,6 +2380,21 @@ fn validate_group_symbol_primitive_clearance(
         })
         .collect()
 }
+/// Processes validate group wire clearance using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group_id` — Input `group id` used by this operation.
+/// * `group` — Input `group` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+/// * `frame_uuid` — Input `frame uuid` used by this operation.
+/// * `frame_bounds` — Input `frame bounds` used by this operation.
+/// * `clearance` — Input `clearance` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_group_wire_clearance(
     group_id: &str,
@@ -1795,6 +2428,21 @@ fn validate_group_wire_clearance(
         })
         .collect()
 }
+/// Processes validate group label clearance using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group_id` — Input `group id` used by this operation.
+/// * `group` — Input `group` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+/// * `frame_uuid` — Input `frame uuid` used by this operation.
+/// * `frame_bounds` — Input `frame bounds` used by this operation.
+/// * `clearance` — Input `clearance` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_group_label_clearance(
     group_id: &str,
@@ -1809,7 +2457,7 @@ fn validate_group_label_clearance(
         .labels
         .iter()
         .filter(|label| {
-            let key = format!("{:.3}:{:.3}", label.position_mm.0, label.position_mm.1);
+            let key = format!("{:.*}:{:.*}", COORDINATE_KEY_DECIMAL_PLACES, label.position_mm.0, COORDINATE_KEY_DECIMAL_PLACES, label.position_mm.1);
             let member_wire_label = component_ids
                 .get(&key)
                 .is_some_and(|component| member_components.contains(component));
@@ -1837,6 +2485,21 @@ fn validate_group_label_clearance(
         })
         .collect()
 }
+/// Processes validate group annotation box clearance using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group_id` — Input `group id` used by this operation.
+/// * `group` — Input `group` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+/// * `frame_uuid` — Input `frame uuid` used by this operation.
+/// * `frame_bounds` — Input `frame bounds` used by this operation.
+/// * `clearance` — Input `clearance` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_group_annotation_box_clearance(
     group_id: &str,
@@ -1867,6 +2530,20 @@ fn validate_group_annotation_box_clearance(
         })
         .collect()
 }
+/// Processes validate group plain text clearance using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group_id` — Input `group id` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+/// * `frame_uuid` — Input `frame uuid` used by this operation.
+/// * `frame_bounds` — Input `frame bounds` used by this operation.
+/// * `clearance` — Input `clearance` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_group_plain_text_clearance(
     group_id: &str,
@@ -1895,6 +2572,20 @@ fn validate_group_plain_text_clearance(
         })
         .collect()
 }
+/// Processes validate group graphic clearance using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group_id` — Input `group id` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+/// * `frame_uuid` — Input `frame uuid` used by this operation.
+/// * `frame_bounds` — Input `frame bounds` used by this operation.
+/// * `clearance` — Input `clearance` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_group_graphic_clearance(
     group_id: &str,
@@ -1924,6 +2615,20 @@ fn validate_group_graphic_clearance(
         })
         .collect()
 }
+/// Processes validate group image clearance using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group_id` — Input `group id` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+/// * `frame_uuid` — Input `frame uuid` used by this operation.
+/// * `frame_bounds` — Input `frame bounds` used by this operation.
+/// * `clearance` — Input `clearance` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_group_image_clearance(
     group_id: &str,
@@ -1952,6 +2657,21 @@ fn validate_group_image_clearance(
         })
         .collect()
 }
+/// Processes validate description frame clearance using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group_id` — Input `group id` used by this operation.
+/// * `group` — Input `group` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+/// * `frame_uuid` — Input `frame uuid` used by this operation.
+/// * `bounds` — Input `bounds` used by this operation.
+/// * `clearance` — Input `clearance` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_description_frame_clearance(
     group_id: &str,
@@ -1969,10 +2689,10 @@ fn validate_description_frame_clearance(
         .find(|text_box| text_box.uuid == group.description_uuid)
     {
         if let Some((box_left, box_top, box_right, box_bottom)) = text_box.bounds_mm {
-            let text_inside_clearance = box_left >= left + clearance - 0.001
-                && box_top >= top + clearance - 0.001
-                && box_right <= right - clearance + 0.001
-                && box_bottom <= bottom - clearance + 0.001;
+            let text_inside_clearance = box_left >= left + clearance - GEOMETRY_TOLERANCE_MM
+                && box_top >= top + clearance - GEOMETRY_TOLERANCE_MM
+                && box_right <= right - clearance + GEOMETRY_TOLERANCE_MM
+                && box_bottom <= bottom - clearance + GEOMETRY_TOLERANCE_MM;
             if !text_inside_clearance {
                 diagnostics.push(Diagnostic::for_builtin_rule(
                     BuiltinRuleId::Sch012,
@@ -1996,6 +2716,18 @@ fn validate_description_frame_clearance(
     }
     diagnostics
 }
+/// Processes validate wire compactness using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group_id` — Input `group id` used by this operation.
+/// * `group` — Input `group` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_wire_compactness(
     group_id: &str,
@@ -2038,10 +2770,10 @@ fn validate_wire_compactness(
     }
 
     let inside = |point: (f64, f64)| {
-        point.0 >= left - 0.001
-            && point.0 <= right + 0.001
-            && point.1 >= top - 0.001
-            && point.1 <= bottom + 0.001
+        point.0 >= left - GEOMETRY_TOLERANCE_MM
+            && point.0 <= right + GEOMETRY_TOLERANCE_MM
+            && point.1 >= top - GEOMETRY_TOLERANCE_MM
+            && point.1 <= bottom + GEOMETRY_TOLERANCE_MM
     };
     let total_wire_length_mm: f64 = facts
         .wires
@@ -2050,7 +2782,7 @@ fn validate_wire_compactness(
         .map(|wire| (wire.end_mm.0 - wire.start_mm.0).hypot(wire.end_mm.1 - wire.start_mm.1))
         .sum();
     let score = total_wire_length_mm / budget;
-    if score > 1.0 + 0.001 {
+    if score > MAX_COMPACTNESS_SCORE + SCORE_COMPARISON_EPSILON {
         vec![Diagnostic::for_builtin_rule(
             BuiltinRuleId::Sch016,
             Severity::Warning,
@@ -2062,6 +2794,18 @@ fn validate_wire_compactness(
         Vec::new()
     }
 }
+/// Processes validate group spacing using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group_id` — Input `group id` used by this operation.
+/// * `group` — Input `group` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_group_spacing(
     group_id: &str,
@@ -2107,7 +2851,7 @@ fn validate_group_spacing(
     for (index, first) in positions.iter().enumerate() {
         for second in positions.iter().skip(index + 1) {
             let actual_spacing = (first.1 - second.1).hypot(first.2 - second.2);
-            if actual_spacing + 0.001 < minimum_spacing {
+            if actual_spacing + GEOMETRY_TOLERANCE_MM < minimum_spacing {
                 diagnostics.push(Diagnostic::for_builtin_rule(
                     BuiltinRuleId::Sch006,
                     Severity::Error,
@@ -2121,6 +2865,18 @@ fn validate_group_spacing(
     }
     diagnostics
 }
+/// Processes validate kicad group membership using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group_id` — Input `group id` used by this operation.
+/// * `group` — Input `group` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_kicad_group_membership(
     group_id: &str,
@@ -2187,6 +2943,17 @@ fn validate_kicad_group_membership(
     }
     diagnostics
 }
+/// Processes validate group evidence using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group_id` — Input `group id` used by this operation.
+/// * `group` — Input `group` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_group_evidence(group_id: &str, group: &GroupIntent) -> Vec<Diagnostic> {
     let evidence = group.evidence.as_ref();
@@ -2215,6 +2982,18 @@ fn validate_group_evidence(group_id: &str, group: &GroupIntent) -> Vec<Diagnosti
         )]
     }
 }
+/// Processes validate group members using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group_id` — Input `group id` used by this operation.
+/// * `group` — Input `group` used by this operation.
+/// * `references` — Input `references` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_group_members(
     group_id: &str,
@@ -2244,6 +3023,18 @@ fn validate_group_members(
     }
     diagnostics
 }
+/// Processes validate group component purposes using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group_id` — Input `group id` used by this operation.
+/// * `group` — Input `group` used by this operation.
+/// * `description` — Input `description` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_group_component_purposes(
     group_id: &str,
@@ -2285,6 +3076,21 @@ fn validate_group_component_purposes(
     }
     diagnostics
 }
+/// Processes validate group phrase using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `diagnostics` — Input `diagnostics` used by this operation.
+/// * `group_id` — Input `group id` used by this operation.
+/// * `reference` — Input `reference` used by this operation.
+/// * `field` — Input `field` used by this operation.
+/// * `phrase` — Input `phrase` used by this operation.
+/// * `description` — Input `description` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_group_phrase(
     diagnostics: &mut Vec<Diagnostic>,
@@ -2310,6 +3116,18 @@ fn validate_group_phrase(
         ));
     }
 }
+/// Processes validate component intent using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `reference` — Input `reference` used by this operation.
+/// * `intent` — Input `intent` used by this operation.
+/// * `netlist` — Input `netlist` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_component_intent(
     reference: &str,
@@ -2359,6 +3177,18 @@ fn validate_component_intent(
     }
     diagnostics
 }
+/// Processes validate pin net contract using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `reference` — Input `reference` used by this operation.
+/// * `intent` — Input `intent` used by this operation.
+/// * `netlist` — Input `netlist` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_pin_net_contract(
     reference: &str,
@@ -2426,6 +3256,17 @@ fn validate_pin_net_contract(
     }
     diagnostics
 }
+/// Processes validate role contract using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `reference` — Input `reference` used by this operation.
+/// * `intent` — Input `intent` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_role_contract(reference: &str, intent: &ComponentIntent) -> Vec<Diagnostic> {
     let required_connections: &[&str] = match (intent.kind, intent.role.0.as_str()) {
@@ -2486,6 +3327,18 @@ fn validate_role_contract(reference: &str, intent: &ComponentIntent) -> Vec<Diag
     }
     diagnostics
 }
+/// Processes validate decoupling intent using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `reference` — Input `reference` used by this operation.
+/// * `contract` — Input `contract` used by this operation.
+/// * `netlist` — Input `netlist` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_decoupling_intent(
     reference: &str,
@@ -2537,6 +3390,18 @@ fn validate_decoupling_intent(
     }
     diagnostics
 }
+/// Processes validate decoupling nets using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `reference` — Input `reference` used by this operation.
+/// * `contract` — Input `contract` used by this operation.
+/// * `netlist` — Input `netlist` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_decoupling_nets(
     reference: &str,
@@ -2597,6 +3462,16 @@ fn validate_decoupling_nets(
     }
     diagnostics
 }
+/// Processes validate decoupler groups using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `components` — Input `components` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn validate_decoupler_groups(components: &BTreeMap<String, ComponentIntent>) -> Vec<Diagnostic> {
     let mut by_target: BTreeMap<&str, Vec<&DecouplingIntent>> = BTreeMap::new();
@@ -2643,6 +3518,16 @@ fn validate_decoupler_groups(components: &BTreeMap<String, ComponentIntent>) -> 
     }
     diagnostics
 }
+/// Processes valid pin ref using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `value` — Input `value` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn valid_pin_ref(value: &str) -> bool {
     let Some((reference, pin)) = value.rsplit_once('.') else {
@@ -2668,6 +3553,7 @@ pub enum MetadataError {
     #[error("unsupported lint profile schema version {0}; expected 1")]
     UnsupportedVersion(u32),
 }
+/// Contains the tests implementation and supporting types.
 
 #[cfg(test)]
 mod tests {
@@ -2678,6 +3564,16 @@ mod tests {
     use kicad_clippy_erc::{Netlist, PinRef};
 
     use super::{ComponentKind, ComponentRole, LintProfile, ProfileMode, SchematicFacts};
+    /// Processes direct wire schematic using the supplied values and schematic data.
+    ///
+    /// # Arguments
+    ///
+    /// * `wire_and_label_items` — Input `wire and label items` used by this operation.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     fn direct_wire_schematic(wire_and_label_items: &str) -> kicad_clippy_parser::SchematicDocument {
         kicad_clippy_parser::SchematicDocument::from_text(
@@ -2704,6 +3600,12 @@ mod tests {
         )
         .expect("fixture parses")
     }
+    /// Processes physical wire group accepts connected pins without labels using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn physical_wire_group_accepts_connected_pins_without_labels() {
@@ -2719,6 +3621,12 @@ mod tests {
                 .any(|item| item.code == "SCH004")
         );
     }
+    /// Processes physical wire group rejects disconnected islands even when labels match using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn physical_wire_group_rejects_disconnected_islands_even_when_labels_match() {
@@ -2738,6 +3646,12 @@ mod tests {
             item.code == "SCH004" && item.message.contains("matching labels do not establish")
         }));
     }
+    /// Processes physical wire group rejects invalid missing and unwired pins using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn physical_wire_group_rejects_invalid_missing_and_unwired_pins() {
@@ -2768,6 +3682,12 @@ mod tests {
                 .any(|message| message.contains("R1.1") && message.contains("not attached"))
         );
     }
+    /// Processes physical wire group rejects duplicate pins and empty names using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn physical_wire_group_rejects_duplicate_pins_and_empty_names() {
@@ -2793,6 +3713,12 @@ mod tests {
                 .any(|message| message.contains("non-empty name"))
         );
     }
+    /// Processes common pin group accepts one named label on a shared wire network using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn common_pin_group_accepts_one_named_label_on_a_shared_wire_network() {
@@ -2813,6 +3739,12 @@ mod tests {
                 .any(|item| item.code == "SCH004")
         );
     }
+    /// Processes common pin group rejects disconnected label joined islands using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn common_pin_group_rejects_disconnected_label_joined_islands() {
@@ -2836,6 +3768,12 @@ mod tests {
                     && item.message.contains("must share one physical"))
         );
     }
+    /// Processes common pin group allows label joined islands when wire connection is not required using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn common_pin_group_allows_label_joined_islands_when_wire_connection_is_not_required() {
@@ -2858,6 +3796,12 @@ mod tests {
                 .any(|item| item.code == "SCH004")
         );
     }
+    /// Processes common pin group rejects duplicate and unresolvable pin references using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn common_pin_group_rejects_duplicate_and_unresolvable_pin_references() {
@@ -2886,6 +3830,12 @@ mod tests {
                 .any(|item| item.message.contains("missing or unsupported pin U1.99"))
         );
     }
+    /// Processes direct wire pair does not connect at an unmarked crossing using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn direct_wire_pair_does_not_connect_at_an_unmarked_crossing() {
@@ -2908,6 +3858,12 @@ mod tests {
                     .contains("must share one physical wire-only network")
         }));
     }
+    /// Processes direct wire pair connects at a crossing with an explicit junction using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn direct_wire_pair_connects_at_a_crossing_with_an_explicit_junction() {
@@ -2931,6 +3887,16 @@ mod tests {
                 .any(|item| item.code == "SCH004")
         );
     }
+    /// Processes direct wire t junction schematic using the supplied values and schematic data.
+    ///
+    /// # Arguments
+    ///
+    /// * `explicit_junction` — Input `explicit junction` used by this operation.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     fn direct_wire_t_junction_schematic(
         explicit_junction: bool,
@@ -2966,6 +3932,12 @@ mod tests {
         )
         .expect("T-junction schematic parses")
     }
+    /// Processes direct wire pair does not connect through an unmarked t junction using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn direct_wire_pair_does_not_connect_through_an_unmarked_t_junction() {
@@ -2981,6 +3953,12 @@ mod tests {
                     .contains("must share one physical wire-only network")
         }));
     }
+    /// Processes direct wire pair connects through a marked t junction using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn direct_wire_pair_connects_through_a_marked_t_junction() {
@@ -2996,6 +3974,12 @@ mod tests {
                 .any(|item| item.code == "SCH004")
         );
     }
+    /// Processes common pin group enforces exactly one matching label using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn common_pin_group_enforces_exactly_one_matching_label() {
@@ -3017,6 +4001,17 @@ mod tests {
                 .any(|item| item.code == "SCH004" && item.message.contains("share exactly one"))
         );
     }
+    /// Processes common pin netlist using the supplied values and schematic data.
+    ///
+    /// # Arguments
+    ///
+    /// * `first_net` — Input `first net` used by this operation.
+    /// * `second_net` — Input `second net` used by this operation.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     fn common_pin_netlist(first_net: Option<&str>, second_net: Option<&str>) -> Netlist {
         let mut pin_nets = BTreeMap::new();
@@ -3043,6 +4038,12 @@ mod tests {
             ..Netlist::default()
         }
     }
+    /// Processes common pin group can require one exported kicad net using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn common_pin_group_can_require_one_exported_kicad_net() {
@@ -3064,6 +4065,12 @@ mod tests {
             item.code == "SCH004" && item.message.contains("different exported KiCad nets")
         }));
     }
+    /// Processes common pin group rejects different exported kicad nets using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn common_pin_group_rejects_different_exported_kicad_nets() {
@@ -3085,6 +4092,12 @@ mod tests {
             item.code == "SCH004" && item.message.contains("different exported KiCad nets")
         }));
     }
+    /// Processes common pin group reports pins missing from exported netlist using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn common_pin_group_reports_pins_missing_from_exported_netlist() {
@@ -3103,6 +4116,12 @@ mod tests {
         assert!(diagnostics.iter().any(|item| item.message.contains("R1.1")
             && item.message.contains("absent from the exported")));
     }
+    /// Processes common pin group warns when requested netlist is not supplied using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn common_pin_group_warns_when_requested_netlist_is_not_supplied() {
@@ -3125,6 +4144,12 @@ mod tests {
                     .contains("no exported KiCad netlist was supplied")
         }));
     }
+    /// Processes common pin group requires a label on each physical pin network using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn common_pin_group_requires_a_label_on_each_physical_pin_network() {
@@ -3150,6 +4175,12 @@ mod tests {
                 .contains("R1.1 must belong to common net SENSE")
         }));
     }
+    /// Processes direct wire pair passes when pins share a continuous wire using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn direct_wire_pair_passes_when_pins_share_a_continuous_wire() {
@@ -3165,6 +4196,12 @@ mod tests {
                 .any(|item| item.code == "SCH004")
         );
     }
+    /// Processes direct wire pair rejects label joined islands using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn direct_wire_pair_rejects_label_joined_islands() {
@@ -3187,6 +4224,12 @@ mod tests {
                     .contains("must share one physical wire-only network")
         }));
     }
+    /// Processes direct wire pair rejects label anchors and forbidden local labels using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn direct_wire_pair_rejects_label_anchors_and_forbidden_local_labels() {
@@ -3214,6 +4257,12 @@ mod tests {
                     .contains("forbidden on a direct-wire-only network")
         }));
     }
+    /// Processes forbidden direct wire label is ignored on unrelated wire islands using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn forbidden_direct_wire_label_is_ignored_on_unrelated_wire_islands() {
@@ -3235,6 +4284,12 @@ mod tests {
                 .any(|item| item.code == "SCH004")
         );
     }
+    /// Processes direct wire pair requires both pin anchors to touch wire segments using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn direct_wire_pair_requires_both_pin_anchors_to_touch_wire_segments() {
@@ -3262,6 +4317,12 @@ mod tests {
                 .any(|item| item.message.contains("R1.1 is not attached"))
         );
     }
+    /// Processes resistor roles require their named connection contract using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn resistor_roles_require_their_named_connection_contract() {
@@ -3281,6 +4342,12 @@ mod tests {
                 .any(|item| item.code == "SCH021")
         );
     }
+    /// Processes incomplete resistor role contract is reported using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn incomplete_resistor_role_contract_is_reported() {
@@ -3300,6 +4367,12 @@ mod tests {
                 .any(|item| item.code == "SCH021" && item.message.contains("signal"))
         );
     }
+    /// Processes group member origins must be inside the declared schematic frame using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn group_member_origins_must_be_inside_the_declared_schematic_frame() {
@@ -3324,6 +4397,12 @@ mod tests {
                 .any(|item| item.code == "SCH009")
         );
     }
+    /// Processes group member origin outside the declared schematic frame is reported using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn group_member_origin_outside_the_declared_schematic_frame_is_reported() {
@@ -3348,6 +4427,12 @@ mod tests {
                 .any(|item| item.code == "SCH009" && item.message.contains("outside frame"))
         );
     }
+    /// Processes group pin outside frame is reported even when symbol origin is inside using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn group_pin_outside_frame_is_reported_even_when_symbol_origin_is_inside() {
@@ -3381,6 +4466,12 @@ mod tests {
                 .any(|item| { item.code == "SCH009" && item.message.contains("member pin R1.1") })
         );
     }
+    /// Processes group visible field bounds must be inside the frame using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn group_visible_field_bounds_must_be_inside_the_frame() {
@@ -3406,6 +4497,12 @@ mod tests {
             item.code == "SCH009" && item.message.contains("member field R1 Value")
         }));
     }
+    /// Processes group description text box must be inside the frame using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn group_description_text_box_must_be_inside_the_frame() {
@@ -3434,6 +4531,12 @@ mod tests {
                 && item.message.contains("extends outside frame")
         }));
     }
+    /// Processes missing group frame uuid is reported using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn missing_group_frame_uuid_is_reported() {
@@ -3458,6 +4561,12 @@ mod tests {
                     && item.message.contains("missing schematic frame UUID"))
         );
     }
+    /// Processes group frame clearance accepts member and description inside margin using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn group_frame_clearance_accepts_member_and_description_inside_margin() {
@@ -3484,6 +4593,12 @@ mod tests {
                 .any(|item| item.code == "SCH012")
         );
     }
+    /// Processes group frame clearance reports symbol origin near frame edge using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn group_frame_clearance_reports_symbol_origin_near_frame_edge() {
@@ -3510,6 +4625,12 @@ mod tests {
                 .any(|item| item.code == "SCH012" && item.message.contains("origin is within"))
         );
     }
+    /// Processes group frame clearance checks transformed member pin coordinates using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn group_frame_clearance_checks_transformed_member_pin_coordinates() {
@@ -3545,6 +4666,12 @@ mod tests {
                     .contains("member pin R1.1 does not maintain 1.00 mm clearance")
         }));
     }
+    /// Processes group frame clearance accepts member pins inside the configured inset using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn group_frame_clearance_accepts_member_pins_inside_the_configured_inset() {
@@ -3580,6 +4707,12 @@ mod tests {
                 .any(|item| item.code == "SCH012")
         );
     }
+    /// Processes group frame clearance checks visible member field bounds using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn group_frame_clearance_checks_visible_member_field_bounds() {
@@ -3608,6 +4741,12 @@ mod tests {
                     .contains("member field R1 Value does not maintain")
         }));
     }
+    /// Processes group frame clearance accepts visible member fields inside the configured inset using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn group_frame_clearance_accepts_visible_member_fields_inside_the_configured_inset() {
@@ -3636,6 +4775,12 @@ mod tests {
                 .any(|item| item.code == "SCH012")
         );
     }
+    /// Processes group frame clearance reports description box near frame edge using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn group_frame_clearance_reports_description_box_near_frame_edge() {
@@ -3662,6 +4807,12 @@ mod tests {
                 .any(|item| item.code == "SCH012" && item.message.contains("description text box"))
         );
     }
+    /// Processes group wire compactness uses only segments wholly inside its frame using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn group_wire_compactness_uses_only_segments_wholly_inside_its_frame() {
@@ -3688,6 +4839,12 @@ mod tests {
             "the wire with endpoints outside the frame must not contribute: {diagnostics:#?}"
         );
     }
+    /// Processes group wire compactness warns when normalized budget is exceeded using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn group_wire_compactness_warns_when_normalized_budget_is_exceeded() {
@@ -3717,6 +4874,12 @@ mod tests {
         assert!(compactness.message.contains("score is 1.200"));
         assert!(compactness.message.contains("12.00/10.00 mm"));
     }
+    /// Processes group wire compactness requires a frame and positive budget using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn group_wire_compactness_requires_a_frame_and_positive_budget() {
@@ -3752,6 +4915,12 @@ mod tests {
                 .any(|item| item.message.contains("must set frame_uuid"))
         );
     }
+    /// Processes group minimum member origin spacing is enforced using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn group_minimum_member_origin_spacing_is_enforced() {
@@ -3777,6 +4946,12 @@ mod tests {
                 && item.message.contains("2.00 mm")
         }));
     }
+    /// Processes group member origin spacing at or above minimum is accepted using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn group_member_origin_spacing_at_or_above_minimum_is_accepted() {
@@ -3802,6 +4977,12 @@ mod tests {
                 .any(|item| item.code == "SCH006")
         );
     }
+    /// Processes group minimum member origin spacing must be positive and finite using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn group_minimum_member_origin_spacing_must_be_positive_and_finite() {
@@ -3825,6 +5006,12 @@ mod tests {
                 .any(|item| item.code == "SCH006" && item.message.contains("finite positive"))
         );
     }
+    /// Processes profile group can be bound to native kicad group membership using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn profile_group_can_be_bound_to_native_kicad_group_membership() {
@@ -3849,6 +5036,12 @@ mod tests {
                 .any(|item| item.code == "SCH007")
         );
     }
+    /// Processes native kicad group must include profile component members using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn native_kicad_group_must_include_profile_component_members() {
@@ -3874,6 +5067,12 @@ mod tests {
                     && item.message.contains("does not contain symbol UUID"))
         );
     }
+    /// Processes missing native kicad group uuid is reported using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn missing_native_kicad_group_uuid_is_reported() {
@@ -3898,6 +5097,12 @@ mod tests {
                     && item.message.contains("missing KiCad group UUID"))
         );
     }
+    /// Processes group evidence and component purpose must match rendered description using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn group_evidence_and_component_purpose_must_match_rendered_description() {
@@ -3917,6 +5122,12 @@ mod tests {
                 .any(|item| item.code == "SCH017" || item.code == "SCH020")
         );
     }
+    /// Processes group without evidence or purpose phrases is rejected using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn group_without_evidence_or_purpose_phrases_is_rejected() {
@@ -3933,6 +5144,12 @@ mod tests {
         assert!(diagnostics.iter().any(|item| item.code == "SCH017"));
         assert!(diagnostics.iter().any(|item| item.code == "SCH020"));
     }
+    /// Processes separate wire pair accepts disconnected islands even when labels match using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn separate_wire_pair_accepts_disconnected_islands_even_when_labels_match() {
@@ -3955,6 +5172,12 @@ mod tests {
                 .any(|item| item.code == "SCH004")
         );
     }
+    /// Processes separate wire pair rejects pins on the same physical wire network using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn separate_wire_pair_rejects_pins_on_the_same_physical_wire_network() {
@@ -3970,6 +5193,12 @@ mod tests {
                     .contains("separate physical wire-only networks")
         }));
     }
+    /// Processes separate wire pair can require distinct exported nets using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn separate_wire_pair_can_require_distinct_exported_nets() {
@@ -4011,6 +5240,12 @@ mod tests {
                 })
         );
     }
+    /// Processes separate wire pair warns when requested netlist is unavailable using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn separate_wire_pair_warns_when_requested_netlist_is_unavailable() {
@@ -4030,6 +5265,12 @@ mod tests {
                 && item.message.contains("no exported KiCad netlist")
         }));
     }
+    /// Processes group symbol body primitive must be inside frame using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn group_symbol_body_primitive_must_be_inside_frame() {
@@ -4066,6 +5307,12 @@ mod tests {
                     .contains("symbol primitive extends outside frame")
         }));
     }
+    /// Processes group symbol body primitive must maintain frame clearance using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn group_symbol_body_primitive_must_maintain_frame_clearance() {
@@ -4102,6 +5349,12 @@ mod tests {
                     .contains("symbol primitive does not maintain 2.00 mm clearance")
         }));
     }
+    /// Processes group wire label and annotation geometry must be inside frame using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn group_wire_label_and_annotation_geometry_must_be_inside_frame() {
@@ -4147,6 +5400,12 @@ mod tests {
             item.code == "SCH009" && item.message.contains("annotation text box note-1")
         }));
     }
+    /// Processes group wire labels must maintain configured frame clearance using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn group_wire_labels_must_maintain_configured_frame_clearance() {
@@ -4183,6 +5442,12 @@ mod tests {
                 && item.message.contains("2.00 mm clearance")
         }));
     }
+    /// Processes group frame contains free standing wires labels and plain text using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn group_frame_contains_free_standing_wires_labels_and_plain_text() {
@@ -4229,6 +5494,12 @@ mod tests {
             item.code == "SCH009" && item.message.contains("plain text annotation")
         }));
     }
+    /// Processes group frame clearance covers free standing wires labels and plain text using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn group_frame_clearance_covers_free_standing_wires_labels_and_plain_text() {
@@ -4277,6 +5548,12 @@ mod tests {
                 && item.message.contains("2.00 mm clearance")
         }));
     }
+    /// Processes group frame contains free standing vector graphics using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn group_frame_contains_free_standing_vector_graphics() {
@@ -4316,6 +5593,12 @@ mod tests {
             item.code == "SCH009" && item.message.contains("vector graphic circle")
         }));
     }
+    /// Processes group frame clearance covers free standing vector graphics using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn group_frame_clearance_covers_free_standing_vector_graphics() {
@@ -4359,6 +5642,12 @@ mod tests {
                 && item.message.contains("2.00 mm clearance")
         }));
     }
+    /// Processes group frame contains embedded bitmap image bounds using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn group_frame_contains_embedded_bitmap_image_bounds() {
@@ -4393,6 +5682,12 @@ mod tests {
             item.code == "SCH009" && item.message.contains("bitmap image Some(\"image-1\")")
         }));
     }
+    /// Processes group frame clearance covers embedded bitmap image bounds using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn group_frame_clearance_covers_embedded_bitmap_image_bounds() {
@@ -4429,6 +5724,12 @@ mod tests {
                 && item.message.contains("2.00 mm clearance")
         }));
     }
+    /// Processes bitmap bounds use legacy resolution migration for old schematics using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     #[test]
     fn bitmap_bounds_use_legacy_resolution_migration_for_old_schematics() {
@@ -4447,6 +5748,16 @@ mod tests {
         let expected = 120.0 * 25.4 / 94.0;
         assert!((width - expected).abs() < 0.001);
     }
+    /// Processes decoupling netlist using the supplied values and schematic data.
+    ///
+    /// # Arguments
+    ///
+    /// * `capacitor_target_net` — Input `capacitor target net` used by this operation.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     fn decoupling_netlist(capacitor_target_net: &str) -> Netlist {
         Netlist {
@@ -4476,6 +5787,17 @@ mod tests {
             ..Netlist::default()
         }
     }
+    /// Processes pin contract netlist using the supplied values and schematic data.
+    ///
+    /// # Arguments
+    ///
+    /// * `pin_one_net` — Input `pin one net` used by this operation.
+    /// * `pin_two_net` — Input `pin two net` used by this operation.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     fn pin_contract_netlist(pin_one_net: &str, pin_two_net: Option<&str>) -> Netlist {
         let mut pin_nets = BTreeMap::from([(
@@ -4499,6 +5821,8 @@ mod tests {
             ..Netlist::default()
         }
     }
+    /// Processes declared component pin nets are verified against the exported netlist using the supplied values and schematic data.
+    ///
 
     #[test]
     fn declared_component_pin_nets_are_verified_against_the_exported_netlist() {
@@ -4518,6 +5842,8 @@ mod tests {
                 .any(|item| item.code == "SCH014")
         );
     }
+    /// Processes incorrect or missing component pin nets are reported using the supplied values and schematic data.
+    ///
 
     #[test]
     fn incorrect_or_missing_component_pin_nets_are_reported() {
@@ -4549,6 +5875,8 @@ mod tests {
                 .contains("absent from the exported KiCad netlist")
         }));
     }
+    /// Processes connector pin nets are verified from pin numbered connections using the supplied values and schematic data.
+    ///
 
     #[test]
     fn connector_pin_nets_are_verified_from_pin_numbered_connections() {
@@ -4578,6 +5906,8 @@ mod tests {
                 .any(|item| item.code == "SCH014" && item.message.contains("expects VBUS"))
         );
     }
+    /// Processes decoupling terminals are checked against exported pin nets using the supplied values and schematic data.
+    ///
 
     #[test]
     fn decoupling_terminals_are_checked_against_exported_pin_nets() {
@@ -4603,6 +5933,8 @@ mod tests {
                 .any(|item| item.code == "SCH022")
         );
     }
+    /// Processes decoupling intent preserves pin and terminal mapping using the supplied values and schematic data.
+    ///
 
     #[test]
     fn decoupling_intent_preserves_pin_and_terminal_mapping() {

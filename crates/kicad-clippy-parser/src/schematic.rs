@@ -10,7 +10,9 @@ use thiserror::Error;
 /// A parsed schematic retaining both its original source and lossless CST.
 #[derive(Debug)]
 pub struct SchematicDocument {
+    /// Stores the `source` value.
     source: SourceFile,
+    /// Stores the `cst` value.
     cst: CstDocument,
 }
 
@@ -20,6 +22,14 @@ impl SchematicDocument {
     /// # Errors
     ///
     /// Returns [`SchematicParseError`] when the file cannot be read, parsed, or validated as a schematic.
+    /// # Arguments
+    ///
+    /// * `path` — Input `path` used by this operation.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
     pub fn from_path(path: impl AsRef<Path>) -> Result<Self, SchematicParseError> {
         let path = path.as_ref().to_path_buf();
         let text = fs::read_to_string(&path).map_err(|source| SchematicParseError::Io {
@@ -35,6 +45,15 @@ impl SchematicDocument {
     /// # Errors
     ///
     /// Returns [`SchematicParseError::Syntax`] for malformed input or [`SchematicParseError::WrongRoot`] for a non-schematic root.
+    /// # Arguments
+    ///
+    /// * `path` — Input `path` used by this operation.
+    /// * `text` — Input `text` used by this operation.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
     pub fn from_text(
         path: impl Into<PathBuf>,
         text: impl Into<String>,
@@ -70,18 +89,30 @@ impl SchematicDocument {
     }
 
     /// Returns the original source path and shared text buffer.
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
     #[must_use]
     pub const fn source(&self) -> &SourceFile {
         &self.source
     }
 
     /// Returns the lossless concrete syntax tree.
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
     #[must_use]
     pub const fn cst(&self) -> &CstDocument {
         &self.cst
     }
 
     /// Returns the byte span of the top-level schematic expression.
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
     #[must_use]
     pub fn root_span(&self) -> Option<ByteSpan> {
         match self.cst.nodes.first() {
@@ -90,6 +121,17 @@ impl SchematicDocument {
         }
     }
 }
+/// Processes unescape quoted atoms using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `nodes` — Input `nodes` used by this operation.
+/// * `source` — Input `source` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn unescape_quoted_atoms(nodes: &mut [Node], source: &str) {
     for node in nodes {
@@ -111,6 +153,16 @@ fn unescape_quoted_atoms(nodes: &mut [Node], source: &str) {
         }
     }
 }
+/// Processes root name using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `document` — Input `document` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn root_name(document: &CstDocument) -> Option<&str> {
     let Node::List { items, .. } = document.nodes.first()? else {
@@ -163,6 +215,7 @@ pub enum SchematicParseError {
         path: PathBuf,
     },
 }
+/// Contains the tests implementation and supporting types.
 
 #[cfg(test)]
 mod tests {
@@ -170,9 +223,20 @@ mod tests {
 
     use super::SchematicDocument;
     use kicad_clippy_core::ByteSpan;
+    /// Defines the schematic constant.
 
     const SCHEMATIC: &str =
         "(kicad_sch (version 20250101) (generator eeschema) (uuid \"root-id\"))";
+    /// Processes parses only a kicad schematic root using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the operation cannot complete with the supplied input.
+    ///
 
     #[test]
     fn parses_only_a_kicad_schematic_root() -> Result<(), Box<dyn Error>> {
@@ -190,6 +254,16 @@ mod tests {
         }
         Ok(())
     }
+    /// Processes unescapes quoted atoms and preserves lossless source using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the operation cannot complete with the supplied input.
+    ///
 
     #[test]
     fn unescapes_quoted_atoms_and_preserves_lossless_source() -> Result<(), Box<dyn Error>> {
@@ -221,6 +295,8 @@ mod tests {
         assert_eq!(quoted_value(3), Some("say \"ok\""));
         Ok(())
     }
+    /// Processes rejects non schematic roots using the supplied values and schematic data.
+    ///
 
     #[test]
     fn rejects_non_schematic_roots() {
@@ -229,6 +305,8 @@ mod tests {
 
         assert!(result.is_err());
     }
+    /// Processes rejects malformed sexpressions using the supplied values and schematic data.
+    ///
 
     #[test]
     fn rejects_malformed_sexpressions() {

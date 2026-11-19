@@ -18,6 +18,10 @@ pub enum Severity {
 
 impl Severity {
     /// Returns the stable lowercase label used in text output.
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -77,6 +81,16 @@ pub struct Diagnostic {
 
 impl Diagnostic {
     /// Creates a diagnostic with optional context left empty.
+    /// # Arguments
+    ///
+    /// * `code` — Input `code` used by this operation.
+    /// * `severity` — Input `severity` used by this operation.
+    /// * `message` — Input `message` used by this operation.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
     #[must_use]
     pub fn new(code: impl Into<String>, severity: Severity, message: impl Into<String>) -> Self {
         Self {
@@ -95,6 +109,16 @@ impl Diagnostic {
     }
 
     /// Creates a diagnostic for a built-in rule without repeating its string code.
+    /// # Arguments
+    ///
+    /// * `rule` — Input `rule` used by this operation.
+    /// * `severity` — Input `severity` used by this operation.
+    /// * `message` — Input `message` used by this operation.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
     #[must_use]
     pub fn for_builtin_rule(
         rule: BuiltinRuleId,
@@ -105,16 +129,23 @@ impl Diagnostic {
     }
 
     /// Returns whether this diagnostic is an active error.
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
     #[must_use]
     pub const fn is_active_error(&self) -> bool {
         matches!(self.severity, Severity::Error) && !self.excluded
     }
 }
+/// Contains the tests implementation and supporting types.
 
 #[cfg(test)]
 mod tests {
     use super::{Diagnostic, Severity};
     use crate::BuiltinRuleId;
+    /// Processes excluded errors do not fail a run using the supplied values and schematic data.
+    ///
 
     #[test]
     fn excluded_errors_do_not_fail_a_run() {
@@ -123,6 +154,8 @@ mod tests {
 
         assert!(!diagnostic.is_active_error());
     }
+    /// Processes builtin diagnostic keeps the stable external code using the supplied values and schematic data.
+    ///
 
     #[test]
     fn builtin_diagnostic_keeps_the_stable_external_code() {

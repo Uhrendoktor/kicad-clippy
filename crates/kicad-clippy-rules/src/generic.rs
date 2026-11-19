@@ -28,12 +28,64 @@ use vector_text_newstroke::NewstrokeRenderer;
 
 use crate::{RuleContext, RulePass};
 
+/// Coordinate equality tolerance used for schematic geometry, in millimetres.
+pub(super) const GEOMETRY_TOLERANCE_MM: f64 = 0.001;
+/// Additional clearance applied when testing wire-to-obstacle spacing, in millimetres.
+pub(super) const STROKE_CLEARANCE_MARGIN_MM: f64 = 0.01;
+/// Floating-point epsilon used to bound geometric numerical error.
+const GEOMETRY_NUMERIC_EPSILON: f64 = 1.0e-9;
+/// Number of degrees in a complete turn.
+const FULL_ROTATION_DEGREES: f64 = 360.0;
+/// Number of degrees in a quarter turn.
+const QUARTER_ROTATION_DEGREES: f64 = 90.0;
+/// Number of degrees in a half turn.
+const HALF_ROTATION_DEGREES: f64 = 180.0;
+/// Number of degrees in a three-quarter turn.
+const THREE_QUARTER_ROTATION_DEGREES: f64 = 270.0;
+/// Supported cardinal rotation angles in degrees.
+const CARDINAL_ROTATION_DEGREES: [f64; 4] = [0.0, QUARTER_ROTATION_DEGREES, HALF_ROTATION_DEGREES, THREE_QUARTER_ROTATION_DEGREES];
+/// Supported cardinal angles including the equivalent full-turn endpoint.
+const CARDINAL_ROTATION_DEGREES_WITH_WRAP: [f64; 5] = [0.0, QUARTER_ROTATION_DEGREES, HALF_ROTATION_DEGREES, THREE_QUARTER_ROTATION_DEGREES, FULL_ROTATION_DEGREES];
+/// Default bitmap resolution when metadata does not declare a resolution, in pixels per inch.
+const DEFAULT_BITMAP_IMAGE_PPI: u32 = 300;
+/// Floating-point form of the default bitmap resolution, in pixels per inch.
+const DEFAULT_BITMAP_IMAGE_PPI_F64: f64 = 300.0;
+/// KiCad format version that introduced the legacy bitmap resolution behavior.
+const LEGACY_BITMAP_PPI_FORMAT_VERSION: u32 = 20_230_121;
+/// KiCad format version that migrated bitmap resolution handling.
+const MIGRATED_BITMAP_PPI_FORMAT_VERSION: u32 = 20_260_623;
+/// Millimetres in one inch.
+const MILLIMETRES_PER_INCH: f64 = 25.4;
+/// Ten times the millimetres-per-inch conversion factor.
+const TENTHS_OF_MILLIMETRE_PER_INCH: u64 = 254;
+/// Centimetres in one metre.
+const CENTIMETRES_PER_METRE: u32 = 100;
+/// Minimum pixels per metre required before deriving a pixels-per-inch value.
+const MINIMUM_PIXELS_PER_METRE_FOR_PPI: u32 = CENTIMETRES_PER_METRE;
+/// Maximum accepted width or height of an embedded bitmap, in pixels.
+const MAX_BITMAP_DIMENSION_PIXELS: u32 = 1_000_000;
+/// Minimum triangle area accepted for stable circular-arc reconstruction, in square millimetres.
+const MINIMUM_CURVE_TRIANGLE_AREA_MM2: f64 = 2.5e-10;
+/// Number of subdivision intervals used to sample an elliptical arc.
+const ELLIPSE_ARC_SUBDIVISION_STEPS: usize = 20;
+/// Factor used to convert a full dimension into a half dimension.
+const HALF_DIMENSION_FACTOR: f64 = 0.5;
+/// Number of decimal places used in stable coordinate keys.
+const COORDINATE_KEY_DECIMAL_PLACES: usize = 3;
+/// Minimum JPEG JFIF application-segment payload length, in bytes.
+const JPEG_JFIF_MINIMUM_SEGMENT_BYTES: usize = 12;
+/// Defines the point type used by this crate.
+
 pub type Point = Coord<f64>;
+/// Stores segment data used by this crate.
 
 #[derive(Clone, Copy, Debug)]
 pub struct Segment {
+    /// Stores the `start` value.
     pub start: Point,
+    /// Stores the `end` value.
     pub end: Point,
+    /// Stores the `span` value.
     pub span: ByteSpan,
 }
 
@@ -49,23 +101,31 @@ pub struct SchematicArcFact {
     /// Signed sweep in radians, selected to pass through `KiCad`'s midpoint.
     pub sweep_rad: f64,
 }
+/// Stores bounds data used by this crate.
 
 #[derive(Clone, Copy, Debug)]
 struct Bounds {
+    /// Stores the `x` value.
     x: f64,
+    /// Stores the `y` value.
     y: f64,
+    /// Stores the `width` value.
     width: f64,
+    /// Stores the `height` value.
     height: f64,
 }
+/// Stores componentfact data used by this crate.
 
 #[derive(Clone, Debug)]
 pub struct ComponentFact {
+    /// Stores the `reference` value.
     pub reference: String,
     /// UUID of the placed schematic symbol instance.
     pub uuid: Option<String>,
     /// Schematic symbol anchor position in millimetres.
     pub position_mm: Option<(f64, f64)>,
 }
+/// Stores schematicgroupfact data used by this crate.
 
 #[derive(Clone, Debug)]
 pub struct SchematicGroupFact {
@@ -76,6 +136,7 @@ pub struct SchematicGroupFact {
     /// UUIDs of schematic objects that belong to the group.
     pub member_uuids: BTreeSet<String>,
 }
+/// Stores schematicframefact data used by this crate.
 
 #[derive(Clone, Debug)]
 pub struct SchematicFrameFact {
@@ -84,6 +145,7 @@ pub struct SchematicFrameFact {
     /// Frame bounds as (left, top, right, bottom), in millimetres.
     pub bounds_mm: (f64, f64, f64, f64),
 }
+/// Stores schematicwirefact data used by this crate.
 
 #[derive(Clone, Copy, Debug)]
 pub struct SchematicWireFact {
@@ -94,6 +156,7 @@ pub struct SchematicWireFact {
     /// Byte offset identifying this wire in the source schematic.
     pub span_start: usize,
 }
+/// Stores schematicpinfact data used by this crate.
 
 #[derive(Clone, Debug)]
 pub struct SchematicPinFact {
@@ -104,6 +167,7 @@ pub struct SchematicPinFact {
     /// Transformed pin position on the sheet, in millimetres.
     pub position_mm: (f64, f64),
 }
+/// Stores schematicfieldfact data used by this crate.
 
 #[derive(Clone, Debug)]
 pub struct SchematicFieldFact {
@@ -114,6 +178,7 @@ pub struct SchematicFieldFact {
     /// Estimated visible glyph bounds as (left, top, right, bottom), in millimetres.
     pub bounds_mm: (f64, f64, f64, f64),
 }
+/// Stores schematicprimitivefact data used by this crate.
 
 #[derive(Clone, Debug)]
 pub struct SchematicPrimitiveFact {
@@ -167,6 +232,7 @@ pub struct SchematicNoConnectFact {
     /// Half of `KiCad`'s fixed 48-mil marker dimension.
     pub half_size_mm: f64,
 }
+/// Stores schematicsymboltextfact data used by this crate.
 
 #[derive(Clone, Debug)]
 pub struct SchematicSymbolTextFact {
@@ -179,6 +245,7 @@ pub struct SchematicSymbolTextFact {
     /// Estimated or declared bounds in sheet coordinates (left, top, right, bottom).
     pub bounds_mm: (f64, f64, f64, f64),
 }
+/// Stores schematiclabelfact data used by this crate.
 
 #[derive(Clone, Debug)]
 pub struct SchematicLabelFact {
@@ -191,6 +258,7 @@ pub struct SchematicLabelFact {
     /// Estimated visible glyph bounds in sheet coordinates, when resolvable.
     pub bounds_mm: Option<(f64, f64, f64, f64)>,
 }
+/// Stores textboxfact data used by this crate.
 
 #[derive(Clone, Debug)]
 pub struct TextBoxFact {
@@ -237,7 +305,9 @@ pub struct SchematicGraphicFact {
 /// A bitmap's centre-derived envelope and orientation-aware rectangular footprint.
 #[derive(Clone, Copy, Debug)]
 struct BitmapImageGeometry {
+    /// Stores the `bounds_mm` value.
     bounds_mm: (f64, f64, f64, f64),
+    /// Stores the `corners_mm` value.
     corners_mm: [(f64, f64); 4],
 }
 
@@ -251,6 +321,7 @@ pub struct SchematicImageFact {
     /// Exact orientation-aware rectangular footprint in millimetres.
     pub corners_mm: Option<[(f64, f64); 4]>,
 }
+/// Stores schematicfacts data used by this crate.
 
 #[derive(Clone, Debug, Default)]
 pub struct SchematicFacts {
@@ -293,6 +364,16 @@ pub struct SchematicFacts {
 }
 
 impl SchematicFacts {
+    /// Processes from document using the supplied values and schematic data.
+    ///
+    /// # Arguments
+    ///
+    /// * `document` — Input `document` used by this operation.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
     #[must_use]
     pub fn from_document(document: &SchematicDocument) -> Self {
         let Some(root) = document.cst().nodes.first() else {
@@ -302,6 +383,18 @@ impl SchematicFacts {
         let junctions = collect_points(root, "junction");
         Self::from_document_with_geometry(document, &segments, &junctions)
     }
+    /// Processes from document with geometry using the supplied values and schematic data.
+    ///
+    /// # Arguments
+    ///
+    /// * `document` — Input `document` used by this operation.
+    /// * `segments` — Input `segments` used by this operation.
+    /// * `junctions` — Input `junctions` used by this operation.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     pub(crate) fn from_document_with_geometry(
         document: &SchematicDocument,
@@ -340,6 +433,16 @@ impl SchematicFacts {
         }
     }
 }
+/// Processes collect component facts using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `root` — Input `root` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn collect_component_facts(root: &Node) -> Vec<ComponentFact> {
     children(root, "symbol")
@@ -370,6 +473,16 @@ fn collect_component_facts(root: &Node) -> Vec<ComponentFact> {
         })
         .collect()
 }
+/// Processes collect text box facts using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `root` — Input `root` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn collect_text_box_facts(root: &Node) -> Vec<TextBoxFact> {
     children(root, "text_box")
@@ -396,6 +509,16 @@ fn collect_text_box_facts(root: &Node) -> Vec<TextBoxFact> {
         })
         .collect()
 }
+/// Processes table cell text rotation is supported using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `cell` — Input `cell` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn table_cell_text_rotation_is_supported(cell: &Node) -> bool {
     let Some(angle) = child_list(cell, "at")
@@ -408,11 +531,21 @@ fn table_cell_text_rotation_is_supported(cell: &Node) -> bool {
     if !angle.is_finite() {
         return false;
     }
-    let normalized = angle.rem_euclid(360.0);
-    [0.0, 90.0, 180.0, 270.0]
+    let normalized = angle.rem_euclid(FULL_ROTATION_DEGREES);
+    CARDINAL_ROTATION_DEGREES
         .iter()
-        .any(|supported| (normalized - supported).abs() <= 0.001)
+        .any(|supported| (normalized - supported).abs() <= GEOMETRY_TOLERANCE_MM)
 }
+/// Processes table text rotations are supported using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `table` — Input `table` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn table_text_rotations_are_supported(table: &Node) -> bool {
     let Some(cells) = child_list(table, "cells") else {
@@ -424,6 +557,16 @@ fn table_text_rotations_are_supported(table: &Node) -> bool {
         .is_some_and(table_cell_text_rotation_is_supported)
         && cell_iterator.all(table_cell_text_rotation_is_supported)
 }
+/// Processes collect plain text facts using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `root` — Input `root` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn collect_plain_text_facts(root: &Node) -> Vec<SchematicTextFact> {
     let table_cells = children(root, "table")
@@ -457,6 +600,16 @@ fn collect_plain_text_facts(root: &Node) -> Vec<SchematicTextFact> {
         })
         .collect()
 }
+/// Processes collect sheet graphic facts using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `root` — Input `root` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn collect_sheet_graphic_facts(root: &Node) -> Vec<SchematicGraphicFact> {
     let mut graphics = Vec::new();
@@ -515,8 +668,8 @@ fn collect_sheet_graphic_facts(root: &Node) -> Vec<SchematicGraphicFact> {
                 .unwrap_or_default()
             };
             let repeated_endpoint = points_mm.len() > 2
-                && (points_mm[0].0 - points_mm[points_mm.len() - 1].0).abs() <= 0.001
-                && (points_mm[0].1 - points_mm[points_mm.len() - 1].1).abs() <= 0.001;
+                && (points_mm[0].0 - points_mm[points_mm.len() - 1].0).abs() <= GEOMETRY_TOLERANCE_MM
+                && (points_mm[0].1 - points_mm[points_mm.len() - 1].1).abs() <= GEOMETRY_TOLERANCE_MM;
             let closed = kind == "rectangle"
                 || kind == "polygon"
                 || kind == "ellipse"
@@ -540,26 +693,65 @@ fn collect_sheet_graphic_facts(root: &Node) -> Vec<SchematicGraphicFact> {
     }
     graphics
 }
+/// Defines the default table stroke width mm constant.
 
 const DEFAULT_TABLE_STROKE_WIDTH_MM: f64 = 0.1524;
+/// Stores schematictablelayout data used by this crate.
 
 #[derive(Clone, Debug)]
 struct SchematicTableLayout {
+    /// Stores the `uuid` value.
     uuid: Option<String>,
+    /// Stores the `origin_mm` value.
     origin_mm: (f64, f64),
+    /// Stores the `rotation_quadrants` value.
     rotation_quadrants: u8,
+    /// Stores the `column_widths_mm` value.
     column_widths_mm: Vec<f64>,
+    /// Stores the `row_heights_mm` value.
     row_heights_mm: Vec<f64>,
+    /// Stores the `cell_spans` value.
     cell_spans: Vec<(usize, usize)>,
 }
+/// Processes nonnegative integer using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `node` — Input `node` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn nonnegative_integer(node: &Node) -> Option<usize> {
     atom_value(node)?.parse::<usize>().ok()
 }
+/// Processes positive integer using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `node` — Input `node` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn positive_integer(node: &Node) -> Option<usize> {
     nonnegative_integer(node).filter(|value| *value > 0)
 }
+/// Processes table dimension values using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `table` — Input `table` used by this operation.
+/// * `name` — Input `name` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn table_dimension_values(table: &Node, name: &str) -> Option<Vec<f64>> {
     let values = child_list(table, name).and_then(list_items)?;
@@ -570,6 +762,16 @@ fn table_dimension_values(table: &Node, name: &str) -> Option<Vec<f64>> {
         .all(|value| value.is_finite() && *value > 0.0)
         .then_some(values)
 }
+/// Processes table cell span using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `cell` — Input `cell` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn table_cell_span(cell: &Node) -> Option<(usize, usize)> {
     let Some(span) = child_list(cell, "span") else {
@@ -581,15 +783,25 @@ fn table_cell_span(cell: &Node) -> Option<(usize, usize)> {
         nonnegative_integer(span.get(2)?)?,
     ))
 }
+/// Processes cardinal table rotation quadrants using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `angle` — Input `angle` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn cardinal_table_rotation_quadrants(angle: f64) -> Option<u8> {
     if !angle.is_finite() {
         return None;
     }
-    let normalized = angle.rem_euclid(360.0);
-    match [0.0, 90.0, 180.0, 270.0, 360.0]
+    let normalized = angle.rem_euclid(FULL_ROTATION_DEGREES);
+    match CARDINAL_ROTATION_DEGREES_WITH_WRAP
         .iter()
-        .position(|supported| (normalized - supported).abs() <= 0.001)?
+        .position(|supported| (normalized - supported).abs() <= GEOMETRY_TOLERANCE_MM)?
     {
         0 | 4 => Some(0),
         1 => Some(1),
@@ -598,6 +810,16 @@ fn cardinal_table_rotation_quadrants(angle: f64) -> Option<u8> {
         _ => None,
     }
 }
+/// Processes schematic table layout using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `table` — Input `table` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn schematic_table_layout(table: &Node) -> Option<SchematicTableLayout> {
     let columns = child_list(table, "column_count")
@@ -665,13 +887,25 @@ fn schematic_table_layout(table: &Node) -> Option<SchematicTableLayout> {
         let column = index % columns;
         let expected = table_grid_point(&layout, column_offsets[column], row_offsets[row]);
         let actual = (number(cell_at.get(1)?)?, number(cell_at.get(2)?)?);
-        if (actual.0 - expected.0).abs() > 0.001 || (actual.1 - expected.1).abs() > 0.001 {
+        if (actual.0 - expected.0).abs() > GEOMETRY_TOLERANCE_MM || (actual.1 - expected.1).abs() > GEOMETRY_TOLERANCE_MM {
             return None;
         }
     }
 
     Some(layout)
 }
+/// Processes table grid point using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `layout` — Input `layout` used by this operation.
+/// * `x_offset` — Input `x offset` used by this operation.
+/// * `y_offset` — Input `y offset` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn table_grid_point(layout: &SchematicTableLayout, x_offset: f64, y_offset: f64) -> (f64, f64) {
     let (x, y) = match layout.rotation_quadrants {
@@ -682,6 +916,18 @@ fn table_grid_point(layout: &SchematicTableLayout, x_offset: f64, y_offset: f64)
     };
     (layout.origin_mm.0 + x, layout.origin_mm.1 + y)
 }
+/// Processes table flag using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group` — Input `group` used by this operation.
+/// * `name` — Input `name` used by this operation.
+/// * `default` — Input `default` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn table_flag(group: Option<&Node>, name: &str, default: bool) -> bool {
     group
@@ -691,6 +937,16 @@ fn table_flag(group: Option<&Node>, name: &str, default: bool) -> bool {
         .and_then(atom_value)
         .map_or(default, |value| value == "yes")
 }
+/// Processes table stroke width mm using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `group` — Input `group` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn table_stroke_width_mm(group: Option<&Node>) -> f64 {
     group
@@ -702,6 +958,17 @@ fn table_stroke_width_mm(group: Option<&Node>) -> f64 {
         .filter(|width| width.is_finite() && *width > 0.0)
         .unwrap_or(DEFAULT_TABLE_STROKE_WIDTH_MM)
 }
+/// Processes cumulative positions using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `origin` — Input `origin` used by this operation.
+/// * `sizes` — Input `sizes` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn cumulative_positions(origin: f64, sizes: &[f64]) -> Vec<f64> {
     let mut positions = Vec::with_capacity(sizes.len() + 1);
@@ -711,6 +978,20 @@ fn cumulative_positions(origin: f64, sizes: &[f64]) -> Vec<f64> {
     }
     positions
 }
+/// Processes table line fact using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `kind` — Input `kind` used by this operation.
+/// * `uuid` — Input `uuid` used by this operation.
+/// * `start` — Input `start` used by this operation.
+/// * `end` — Input `end` used by this operation.
+/// * `stroke_width_mm` — Input `stroke width mm` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn table_line_fact(
     kind: &str,
@@ -719,7 +1000,7 @@ fn table_line_fact(
     end: (f64, f64),
     stroke_width_mm: f64,
 ) -> SchematicGraphicFact {
-    let margin = stroke_width_mm / 2.0 + 0.01;
+    let margin = stroke_width_mm * HALF_DIMENSION_FACTOR + STROKE_CLEARANCE_MARGIN_MM;
     SchematicGraphicFact {
         kind: kind.to_owned(),
         uuid: uuid.map(str::to_owned),
@@ -737,6 +1018,18 @@ fn table_line_fact(
         stroke_width_mm,
     }
 }
+/// Processes append table outline using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `graphics` — Input `graphics` used by this operation.
+/// * `layout` — Input `layout` used by this operation.
+/// * `stroke_width_mm` — Input `stroke width mm` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn append_table_outline(
     graphics: &mut Vec<SchematicGraphicFact>,
@@ -761,6 +1054,22 @@ fn append_table_outline(
         ));
     }
 }
+/// Processes append table separators using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `graphics` — Input `graphics` used by this operation.
+/// * `layout` — Input `layout` used by this operation.
+/// * `header_enabled` — Input `header enabled` used by this operation.
+/// * `columns_enabled` — Input `columns enabled` used by this operation.
+/// * `rows_enabled` — Input `rows enabled` used by this operation.
+/// * `border_width_mm` — Input `border width mm` used by this operation.
+/// * `separator_width_mm` — Input `separator width mm` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn append_table_separators(
     graphics: &mut Vec<SchematicGraphicFact>,
@@ -838,6 +1147,16 @@ fn append_table_separators(
         }
     }
 }
+/// Processes collect sheet table stroke facts using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `root` — Input `root` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn collect_sheet_table_stroke_facts(root: &Node) -> Vec<SchematicGraphicFact> {
     let mut graphics = Vec::new();
@@ -864,9 +1183,20 @@ fn collect_sheet_table_stroke_facts(root: &Node) -> Vec<SchematicGraphicFact> {
     }
     graphics
 }
+/// Processes sheet graphic bounds using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `node` — Input `node` used by this operation.
+/// * `kind` — Input `kind` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn sheet_graphic_bounds(node: &Node, kind: &str) -> Option<(f64, f64, f64, f64)> {
-    let stroke_margin = symbol_primitive_stroke_width(node) / 2.0 + 0.01;
+    let stroke_margin = symbol_primitive_stroke_width(node) * HALF_DIMENSION_FACTOR + STROKE_CLEARANCE_MARGIN_MM;
     if kind == "circle" {
         let center = child_list(node, "center").and_then(list_items)?;
         let radius = child_list(node, "radius")
@@ -911,6 +1241,19 @@ fn sheet_graphic_bounds(node: &Node, kind: &str) -> Option<(f64, f64, f64, f64)>
         max_y + stroke_margin,
     ))
 }
+/// Processes rotated bitmap image geometry using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `center` — Input `center` used by this operation.
+/// * `width_mm` — Input `width mm` used by this operation.
+/// * `height_mm` — Input `height mm` used by this operation.
+/// * `orientation_degrees` — Input `orientation degrees` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn rotated_bitmap_image_geometry(
     center: Point,
@@ -927,7 +1270,7 @@ fn rotated_bitmap_image_geometry(
         return None;
     }
 
-    let radians = orientation_degrees.rem_euclid(360.0).to_radians();
+    let radians = orientation_degrees.rem_euclid(FULL_ROTATION_DEGREES).to_radians();
     let (sin, cos) = radians.sin_cos();
     let half_width = width_mm / 2.0;
     let half_height = height_mm / 2.0;
@@ -968,6 +1311,16 @@ fn rotated_bitmap_image_geometry(
         corners_mm: corners,
     })
 }
+/// Processes collect sheet image facts using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `root` — Input `root` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn collect_sheet_image_facts(root: &Node) -> Vec<SchematicImageFact> {
     let format_version = child_list(root, "version")
@@ -975,7 +1328,7 @@ fn collect_sheet_image_facts(root: &Node) -> Vec<SchematicImageFact> {
         .and_then(|items| items.get(1))
         .and_then(atom_value)
         .and_then(|value| value.parse::<u32>().ok())
-        .unwrap_or(20_260_623);
+        .unwrap_or(MIGRATED_BITMAP_PPI_FORMAT_VERSION);
 
     children(root, "image")
         .map(|node| {
@@ -1006,15 +1359,15 @@ fn collect_sheet_image_facts(root: &Node) -> Vec<SchematicImageFact> {
                         .and_then(number)
                         .filter(|scale| scale.is_finite() && *scale > 0.0)
                         .unwrap_or(1.0);
-                    let ppi = if format_version <= 20_230_121 {
-                        300.0
-                    } else if format_version < 20_260_623 {
+                    let ppi = if format_version <= LEGACY_BITMAP_PPI_FORMAT_VERSION {
+                        DEFAULT_BITMAP_IMAGE_PPI_F64
+                    } else if format_version < MIGRATED_BITMAP_PPI_FORMAT_VERSION {
                         f64::from(metadata.legacy_ppi)
                     } else {
                         f64::from(metadata.ppi)
                     };
-                    let width = f64::from(metadata.width_pixels) * 25.4 / ppi * scale;
-                    let height = f64::from(metadata.height_pixels) * 25.4 / ppi * scale;
+                    let width = f64::from(metadata.width_pixels) * MILLIMETRES_PER_INCH / f64::from(ppi) * scale;
+                    let height = f64::from(metadata.height_pixels) * MILLIMETRES_PER_INCH / f64::from(ppi) * scale;
                     rotated_bitmap_image_geometry(position, width, height, orientation)
                 });
             let bounds_mm = geometry.map(|geometry| geometry.bounds_mm);
@@ -1027,18 +1380,34 @@ fn collect_sheet_image_facts(root: &Node) -> Vec<SchematicImageFact> {
         })
         .collect()
 }
+/// Stores bitmapimagemetadata data used by this crate.
 
 #[derive(Clone, Copy, Debug)]
 struct BitmapImageMetadata {
+    /// Stores the `width_pixels` value.
     width_pixels: u32,
+    /// Stores the `height_pixels` value.
     height_pixels: u32,
+    /// Stores the `ppi` value.
     ppi: u32,
+    /// Stores the `legacy_ppi` value.
     legacy_ppi: u32,
 }
+/// Processes parse bitmap image metadata using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `encoded` — Input `encoded` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn parse_bitmap_image_metadata(encoded: &str) -> Option<BitmapImageMetadata> {
-    const MAX_HEADER_BYTES: usize = 256 * 1024;
-    let bytes = decode_base64_prefix(encoded, MAX_HEADER_BYTES);
+    /// Defines the max header bytes constant.
+    const MAX_BITMAP_HEADER_BYTES: usize = 256 * 1024;
+    let bytes = decode_base64_prefix(encoded, MAX_BITMAP_HEADER_BYTES);
     if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
         parse_png_image_metadata(&bytes)
     } else if bytes.starts_with(&[0xff, 0xd8]) {
@@ -1047,6 +1416,17 @@ fn parse_bitmap_image_metadata(encoded: &str) -> Option<BitmapImageMetadata> {
         None
     }
 }
+/// Processes decode base64 prefix using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `encoded` — Input `encoded` used by this operation.
+/// * `max_bytes` — Input `max bytes` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn decode_base64_prefix(encoded: &str, max_bytes: usize) -> Vec<u8> {
     let mut decoded = Vec::with_capacity(max_bytes.min(encoded.len() * 3 / 4));
@@ -1091,6 +1471,16 @@ fn decode_base64_prefix(encoded: &str, max_bytes: usize) -> Vec<u8> {
     decoded.truncate(max_bytes);
     decoded
 }
+/// Processes base64 digit using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `byte` — Input `byte` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 const fn base64_digit(byte: u8) -> Option<u8> {
     match byte {
@@ -1102,18 +1492,50 @@ const fn base64_digit(byte: u8) -> Option<u8> {
         _ => None,
     }
 }
+/// Processes read be u32 using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `bytes` — Input `bytes` used by this operation.
+/// * `offset` — Input `offset` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn read_be_u32(bytes: &[u8], offset: usize) -> Option<u32> {
     Some(u32::from_be_bytes(
         bytes.get(offset..offset + 4)?.try_into().ok()?,
     ))
 }
+/// Processes read be u16 using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `bytes` — Input `bytes` used by this operation.
+/// * `offset` — Input `offset` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn read_be_u16(bytes: &[u8], offset: usize) -> Option<u16> {
     Some(u16::from_be_bytes(
         bytes.get(offset..offset + 2)?.try_into().ok()?,
     ))
 }
+/// Processes parse png image metadata using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `bytes` — Input `bytes` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn parse_png_image_metadata(bytes: &[u8]) -> Option<BitmapImageMetadata> {
     if !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
@@ -1121,8 +1543,8 @@ fn parse_png_image_metadata(bytes: &[u8]) -> Option<BitmapImageMetadata> {
     }
     let mut width_pixels = None;
     let mut height_pixels = None;
-    let mut ppi = 300;
-    let mut legacy_ppi = 300;
+    let mut ppi = DEFAULT_BITMAP_IMAGE_PPI;
+    let mut legacy_ppi = DEFAULT_BITMAP_IMAGE_PPI;
     let mut offset: usize = 8;
 
     while offset.checked_add(12)? <= bytes.len() {
@@ -1142,9 +1564,9 @@ fn parse_png_image_metadata(bytes: &[u8]) -> Option<BitmapImageMetadata> {
             b"pHYs" if chunk_length == 9 => {
                 let pixels_per_meter = read_be_u32(bytes, data_start)?;
                 let unit_is_meter = bytes[data_start + 8] == 1;
-                if unit_is_meter && pixels_per_meter > 100 {
+                if unit_is_meter && pixels_per_meter > MINIMUM_PIXELS_PER_METRE_FOR_PPI {
                     ppi = pixels_per_meter_to_ppi(pixels_per_meter);
-                    legacy_ppi = pixels_per_cm_to_ppi(pixels_per_meter / 100);
+                    legacy_ppi = pixels_per_cm_to_ppi(pixels_per_meter / CENTIMETRES_PER_METRE);
                 }
             }
             b"IDAT" | b"IEND" => break,
@@ -1153,8 +1575,8 @@ fn parse_png_image_metadata(bytes: &[u8]) -> Option<BitmapImageMetadata> {
         offset = data_end + 4;
     }
 
-    let width_pixels = width_pixels.filter(|value| *value > 0 && *value <= 1_000_000)?;
-    let height_pixels = height_pixels.filter(|value| *value > 0 && *value <= 1_000_000)?;
+    let width_pixels = width_pixels.filter(|value| *value > 0 && *value <= MAX_BITMAP_DIMENSION_PIXELS)?;
+    let height_pixels = height_pixels.filter(|value| *value > 0 && *value <= MAX_BITMAP_DIMENSION_PIXELS)?;
     Some(BitmapImageMetadata {
         width_pixels,
         height_pixels,
@@ -1162,21 +1584,62 @@ fn parse_png_image_metadata(bytes: &[u8]) -> Option<BitmapImageMetadata> {
         legacy_ppi: legacy_ppi.max(1),
     })
 }
+/// Processes pixels per meter to ppi using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `pixels_per_meter` — Input `pixels per meter` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn pixels_per_meter_to_ppi(pixels_per_meter: u32) -> u32 {
     // Round pixels/metre * 2.54 / 100 to the nearest integer without a float cast.
-    rounded_ratio_to_u32(u64::from(pixels_per_meter) * 254, 10_000)
+    rounded_ratio_to_u32(u64::from(pixels_per_meter) * TENTHS_OF_MILLIMETRE_PER_INCH, 10_000)
 }
+/// Processes pixels per cm to ppi using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `pixels_per_cm` — Input `pixels per cm` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn pixels_per_cm_to_ppi(pixels_per_cm: u32) -> u32 {
     // Legacy KiCad first truncated pixels/metre to integer pixels/cm.
-    rounded_ratio_to_u32(u64::from(pixels_per_cm) * 254, 100)
+    rounded_ratio_to_u32(u64::from(pixels_per_cm) * TENTHS_OF_MILLIMETRE_PER_INCH, u64::from(CENTIMETRES_PER_METRE))
 }
+/// Processes rounded ratio to u32 using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `numerator` — Input `numerator` used by this operation.
+/// * `denominator` — Input `denominator` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn rounded_ratio_to_u32(numerator: u64, denominator: u64) -> u32 {
     let rounded = numerator.saturating_add(denominator / 2) / denominator;
     u32::try_from(rounded).unwrap_or(u32::MAX).max(1)
 }
+/// Processes parse jpeg image metadata using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `bytes` — Input `bytes` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn parse_jpeg_image_metadata(bytes: &[u8]) -> Option<BitmapImageMetadata> {
     if !bytes.starts_with(&[0xff, 0xd8]) {
@@ -1184,7 +1647,7 @@ fn parse_jpeg_image_metadata(bytes: &[u8]) -> Option<BitmapImageMetadata> {
     }
     let mut width_pixels = None;
     let mut height_pixels = None;
-    let mut ppi = 300;
+    let mut ppi = DEFAULT_BITMAP_IMAGE_PPI;
     let mut offset = 2;
 
     while offset + 4 <= bytes.len() {
@@ -1211,13 +1674,13 @@ fn parse_jpeg_image_metadata(bytes: &[u8]) -> Option<BitmapImageMetadata> {
         let data_end = offset.checked_add(segment_length)?;
         let segment = bytes.get(data_start..data_end)?;
 
-        if marker == 0xe0 && segment.len() >= 12 && segment.starts_with(b"JFIF\0") {
+        if marker == 0xe0 && segment.len() >= JPEG_JFIF_MINIMUM_SEGMENT_BYTES && segment.starts_with(b"JFIF\0") {
             let units = segment[7];
             let density_x = u32::from(u16::from_be_bytes([segment[8], segment[9]]));
             ppi = match units {
                 1 => density_x,
                 2 => pixels_per_cm_to_ppi(density_x),
-                _ => 300,
+                _ => DEFAULT_BITMAP_IMAGE_PPI,
             };
         }
 
@@ -1251,6 +1714,16 @@ fn parse_jpeg_image_metadata(bytes: &[u8]) -> Option<BitmapImageMetadata> {
         legacy_ppi: ppi.max(1),
     })
 }
+/// Processes collect group facts using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `root` — Input `root` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn collect_group_facts(root: &Node) -> Vec<SchematicGroupFact> {
     children(root, "group")
@@ -1277,6 +1750,16 @@ fn collect_group_facts(root: &Node) -> Vec<SchematicGroupFact> {
         })
         .collect()
 }
+/// Processes collect frame facts using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `root` — Input `root` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn collect_frame_facts(root: &Node) -> Vec<SchematicFrameFact> {
     children(root, "rectangle")
@@ -1303,6 +1786,16 @@ fn collect_frame_facts(root: &Node) -> Vec<SchematicFrameFact> {
         })
         .collect()
 }
+/// Processes collect label facts using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `root` — Input `root` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn collect_label_facts(root: &Node) -> Vec<SchematicLabelFact> {
     collect_label_nodes(root)
@@ -1322,6 +1815,16 @@ fn collect_label_facts(root: &Node) -> Vec<SchematicLabelFact> {
         })
         .collect()
 }
+/// Processes collect pin facts using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `root` — Input `root` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn collect_pin_facts(root: &Node) -> Vec<SchematicPinFact> {
     let Some(library_symbols) = child_list(root, "lib_symbols") else {
@@ -1380,6 +1883,16 @@ fn collect_pin_facts(root: &Node) -> Vec<SchematicPinFact> {
     }
     pins
 }
+/// Processes collect sheet facts using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `root` — Input `root` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn collect_sheet_facts(root: &Node) -> Vec<SchematicSheetFact> {
     children(root, "sheet")
@@ -1454,6 +1967,17 @@ fn collect_sheet_facts(root: &Node) -> Vec<SchematicSheetFact> {
         })
         .collect()
 }
+/// Processes object reference using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `node` — Input `node` used by this operation.
+/// * `prefix` — Input `prefix` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn object_reference(node: &Node, prefix: &str) -> String {
     child_list(node, "uuid")
@@ -1465,11 +1989,20 @@ fn object_reference(node: &Node, prefix: &str) -> String {
             str::to_owned,
         )
 }
+/// Defines the no connect marker half size mm constant.
 
 const NO_CONNECT_MARKER_HALF_SIZE_MM: f64 = 48.0 * 0.0254 / 2.0;
 
 /// Collects `KiCad`'s fixed-size no-connect marker strokes without assuming the
 /// schematic-settings-dependent pen width, which is not serialized per marker.
+/// # Arguments
+///
+/// * `root` — Input `root` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 fn collect_no_connect_facts(root: &Node) -> Vec<SchematicNoConnectFact> {
     children(root, "no_connect")
         .filter_map(|node| {
@@ -1483,6 +2016,16 @@ fn collect_no_connect_facts(root: &Node) -> Vec<SchematicNoConnectFact> {
         })
         .collect()
 }
+/// Processes collect bus obstacle facts using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `root` — Input `root` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn collect_bus_obstacle_facts(root: &Node) -> Vec<SchematicBusObstacleFact> {
     let mut obstacles = Vec::new();
@@ -1543,7 +2086,7 @@ fn collect_bus_obstacle_facts(root: &Node) -> Vec<SchematicBusObstacleFact> {
                     y: start.1,
                 },
                 Point { x: end.0, y: end.1 },
-            ) <= 0.001
+            ) <= GEOMETRY_TOLERANCE_MM
         {
             continue;
         }
@@ -1574,6 +2117,16 @@ fn collect_bus_obstacle_facts(root: &Node) -> Vec<SchematicBusObstacleFact> {
 
     obstacles
 }
+/// Processes collect symbol field facts using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `root` — Input `root` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn collect_symbol_field_facts(root: &Node) -> Vec<SchematicFieldFact> {
     let mut fields = Vec::new();
@@ -1622,6 +2175,16 @@ fn collect_symbol_field_facts(root: &Node) -> Vec<SchematicFieldFact> {
     }
     fields
 }
+/// Processes collect symbol primitive facts using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `root` — Input `root` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn collect_symbol_primitive_facts(root: &Node) -> Vec<SchematicPrimitiveFact> {
     let Some(library_symbols) = child_list(root, "lib_symbols") else {
@@ -1632,6 +2195,17 @@ fn collect_symbol_primitive_facts(root: &Node) -> Vec<SchematicPrimitiveFact> {
         .flat_map(|instance| collect_instance_primitives(instance, &definitions))
         .collect()
 }
+/// Processes collect instance primitives using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `instance` — Input `instance` used by this operation.
+/// * `definitions` — Input `definitions` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn collect_instance_primitives(
     instance: &Node,
@@ -1660,6 +2234,16 @@ fn collect_instance_primitives(
         .flat_map(|unit| collect_primitives_from_unit(unit, &transform))
         .collect()
 }
+/// Processes collect symbol text facts using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `root` — Input `root` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn collect_symbol_text_facts(root: &Node) -> Vec<SchematicSymbolTextFact> {
     let Some(library_symbols) = child_list(root, "lib_symbols") else {
@@ -1695,6 +2279,17 @@ fn collect_symbol_text_facts(root: &Node) -> Vec<SchematicSymbolTextFact> {
 
     texts
 }
+/// Processes collect symbol text from unit using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `unit` — Input `unit` used by this operation.
+/// * `transform` — Input `transform` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn collect_symbol_text_from_unit(
     unit: &Node,
@@ -1740,6 +2335,17 @@ fn collect_symbol_text_from_unit(
     }
     texts
 }
+/// Processes transform symbol bounds using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `bounds` — Input `bounds` used by this operation.
+/// * `transform` — Input `transform` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn transform_symbol_bounds(bounds: Bounds, transform: &SymbolTransform) -> Option<Bounds> {
     let points = [
@@ -1778,6 +2384,18 @@ fn transform_symbol_bounds(bounds: Bounds, transform: &SymbolTransform) -> Optio
         height: bottom - top,
     })
 }
+/// Processes selected symbol units using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `definition` — Input `definition` used by this operation.
+/// * `unit` — Input `unit` used by this operation.
+/// * `convert` — Input `convert` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn selected_symbol_units(definition: &Node, unit: u32, convert: u32) -> Vec<&Node> {
     let sub_symbols: Vec<_> = children(definition, "symbol").collect();
@@ -1797,6 +2415,17 @@ fn selected_symbol_units(definition: &Node, unit: u32, convert: u32) -> Vec<&Nod
         })
         .collect()
 }
+/// Processes collect primitives from unit using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `unit` — Input `unit` used by this operation.
+/// * `transform` — Input `transform` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn collect_primitives_from_unit(
     unit: &Node,
@@ -1819,6 +2448,17 @@ fn collect_primitives_from_unit(
     }
     primitives
 }
+/// Processes parse symbol primitive using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `node` — Input `node` used by this operation.
+/// * `transform` — Input `transform` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn parse_symbol_primitive(
     node: &Node,
@@ -1885,8 +2525,8 @@ fn parse_symbol_primitive(
     };
     let last_point = *points_mm.last()?;
     let repeated_endpoint = points_mm.len() > 2
-        && (points_mm[0].0 - last_point.0).abs() <= 0.001
-        && (points_mm[0].1 - last_point.1).abs() <= 0.001;
+        && (points_mm[0].0 - last_point.0).abs() <= GEOMETRY_TOLERANCE_MM
+        && (points_mm[0].1 - last_point.1).abs() <= GEOMETRY_TOLERANCE_MM;
     let closed = kind == "rectangle" || kind == "polygon" || repeated_endpoint;
     if closed && repeated_endpoint {
         points_mm.pop();
@@ -1901,6 +2541,16 @@ fn parse_symbol_primitive(
         stroke_width_mm,
     })
 }
+/// Processes symbol primitive stroke width using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `node` — Input `node` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn symbol_primitive_stroke_width(node: &Node) -> f64 {
     child_list(node, "stroke")
@@ -1908,9 +2558,19 @@ fn symbol_primitive_stroke_width(node: &Node) -> f64 {
         .and_then(list_items)
         .and_then(|items| items.get(1))
         .and_then(number)
-        .filter(|width| width.is_finite() && width.abs() > 0.001)
+        .filter(|width| width.is_finite() && width.abs() > GEOMETRY_TOLERANCE_MM)
         .map_or(0.254, f64::abs)
 }
+/// Processes rectangle primitive points using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `node` — Input `node` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn rectangle_primitive_points(node: &Node) -> Option<Vec<(f64, f64)>> {
     let start = child_list(node, "start").and_then(list_items)?;
@@ -1921,6 +2581,16 @@ fn rectangle_primitive_points(node: &Node) -> Option<Vec<(f64, f64)>> {
     let y2 = number(end.get(2)?)?;
     Some(vec![(x1, y1), (x2, y1), (x2, y2), (x1, y2)])
 }
+/// Processes polyline primitive points using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `node` — Input `node` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn polyline_primitive_points(node: &Node) -> Option<Vec<(f64, f64)>> {
     let points = child_list(node, "pts")?;
@@ -1932,6 +2602,16 @@ fn polyline_primitive_points(node: &Node) -> Option<Vec<(f64, f64)>> {
         .collect();
     (points.len() >= 2).then_some(points)
 }
+/// Processes arc primitive control points using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `node` — Input `node` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn arc_primitive_control_points(node: &Node) -> Option<[(f64, f64); 3]> {
     let point = |name| {
@@ -1940,18 +2620,51 @@ fn arc_primitive_control_points(node: &Node) -> Option<[(f64, f64); 3]> {
     };
     Some([point("start")?, point("mid")?, point("end")?])
 }
+/// Processes arc primitive geometry using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `node` — Input `node` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn arc_primitive_geometry(node: &Node) -> Option<SchematicArcFact> {
     let [start, mid, end] = arc_primitive_control_points(node)?;
     circular_arc_through_three_points(start, mid, end)
 }
+/// Processes arc primitive points using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `node` — Input `node` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn arc_primitive_points(node: &Node) -> Option<Vec<(f64, f64)>> {
     let [start, mid, end] = arc_primitive_control_points(node)?;
     Some(sample_arc_through_three_points(start, mid, end))
 }
+/// Defines the curve flatten tolerance mm constant.
 
 const CURVE_FLATTEN_TOLERANCE_MM: f64 = 0.01;
+/// Processes flattened curve points using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `path` — Input `path` used by this operation.
+/// * `start` — Input `start` used by this operation.
+/// * `end` — Input `end` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn flattened_curve_points(
     path: impl IntoIterator<Item = PathEl>,
@@ -1974,6 +2687,16 @@ fn flattened_curve_points(
     }
     points
 }
+/// Processes bezier primitive control points using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `node` — Input `node` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn bezier_primitive_control_points(node: &Node) -> Option<[(f64, f64); 4]> {
     let points_node = child_list(node, "pts")?;
@@ -1989,6 +2712,16 @@ fn bezier_primitive_control_points(node: &Node) -> Option<[(f64, f64); 4]> {
     };
     Some([*start, *control_one, *control_two, *end])
 }
+/// Processes bezier primitive points using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `node` — Input `node` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn bezier_primitive_points(node: &Node) -> Option<Vec<(f64, f64)>> {
     let [start, control_one, control_two, end] = bezier_primitive_control_points(node)?;
@@ -2002,6 +2735,18 @@ fn bezier_primitive_points(node: &Node) -> Option<Vec<(f64, f64)>> {
     ];
     Some(flattened_curve_points(path, start, end))
 }
+/// Processes sample arc through three points using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `start` — Input `start` used by this operation.
+/// * `mid` — Input `mid` used by this operation.
+/// * `end` — Input `end` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn sample_arc_through_three_points(
     start: (f64, f64),
@@ -2020,6 +2765,22 @@ fn sample_arc_through_three_points(
     );
     flattened_curve_points(path.path_elements(CURVE_FLATTEN_TOLERANCE_MM), start, end)
 }
+/// Processes subdivide ellipse arc using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `start_angle` — Input `start angle` used by this operation.
+/// * `start` — Input `start` used by this operation.
+/// * `end_angle` — Input `end angle` used by this operation.
+/// * `end` — Input `end` used by this operation.
+/// * `depth` — Input `depth` used by this operation.
+/// * `evaluate` — Input `evaluate` used by this operation.
+/// * `points` — Input `points` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn subdivide_ellipse_arc(
     start_angle: f64,
@@ -2066,6 +2827,17 @@ fn subdivide_ellipse_arc(
     }
     Some(())
 }
+/// Processes ellipse primitive points using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `node` — Input `node` used by this operation.
+/// * `is_arc` — Input `is arc` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn ellipse_primitive_points(node: &Node, is_arc: bool) -> Option<Vec<(f64, f64)>> {
     let center = child_list(node, "center").and_then(list_items)?;
@@ -2106,7 +2878,7 @@ fn ellipse_primitive_points(node: &Node, is_arc: bool) -> Option<Vec<(f64, f64)>
             .and_then(list_items)
             .and_then(|items| items.get(1))
             .and_then(number)
-            .unwrap_or(90.0)
+            .unwrap_or(QUARTER_ROTATION_DEGREES)
     } else {
         360.0
     };
@@ -2118,10 +2890,10 @@ fn ellipse_primitive_points(node: &Node, is_arc: bool) -> Option<Vec<(f64, f64)>
     if !sweep_degrees.is_finite() {
         return None;
     }
-    if sweep_degrees >= 360.0 || sweep_degrees <= -360.0 {
-        sweep_degrees = 360.0;
+    if sweep_degrees >= FULL_ROTATION_DEGREES || sweep_degrees <= -FULL_ROTATION_DEGREES {
+        sweep_degrees = FULL_ROTATION_DEGREES;
     } else if sweep_degrees < 0.0 {
-        sweep_degrees += 360.0;
+        sweep_degrees += FULL_ROTATION_DEGREES;
     }
 
     let start_angle = start_degrees.to_radians().rem_euclid(std::f64::consts::TAU);
@@ -2144,12 +2916,24 @@ fn ellipse_primitive_points(node: &Node, is_arc: bool) -> Option<Vec<(f64, f64)>
         start,
         end_angle,
         end,
-        20,
+        ELLIPSE_ARC_SUBDIVISION_STEPS,
         &evaluate,
         &mut points,
     )?;
     Some(points)
 }
+/// Processes circular arc through three points using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `start` — Input `start` used by this operation.
+/// * `mid` — Input `mid` used by this operation.
+/// * `end` — Input `end` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn circular_arc_through_three_points(
     start: (f64, f64),
@@ -2163,7 +2947,7 @@ fn circular_arc_through_three_points(
     );
     // Preserve the previous near-collinear fallback before asking Kurbo for
     // the circumcircle; its circumcircle method assumes non-zero triangle area.
-    if triangle.area().abs() <= 2.5e-10 {
+    if triangle.area().abs() <= MINIMUM_CURVE_TRIANGLE_AREA_MM2 {
         return None;
     }
 
@@ -2171,7 +2955,7 @@ fn circular_arc_through_three_points(
     let center_x = circle.center.x;
     let center_y = circle.center.y;
     let radius = circle.radius.abs();
-    if !center_x.is_finite() || !center_y.is_finite() || !radius.is_finite() || radius <= 1.0e-9 {
+    if !center_x.is_finite() || !center_y.is_finite() || !radius.is_finite() || radius <= GEOMETRY_NUMERIC_EPSILON {
         return None;
     }
 
@@ -2180,12 +2964,12 @@ fn circular_arc_through_three_points(
     let end_angle = (end.1 - center_y).atan2(end.0 - center_x);
     let counter_clockwise_sweep = (end_angle - start_angle).rem_euclid(std::f64::consts::TAU);
     let mid_sweep = (mid_angle - start_angle).rem_euclid(std::f64::consts::TAU);
-    let sweep = if mid_sweep <= counter_clockwise_sweep + 1.0e-9 {
+    let sweep = if mid_sweep <= counter_clockwise_sweep + GEOMETRY_NUMERIC_EPSILON {
         counter_clockwise_sweep
     } else {
         counter_clockwise_sweep - std::f64::consts::TAU
     };
-    if sweep.abs() <= 1.0e-9 {
+    if sweep.abs() <= GEOMETRY_NUMERIC_EPSILON {
         return None;
     }
 
@@ -2196,6 +2980,17 @@ fn circular_arc_through_three_points(
         sweep_rad: sweep,
     })
 }
+/// Processes transform primitive points using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `points` — Input `points` used by this operation.
+/// * `transform` — Input `transform` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn transform_primitive_points(
     points: &[(f64, f64)],
@@ -2226,9 +3021,25 @@ pub struct RuleRun {
 pub struct BuiltinGeometryPass;
 
 impl RulePass for BuiltinGeometryPass {
+    /// Processes name using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
     fn name(&self) -> &'static str {
         "01-kicad-clippy.geometry"
     }
+    /// Processes run using the supplied values and schematic data.
+    ///
+    /// # Arguments
+    ///
+    /// * `context` — Input `context` used by this operation.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     fn run(&self, context: &RuleContext<'_>) -> Vec<Diagnostic> {
         run_geometry_checks(context)
@@ -2239,9 +3050,25 @@ impl RulePass for BuiltinGeometryPass {
 pub struct BuiltinLabelPass;
 
 impl RulePass for BuiltinLabelPass {
+    /// Processes name using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
     fn name(&self) -> &'static str {
         "02-kicad-clippy.labels"
     }
+    /// Processes run using the supplied values and schematic data.
+    ///
+    /// # Arguments
+    ///
+    /// * `context` — Input `context` used by this operation.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     fn run(&self, context: &RuleContext<'_>) -> Vec<Diagnostic> {
         run_label_checks(context)
@@ -2252,9 +3079,25 @@ impl RulePass for BuiltinLabelPass {
 pub struct BuiltinAnnotationPass;
 
 impl RulePass for BuiltinAnnotationPass {
+    /// Processes name using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
     fn name(&self) -> &'static str {
         "03-kicad-clippy.annotations"
     }
+    /// Processes run using the supplied values and schematic data.
+    ///
+    /// # Arguments
+    ///
+    /// * `context` — Input `context` used by this operation.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     fn run(&self, context: &RuleContext<'_>) -> Vec<Diagnostic> {
         run_annotation_checks(context)
@@ -2262,10 +3105,28 @@ impl RulePass for BuiltinAnnotationPass {
 }
 
 /// Run reusable rules that do not require a project profile.
+/// # Arguments
+///
+/// * `document` — Input `document` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 #[must_use]
 pub fn run_builtin_rules(document: &SchematicDocument) -> RuleRun {
     crate::RuleEngine::with_builtins().run(document)
 }
+/// Processes run geometry checks using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `context` — Input `context` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 #[must_use]
 pub fn run_geometry_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
@@ -2294,6 +3155,16 @@ pub fn run_geometry_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
     ));
     diagnostics
 }
+/// Processes schematic has graphical netclass assignments using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `root` — Input `root` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn schematic_has_graphical_netclass_assignments(root: &Node) -> bool {
     let mut has_assignments = false;
@@ -2313,6 +3184,16 @@ fn schematic_has_graphical_netclass_assignments(root: &Node) -> bool {
     });
     has_assignments
 }
+/// Processes run label checks using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `context` — Input `context` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 #[must_use]
 pub fn run_label_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
@@ -2325,6 +3206,16 @@ pub fn run_label_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
     diagnostics.extend(check_label_kind_consistency(root));
     diagnostics
 }
+/// Processes run annotation checks using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `context` — Input `context` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 #[must_use]
 pub fn run_annotation_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
@@ -2340,13 +3231,22 @@ pub fn run_annotation_checks(context: &RuleContext<'_>) -> Vec<Diagnostic> {
     ));
     diagnostics
 }
+/// Represents the supported pinaxis alternatives.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PinAxis {
+    /// Represents the `Horizontal` case.
     Horizontal,
+    /// Represents the `Vertical` case.
     Vertical,
 }
 
 impl PinAxis {
+    /// Processes as str using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
     const fn as_str(self) -> &'static str {
         match self {
             Self::Horizontal => "horizontal",
@@ -2354,16 +3254,35 @@ impl PinAxis {
         }
     }
 }
+/// Stores symboltransform data used by this crate.
 
 #[derive(Clone, Debug)]
 struct SymbolTransform {
+    /// Stores the `reference` value.
     reference: String,
+    /// Stores the `origin` value.
     origin: Point,
+    /// Stores the `rotation` value.
     rotation: f64,
+    /// Stores the `mirror` value.
     mirror: Option<String>,
+    /// Stores the `unit` value.
     unit: u32,
+    /// Stores the `convert` value.
     convert: u32,
 }
+/// Processes embedded symbol text obstacle diagnostics using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `wire_index` — Input `wire index` used by this operation.
+/// * `wire` — Input `wire` used by this operation.
+/// * `texts` — Input `texts` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn embedded_symbol_text_obstacle_diagnostics(
     wire_index: usize,
@@ -2393,6 +3312,19 @@ fn embedded_symbol_text_obstacle_diagnostics(
         })
         .collect()
 }
+/// Processes bus obstacle diagnostics using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `wire_index` — Input `wire index` used by this operation.
+/// * `segment` — Input `segment` used by this operation.
+/// * `obstacles` — Input `obstacles` used by this operation.
+/// * `wire_stroke_width_mm` — Input `wire stroke width mm` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn bus_obstacle_diagnostics(
     wire_index: usize,
@@ -2422,6 +3354,19 @@ fn bus_obstacle_diagnostics(
         })
         .collect()
 }
+/// Processes sheet frame obstacle diagnostics using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `wire_index` — Input `wire index` used by this operation.
+/// * `segment` — Input `segment` used by this operation.
+/// * `sheets` — Input `sheets` used by this operation.
+/// * `wire_stroke_width_mm` — Input `wire stroke width mm` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn sheet_frame_obstacle_diagnostics(
     wire_index: usize,
@@ -2451,6 +3396,19 @@ fn sheet_frame_obstacle_diagnostics(
         })
         .collect()
 }
+/// Processes table stroke obstacle diagnostics using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `wire_index` — Input `wire index` used by this operation.
+/// * `segment` — Input `segment` used by this operation.
+/// * `table_strokes` — Input `table strokes` used by this operation.
+/// * `wire_stroke_width_mm` — Input `wire stroke width mm` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn table_stroke_obstacle_diagnostics(
     wire_index: usize,
@@ -2475,6 +3433,18 @@ fn table_stroke_obstacle_diagnostics(
         })
         .collect()
 }
+/// Processes wire crosses no connect diagonal using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `wire` — Input `wire` used by this operation.
+/// * `diagonal` — Input `diagonal` used by this operation.
+/// * `wire_stroke_width_mm` — Input `wire stroke width mm` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn wire_crosses_no_connect_diagonal(
     wire: Segment,
@@ -2504,6 +3474,20 @@ fn wire_crosses_no_connect_diagonal(
     (finite && !segment_intersection_points(wire, start, end).is_empty())
         || wire_within_sampled_path_stroke(wire, &diagonal, false, wire_stroke_width_mm, 0.0)
 }
+/// Processes no connect marker obstacle diagnostics using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `wire_index` — Input `wire index` used by this operation.
+/// * `segment` — Input `segment` used by this operation.
+/// * `markers` — Input `markers` used by this operation.
+/// * `wire_stroke_width_mm` — Input `wire stroke width mm` used by this operation.
+/// * `default_marker_pen_width_mm` — Input `default marker pen width mm` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn no_connect_marker_obstacle_diagnostics(
     wire_index: usize,
@@ -2554,12 +3538,31 @@ fn no_connect_marker_obstacle_diagnostics(
         })
         .collect()
 }
+/// Stores wireobstaclestrokewidths data used by this crate.
 
 #[derive(Clone, Copy)]
 struct WireObstacleStrokeWidths {
+    /// Stores the `wire_mm` value.
     wire_mm: f64,
+    /// Stores the `no_connect_marker_pen_mm` value.
     no_connect_marker_pen_mm: Option<f64>,
 }
+/// Processes sheet table bus obstacle diagnostics using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `wire_index` — Input `wire index` used by this operation.
+/// * `segment` — Input `segment` used by this operation.
+/// * `sheets` — Input `sheets` used by this operation.
+/// * `table_strokes` — Input `table strokes` used by this operation.
+/// * `bus_obstacles` — Input `bus obstacles` used by this operation.
+/// * `no_connects` — Input `no connects` used by this operation.
+/// * `stroke_widths` — Input `stroke widths` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn sheet_table_bus_obstacle_diagnostics(
     wire_index: usize,
@@ -2594,6 +3597,18 @@ fn sheet_table_bus_obstacle_diagnostics(
     ));
     diagnostics
 }
+/// Processes intermediate pin obstacle diagnostics using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `wire_index` — Input `wire index` used by this operation.
+/// * `segment` — Input `segment` used by this operation.
+/// * `pins` — Input `pins` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn intermediate_pin_obstacle_diagnostics(
     wire_index: usize,
@@ -2620,6 +3635,21 @@ fn intermediate_pin_obstacle_diagnostics(
         })
         .collect()
 }
+/// Processes check wire obstacles using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `root` — Input `root` used by this operation.
+/// * `segments` — Input `segments` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+/// * `wire_stroke_widths` — Input `wire stroke widths` used by this operation.
+/// * `default_wire_stroke_width_mm` — Input `default wire stroke width mm` used by this operation.
+/// * `default_marker_pen_width_mm` — Input `default marker pen width mm` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn check_wire_obstacles(
     root: &Node,
@@ -2719,6 +3749,20 @@ fn check_wire_obstacles(
     }
     diagnostics
 }
+/// Processes wire text annotation obstacle diagnostics using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `wire_index` — Input `wire index` used by this operation.
+/// * `segment` — Input `segment` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+/// * `fields` — Input `fields` used by this operation.
+/// * `text_boxes` — Input `text boxes` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn wire_text_annotation_obstacle_diagnostics(
     wire_index: usize,
@@ -2770,6 +3814,16 @@ fn wire_text_annotation_obstacle_diagnostics(
     }
     diagnostics
 }
+/// Processes collect visible field bounds using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `root` — Input `root` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn collect_visible_field_bounds(root: &Node) -> Vec<(String, Bounds, ByteSpan)> {
     let mut fields = Vec::new();
@@ -2808,6 +3862,17 @@ fn collect_visible_field_bounds(root: &Node) -> Vec<(String, Bounds, ByteSpan)> 
     }
     fields
 }
+/// Processes segment arc intersection points using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `wire` — Input `wire` used by this operation.
+/// * `arc` — Input `arc` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn segment_arc_intersection_points(wire: Segment, arc: SchematicArcFact) -> Vec<Point> {
     let direction_x = wire.end.x - wire.start.x;
@@ -2848,7 +3913,7 @@ fn segment_arc_intersection_points(wire: Segment, arc: SchematicArcFact) -> Vec<
     let mut intersections = Vec::with_capacity(root_count);
 
     for (index, parameter) in [first_root, second_root].into_iter().enumerate() {
-        if index >= root_count || !(-1.0e-9..=1.0 + 1.0e-9).contains(&parameter) {
+        if index >= root_count || !(-GEOMETRY_NUMERIC_EPSILON..=1.0 + GEOMETRY_NUMERIC_EPSILON).contains(&parameter) {
             continue;
         }
         let parameter = parameter.clamp(0.0, 1.0);
@@ -2862,13 +3927,24 @@ fn segment_arc_intersection_points(wire: Segment, arc: SchematicArcFact) -> Vec<
         } else {
             (arc.start_angle_rad - angle).rem_euclid(std::f64::consts::TAU)
         };
-        if directed_sweep <= arc.sweep_rad.abs() + 1.0e-9 {
+        if directed_sweep <= arc.sweep_rad.abs() + GEOMETRY_NUMERIC_EPSILON {
             intersections.push(point);
         }
     }
 
     intersections
 }
+/// Processes segment bezier intersection points using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `wire` — Input `wire` used by this operation.
+/// * `control_points` — Input `control points` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn segment_bezier_intersection_points(
     wire: Segment,
@@ -2897,7 +3973,7 @@ fn segment_bezier_intersection_points(
         .intersect_line(line)
         .into_iter()
         .filter(|intersection| {
-            intersection.is_finite() && (-1.0e-9..=1.0 + 1.0e-9).contains(&intersection.segment_t)
+            intersection.is_finite() && (-GEOMETRY_NUMERIC_EPSILON..=1.0 + GEOMETRY_NUMERIC_EPSILON).contains(&intersection.segment_t)
         })
         .map(|intersection| {
             let line_parameter = intersection.line_t.clamp(0.0, 1.0);
@@ -2908,6 +3984,16 @@ fn segment_bezier_intersection_points(
         })
         .collect()
 }
+/// Processes cubic bezier path segment using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `control_points` — Input `control points` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn cubic_bezier_path_segment(control_points: [(f64, f64); 4]) -> CurvePathSeg {
     CurvePathSeg::Cubic(CurveCubicBez::new(
@@ -2917,9 +4003,22 @@ fn cubic_bezier_path_segment(control_points: [(f64, f64); 4]) -> CurvePathSeg {
         CurvePoint::new(control_points[3].0, control_points[3].1),
     ))
 }
+/// Defines the sch013 stroke distance accuracy mm constant.
 
 const SCH013_STROKE_DISTANCE_ACCURACY_MM: f64 = 1.0e-6;
+/// Defines the sch013 stroke distance epsilon mm constant.
 const SCH013_STROKE_DISTANCE_EPSILON_MM: f64 = 1.0e-6;
+/// Processes wire path min distance using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `wire` — Input `wire` used by this operation.
+/// * `path` — Input `path` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn wire_path_min_distance(wire: Segment, path: CurvePathSeg) -> Option<f64> {
     let line = CurveLine::new(
@@ -2932,6 +4031,19 @@ fn wire_path_min_distance(wire: Segment, path: CurvePathSeg) -> Option<f64> {
     let nearest = path.min_dist(CurvePathSeg::Line(line), SCH013_STROKE_DISTANCE_ACCURACY_MM);
     nearest.distance.is_finite().then_some(nearest.distance)
 }
+/// Processes wire within path stroke using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `wire` — Input `wire` used by this operation.
+/// * `path` — Input `path` used by this operation.
+/// * `stroke_width_mm` — Input `stroke width mm` used by this operation.
+/// * `flatten_tolerance_mm` — Input `flatten tolerance mm` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn wire_within_path_stroke(
     wire: Segment,
@@ -2951,6 +4063,20 @@ fn wire_within_path_stroke(
     );
     minimum_distance <= threshold
 }
+/// Processes wire within sampled path stroke using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `wire` — Input `wire` used by this operation.
+/// * `points` — Input `points` used by this operation.
+/// * `closed` — Input `closed` used by this operation.
+/// * `stroke_width_mm` — Input `stroke width mm` used by this operation.
+/// * `flatten_tolerance_mm` — Input `flatten tolerance mm` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn wire_within_sampled_path_stroke(
     wire: Segment,
@@ -2984,6 +4110,18 @@ fn wire_within_sampled_path_stroke(
 }
 
 /// Checks the declared circular stroke ring while retaining the existing inner-body obstacle rule.
+/// # Arguments
+///
+/// * `wire` — Input `wire` used by this operation.
+/// * `center` — Input `center` used by this operation.
+/// * `radius_mm` — Input `radius mm` used by this operation.
+/// * `stroke_width_mm` — Input `stroke width mm` used by this operation.
+/// * `wire_stroke_width_mm` — Input `wire stroke width mm` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 fn wire_within_circle_stroke(
     wire: Segment,
     center: Point,
@@ -3021,10 +4159,22 @@ fn wire_within_circle_stroke(
         <= effective_outer_radius + SCH013_STROKE_DISTANCE_EPSILON_MM
         && maximum_distance + SCH013_STROKE_DISTANCE_EPSILON_MM >= effective_inner_radius;
     let penetrates_existing_body_region =
-        inner_radius > 0.0 && minimum_distance < inner_radius + wire_radius - 0.001;
+        inner_radius > 0.0 && minimum_distance < inner_radius + wire_radius - GEOMETRY_TOLERANCE_MM;
 
     intersects_stroke_ring || penetrates_existing_body_region
 }
+/// Processes wire crosses sheet graphic with wire stroke using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `wire` — Input `wire` used by this operation.
+/// * `graphic` — Input `graphic` used by this operation.
+/// * `wire_stroke_width_mm` — Input `wire stroke width mm` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn wire_crosses_sheet_graphic_with_wire_stroke(
     wire: Segment,
@@ -3105,12 +4255,23 @@ fn wire_crosses_sheet_graphic_with_wire_stroke(
     }
     false
 }
+/// Processes wire crosses polygon interior using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `wire` — Input `wire` used by this operation.
+/// * `polygon` — Input `polygon` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn wire_crosses_polygon_interior(wire: Segment, polygon: &Polygon<f64>) -> bool {
     let direction_x = wire.end.x - wire.start.x;
     let direction_y = wire.end.y - wire.start.y;
     let wire_length = distance(wire.start, wire.end);
-    if !wire_length.is_finite() || wire_length <= 0.001 {
+    if !wire_length.is_finite() || wire_length <= GEOMETRY_TOLERANCE_MM {
         return false;
     }
 
@@ -3125,16 +4286,16 @@ fn wire_crosses_polygon_interior(wire: Segment, polygon: &Polygon<f64>) -> bool 
     for edge in polygon.exterior().lines() {
         for intersection in segment_intersection_points(wire, edge.start, edge.end) {
             let parameter = parameter_for(intersection);
-            if (-1.0e-9..=1.0 + 1.0e-9).contains(&parameter) {
+            if (-GEOMETRY_NUMERIC_EPSILON..=1.0 + GEOMETRY_NUMERIC_EPSILON).contains(&parameter) {
                 parameters.push(parameter.clamp(0.0, 1.0));
             }
         }
     }
     parameters.sort_by(f64::total_cmp);
-    parameters.dedup_by(|first, second| (*first - *second).abs() <= 1.0e-9);
+    parameters.dedup_by(|first, second| (*first - *second).abs() <= GEOMETRY_NUMERIC_EPSILON);
 
     parameters.windows(2).any(|interval| {
-        if interval[1] - interval[0] <= 1.0e-9 {
+        if interval[1] - interval[0] <= GEOMETRY_NUMERIC_EPSILON {
             return false;
         }
         let parameter = f64::midpoint(interval[0], interval[1]);
@@ -3142,9 +4303,20 @@ fn wire_crosses_polygon_interior(wire: Segment, polygon: &Polygon<f64>) -> bool 
             parameter.mul_add(direction_x, wire.start.x),
             parameter.mul_add(direction_y, wire.start.y),
         );
-        polygon.contains(&midpoint) && Euclidean.distance(&midpoint, polygon.exterior()) > 0.001
+        polygon.contains(&midpoint) && Euclidean.distance(&midpoint, polygon.exterior()) > GEOMETRY_TOLERANCE_MM
     })
 }
+/// Processes wire crosses bitmap image using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `wire` — Input `wire` used by this operation.
+/// * `corners` — Input `corners` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn wire_crosses_bitmap_image(wire: Segment, corners: &[(f64, f64); 4]) -> bool {
     let mut ring: Vec<_> = corners
@@ -3157,6 +4329,17 @@ fn wire_crosses_bitmap_image(wire: Segment, corners: &[(f64, f64); 4]) -> bool {
 }
 
 /// Excludes only the local stroke-clearance neighbourhood at matching pin endpoints.
+/// # Arguments
+///
+/// * `wire` — Input `wire` used by this operation.
+/// * `reference` — Input `reference` used by this operation.
+/// * `pins` — Input `pins` used by this operation.
+/// * `exclusion_distance_mm` — Input `exclusion distance mm` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 fn wire_without_pin_contact_region(
     wire: Segment,
     reference: &str,
@@ -3203,6 +4386,18 @@ fn wire_without_pin_contact_region(
         span: wire.span,
     })
 }
+/// Processes symbol primitive has centerline collision using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `wire` — Input `wire` used by this operation.
+/// * `primitive` — Input `primitive` used by this operation.
+/// * `pins` — Input `pins` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn symbol_primitive_has_centerline_collision(
     wire: Segment,
@@ -3248,6 +4443,19 @@ fn symbol_primitive_has_centerline_collision(
             .any(|point| !wire_intersection_is_allowed_pin(point, wire, &primitive.reference, pins))
         })
 }
+/// Processes symbol primitive wire stroke collision using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `wire` — Input `wire` used by this operation.
+/// * `primitive` — Input `primitive` used by this operation.
+/// * `pins` — Input `pins` used by this operation.
+/// * `combined_stroke_width_mm` — Input `combined stroke width mm` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn symbol_primitive_wire_stroke_collision(
     wire: Segment,
@@ -3295,6 +4503,19 @@ fn symbol_primitive_wire_stroke_collision(
         0.0,
     )
 }
+/// Processes wire crosses symbol primitive with wire stroke using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `wire` — Input `wire` used by this operation.
+/// * `primitive` — Input `primitive` used by this operation.
+/// * `pins` — Input `pins` used by this operation.
+/// * `wire_stroke_width_mm` — Input `wire stroke width mm` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn wire_crosses_symbol_primitive_with_wire_stroke(
     wire: Segment,
@@ -3342,6 +4563,19 @@ fn wire_crosses_symbol_primitive_with_wire_stroke(
         || (!wire_endpoint_is_pin(wire.end, &primitive.reference, pins)
             && point_in_polygon(wire.end, &primitive.points_mm))
 }
+/// Processes wire intersection is allowed pin using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `point` — Input `point` used by this operation.
+/// * `wire` — Input `wire` used by this operation.
+/// * `reference` — Input `reference` used by this operation.
+/// * `pins` — Input `pins` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn wire_intersection_is_allowed_pin(
     point: Point,
@@ -3349,9 +4583,21 @@ fn wire_intersection_is_allowed_pin(
     reference: &str,
     pins: &[SchematicPinFact],
 ) -> bool {
-    (distance(point, wire.start) <= 0.001 && wire_endpoint_is_pin(wire.start, reference, pins))
-        || (distance(point, wire.end) <= 0.001 && wire_endpoint_is_pin(wire.end, reference, pins))
+    (distance(point, wire.start) <= GEOMETRY_TOLERANCE_MM && wire_endpoint_is_pin(wire.start, reference, pins))
+        || (distance(point, wire.end) <= GEOMETRY_TOLERANCE_MM && wire_endpoint_is_pin(wire.end, reference, pins))
 }
+/// Processes wire endpoint is pin using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `endpoint` — Input `endpoint` used by this operation.
+/// * `reference` — Input `reference` used by this operation.
+/// * `pins` — Input `pins` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn wire_endpoint_is_pin(endpoint: Point, reference: &str, pins: &[SchematicPinFact]) -> bool {
     pins.iter().any(|pin| {
@@ -3362,9 +4608,20 @@ fn wire_endpoint_is_pin(endpoint: Point, reference: &str, pins: &[SchematicPinFa
                     x: pin.position_mm.0,
                     y: pin.position_mm.1,
                 },
-            ) <= 0.001
+            ) <= GEOMETRY_TOLERANCE_MM
     })
 }
+/// Processes geo line using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `start` — Input `start` used by this operation.
+/// * `end` — Input `end` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn geo_line(start: Point, end: Point) -> Line<f64> {
     Line::new(start, end)
@@ -3373,6 +4630,16 @@ fn geo_line(start: Point, end: Point) -> Line<f64> {
 /// Returns all point endpoints of a segment intersection, including both ends
 /// of a collinear overlap. `GeoRust` owns the intersection classification and
 /// construction; this adapter only converts to the schematic point type.
+/// # Arguments
+///
+/// * `first` — Input `first` used by this operation.
+/// * `second_start` — Input `second start` used by this operation.
+/// * `second_end` — Input `second end` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 fn segment_intersection_points(
     first: Segment,
     second_start: Point,
@@ -3387,7 +4654,7 @@ fn segment_intersection_points(
         }
         Some(LineIntersection::Collinear { intersection }) => {
             let points = [intersection.start, intersection.end];
-            if distance(points[0], points[1]) <= 0.001 {
+            if distance(points[0], points[1]) <= GEOMETRY_TOLERANCE_MM {
                 vec![points[0]]
             } else {
                 points.into_iter().collect()
@@ -3396,14 +4663,49 @@ fn segment_intersection_points(
         None => Vec::new(),
     }
 }
+/// Processes point on segment any using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `point` — Input `point` used by this operation.
+/// * `start` — Input `start` used by this operation.
+/// * `end` — Input `end` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn point_on_segment_any(point: Point, start: Point, end: Point) -> bool {
-    Euclidean.distance(&GeoPoint::new(point.x, point.y), &geo_line(start, end)) <= 0.001
+    Euclidean.distance(&GeoPoint::new(point.x, point.y), &geo_line(start, end)) <= GEOMETRY_TOLERANCE_MM
 }
+/// Processes point segment distance using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `point` — Input `point` used by this operation.
+/// * `start` — Input `start` used by this operation.
+/// * `end` — Input `end` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn point_segment_distance(point: Point, start: Point, end: Point) -> f64 {
     Euclidean.distance(&GeoPoint::new(point.x, point.y), &geo_line(start, end))
 }
+/// Processes point in polygon using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `point` — Input `point` used by this operation.
+/// * `polygon` — Input `polygon` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn point_in_polygon(point: Point, polygon: &[(f64, f64)]) -> bool {
     if polygon.len() < 3 {
@@ -3422,8 +4724,19 @@ fn point_in_polygon(point: Point, polygon: &[(f64, f64)]) -> bool {
 
     let geometry = Polygon::new(LineString::new(ring), Vec::new());
     let query = GeoPoint::new(point.x, point.y);
-    geometry.contains(&query) || Euclidean.distance(&query, geometry.exterior()) <= 0.001
+    geometry.contains(&query) || Euclidean.distance(&query, geometry.exterior()) <= GEOMETRY_TOLERANCE_MM
 }
+/// Processes check pin orientation using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `root` — Input `root` used by this operation.
+/// * `segments` — Input `segments` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn check_pin_orientation(root: &Node, segments: &[Segment]) -> Vec<Diagnostic> {
     let Some(library_symbols) = child_list(root, "lib_symbols") else {
@@ -3433,6 +4746,18 @@ fn check_pin_orientation(root: &Node, segments: &[Segment]) -> Vec<Diagnostic> {
         .flat_map(|instance| check_instance_pin_orientation(instance, library_symbols, segments))
         .collect()
 }
+/// Processes check instance pin orientation using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `instance` — Input `instance` used by this operation.
+/// * `library_symbols` — Input `library symbols` used by this operation.
+/// * `segments` — Input `segments` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn check_instance_pin_orientation(
     instance: &Node,
@@ -3466,6 +4791,16 @@ fn check_instance_pin_orientation(
         .filter_map(|pin| pin_orientation_diagnostic(instance, pin, &transform, segments))
         .collect()
 }
+/// Processes check no connect markers using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `root` — Input `root` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn check_no_connect_markers(root: &Node) -> Vec<Diagnostic> {
     let markers = collect_nodes(root, "no_connect");
@@ -3481,7 +4816,7 @@ fn check_no_connect_markers(root: &Node) -> Vec<Diagnostic> {
             let point = point_from_at(marker)?;
             let matches_pin = pin_positions
                 .iter()
-                .any(|pin| distance(*pin, point) < 0.001);
+                .any(|pin| distance(*pin, point) < GEOMETRY_TOLERANCE_MM);
             (!matches_pin).then(|| {
                 at_point(BuiltinRuleId::Sch015,
                     format!(
@@ -3495,6 +4830,16 @@ fn check_no_connect_markers(root: &Node) -> Vec<Diagnostic> {
         })
         .collect()
 }
+/// Processes collect placed pin positions using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `root` — Input `root` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn collect_placed_pin_positions(root: &Node) -> Option<Vec<Point>> {
     let mut positions = Vec::new();
@@ -3538,6 +4883,16 @@ fn collect_placed_pin_positions(root: &Node) -> Option<Vec<Point>> {
     }
     Some(positions)
 }
+/// Processes read symbol transform using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `instance` — Input `instance` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn read_symbol_transform(instance: &Node) -> Option<SymbolTransform> {
     let reference = children(instance, "property").find_map(|property| {
@@ -3575,6 +4930,17 @@ fn read_symbol_transform(instance: &Node) -> Option<SymbolTransform> {
         convert,
     })
 }
+/// Processes instance integer using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `instance` — Input `instance` used by this operation.
+/// * `name` — Input `name` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn instance_integer(instance: &Node, name: &str) -> Option<u32> {
     child_list(instance, name)
@@ -3583,6 +4949,18 @@ fn instance_integer(instance: &Node, name: &str) -> Option<u32> {
         .and_then(atom_value)
         .and_then(|value| value.parse().ok())
 }
+/// Processes embedded symbol pins using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `library_symbol` — Input `library symbol` used by this operation.
+/// * `unit` — Input `unit` used by this operation.
+/// * `convert` — Input `convert` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn embedded_symbol_pins(library_symbol: &Node, unit: u32, convert: u32) -> Vec<&Node> {
     let mut pin_nodes = Vec::new();
@@ -3605,6 +4983,19 @@ fn embedded_symbol_pins(library_symbol: &Node, unit: u32, convert: u32) -> Vec<&
     }
     pin_nodes
 }
+/// Processes pin orientation diagnostic using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `instance` — Input `instance` used by this operation.
+/// * `pin` — Input `pin` used by this operation.
+/// * `transform` — Input `transform` used by this operation.
+/// * `segments` — Input `segments` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn pin_orientation_diagnostic(
     instance: &Node,
@@ -3641,8 +5032,8 @@ fn pin_orientation_diagnostic(
         return None;
     }
     let aligned = touching_segments.iter().any(|segment| match expected_axis {
-        PinAxis::Horizontal => (segment.start.y - segment.end.y).abs() < 0.001,
-        PinAxis::Vertical => (segment.start.x - segment.end.x).abs() < 0.001,
+        PinAxis::Horizontal => (segment.start.y - segment.end.y).abs() < GEOMETRY_TOLERANCE_MM,
+        PinAxis::Vertical => (segment.start.x - segment.end.x).abs() < GEOMETRY_TOLERANCE_MM,
     });
     if aligned {
         return None;
@@ -3663,18 +5054,38 @@ fn pin_orientation_diagnostic(
         span_of(instance),
     ))
 }
+/// Processes sub symbol unit convert using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `name` — Input `name` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn sub_symbol_unit_convert(name: &str) -> Option<(u32, u32)> {
     let (prefix, convert) = name.rsplit_once('_')?;
     let (_, unit) = prefix.rsplit_once('_')?;
     Some((unit.parse().ok()?, convert.parse().ok()?))
 }
+/// Processes cardinal rotation using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `angle` — Input `angle` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn cardinal_rotation(angle: f64) -> Option<i32> {
-    let normalized = angle.rem_euclid(360.0);
-    [(0.0, 0), (90.0, 90), (180.0, 180), (270.0, 270)]
+    let normalized = angle.rem_euclid(FULL_ROTATION_DEGREES);
+    [(0.0, 0), (QUARTER_ROTATION_DEGREES, 90), (HALF_ROTATION_DEGREES, 180), (THREE_QUARTER_ROTATION_DEGREES, 270)]
         .into_iter()
-        .find_map(|(degrees, rotation)| ((normalized - degrees).abs() <= 0.001).then_some(rotation))
+        .find_map(|(degrees, rotation)| ((normalized - degrees).abs() <= GEOMETRY_TOLERANCE_MM).then_some(rotation))
 }
 
 /// Builds the common `KiCad` symbol-local to schematic-space linear transform.
@@ -3683,6 +5094,15 @@ fn cardinal_rotation(angle: f64) -> Option<i32> {
 /// coordinates are Y-down. Kurbo applies any finite rotation and the supported
 /// mirror modes, avoiding a separate hand-written geometry path for diagonal
 /// symbol placements.
+/// # Arguments
+///
+/// * `rotation_degrees` — Input `rotation degrees` used by this operation.
+/// * `mirror` — Input `mirror` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 fn symbol_transform_affine(rotation_degrees: f64, mirror: Option<&str>) -> Option<Affine> {
     if !rotation_degrees.is_finite() {
         return None;
@@ -3697,6 +5117,19 @@ fn symbol_transform_affine(rotation_degrees: f64, mirror: Option<&str>) -> Optio
 
     Some(Affine::FLIP_Y * Affine::rotate(rotation) * mirror)
 }
+/// Processes transform symbol point using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `x` — Input `x` used by this operation.
+/// * `y` — Input `y` used by this operation.
+/// * `rotation_degrees` — Input `rotation degrees` used by this operation.
+/// * `mirror` — Input `mirror` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn transform_symbol_point(
     x: f64,
@@ -3707,32 +5140,54 @@ fn transform_symbol_point(
     let point = symbol_transform_affine(rotation_degrees, mirror)? * CurvePoint::new(x, y);
     Some((point.x, point.y))
 }
+/// Stores indexedsegment data used by this crate.
 
 #[derive(Clone, Copy)]
 struct IndexedSegment {
+    /// Stores the `index` value.
     index: usize,
+    /// Stores the `segment` value.
     segment: Segment,
 }
 
 impl Cross for IndexedSegment {
+    /// Defines the scalar type used by this crate.
     type Scalar = f64;
+    /// Processes line using the supplied values and schematic data.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     fn line(&self) -> Line<f64> {
         geo_line(self.segment.start, self.segment.end)
     }
 }
+/// Processes check wire geometry using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `root` — Input `root` used by this operation.
+/// * `segments` — Input `segments` used by this operation.
+/// * `junctions` — Input `junctions` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn check_wire_geometry(root: &Node, segments: &[Segment], junctions: &[Point]) -> Vec<Diagnostic> {
     let mut diagnostics = collect_invalid_wire_diagnostics(root);
     for segment in segments {
-        if distance(segment.start, segment.end) < 0.001 {
+        if distance(segment.start, segment.end) < GEOMETRY_TOLERANCE_MM {
             diagnostics.push(at_segment(
                 BuiltinRuleId::Sch001,
                 "wire has zero length",
                 *segment,
             ));
-        } else if (segment.start.x - segment.end.x).abs() > 0.001
-            && (segment.start.y - segment.end.y).abs() > 0.001
+        } else if (segment.start.x - segment.end.x).abs() > GEOMETRY_TOLERANCE_MM
+            && (segment.start.y - segment.end.y).abs() > GEOMETRY_TOLERANCE_MM
         {
             diagnostics.push(at_segment(
                 BuiltinRuleId::Sch001,
@@ -3765,7 +5220,7 @@ fn check_wire_geometry(root: &Node, segments: &[Segment], junctions: &[Point]) -
                     x: intersection.end.x,
                     y: intersection.end.y,
                 };
-                if distance(overlap, overlap_end) > 0.001 {
+                if distance(overlap, overlap_end) > GEOMETRY_TOLERANCE_MM {
                     diagnostics.push(at_segment(
                         BuiltinRuleId::Sch001,
                         "collinear wire segments overlap",
@@ -3799,7 +5254,7 @@ fn check_wire_geometry(root: &Node, segments: &[Segment], junctions: &[Point]) -
                 } else if first_end != second_end
                     && !junctions
                         .iter()
-                        .any(|junction| distance(*junction, point) < 0.001)
+                        .any(|junction| distance(*junction, point) < GEOMETRY_TOLERANCE_MM)
                 {
                     let mut diagnostic = at_segment(
                         BuiltinRuleId::Sch001,
@@ -3818,6 +5273,16 @@ fn check_wire_geometry(root: &Node, segments: &[Segment], junctions: &[Point]) -
 
     diagnostics
 }
+/// Processes collect invalid wire diagnostics using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `root` — Input `root` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn collect_invalid_wire_diagnostics(root: &Node) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
@@ -3838,6 +5303,17 @@ fn collect_invalid_wire_diagnostics(root: &Node) -> Vec<Diagnostic> {
     });
     diagnostics
 }
+/// Processes check label wire clearance using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `root` — Input `root` used by this operation.
+/// * `segments` — Input `segments` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn check_label_wire_clearance(root: &Node, segments: &[Segment]) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
@@ -3861,6 +5337,17 @@ fn check_label_wire_clearance(root: &Node, segments: &[Segment]) -> Vec<Diagnost
     }
     diagnostics
 }
+/// Processes check text box layout using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `root` — Input `root` used by this operation.
+/// * `segments` — Input `segments` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn check_text_box_layout(root: &Node, segments: &[Segment]) -> Vec<Diagnostic> {
     let mut diagnostics: Vec<_> = collect_nodes(root, "text")
@@ -3884,13 +5371,28 @@ fn check_text_box_layout(root: &Node, segments: &[Segment]) -> Vec<Diagnostic> {
     diagnostics.extend(check_text_box_interactions(&boxes, segments));
     diagnostics
 }
+/// Stores textboxrecord data used by this crate.
 
 #[derive(Clone, Debug)]
 struct TextBoxRecord {
+    /// Stores the `id` value.
     id: String,
+    /// Stores the `bounds` value.
     bounds: Bounds,
+    /// Stores the `span` value.
     span: ByteSpan,
 }
+/// Processes inspect text box using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `node` — Input `node` used by this operation.
+/// * `index` — Input `index` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn inspect_text_box(node: &Node, index: usize) -> (Option<TextBoxRecord>, Vec<Diagnostic>) {
     let (metrics, error) = read_text_box_metrics(node, index);
@@ -3900,8 +5402,8 @@ fn inspect_text_box(node: &Node, index: usize) -> (Option<TextBoxRecord>, Vec<Di
     let (required_width, required_height) =
         required_text_box_size(&metrics.label, metrics.font_size, metrics.padding);
     let mut diagnostics = Vec::new();
-    if metrics.bounds.width + 0.001 < required_width
-        || metrics.bounds.height + 0.001 < required_height
+    if metrics.bounds.width + GEOMETRY_TOLERANCE_MM < required_width
+        || metrics.bounds.height + GEOMETRY_TOLERANCE_MM < required_height
     {
         diagnostics.push(at_span(BuiltinRuleId::Sch008,
             format!(
@@ -3911,7 +5413,7 @@ fn inspect_text_box(node: &Node, index: usize) -> (Option<TextBoxRecord>, Vec<Di
             metrics.span,
         ));
     }
-    if metrics.stroke_width <= 0.0 && metrics.bounds.width + 0.001 < required_width + 10.16 {
+    if metrics.stroke_width <= 0.0 && metrics.bounds.width + GEOMETRY_TOLERANCE_MM < required_width + 10.16 {
         diagnostics.push(at_span(BuiltinRuleId::Sch008,
             format!(
                 "unbordered text_box {index} needs at least {:.2} mm width for reliable single-line rendering",
@@ -3929,16 +5431,34 @@ fn inspect_text_box(node: &Node, index: usize) -> (Option<TextBoxRecord>, Vec<Di
         diagnostics,
     )
 }
+/// Stores textboxmetrics data used by this crate.
 
 #[derive(Clone, Debug)]
 struct TextBoxMetrics {
+    /// Stores the `label` value.
     label: String,
+    /// Stores the `bounds` value.
     bounds: Bounds,
+    /// Stores the `font_size` value.
     font_size: f64,
+    /// Stores the `padding` value.
     padding: f64,
+    /// Stores the `stroke_width` value.
     stroke_width: f64,
+    /// Stores the `span` value.
     span: ByteSpan,
 }
+/// Processes read text box metrics using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `node` — Input `node` used by this operation.
+/// * `index` — Input `index` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn read_text_box_metrics(
     node: &Node,
@@ -3987,7 +5507,7 @@ fn read_text_box_metrics(
             )),
         );
     };
-    if pads.len() != 4 || pads.iter().any(|pad| (pad - 1.27).abs() > 0.001) {
+    if pads.len() != 4 || pads.iter().any(|pad| (pad - 1.27).abs() > GEOMETRY_TOLERANCE_MM) {
         return (
             None,
             Some(at_span(
@@ -4036,6 +5556,17 @@ fn read_text_box_metrics(
         None,
     )
 }
+/// Processes check text box interactions using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `boxes` — Input `boxes` used by this operation.
+/// * `segments` — Input `segments` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn check_text_box_interactions(boxes: &[TextBoxRecord], segments: &[Segment]) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
@@ -4062,6 +5593,16 @@ fn check_text_box_interactions(boxes: &[TextBoxRecord], segments: &[Segment]) ->
     }
     diagnostics
 }
+/// Processes check block annotation structure using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `root` — Input `root` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn check_block_annotation_structure(root: &Node) -> Vec<Diagnostic> {
     collect_nodes(root, "text_box")
@@ -4085,10 +5626,31 @@ fn check_block_annotation_structure(root: &Node) -> Vec<Diagnostic> {
         })
         .collect()
 }
+/// Processes collect nodes using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `root` — Input `root` used by this operation.
+/// * `name` — Input `name` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn collect_nodes<'a>(root: &'a Node, name: &'a str) -> Vec<&'a Node> {
     children(root, name).collect()
 }
+/// Processes collect label nodes using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `root` — Input `root` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn collect_label_nodes(root: &Node) -> Vec<(String, String, Point, ByteSpan, &Node)> {
     let mut labels = Vec::new();
@@ -4119,6 +5681,17 @@ fn collect_label_nodes(root: &Node) -> Vec<(String, String, Point, ByteSpan, &No
     }
     labels
 }
+/// Processes text visual bounds using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `value` — Input `value` used by this operation.
+/// * `node` — Input `node` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn text_visual_bounds(value: &str, node: &Node) -> Option<Bounds> {
     let at = child_list(node, "at").and_then(list_items)?;
@@ -4138,7 +5711,7 @@ fn text_visual_bounds(value: &str, node: &Node) -> Option<Bounds> {
     if !angle.is_finite() {
         return None;
     }
-    let normalized_angle = angle.rem_euclid(360.0);
+    let normalized_angle = angle.rem_euclid(FULL_ROTATION_DEGREES);
 
     let justify = effects.and_then(|effects| child_list(effects, "justify"));
     let justify_items = justify.and_then(list_items);
@@ -4154,9 +5727,9 @@ fn text_visual_bounds(value: &str, node: &Node) -> Option<Bounds> {
 
     // KiCad's anchor and justification define a local text rectangle. Kurbo
     // applies the cardinal rotation and returns its world-space AABB.
-    let (left, top, rotation) = if (normalized_angle - 90.0).abs() < 0.001 {
+    let (left, top, rotation) = if (normalized_angle - QUARTER_ROTATION_DEGREES).abs() < GEOMETRY_TOLERANCE_MM {
         (left, -height / 2.0, -std::f64::consts::FRAC_PI_2)
-    } else if (normalized_angle - 270.0).abs() < 0.001 {
+    } else if (normalized_angle - THREE_QUARTER_ROTATION_DEGREES).abs() < GEOMETRY_TOLERANCE_MM {
         (left, -height / 2.0, std::f64::consts::FRAC_PI_2)
     } else {
         let top_aligned = justify_items
@@ -4164,7 +5737,7 @@ fn text_visual_bounds(value: &str, node: &Node) -> Option<Bounds> {
             .and_then(atom_value)
             .is_some_and(|value| value == "top");
         let top = if top_aligned { 0.0 } else { -height };
-        if (normalized_angle - 180.0).abs() < 0.001 {
+        if (normalized_angle - HALF_ROTATION_DEGREES).abs() < GEOMETRY_TOLERANCE_MM {
             // A 180-degree turn reflects the justified text rectangle around
             // its anchor; its AABB stays axis-aligned but changes sides.
             (-left - width, -top - height, 0.0)
@@ -4184,11 +5757,20 @@ fn text_visual_bounds(value: &str, node: &Node) -> Option<Bounds> {
         height: bounds.height(),
     })
 }
+/// Defines the newstroke glyph limit constant.
 
 const NEWSTROKE_GLYPH_LIMIT: u32 = 0x27ff;
+/// Defines the newstroke measure glyph constant.
 const NEWSTROKE_MEASURE_GLYPH: &str = "H";
+/// Processes newstroke sentinel using the supplied values and schematic data.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn newstroke_sentinel() -> &'static (Vec<VectorPoint>, f64) {
+    /// Defines the sentinel static value.
     static SENTINEL: OnceLock<(Vec<VectorPoint>, f64)> = OnceLock::new();
     SENTINEL.get_or_init(|| {
         let points = NewstrokeRenderer::render_text(NEWSTROKE_MEASURE_GLYPH, ());
@@ -4203,6 +5785,14 @@ fn newstroke_sentinel() -> &'static (Vec<VectorPoint>, f64) {
 /// The upstream renderer exposes points rather than a text-measurement method.
 /// Appending a known glyph makes its translated start position equal to the
 /// preceding text's full advance, including spaces and trailing blank glyphs.
+/// # Arguments
+///
+/// * `value` — Input `value` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 fn newstroke_text_metrics_ratio(value: &str) -> (f64, f64) {
     let (sentinel, cap_height) = newstroke_sentinel();
     let Some(sentinel_first) = sentinel.first() else {
@@ -4245,6 +5835,18 @@ fn newstroke_text_metrics_ratio(value: &str) -> (f64, f64) {
         glyph_height / cap_height,
     )
 }
+/// Processes required text box size using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `value` — Input `value` used by this operation.
+/// * `font_size` — Input `font size` used by this operation.
+/// * `padding` — Input `padding` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn required_text_box_size(value: &str, font_size: f64, padding: f64) -> (f64, f64) {
     let lines: Vec<_> = value.lines().collect();
@@ -4258,14 +5860,38 @@ fn required_text_box_size(value: &str, font_size: f64, padding: f64) -> (f64, f6
         (f64::from(line_count) * font_size).mul_add(1.55, 2.0 * padding),
     )
 }
+/// Processes bounds overlap using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `first` — Input `first` used by this operation.
+/// * `second` — Input `second` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn bounds_overlap(first: Bounds, second: Bounds) -> bool {
-    (first.x + first.width).min(second.x + second.width) - first.x.max(second.x) > 0.001
-        && (first.y + first.height).min(second.y + second.height) - first.y.max(second.y) > 0.001
+    (first.x + first.width).min(second.x + second.width) - first.x.max(second.x) > GEOMETRY_TOLERANCE_MM
+        && (first.y + first.height).min(second.y + second.height) - first.y.max(second.y) > GEOMETRY_TOLERANCE_MM
 }
+/// Processes wire overlaps bounds using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `segment` — Input `segment` used by this operation.
+/// * `bounds` — Input `bounds` used by this operation.
+/// * `strict` — Input `strict` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn wire_overlaps_bounds(segment: Segment, bounds: Bounds, strict: bool) -> bool {
-    const TOLERANCE: f64 = 0.001;
+    /// Defines the tolerance constant.
+    const TOLERANCE: f64 = GEOMETRY_TOLERANCE_MM;
 
     let horizontal = (segment.start.y - segment.end.y).abs() < TOLERANCE;
     let vertical = (segment.start.x - segment.end.x).abs() < TOLERANCE;
@@ -4312,20 +5938,65 @@ fn wire_overlaps_bounds(segment: Segment, bounds: Bounds, strict: bool) -> bool 
 
     Euclidean.length(&clipped) > TOLERANCE
 }
+/// Processes line hits bounds using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `segment` — Input `segment` used by this operation.
+/// * `bounds` — Input `bounds` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn line_hits_bounds(segment: Segment, bounds: Bounds) -> bool {
     wire_overlaps_bounds(segment, bounds, false)
 }
+/// Processes strict line hits bounds using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `segment` — Input `segment` used by this operation.
+/// * `bounds` — Input `bounds` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn strict_line_hits_bounds(segment: Segment, bounds: Bounds) -> bool {
     wire_overlaps_bounds(segment, bounds, true)
 }
+/// Processes at span using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `code` — Input `code` used by this operation.
+/// * `message` — Input `message` used by this operation.
+/// * `span` — Input `span` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn at_span(code: BuiltinRuleId, message: impl Into<String>, span: ByteSpan) -> Diagnostic {
     let mut diagnostic = Diagnostic::for_builtin_rule(code, Severity::Error, message);
     diagnostic.span = Some(span);
     diagnostic
 }
+/// Processes check label topology using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `root` — Input `root` used by this operation.
+/// * `segments` — Input `segments` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn check_label_topology(root: &Node, segments: &[Segment]) -> Vec<Diagnostic> {
     let labels = collect_labels(root);
@@ -4400,6 +6071,18 @@ fn check_label_topology(root: &Node, segments: &[Segment]) -> Vec<Diagnostic> {
     }
     diagnostics
 }
+/// Processes wire components using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `segments` — Input `segments` used by this operation.
+/// * `points` — Input `points` used by this operation.
+/// * `junctions` — Input `junctions` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn wire_components(
     segments: &[Segment],
@@ -4421,7 +6104,7 @@ fn wire_components(
         *endpoint_degree.entry(point_key(segment.start)).or_default() += 1;
         *endpoint_degree.entry(point_key(segment.end)).or_default() += 1;
 
-        let horizontal = (segment.start.y - segment.end.y).abs() < 0.001;
+        let horizontal = (segment.start.y - segment.end.y).abs() < GEOMETRY_TOLERANCE_MM;
         let mut split: Vec<_> = points
             .iter()
             .copied()
@@ -4459,24 +6142,65 @@ fn wire_components(
 
     (component_ids, endpoint_degree)
 }
+/// Processes point key using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `point` — Input `point` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn point_key(point: Point) -> String {
     format!("{:.3}:{:.3}", point.x, point.y)
 }
 
 /// Returns the stable coordinate key used by physical wire-component lookup.
+/// # Arguments
+///
+/// * `x_mm` — Input `x mm` used by this operation.
+/// * `y_mm` — Input `y mm` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 #[must_use]
 pub fn physical_wire_component_key(x_mm: f64, y_mm: f64) -> String {
     point_key(Point { x: x_mm, y: y_mm })
 }
+/// Processes has unmarked wire endpoint using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `point` — Input `point` used by this operation.
+/// * `segments` — Input `segments` used by this operation.
+/// * `junctions` — Input `junctions` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn has_unmarked_wire_endpoint(point: Point, segments: &[Segment], junctions: &[Point]) -> bool {
     let terminates_another_wire = segments.iter().any(|other| is_endpoint(point, *other));
     terminates_another_wire
         && !junctions
             .iter()
-            .any(|junction| distance(*junction, point) < 0.001)
+            .any(|junction| distance(*junction, point) < GEOMETRY_TOLERANCE_MM)
 }
+/// Processes physical wire component ids using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `facts` — Input `facts` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 #[must_use]
 pub fn physical_wire_component_ids(facts: &SchematicFacts) -> BTreeMap<String, usize> {
@@ -4527,6 +6251,16 @@ pub fn physical_wire_component_ids(facts: &SchematicFacts) -> BTreeMap<String, u
     points.dedup_by_key(|point| point_key(*point));
     wire_components(&segments, &points, &junctions).0
 }
+/// Processes check label text collisions using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `root` — Input `root` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn check_label_text_collisions(root: &Node) -> Vec<Diagnostic> {
     let mut labels = Vec::new();
@@ -4581,6 +6315,18 @@ fn check_label_text_collisions(root: &Node) -> Vec<Diagnostic> {
     }
     diagnostics
 }
+/// Processes check symbol field clearance using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `root` — Input `root` used by this operation.
+/// * `segments` — Input `segments` used by this operation.
+/// * `facts` — Input `facts` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn check_symbol_field_clearance(
     root: &Node,
@@ -4683,6 +6429,16 @@ fn check_symbol_field_clearance(
     }
     diagnostics
 }
+/// Processes geo rect using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `bounds` — Input `bounds` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn geo_rect(bounds: Bounds) -> GeoRect<f64> {
     let opposite_x = bounds.x + bounds.width;
@@ -4698,20 +6454,52 @@ fn geo_rect(bounds: Bounds) -> GeoRect<f64> {
         },
     )
 }
+/// Processes point in bounds using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `point` — Input `point` used by this operation.
+/// * `bounds` — Input `bounds` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn point_in_bounds(point: Point, bounds: Bounds) -> bool {
     let expanded = Bounds {
-        x: bounds.x - 0.001,
-        y: bounds.y - 0.001,
+        x: bounds.x - GEOMETRY_TOLERANCE_MM,
+        y: bounds.y - GEOMETRY_TOLERANCE_MM,
         width: bounds.width + 0.002,
         height: bounds.height + 0.002,
     };
     geo_rect(expanded).contains(&GeoPoint::new(point.x, point.y))
 }
+/// Processes point bounds distance using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `point` — Input `point` used by this operation.
+/// * `bounds` — Input `bounds` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn point_bounds_distance(point: Point, bounds: Bounds) -> f64 {
     Euclidean.distance(&GeoPoint::new(point.x, point.y), &geo_rect(bounds))
 }
+/// Processes schematic polygon using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `primitive` — Input `primitive` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn schematic_polygon(primitive: &SchematicPrimitiveFact) -> Option<Polygon<f64>> {
     if !primitive.closed || primitive.points_mm.len() < 3 {
@@ -4729,6 +6517,16 @@ fn schematic_polygon(primitive: &SchematicPrimitiveFact) -> Option<Polygon<f64>>
     }
     Some(Polygon::new(LineString::new(ring), Vec::new()))
 }
+/// Processes schematic path using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `primitive` — Input `primitive` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn schematic_path(primitive: &SchematicPrimitiveFact) -> LineString<f64> {
     LineString::new(
@@ -4739,6 +6537,17 @@ fn schematic_path(primitive: &SchematicPrimitiveFact) -> LineString<f64> {
             .collect(),
     )
 }
+/// Processes symbol primitive intersects bounds using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `bounds` — Input `bounds` used by this operation.
+/// * `primitive` — Input `primitive` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn symbol_primitive_intersects_bounds(bounds: Bounds, primitive: &SchematicPrimitiveFact) -> bool {
     if let Some((center_x, center_y, radius)) = primitive.circle_mm {
@@ -4747,7 +6556,7 @@ fn symbol_primitive_intersects_bounds(bounds: Bounds, primitive: &SchematicPrimi
             y: center_y,
         };
         return point_bounds_distance(center, bounds)
-            <= radius + primitive.stroke_width_mm / 2.0 + 0.001;
+            <= radius + primitive.stroke_width_mm / 2.0 + GEOMETRY_TOLERANCE_MM;
     }
 
     let rectangle = geo_rect(bounds);
@@ -4756,6 +6565,17 @@ fn symbol_primitive_intersects_bounds(bounds: Bounds, primitive: &SchematicPrimi
         |polygon| polygon.intersects(&rectangle),
     )
 }
+/// Processes symbol primitive contains bounds using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `bounds` — Input `bounds` used by this operation.
+/// * `primitive` — Input `primitive` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn symbol_primitive_contains_bounds(bounds: Bounds, primitive: &SchematicPrimitiveFact) -> bool {
     if let Some((center_x, center_y, radius)) = primitive.circle_mm {
@@ -4790,15 +6610,35 @@ fn symbol_primitive_contains_bounds(bounds: Bounds, primitive: &SchematicPrimiti
             },
         ]
         .iter()
-        .all(|corner| distance(*corner, center) <= inner_radius + 0.001);
+        .all(|corner| distance(*corner, center) <= inner_radius + GEOMETRY_TOLERANCE_MM);
     }
 
     schematic_polygon(primitive).is_some_and(|polygon| polygon.contains(&geo_rect(bounds)))
 }
+/// Processes property is hidden using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `property` — Input `property` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn property_is_hidden(property: &Node) -> bool {
     child_list(property, "effects").is_some_and(|effects| child_list(effects, "hide").is_some())
 }
+/// Processes text box bounds using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `node` — Input `node` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn text_box_bounds(node: &Node) -> Option<Bounds> {
     let at = child_list(node, "at").and_then(list_items)?;
@@ -4810,6 +6650,16 @@ fn text_box_bounds(node: &Node) -> Option<Bounds> {
         height: number(size.get(2)?)?,
     })
 }
+/// Processes check label kind consistency using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `root` — Input `root` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn check_label_kind_consistency(root: &Node) -> Vec<Diagnostic> {
     let mut label_kinds: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
@@ -4832,6 +6682,17 @@ fn check_label_kind_consistency(root: &Node) -> Vec<Diagnostic> {
         })
         .collect()
 }
+/// Processes walk using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `node` — Input `node` used by this operation.
+/// * `visit` — Input `visit` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn walk<'a>(node: &'a Node, visit: &mut impl FnMut(&'a Node)) {
     visit(node);
@@ -4841,6 +6702,16 @@ fn walk<'a>(node: &'a Node, visit: &mut impl FnMut(&'a Node)) {
         }
     }
 }
+/// Processes list items using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `node` — Input `node` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn list_items(node: &Node) -> Option<&[Node]> {
     if let Node::List { items, .. } = node {
@@ -4849,6 +6720,16 @@ fn list_items(node: &Node) -> Option<&[Node]> {
         None
     }
 }
+/// Processes head using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `node` — Input `node` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn head(node: &Node) -> Option<&str> {
     let Node::List { items, .. } = node else {
@@ -4863,6 +6744,17 @@ fn head(node: &Node) -> Option<&str> {
     };
     Some(value)
 }
+/// Processes children using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `node` — Input `node` used by this operation.
+/// * `name` — Input `name` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn children<'a>(node: &'a Node, name: &'a str) -> impl Iterator<Item = &'a Node> + 'a {
     list_items(node)
@@ -4870,6 +6762,16 @@ fn children<'a>(node: &'a Node, name: &'a str) -> impl Iterator<Item = &'a Node>
         .flatten()
         .filter(move |child| head(child) == Some(name))
 }
+/// Processes atom value using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `node` — Input `node` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn atom_value(node: &Node) -> Option<&str> {
     let Node::Atom { atom, .. } = node else {
@@ -4879,14 +6781,45 @@ fn atom_value(node: &Node) -> Option<&str> {
         Atom::Symbol(value) | Atom::Quoted(value) => Some(value.as_str()),
     }
 }
+/// Processes number using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `node` — Input `node` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn number(node: &Node) -> Option<f64> {
     atom_value(node)?.parse().ok()
 }
+/// Processes child list using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `node` — Input `node` used by this operation.
+/// * `name` — Input `name` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn child_list<'a>(node: &'a Node, name: &'a str) -> Option<&'a Node> {
     children(node, name).next()
 }
+/// Processes point from at using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `node` — Input `node` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn point_from_at(node: &Node) -> Option<Point> {
     let at = child_list(node, "at")?;
@@ -4896,12 +6829,32 @@ fn point_from_at(node: &Node) -> Option<Point> {
         y: number(items.get(2)?)?,
     })
 }
+/// Processes span of using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `node` — Input `node` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 const fn span_of(node: &Node) -> ByteSpan {
     match node {
         Node::List { span, .. } | Node::Atom { span, .. } => ByteSpan::new(span.start, span.end),
     }
 }
+/// Processes collect explicit wire stroke widths using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `root` — Input `root` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn collect_explicit_wire_stroke_widths(root: &Node) -> BTreeMap<usize, f64> {
     let mut widths = BTreeMap::new();
@@ -4920,6 +6873,16 @@ fn collect_explicit_wire_stroke_widths(root: &Node) -> BTreeMap<usize, f64> {
     });
     widths
 }
+/// Processes collect segments using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `root` — Input `root` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 #[must_use]
 pub fn collect_segments(root: &Node) -> Vec<Segment> {
@@ -4950,6 +6913,17 @@ pub fn collect_segments(root: &Node) -> Vec<Segment> {
     });
     segments
 }
+/// Processes collect points using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `root` — Input `root` used by this operation.
+/// * `name` — Input `name` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 #[must_use]
 pub fn collect_points(root: &Node, name: &str) -> Vec<Point> {
@@ -4963,6 +6937,16 @@ pub fn collect_points(root: &Node, name: &str) -> Vec<Point> {
     });
     points
 }
+/// Processes collect labels using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `root` — Input `root` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn collect_labels(root: &Node) -> Vec<(String, String, Point, ByteSpan)> {
     let mut labels = Vec::new();
@@ -4985,24 +6969,82 @@ fn collect_labels(root: &Node) -> Vec<(String, String, Point, ByteSpan)> {
     });
     labels
 }
+/// Processes point on segment using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `point` — Input `point` used by this operation.
+/// * `segment` — Input `segment` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn point_on_segment(point: Point, segment: &Segment) -> bool {
     point_on_segment_any(point, segment.start, segment.end)
 }
+/// Processes is endpoint using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `point` — Input `point` used by this operation.
+/// * `segment` — Input `segment` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn is_endpoint(point: Point, segment: Segment) -> bool {
-    distance(point, segment.start) < 0.001 || distance(point, segment.end) < 0.001
+    distance(point, segment.start) < GEOMETRY_TOLERANCE_MM || distance(point, segment.end) < GEOMETRY_TOLERANCE_MM
 }
+/// Processes distance using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `first` — Input `first` used by this operation.
+/// * `second` — Input `second` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn distance(first: Point, second: Point) -> f64 {
     (first.x - second.x).hypot(first.y - second.y)
 }
+/// Processes at segment using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `code` — Input `code` used by this operation.
+/// * `message` — Input `message` used by this operation.
+/// * `segment` — Input `segment` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn at_segment(code: BuiltinRuleId, message: &str, segment: Segment) -> Diagnostic {
     let mut diagnostic = Diagnostic::new(code, Severity::Error, message);
     diagnostic.span = Some(segment.span);
     diagnostic
 }
+/// Processes at point using the supplied values and schematic data.
+///
+/// # Arguments
+///
+/// * `code` — Input `code` used by this operation.
+/// * `message` — Input `message` used by this operation.
+/// * `point` — Input `point` used by this operation.
+/// * `span` — Input `span` used by this operation.
+///
+/// # Returns
+///
+/// The value produced by this operation.
+///
 
 fn at_point(code: BuiltinRuleId, message: String, point: Point, span: ByteSpan) -> Diagnostic {
     let mut diagnostic = Diagnostic::new(code, Severity::Error, message);
@@ -5013,6 +7055,7 @@ fn at_point(code: BuiltinRuleId, message: String, point: Point, span: ByteSpan) 
     });
     diagnostic
 }
+/// Contains the tests implementation and supporting types.
 
 #[cfg(test)]
 mod tests {
@@ -5020,11 +7063,23 @@ mod tests {
     use super::run_builtin_rules;
     use kicad_clippy_parser::SchematicDocument;
     use kurbo::{ParamCurve, ParamCurveDeriv};
+    /// Processes document using the supplied values and schematic data.
+    ///
+    /// # Arguments
+    ///
+    /// * `body` — Input `body` used by this operation.
+    ///
+    /// # Returns
+    ///
+    /// The value produced by this operation.
+    ///
 
     fn document(body: &str) -> SchematicDocument {
         SchematicDocument::from_text("fixture.kicad_sch", format!("(kicad_sch {body})"))
             .expect("fixture parses")
     }
+    /// Processes sch013 checks both no connect marker diagonals using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sch013_checks_both_no_connect_marker_diagonals() {
@@ -5039,6 +7094,8 @@ mod tests {
             item.code == "SCH013" && item.message.contains("no-connect marker nc-center")
         }));
     }
+    /// Processes sch013 uses project default line width for no connect marker pen using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sch013_uses_project_default_line_width_for_no_connect_marker_pen() {
@@ -5067,6 +7124,8 @@ mod tests {
                 })
         );
     }
+    /// Processes sch013 does not expand no connect marker with an assumed pen width using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sch013_does_not_expand_no_connect_marker_with_an_assumed_pen_width() {
@@ -5083,6 +7142,8 @@ mod tests {
             })
         );
     }
+    /// Processes sch013 checks wire crossings of schematic bus lines using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sch013_checks_wire_crossings_of_schematic_bus_lines() {
@@ -5102,6 +7163,8 @@ mod tests {
                 .any(|item| { item.code == "SCH013" && item.message.contains("bus line") })
         );
     }
+    /// Processes sch013 allows wire endpoint at bus entry without exempting other crossings using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sch013_allows_wire_endpoint_at_bus_entry_without_exempting_other_crossings() {
@@ -5140,6 +7203,8 @@ mod tests {
                 .any(|item| { item.code == "SCH013" && item.message.contains("bus entry") })
         );
     }
+    /// Processes sch013 checks hierarchical sheet frame away from sheet pins using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sch013_checks_hierarchical_sheet_frame_away_from_sheet_pins() {
@@ -5162,6 +7227,8 @@ mod tests {
             })
         );
     }
+    /// Processes sch013 allows wire endpoint at matching sheet pin using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sch013_allows_wire_endpoint_at_matching_sheet_pin() {
@@ -5184,6 +7251,8 @@ mod tests {
             })
         );
     }
+    /// Processes sch013 sheet pin exemption does not allow wire to continue inside sheet using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sch013_sheet_pin_exemption_does_not_allow_wire_to_continue_inside_sheet() {
@@ -5206,6 +7275,8 @@ mod tests {
             })
         );
     }
+    /// Processes sch013 checks enabled table external borders and column separators using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sch013_checks_enabled_table_external_borders_and_column_separators() {
@@ -5237,6 +7308,8 @@ mod tests {
                 .any(|item| { item.code == "SCH013" && item.message.contains("table separator") })
         );
     }
+    /// Processes sch013 checks cardinally rotated table borders and separators using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sch013_checks_cardinally_rotated_table_borders_and_separators() {
@@ -5270,6 +7343,8 @@ mod tests {
             );
         }
     }
+    /// Processes sch013 checks cardinally rotated table external borders using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sch013_checks_cardinally_rotated_table_external_borders() {
@@ -5304,6 +7379,8 @@ mod tests {
             );
         }
     }
+    /// Processes sch013 does not use unrotated table coordinates after rotation using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sch013_does_not_use_unrotated_table_coordinates_after_rotation() {
@@ -5328,6 +7405,8 @@ mod tests {
                 .any(|item| { item.code == "SCH013" && item.message.contains("table") })
         );
     }
+    /// Processes sch013 skips tables with inconsistent cell rotations or positions using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sch013_skips_tables_with_inconsistent_cell_rotations_or_positions() {
@@ -5373,6 +7452,8 @@ mod tests {
                 .any(|item| { item.code == "SCH013" && item.message.contains("table") })
         );
     }
+    /// Processes sch013 ignores disabled table strokes and merged cell separators using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sch013_ignores_disabled_table_strokes_and_merged_cell_separators() {
@@ -5418,6 +7499,8 @@ mod tests {
                 .any(|item| item.code == "SCH013" && item.message.contains("table"))
         );
     }
+    /// Processes sch013 checks table cell text with estimated glyph bounds using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sch013_checks_table_cell_text_with_estimated_glyph_bounds() {
@@ -5439,6 +7522,8 @@ mod tests {
             item.code == "SCH013" && item.message.contains("free-standing schematic text")
         }));
     }
+    /// Processes sch013 uses reflected text bounds for 180 degree table cells using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sch013_uses_reflected_text_bounds_for_180_degree_table_cells() {
@@ -5483,6 +7568,8 @@ mod tests {
                 })
         );
     }
+    /// Processes sch013 skips table cell text for unsupported non cardinal rotation using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sch013_skips_table_cell_text_for_unsupported_non_cardinal_rotation() {
@@ -5506,6 +7593,8 @@ mod tests {
             })
         );
     }
+    /// Processes geo rectangle clipping preserves wire overlap tolerance using the supplied values and schematic data.
+    ///
 
     #[test]
     fn geo_rectangle_clipping_preserves_wire_overlap_tolerance() {
@@ -5551,6 +7640,8 @@ mod tests {
             bounds,
         ));
     }
+    /// Processes analytic arc intersection detects a curve hit missed by its sampled chord using the supplied values and schematic data.
+    ///
 
     #[test]
     fn analytic_arc_intersection_detects_a_curve_hit_missed_by_its_sampled_chord() {
@@ -5634,6 +7725,8 @@ mod tests {
         assert!((intersections[0].x - wire.start.x).abs() < 1.0e-9);
         assert!((intersections[0].y - wire.start.y).abs() < 1.0e-9);
     }
+    /// Processes analytic arc intersection respects directed sweep and tangency using the supplied values and schematic data.
+    ///
 
     #[test]
     fn analytic_arc_intersection_respects_directed_sweep_and_tangency() {
@@ -5670,6 +7763,8 @@ mod tests {
         assert!(tangent[0].x.abs() < 1.0e-9);
         assert!((tangent[0].y - 2.0).abs() < 1.0e-9);
     }
+    /// Processes analytic bezier intersection detects a curve hit missed by its flattened polyline using the supplied values and schematic data.
+    ///
 
     #[test]
     fn analytic_bezier_intersection_detects_a_curve_hit_missed_by_its_flattened_polyline() {
@@ -5775,6 +7870,8 @@ mod tests {
             0.0,
         ));
     }
+    /// Processes kurbo circumcircle preserves arc direction and collinear fallback using the supplied values and schematic data.
+    ///
 
     #[test]
     fn kurbo_circumcircle_preserves_arc_direction_and_collinear_fallback() {
@@ -5791,6 +7888,8 @@ mod tests {
         let collinear = super::sample_arc_through_three_points((0.0, 0.0), (1.0, 0.0), (2.0, 0.0));
         assert_eq!(collinear, [(0.0, 0.0), (1.0, 0.0), (2.0, 0.0)]);
     }
+    /// Processes kurbo affine matches kicad cardinal symbol transforms using the supplied values and schematic data.
+    ///
 
     #[test]
     fn kurbo_affine_matches_kicad_cardinal_symbol_transforms() {
@@ -5821,6 +7920,7 @@ mod tests {
         assert!(super::transform_symbol_point(2.0, 3.0, 0.0, Some("diagonal")).is_none());
         assert!(super::transform_symbol_point(2.0, 3.0, f64::NAN, None).is_none());
     }
+    /// Defines the embedded pin constant.
 
     const EMBEDDED_PIN: &str = r#"
         (lib_symbols
@@ -5836,6 +7936,8 @@ mod tests {
           (property "Reference" "J1" (at 10 10 0) (effects (font (size 1 1))))
         )
     "#;
+    /// Processes non cardinal symbol rotation resolves embedded pin and primitive geometry using the supplied values and schematic data.
+    ///
 
     #[test]
     fn non_cardinal_symbol_rotation_resolves_embedded_pin_and_primitive_geometry() {
@@ -5864,6 +7966,8 @@ mod tests {
                 .any(|item| item.code == "SCH005")
         );
     }
+    /// Processes sch013 detects wire crossing a non cardinal symbol body using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sch013_detects_wire_crossing_a_non_cardinal_symbol_body() {
@@ -5879,6 +7983,8 @@ mod tests {
             item.code == "SCH013" && item.message.contains("penetrates symbol body J1")
         }));
     }
+    /// Processes sch015 accepts no connect marker on non cardinal symbol pin using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sch015_accepts_no_connect_marker_on_non_cardinal_symbol_pin() {
@@ -5897,6 +8003,8 @@ mod tests {
                 .any(|item| item.code == "SCH015")
         );
     }
+    /// Processes pin wire must follow the embedded pin axis using the supplied values and schematic data.
+    ///
 
     #[test]
     fn pin_wire_must_follow_the_embedded_pin_axis() {
@@ -5910,6 +8018,8 @@ mod tests {
                 .any(|item| item.code == "SCH005" && item.message.contains("J1 pin 1"))
         );
     }
+    /// Processes correctly aligned pin wire is accepted using the supplied values and schematic data.
+    ///
 
     #[test]
     fn correctly_aligned_pin_wire_is_accepted() {
@@ -5923,6 +8033,8 @@ mod tests {
                 .any(|item| item.code == "SCH005")
         );
     }
+    /// Processes pin axis and position follow symbol rotation and mirroring using the supplied values and schematic data.
+    ///
 
     #[test]
     fn pin_axis_and_position_follow_symbol_rotation_and_mirroring() {
@@ -5949,6 +8061,8 @@ mod tests {
                 .any(|item| item.code == "SCH005")
         );
     }
+    /// Processes embedded library fields are not counted as placed components using the supplied values and schematic data.
+    ///
 
     #[test]
     fn embedded_library_fields_are_not_counted_as_placed_components() {
@@ -5956,6 +8070,8 @@ mod tests {
         let run = run_builtin_rules(&doc);
         assert_eq!(run.components, 1);
     }
+    /// Processes no connect marker must coincide with a placed symbol pin using the supplied values and schematic data.
+    ///
 
     #[test]
     fn no_connect_marker_must_coincide_with_a_placed_symbol_pin() {
@@ -5969,6 +8085,8 @@ mod tests {
                 .any(|item| item.code == "SCH015" && item.message.contains("does not coincide"))
         );
     }
+    /// Processes correctly placed no connect marker is accepted even for power symbols using the supplied values and schematic data.
+    ///
 
     #[test]
     fn correctly_placed_no_connect_marker_is_accepted_even_for_power_symbols() {
@@ -5983,6 +8101,8 @@ mod tests {
                 .any(|item| item.code == "SCH015")
         );
     }
+    /// Processes quoted atoms use parser decoded escape sequences using the supplied values and schematic data.
+    ///
 
     #[test]
     fn quoted_atoms_use_parser_decoded_escape_sequences() {
@@ -5992,6 +8112,8 @@ mod tests {
         assert_eq!(labels.len(), 1);
         assert_eq!(labels[0].1, "first\nsecond");
     }
+    /// Processes newstroke text height uses rendered glyph geometry using the supplied values and schematic data.
+    ///
 
     #[test]
     fn newstroke_text_height_uses_rendered_glyph_geometry() {
@@ -6005,6 +8127,8 @@ mod tests {
         assert!(lowercase > 0.0 && lowercase <= cap);
         assert!((blank - cap).abs() < 0.001);
     }
+    /// Processes text bounds use kurbo for cardinal rotation and justification using the supplied values and schematic data.
+    ///
 
     #[test]
     fn text_bounds_use_kurbo_for_cardinal_rotation_and_justification() {
@@ -6083,6 +8207,8 @@ mod tests {
             assert!((bounds.height - expected_height).abs() < 0.001);
         }
     }
+    /// Processes text widths use kicad newstroke glyph advances using the supplied values and schematic data.
+    ///
 
     #[test]
     fn text_widths_use_kicad_newstroke_glyph_advances() {
@@ -6104,6 +8230,8 @@ mod tests {
             );
         }
     }
+    /// Processes unsupported unicode does not panic or shift newstroke metrics using the supplied values and schematic data.
+    ///
 
     #[test]
     fn unsupported_unicode_does_not_panic_or_shift_newstroke_metrics() {
@@ -6112,6 +8240,8 @@ mod tests {
         assert!((supported.0 - with_unsupported.0).abs() < 0.001);
         assert!((supported.1 - with_unsupported.1).abs() < 0.001);
     }
+    /// Processes sch013 detects wire crossing a top level sheet circle using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sch013_detects_wire_crossing_a_top_level_sheet_circle() {
@@ -6126,6 +8256,8 @@ mod tests {
             item.code == "SCH013" && item.message.contains("sheet graphic circle")
         }));
     }
+    /// Processes sch013 detects wire crossing an embedded bitmap image using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sch013_detects_wire_crossing_an_embedded_bitmap_image() {
@@ -6138,9 +8270,12 @@ mod tests {
             item.code == "SCH013" && item.message.contains("embedded bitmap image")
         }));
     }
+    /// Processes sch013 uses rotated bitmap footprint instead of its axis aligned bounds using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sch013_uses_rotated_bitmap_footprint_instead_of_its_axis_aligned_bounds() {
+        /// Defines the image constant.
         const IMAGE: &str = r"
             (image (at 5 5) (rotate 45) (scale 1)
               (data iVBORw0KGgoAAAANSUhEUgAAAHgAAAA8CAYAAACtrX6oAAAACXBIWXMAAC4jAAAuIwF4pT92AAAAoklEQVR4nO3RAQkAMAzAsPk3vak4h5IoKHSWtPkdwFsGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcZ3CcwXEGxxkcd1OAFhGyMXxbAAAAAElFTkSuQmCC))
@@ -6158,6 +8293,8 @@ mod tests {
             .iter()
             .any(|item| item.code == "SCH013" && item.message.contains("embedded bitmap image")));
     }
+    /// Processes diagonal wires are reported using the supplied values and schematic data.
+    ///
 
     #[test]
     fn diagonal_wires_are_reported() {
@@ -6169,6 +8306,8 @@ mod tests {
                 .any(|item| item.code == "SCH001")
         );
     }
+    /// Processes local labels must be reused using the supplied values and schematic data.
+    ///
 
     #[test]
     fn local_labels_must_be_reused() {
@@ -6180,6 +8319,8 @@ mod tests {
                 .any(|item| item.code == "SCH002")
         );
     }
+    /// Processes repeated local label on one wire is rejected using the supplied values and schematic data.
+    ///
 
     #[test]
     fn repeated_local_label_on_one_wire_is_rejected() {
@@ -6190,6 +8331,8 @@ mod tests {
             item.code == "SCH002" && item.message.contains("one physical wire network")
         }));
     }
+    /// Processes repeated local label joins distinct wire islands using the supplied values and schematic data.
+    ///
 
     #[test]
     fn repeated_local_label_joins_distinct_wire_islands() {
@@ -6203,6 +8346,7 @@ mod tests {
                 .any(|item| item.code == "SCH002")
         );
     }
+    /// Defines the triangle symbol constant.
 
     const TRIANGLE_SYMBOL: &str = r#"
         (lib_symbols
@@ -6220,6 +8364,8 @@ mod tests {
           (property "Reference" "Q1" (at 10 10 0) (effects (font (size 1 1))))
         )
     "#;
+    /// Processes wire obstacle uses actual triangle outline not its bounding box using the supplied values and schematic data.
+    ///
 
     #[test]
     fn wire_obstacle_uses_actual_triangle_outline_not_its_bounding_box() {
@@ -6243,6 +8389,8 @@ mod tests {
                 .any(|item| item.code == "SCH013" && item.message.contains("symbol body Q1"))
         );
     }
+    /// Processes sch013 checks free standing schematic text as a wire obstacle using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sch013_checks_free_standing_schematic_text_as_a_wire_obstacle() {
@@ -6278,6 +8426,8 @@ mod tests {
             item.code == "SCH013" && item.message.contains("free-standing schematic text")
         }));
     }
+    /// Processes sch013 checks embedded symbol text and text box obstacles using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sch013_checks_embedded_symbol_text_and_text_box_obstacles() {
@@ -6323,6 +8473,8 @@ mod tests {
                 && item.message.contains("NOTE")
         }));
     }
+    /// Processes sch013 transforms embedded symbol text obstacles with symbol mirrors and rotation using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sch013_transforms_embedded_symbol_text_obstacles_with_symbol_mirrors_and_rotation() {
@@ -6351,6 +8503,8 @@ mod tests {
                 && item.message.contains("ROTATED")
         }));
     }
+    /// Processes sch013 checks declared stroke width for open sheet paths using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sch013_checks_declared_stroke_width_for_open_sheet_paths() {
@@ -6376,9 +8530,12 @@ mod tests {
             item.code == "SCH013" && item.message.contains("sheet graphic polyline")
         }));
     }
+    /// Processes sch013 checks declared stroke width for embedded symbol paths using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sch013_checks_declared_stroke_width_for_embedded_symbol_paths() {
+        /// Defines the embedded stroke symbol constant.
         const EMBEDDED_STROKE_SYMBOL: &str = r#"
             (lib_symbols
               (symbol "Test:Stroked"
@@ -6412,6 +8569,8 @@ mod tests {
                 .any(|item| { item.code == "SCH013" && item.message.contains("symbol body U1") })
         );
     }
+    /// Processes sch013 checks embedded symbol arc and bezier stroke clearance using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sch013_checks_embedded_symbol_arc_and_bezier_stroke_clearance() {
@@ -6500,6 +8659,8 @@ mod tests {
             0.0,
         ));
     }
+    /// Processes sch013 pin endpoint exemption is limited to local stroke contact using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sch013_pin_endpoint_exemption_is_limited_to_local_stroke_contact() {
@@ -6529,6 +8690,8 @@ mod tests {
             0.0,
         ));
     }
+    /// Processes sch013 uses curve distance for bezier stroke clearance using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sch013_uses_curve_distance_for_bezier_stroke_clearance() {
@@ -6583,6 +8746,8 @@ mod tests {
             0.0
         ));
     }
+    /// Processes sch013 applies arc stroke clearance to the selected sweep using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sch013_applies_arc_stroke_clearance_to_the_selected_sweep() {
@@ -6629,6 +8794,8 @@ mod tests {
             0.0
         ));
     }
+    /// Processes wire obstacle uses exact intersections for top level three point arcs using the supplied values and schematic data.
+    ///
 
     #[test]
     fn wire_obstacle_uses_exact_intersections_for_top_level_three_point_arcs() {
@@ -6647,6 +8814,8 @@ mod tests {
             })
         );
     }
+    /// Processes wire obstacle uses exact intersections for top level cubic beziers using the supplied values and schematic data.
+    ///
 
     #[test]
     fn wire_obstacle_uses_exact_intersections_for_top_level_cubic_beziers() {
@@ -6664,6 +8833,8 @@ mod tests {
             item.code == "SCH013" && item.message.contains("sheet graphic bezier")
         }));
     }
+    /// Processes wire obstacle detects wire near the true three point arc path using the supplied values and schematic data.
+    ///
 
     #[test]
     fn wire_obstacle_detects_wire_near_the_true_three_point_arc_path() {
@@ -6690,6 +8861,8 @@ mod tests {
                 .any(|item| item.code == "SCH013" && item.message.contains("symbol body U1"))
         );
     }
+    /// Processes arc midpoint selects the correct sweep direction using the supplied values and schematic data.
+    ///
 
     #[test]
     fn arc_midpoint_selects_the_correct_sweep_direction() {
@@ -6716,6 +8889,8 @@ mod tests {
                 .any(|item| item.code == "SCH013" && item.message.contains("symbol body U1"))
         );
     }
+    /// Processes wire obstacle detects actual cubic bezier curve using the supplied values and schematic data.
+    ///
 
     #[test]
     fn wire_obstacle_detects_actual_cubic_bezier_curve() {
@@ -6744,6 +8919,8 @@ mod tests {
                 .any(|item| item.code == "SCH013" && item.message.contains("symbol body U1"))
         );
     }
+    /// Processes bezier control polygon is not treated as the curve using the supplied values and schematic data.
+    ///
 
     #[test]
     fn bezier_control_polygon_is_not_treated_as_the_curve() {
@@ -6772,6 +8949,8 @@ mod tests {
                 .any(|item| item.code == "SCH013" && item.message.contains("symbol body U1"))
         );
     }
+    /// Processes sch013 combines explicit wire and sheet graphic stroke widths using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sch013_combines_explicit_wire_and_sheet_graphic_stroke_widths() {
@@ -6832,6 +9011,8 @@ mod tests {
             item.code == "SCH013" && item.message.contains("sheet graphic polyline")
         }));
     }
+    /// Processes sch013 uses project default wire width when no assignment override exists using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sch013_uses_project_default_wire_width_when_no_assignment_override_exists() {
@@ -6848,6 +9029,8 @@ mod tests {
             item.code == "SCH013" && item.message.contains("sheet graphic polyline")
         }));
     }
+    /// Processes sch013 does not apply project default when graphical assignments exist using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sch013_does_not_apply_project_default_when_graphical_assignments_exist() {
@@ -6871,6 +9054,8 @@ mod tests {
             }));
         }
     }
+    /// Processes sch013 combines explicit wire and embedded symbol strokes using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sch013_combines_explicit_wire_and_embedded_symbol_strokes() {
@@ -6901,6 +9086,8 @@ mod tests {
             0.2,
         ));
     }
+    /// Processes sch013 explicit wire width expands circle stroke ring using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sch013_explicit_wire_width_expands_circle_stroke_ring() {
@@ -6917,6 +9104,8 @@ mod tests {
             wire, center, 2.0, 0.2, 0.2
         ));
     }
+    /// Processes sch013 checks rotated ellipse stroke proximity and preserves clearance using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sch013_checks_rotated_ellipse_stroke_proximity_and_preserves_clearance() {
@@ -6952,6 +9141,8 @@ mod tests {
                 })
         );
     }
+    /// Processes sch013 checks elliptical arc stroke without blocking its interior using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sch013_checks_elliptical_arc_stroke_without_blocking_its_interior() {
@@ -6984,6 +9175,8 @@ mod tests {
                 })
         );
     }
+    /// Processes sch013 checks circle stroke proximity and preserves interior detection using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sch013_checks_circle_stroke_proximity_and_preserves_interior_detection() {
@@ -7088,6 +9281,8 @@ mod tests {
                 .any(|item| { item.code == "SCH013" && item.message.contains("symbol body U1") })
         );
     }
+    /// Processes wire obstacle detects circle primitive interiors using the supplied values and schematic data.
+    ///
 
     #[test]
     fn wire_obstacle_detects_circle_primitive_interiors() {
@@ -7114,6 +9309,8 @@ mod tests {
                 .any(|item| item.code == "SCH013" && item.message.contains("symbol body U1"))
         );
     }
+    /// Processes wire may start at its intended symbol pin without body penetration using the supplied values and schematic data.
+    ///
 
     #[test]
     fn wire_may_start_at_its_intended_symbol_pin_without_body_penetration() {
@@ -7142,6 +9339,8 @@ mod tests {
                 .any(|item| item.code == "SCH013" && item.message.contains("symbol body U2"))
         );
     }
+    /// Processes wire obstacle rejects intermediate pins visible fields and text boxes using the supplied values and schematic data.
+    ///
 
     #[test]
     fn wire_obstacle_rejects_intermediate_pins_visible_fields_and_text_boxes() {
@@ -7184,6 +9383,8 @@ mod tests {
                 .any(|item| item.code == "SCH013" && item.message.contains("annotation text box"))
         );
     }
+    /// Processes sweep line reports crossing wires with the intersection location using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sweep_line_reports_crossing_wires_with_the_intersection_location() {
@@ -7197,6 +9398,8 @@ mod tests {
         assert!((location.x_mm - 2.0).abs() < 0.001);
         assert!((location.y_mm - 0.0).abs() < 0.001);
     }
+    /// Processes sweep line requires an explicit marker for t junctions using the supplied values and schematic data.
+    ///
 
     #[test]
     fn sweep_line_requires_an_explicit_marker_for_t_junctions() {
@@ -7218,6 +9421,8 @@ mod tests {
                 .any(|item| item.code == "SCH001" && item.message.contains("T-junction"))
         );
     }
+    /// Processes wire overlap is rejected using the supplied values and schematic data.
+    ///
 
     #[test]
     fn wire_overlap_is_rejected() {
@@ -7229,6 +9434,8 @@ mod tests {
                 .any(|item| { item.code == "SCH001" && item.message.contains("overlap") })
         );
     }
+    /// Processes wire through label glyph is rejected using the supplied values and schematic data.
+    ///
 
     #[test]
     fn wire_through_label_glyph_is_rejected() {
@@ -7242,6 +9449,8 @@ mod tests {
                 .any(|item| item.code == "SCH003")
         );
     }
+    /// Processes undersized text box is rejected using the supplied values and schematic data.
+    ///
 
     #[test]
     fn undersized_text_box_is_rejected() {
@@ -7255,6 +9464,8 @@ mod tests {
                 .any(|item| item.code == "SCH008")
         );
     }
+    /// Processes free standing text is rejected using the supplied values and schematic data.
+    ///
 
     #[test]
     fn free_standing_text_is_rejected() {
@@ -7266,6 +9477,8 @@ mod tests {
                 .any(|item| item.code == "SCH008")
         );
     }
+    /// Processes multiline unbordered text box is rejected using the supplied values and schematic data.
+    ///
 
     #[test]
     fn multiline_unbordered_text_box_is_rejected() {
@@ -7279,6 +9492,8 @@ mod tests {
                 .any(|item| item.code == "SCH011")
         );
     }
+    /// Processes overlapping label glyphs are rejected using the supplied values and schematic data.
+    ///
 
     #[test]
     fn overlapping_label_glyphs_are_rejected() {
@@ -7292,6 +9507,8 @@ mod tests {
                 .any(|item| item.code == "SCH018")
         );
     }
+    /// Processes visible symbol fields may not overlap each other using the supplied values and schematic data.
+    ///
 
     #[test]
     fn visible_symbol_fields_may_not_overlap_each_other() {
@@ -7311,6 +9528,8 @@ mod tests {
                     && item.message.contains("visible symbol fields overlap"))
         );
     }
+    /// Processes visible symbol fields may not overlap annotation boxes using the supplied values and schematic data.
+    ///
 
     #[test]
     fn visible_symbol_fields_may_not_overlap_annotation_boxes() {
@@ -7331,6 +9550,8 @@ mod tests {
                 .any(|item| item.code == "SCH010" && item.message.contains("annotation text box"))
         );
     }
+    /// Processes visible reference field may not be embedded in symbol body using the supplied values and schematic data.
+    ///
 
     #[test]
     fn visible_reference_field_may_not_be_embedded_in_symbol_body() {
@@ -7356,6 +9577,8 @@ mod tests {
                 .any(|item| item.code == "SCH010" && item.message.contains("own symbol body"))
         );
     }
+    /// Processes value field fully inside closed symbol body is allowed using the supplied values and schematic data.
+    ///
 
     #[test]
     fn value_field_fully_inside_closed_symbol_body_is_allowed() {
@@ -7382,6 +9605,8 @@ mod tests {
                 .any(|item| item.code == "SCH010" && item.message.contains("Value"))
         );
     }
+    /// Processes visible symbol field may not overlap wire segment or pin using the supplied values and schematic data.
+    ///
 
     #[test]
     fn visible_symbol_field_may_not_overlap_wire_segment_or_pin() {
@@ -7414,6 +9639,8 @@ mod tests {
                 .any(|item| item.code == "SCH010" && item.message.contains("overlaps pin U1.1"))
         );
     }
+    /// Processes visible symbol field may not overlap label glyph using the supplied values and schematic data.
+    ///
 
     #[test]
     fn visible_symbol_field_may_not_overlap_label_glyph() {
@@ -7432,6 +9659,8 @@ mod tests {
                 .any(|item| item.code == "SCH010" && item.message.contains("overlaps label"))
         );
     }
+    /// Processes separated visible symbol fields are accepted using the supplied values and schematic data.
+    ///
 
     #[test]
     fn separated_visible_symbol_fields_are_accepted() {
@@ -7450,6 +9679,8 @@ mod tests {
                 .any(|item| item.code == "SCH010")
         );
     }
+    /// Processes label glyph may not overlap symbol field using the supplied values and schematic data.
+    ///
 
     #[test]
     fn label_glyph_may_not_overlap_symbol_field() {
@@ -7463,6 +9694,8 @@ mod tests {
                 .any(|item| { item.code == "SCH018" && item.message.contains("symbol field") })
         );
     }
+    /// Processes label glyph may not overlap annotation box using the supplied values and schematic data.
+    ///
 
     #[test]
     fn label_glyph_may_not_overlap_annotation_box() {
@@ -7475,6 +9708,8 @@ mod tests {
             })
         );
     }
+    /// Processes same label cannot be local and hierarchical using the supplied values and schematic data.
+    ///
 
     #[test]
     fn same_label_cannot_be_local_and_hierarchical() {
