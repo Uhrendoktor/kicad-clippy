@@ -5786,7 +5786,7 @@ fn strict_line_hits_bounds(segment: Segment, bounds: Bounds) -> bool {
 /// # Arguments
 ///
 /// * `code` — Rule identifier associated with the diagnostic.
-/// * `message` — User-facing diagnostic message.
+/// * `message` — Concise user-facing explanation of the detected rule violation, including enough context to identify the offending object or geometry.
 /// * `span` — Original source byte span to attach to the diagnostic.
 ///
 /// # Returns
@@ -6761,7 +6761,7 @@ fn distance(first: Point, second: Point) -> f64 {
 /// # Arguments
 ///
 /// * `code` — Rule identifier associated with the diagnostic.
-/// * `message` — User-facing diagnostic message.
+/// * `message` — Concise user-facing explanation of the detected rule violation, including enough context to identify the offending object or geometry.
 /// * `segment` — Wire segment being checked for obstacle intersection or clearance.
 ///
 /// # Returns
@@ -6777,7 +6777,7 @@ fn at_segment(code: BuiltinRuleId, message: &str, segment: Segment) -> Diagnosti
 /// # Arguments
 ///
 /// * `code` — Rule identifier associated with the diagnostic.
-/// * `message` — User-facing diagnostic message.
+/// * `message` — Concise user-facing explanation of the detected rule violation, including enough context to identify the offending object or geometry.
 /// * `point` — Schematic coordinate being tested, in millimetres.
 /// * `span` — Original source byte span to attach to the diagnostic.
 ///
