@@ -74,7 +74,6 @@ impl RuleDescriptor {
     }
 }
 
-
 /// Builds the complete descriptor catalogue for all stable built-in schematic rules.
 ///
 /// The descriptor catalogue is metadata only: it does not enable, disable, or
@@ -109,148 +108,195 @@ pub fn builtin_rule_registry() -> Result<RuleRegistry, RuleRegistryError> {
 /// rationale, default policy level, documentation link, and search tags.
 fn builtin_rule_descriptor(id: BuiltinRuleId) -> RuleDescriptor {
     let (name, category, summary, explanation, level, tags): (
-        &str, &str, &str, &str, RuleLevel, &[&str],
+        &str,
+        &str,
+        &str,
+        &str,
+        RuleLevel,
+        &[&str],
     ) = match id {
         BuiltinRuleId::Sch001 => (
-            "wire geometry", "layout",
+            "wire geometry",
+            "layout",
             "Checks wire endpoints, orthogonal routing, zero-length segments, overlaps, crossings, and unmarked T-junctions.",
             "Consistent wire geometry makes schematic connectivity visible and reviewable. Explicit junction semantics are preserved; native ERC remains authoritative for electrical connectivity.",
-            RuleLevel::Deny, &["wire", "geometry", "junction"],
+            RuleLevel::Deny,
+            &["wire", "geometry", "junction"],
         ),
         BuiltinRuleId::Sch002 => (
-            "label topology", "connectivity",
+            "label topology",
+            "connectivity",
             "Checks label identity and reuse across physical wire islands, including hierarchical twig termination.",
             "Labels affect logical connectivity, but they do not create physical wire edges. This rule identifies ambiguous or inconsistent label use without replacing native ERC.",
-            RuleLevel::Deny, &["label", "topology", "connectivity"],
+            RuleLevel::Deny,
+            &["label", "topology", "connectivity"],
         ),
         BuiltinRuleId::Sch003 => (
-            "label and wire clearance", "annotation",
+            "label and wire clearance",
+            "annotation",
             "Detects estimated label glyph bounds that overlap wire interiors.",
             "Visible label text should remain legible and should not be obscured by wire strokes. Text bounds are estimates based on supported KiCad stroke-font metrics.",
-            RuleLevel::Deny, &["label", "text", "clearance"],
+            RuleLevel::Deny,
+            &["label", "text", "clearance"],
         ),
         BuiltinRuleId::Sch004 => (
-            "physical pin connectivity", "connectivity",
+            "physical pin connectivity",
+            "connectivity",
             "Validates profile-declared direct-wire, common-pin, physical-wire-group, and separate-wire contracts.",
             "Project profiles can declare physical connections that must be visibly wired. The rule uses transformed pin anchors and wire-only topology; labels never substitute for physical wire continuity.",
-            RuleLevel::Deny, &["profile", "pins", "physical-connectivity"],
+            RuleLevel::Deny,
+            &["profile", "pins", "physical-connectivity"],
         ),
         BuiltinRuleId::Sch005 => (
-            "pin orientation", "layout",
+            "pin orientation",
+            "layout",
             "Checks that connected wire axes align with embedded symbol pin axes.",
             "Aligned pin stubs make connection intent easier to inspect. Unsupported non-cardinal axis cases are skipped rather than assigned a guessed orientation.",
-            RuleLevel::Deny, &["pins", "orientation", "wire"],
+            RuleLevel::Deny,
+            &["pins", "orientation", "wire"],
         ),
         BuiltinRuleId::Sch006 => (
-            "component spacing", "layout",
+            "component spacing",
+            "layout",
             "Enforces profile-declared minimum spacing between placed functional-group member origins.",
             "A declared spacing contract keeps related components consistently arranged. The current check measures symbol origins, not full body-to-body clearance.",
-            RuleLevel::Deny, &["groups", "spacing", "profile"],
+            RuleLevel::Deny,
+            &["groups", "spacing", "profile"],
         ),
         BuiltinRuleId::Sch007 => (
-            "native group membership", "design-structure",
+            "native group membership",
+            "design-structure",
             "Checks profile-declared member references against a native KiCad schematic group.",
             "Binding profile groups to native group UUIDs catches drift between documented functional grouping and actual group membership.",
-            RuleLevel::Deny, &["groups", "metadata", "kicad"],
+            RuleLevel::Deny,
+            &["groups", "metadata", "kicad"],
         ),
         BuiltinRuleId::Sch008 => (
-            "annotation text-box geometry", "annotation",
+            "annotation text-box geometry",
+            "annotation",
             "Checks required text-box geometry, font, margins, sizing, overlap, and wire penetration.",
             "Structured annotation boxes should have usable dimensions and remain readable without colliding with other content or electrical graphics.",
-            RuleLevel::Deny, &["annotation", "text-box", "geometry"],
+            RuleLevel::Deny,
+            &["annotation", "text-box", "geometry"],
         ),
         BuiltinRuleId::Sch009 => (
-            "group containment and frame layout", "design-structure",
+            "group containment and frame layout",
+            "design-structure",
             "Checks profile-declared group frames, member geometry, associated annotations, and overlap between independently declared frame interiors.",
             "Functional-group frames should contain their declared contents and should not overlap other independently declared frames. Only explicitly referenced frame UUIDs are treated as group boundaries; shared edges are allowed.",
-            RuleLevel::Deny, &["groups", "frames", "containment", "profile"],
+            RuleLevel::Deny,
+            &["groups", "frames", "containment", "profile"],
         ),
         BuiltinRuleId::Sch010 => (
-            "symbol field clearance", "annotation",
+            "symbol field clearance",
+            "annotation",
             "Checks estimated visible symbol-field bounds against fields, symbol bodies, wires, pins, labels, and annotation boxes.",
             "Reference and Value fields should remain readable and avoid collisions with nearby schematic content. Text bounds are estimates; exact renderer geometry and maximum field-to-body gaps remain future work.",
-            RuleLevel::Deny, &["fields", "text", "clearance"],
+            RuleLevel::Deny,
+            &["fields", "text", "clearance"],
         ),
         BuiltinRuleId::Sch011 => (
-            "block annotation structure", "documentation",
+            "block annotation structure",
+            "documentation",
             "Requires multiline annotation text boxes to have a visible border.",
             "A visible border distinguishes multi-line explanatory blocks from free-standing notes and improves consistent schematic documentation.",
-            RuleLevel::Deny, &["annotation", "documentation", "text-box"],
+            RuleLevel::Deny,
+            &["annotation", "documentation", "text-box"],
         ),
         BuiltinRuleId::Sch012 => (
-            "frame content clearance", "design-structure",
+            "frame content clearance",
+            "design-structure",
             "Enforces a profile-declared minimum inset between functional-group frame edges and contained schematic content.",
             "An explicit inset prevents group members and associated graphics from crowding their frame boundary. Coverage remains limited to the documented supported geometry families.",
-            RuleLevel::Deny, &["groups", "frames", "clearance", "profile"],
+            RuleLevel::Deny,
+            &["groups", "frames", "clearance", "profile"],
         ),
         BuiltinRuleId::Sch013 => (
-            "wire obstacle clearance", "layout",
+            "wire obstacle clearance",
+            "layout",
             "Checks wire strokes against supported symbol, annotation, sheet, bus, table, image, and vector-graphic obstacles.",
             "Wire-to-graphic collisions reduce readability and can obscure intended topology. Geometry uses resolved transforms and widths where authoritative facts are available; unresolved cases remain conservative.",
-            RuleLevel::Deny, &["wire", "obstacles", "geometry", "clearance"],
+            RuleLevel::Deny,
+            &["wire", "obstacles", "geometry", "clearance"],
         ),
         BuiltinRuleId::Sch014 => (
-            "shared pin and net contracts", "electrical-intent",
+            "shared pin and net contracts",
+            "electrical-intent",
             "Validates profile-declared component pin and connector pin mappings against the exported KiCad netlist.",
             "A profile can assert the logical net expected at a particular component pin. The exported netlist is the authority for these relationships, not label-string comparison.",
-            RuleLevel::Deny, &["profile", "pins", "netlist", "connectors"],
+            RuleLevel::Deny,
+            &["profile", "pins", "netlist", "connectors"],
         ),
         BuiltinRuleId::Sch015 => (
-            "required no-connect markers", "electrical-intent",
+            "required no-connect markers",
+            "electrical-intent",
             "Checks explicit no-connect marker placement and profile-declared pins that require a marker.",
             "An explicit no-connect flag records intentional omission at a placed pin. Unresolved pin geometry is reported as unverified; native ERC remains responsible for electrical unconnected-pin semantics.",
-            RuleLevel::Deny, &["pins", "no-connect", "profile"],
+            RuleLevel::Deny,
+            &["pins", "no-connect", "profile"],
         ),
         BuiltinRuleId::Sch016 => (
-            "wire compactness", "layout",
+            "wire compactness",
+            "layout",
             "Compares the total length of wire segments wholly inside a declared group frame with its positive wire-length budget.",
             "A profile-declared budget can discourage unnecessarily long internal wiring while keeping the threshold project-specific. Over-budget findings are warnings.",
-            RuleLevel::Warn, &["groups", "wire", "length", "profile"],
+            RuleLevel::Warn,
+            &["groups", "wire", "length", "profile"],
         ),
         BuiltinRuleId::Sch017 => (
-            "circuit documentation", "documentation",
+            "circuit documentation",
+            "documentation",
             "Validates functional-group membership, description references, and declared documentation evidence.",
             "Documented group intent should resolve to actual schematic members and a rendered description with traceable design evidence.",
-            RuleLevel::Deny, &["groups", "documentation", "evidence"],
+            RuleLevel::Deny,
+            &["groups", "documentation", "evidence"],
         ),
         BuiltinRuleId::Sch018 => (
-            "label text collision", "annotation",
+            "label text collision",
+            "annotation",
             "Detects estimated label glyph bounds that overlap other labels, visible symbol fields, or annotation boxes.",
             "Label collisions make net names difficult to read and can conceal nearby component annotations. Glyph bounds are approximations of the rendered stroke font.",
-            RuleLevel::Deny, &["labels", "text", "collision"],
+            RuleLevel::Deny,
+            &["labels", "text", "collision"],
         ),
         BuiltinRuleId::Sch019 => (
-            "label-kind consistency", "connectivity",
+            "label-kind consistency",
+            "connectivity",
             "Detects reuse of one label text with inconsistent local, global, or hierarchical label kinds.",
             "Repeated label strings with different scope semantics can produce surprising logical connectivity and should be made explicit.",
-            RuleLevel::Deny, &["labels", "scope", "connectivity"],
+            RuleLevel::Deny,
+            &["labels", "scope", "connectivity"],
         ),
         BuiltinRuleId::Sch020 => (
-            "component function and rationale", "documentation",
+            "component function and rationale",
+            "documentation",
             "Requires metadata-declared components to provide function and rationale text.",
             "Component intent should explain both what a part does and why the chosen implementation or topology is appropriate.",
-            RuleLevel::Deny, &["components", "metadata", "documentation"],
+            RuleLevel::Deny,
+            &["components", "metadata", "documentation"],
         ),
         BuiltinRuleId::Sch021 => (
-            "component metadata and role contracts", "design-intent",
+            "component metadata and role contracts",
+            "design-intent",
             "Checks strict component metadata coverage, stale profile references, and supported role-specific connection and connector declarations.",
             "Component metadata should identify every required placed part and provide the electrical nodes required by supported roles. Connector declarations additionally require an interface standard and at least one pin mapping; unsupported roles are not inferred.",
-            RuleLevel::Deny, &["components", "metadata", "roles", "profile"],
+            RuleLevel::Deny,
+            &["components", "metadata", "roles", "profile"],
         ),
         BuiltinRuleId::Sch022 => (
-            "decoupling contracts", "electrical-intent",
+            "decoupling contracts",
+            "electrical-intent",
             "Checks decoupling target pins, distinct capacitor terminals, expected return nets, netlist membership, and cluster consistency.",
             "A decoupling declaration must identify the target IC pin, the capacitor's target and return terminals, the expected return net, and a cluster. When a netlist is supplied, target-side and return-side memberships are verified against KiCad's exported connectivity.",
-            RuleLevel::Deny, &["decoupling", "capacitors", "netlist", "profile"],
+            RuleLevel::Deny,
+            &["decoupling", "capacitors", "netlist", "profile"],
         ),
     };
 
-    let mut descriptor = RuleDescriptor::new(
-        id.as_str(), name, category, summary, explanation, level,
-    );
-    descriptor.documentation_url = Some(
-        "https://github.com/Uhrendoktor/kicad-clippy/blob/main/docs/rules.md".to_owned(),
-    );
+    let mut descriptor =
+        RuleDescriptor::new(id.as_str(), name, category, summary, explanation, level);
+    descriptor.documentation_url =
+        Some("https://github.com/Uhrendoktor/kicad-clippy/blob/main/docs/rules.md".to_owned());
     descriptor.tags = tags.iter().map(|tag| (*tag).to_owned()).collect();
     descriptor
 }
@@ -388,7 +434,9 @@ mod tests {
         let registry = super::builtin_rule_registry()?;
         assert_eq!(registry.len(), BuiltinRuleId::ALL.len());
         for id in BuiltinRuleId::ALL {
-            let descriptor = registry.get(id.as_str()).expect("every built-in rule must have a descriptor");
+            let descriptor = registry
+                .get(id.as_str())
+                .expect("every built-in rule must have a descriptor");
             assert_eq!(descriptor.id, id.as_str());
             assert!(!descriptor.name.trim().is_empty());
             assert!(!descriptor.category.trim().is_empty());
@@ -402,7 +450,8 @@ mod tests {
 
     /// Checks that the latest profile-rule descriptors summarize their implemented contracts.
     #[test]
-    fn sch021_and_sch022_descriptors_match_the_profile_contracts() -> Result<(), super::RuleRegistryError> {
+    fn sch021_and_sch022_descriptors_match_the_profile_contracts()
+    -> Result<(), super::RuleRegistryError> {
         let registry = super::builtin_rule_registry()?;
         let sch021 = registry.get("SCH021").expect("SCH021 descriptor exists");
         assert!(sch021.summary.contains("role-specific"));
@@ -412,5 +461,4 @@ mod tests {
         assert!(sch022.summary.contains("return nets"));
         Ok(())
     }
-
 }
