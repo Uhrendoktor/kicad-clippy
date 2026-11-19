@@ -3,7 +3,6 @@
 use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::Diagnostic;
 use kicad_clippy_core::Severity;
-use super::ComponentKind;
 use super::GroupIntent;
 
 /// Checks that member component roles and purposes are consistent with the group's description.

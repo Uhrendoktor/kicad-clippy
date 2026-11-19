@@ -4,7 +4,7 @@ use crate::Rule;
 use crate::RulePass;
 pub(crate) use crate::TWO_SIDED_FACTOR;
 use geo::algorithm::line_measures::Length;
-use geo::Contains;
+use geo::BooleanOps;
 use geo::Coord;
 use geo::Euclidean;
 use geo::LineString;
@@ -19,17 +19,18 @@ use kiutils_sexpr::Atom;
 use kiutils_sexpr::Node;
 use kurbo::Affine;
 use kurbo::Arc as CurveArc;
-use kurbo::CubicBez as CurveCubicBez;
 use kurbo::flatten as flatten_curve_path;
 use kurbo::PathEl;
 use kurbo::Point as CurvePoint;
 use kurbo::Rect as CurveRect;
+use kurbo::Shape;
 use kurbo::Triangle;
 use kurbo::Vec2;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::sync::OnceLock;
 use vector_text_core::Point as VectorPoint;
+use vector_text_core::Renderer;
 use vector_text_newstroke::NewstrokeRenderer;
 
 /// Checks `SCH001` wire endpoints, segment geometry, overlaps, crossings, and unmarked junctions.
@@ -79,7 +80,7 @@ mod sch019;
 pub use sch002::{physical_wire_component_ids, physical_wire_component_key};
 
 /// Shared geometric and annotation helpers consumed by more than one rule.
-pub(super) use sch010::{geo_rect, property_is_hidden, text_box_bounds};
+use sch010::{geo_rect, property_is_hidden, text_box_bounds};
 
 /// Disjoint-set forest used to resolve connected physical wire components.
 #[derive(Debug)]

@@ -1,6 +1,5 @@
 //! Checks `SCH002` physical wire-island topology, label reuse, and connected-component identity.
 
-use geo::BooleanOps;
 use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::ByteSpan;
 use kicad_clippy_core::Diagnostic;

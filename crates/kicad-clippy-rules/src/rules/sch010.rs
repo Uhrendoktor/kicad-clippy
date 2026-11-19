@@ -347,3 +347,27 @@ pub(super) fn text_box_bounds(node: &Node) -> Option<Bounds> {
         height: number(size.get(2)?)?,
     })
 }
+
+/// Concrete implementation of built-in rule SCH010.
+pub(super) struct Sch010;
+impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch010 {
+    /// Returns the stable SCH010 identifier.
+    ///
+    /// # Returns
+    ///
+    /// The stable SCH010 identifier.
+    fn id(&self) -> BuiltinRuleId { BuiltinRuleId::Sch010 }
+    /// Evaluates visible symbol-field clearance against nearby schematic geometry.
+    ///
+    /// # Arguments
+    ///
+    /// * context — The parsed schematic, wire segments, and normalized symbol/field facts.
+    ///
+    /// # Returns
+    ///
+    /// Diagnostics for visible symbol fields that violate the configured clearance.
+    fn check(&self, context: &crate::RuleContext<'a>) -> Vec<Diagnostic> {
+        let Some(root) = context.document().cst().nodes.first() else { return Vec::new(); };
+        check_symbol_field_clearance(root, context.segments, context.facts())
+    }
+}

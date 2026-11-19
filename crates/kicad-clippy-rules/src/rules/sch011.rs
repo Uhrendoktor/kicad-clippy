@@ -1,6 +1,5 @@
 //! Checks `SCH011` multiline block annotations for a visible border.
 
-use geo::Contains;
 use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::Diagnostic;
 use kiutils_sexpr::Node;

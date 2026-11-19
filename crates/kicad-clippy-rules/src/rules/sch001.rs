@@ -19,6 +19,7 @@ use super::is_endpoint;
 use super::Point;
 use super::sch013::geo_line;
 use super::{head, span_of, walk};
+#[cfg(test)]
 pub(super) use super::line_hits_bounds;
 use super::Segment;
 

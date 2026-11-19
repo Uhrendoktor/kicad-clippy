@@ -31,7 +31,6 @@ use super::GEOMETRY_NUMERIC_EPSILON;
 use super::GEOMETRY_TOLERANCE_MM;
 use super::HALF_FACTOR;
 use super::is_endpoint;
-use super::number;
 use super::Point;
 use super::SchematicArcFact;
 use super::SchematicBusObstacleFact;

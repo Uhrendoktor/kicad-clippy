@@ -1,9 +1,7 @@
 use crate::generic::GEOMETRY_TOLERANCE_MM;
 use crate::generic::SchematicFacts;
 use crate::Rule;
-use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::Diagnostic;
-use kicad_clippy_core::Severity;
 use kicad_clippy_erc::Netlist;
 use kicad_clippy_parser::SchematicDocument;
 use serde::Deserialize;
