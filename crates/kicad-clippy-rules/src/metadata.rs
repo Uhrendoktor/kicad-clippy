@@ -209,7 +209,6 @@ pub struct SeparateWirePair {
     pub netlist_separate: bool,
 }
 
-
 /// Default coordinate tolerance for comparing schematic anchors with the configured grid, in millimetres.
 const DEFAULT_GRID_ALIGNMENT_TOLERANCE_MM: f64 = 0.001;
 

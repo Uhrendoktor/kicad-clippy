@@ -34,7 +34,11 @@ fn validate_grid_configuration(intent: &GridAlignmentIntent) -> Vec<Diagnostic> 
             "grid_alignment.tolerance_mm must be finite, non-negative, and less than half the grid spacing",
         ));
     }
-    if intent.origin_mm.iter().any(|coordinate| !coordinate.is_finite()) {
+    if intent
+        .origin_mm
+        .iter()
+        .any(|coordinate| !coordinate.is_finite())
+    {
         diagnostics.push(configuration_error(
             "grid_alignment.origin_mm must contain two finite coordinates",
         ));
@@ -64,9 +68,11 @@ fn validate_grid_configuration(intent: &GridAlignmentIntent) -> Vec<Diagnostic> 
             )));
         }
     }
-    if intent.exempt_coordinates_mm.iter().any(|point| {
-        point.iter().any(|coordinate| !coordinate.is_finite())
-    }) {
+    if intent
+        .exempt_coordinates_mm
+        .iter()
+        .any(|point| point.iter().any(|coordinate| !coordinate.is_finite()))
+    {
         diagnostics.push(configuration_error(
             "grid_alignment.exempt_coordinates_mm must contain only finite [x, y] coordinates",
         ));
@@ -392,9 +398,7 @@ mod tests {
     /// Uses the configured nonzero grid origin and accepts anchors within both axis tolerances.
     #[test]
     fn accepts_anchors_on_an_offset_grid_within_tolerance() {
-        let profile = profile(
-            r#"{"spacing_mm":5.0,"origin_mm":[1.0,2.0],"tolerance_mm":0.1}"#,
-        );
+        let profile = profile(r#"{"spacing_mm":5.0,"origin_mm":[1.0,2.0],"tolerance_mm":0.1}"#);
         let mut facts = facts();
         facts.components[0].position_mm = Some((11.05, 21.95));
         facts.labels[0].position_mm = (10.95, 22.05);
@@ -409,10 +413,26 @@ mod tests {
         let diagnostics = validate_grid_alignment(&profile, &facts());
         assert_eq!(diagnostics.len(), 2);
         assert!(diagnostics.iter().all(|item| item.code == "SCH026"));
-        assert!(diagnostics.iter().all(|item| item.severity == Severity::Error));
-        assert!(diagnostics.iter().any(|item| item.message.contains("component U1")));
-        assert!(diagnostics.iter().any(|item| item.message.contains(r#"local label "VDD""#)));
-        assert!(diagnostics.iter().all(|item| item.schematic_location.is_some()));
+        assert!(
+            diagnostics
+                .iter()
+                .all(|item| item.severity == Severity::Error)
+        );
+        assert!(
+            diagnostics
+                .iter()
+                .any(|item| item.message.contains("component U1"))
+        );
+        assert!(
+            diagnostics
+                .iter()
+                .any(|item| item.message.contains(r#"local label "VDD""#))
+        );
+        assert!(
+            diagnostics
+                .iter()
+                .all(|item| item.schematic_location.is_some())
+        );
     }
 
     /// Checks pin anchors, junctions and wire endpoints only when each target family is selected.
@@ -427,10 +447,26 @@ mod tests {
         );
         let diagnostics = validate_grid_alignment(&profile, &facts());
         assert_eq!(diagnostics.len(), 4);
-        assert!(diagnostics.iter().any(|item| item.message.contains("pin U2.3")));
-        assert!(diagnostics.iter().any(|item| item.message.contains("junction 1")));
-        assert!(diagnostics.iter().any(|item| item.message.contains("wire endpoint at start")));
-        assert!(!diagnostics.iter().any(|item| item.message.contains("wire endpoint at end")));
+        assert!(
+            diagnostics
+                .iter()
+                .any(|item| item.message.contains("pin U2.3"))
+        );
+        assert!(
+            diagnostics
+                .iter()
+                .any(|item| item.message.contains("junction 1"))
+        );
+        assert!(
+            diagnostics
+                .iter()
+                .any(|item| item.message.contains("wire endpoint at start"))
+        );
+        assert!(
+            !diagnostics
+                .iter()
+                .any(|item| item.message.contains("wire endpoint at end"))
+        );
     }
 
     /// Accepts configured component, pin, label and exact-coordinate exemptions.
@@ -491,7 +527,11 @@ mod tests {
         let diagnostics = validate_grid_alignment(&profile, &facts());
         assert!(diagnostics.len() >= 4);
         assert!(diagnostics.iter().all(|item| item.code == "SCH026"));
-        assert!(diagnostics.iter().all(|item| item.severity == Severity::Error));
+        assert!(
+            diagnostics
+                .iter()
+                .all(|item| item.severity == Severity::Error)
+        );
     }
 
     /// Round-trips the default grid target set in the typed profile representation.
@@ -517,7 +557,8 @@ mod tests {
     ///
     /// Returns an error if the schematic fixture cannot be parsed.
     #[test]
-    fn profile_validation_dispatches_grid_alignment_rule() -> Result<(), Box<dyn std::error::Error>> {
+    fn profile_validation_dispatches_grid_alignment_rule() -> Result<(), Box<dyn std::error::Error>>
+    {
         let schematic = SchematicDocument::from_text(
             "grid-alignment-dispatch.kicad_sch",
             r#"(kicad_sch
@@ -527,9 +568,11 @@ mod tests {
         )?;
         let profile = profile(r#"{"spacing_mm":5.0,"tolerance_mm":0.01}"#);
         let diagnostics = profile.validate(&schematic);
-        assert!(diagnostics.iter().any(|item| {
-            item.code == "SCH026" && item.message.contains("local label")
-        }));
+        assert!(
+            diagnostics
+                .iter()
+                .any(|item| { item.code == "SCH026" && item.message.contains("local label") })
+        );
         Ok(())
     }
 
@@ -541,5 +584,4 @@ mod tests {
         assert_eq!(diagnostics.len(), 1);
         assert!(diagnostics[0].message.contains("finite positive"));
     }
-
 }
