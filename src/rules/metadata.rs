@@ -21,7 +21,7 @@ mod sch004;
 #[path = "profile_rules/geometry.rs"]
 mod geometry;
 
-/// Checks `SCH006` minimum spacing between functional-group member symbols.
+/// Checks `SCH006` spacing and compactness between functional-group member symbols.
 #[path = "profile_rules/sch006.rs"]
 mod sch006;
 
@@ -418,6 +418,9 @@ pub struct GroupIntent {
     /// Optional minimum edge-to-edge clearance between supported member body outlines, in millimetres.
     #[serde(default)]
     pub minimum_member_body_clearance_mm: Option<f64>,
+    /// Optional maximum nearest-edge gap between every pair of supported member body outlines, in millimetres.
+    #[serde(default)]
+    pub maximum_member_body_gap_mm: Option<f64>,
     /// Optional axis along which all member symbol origins must align.
     #[serde(default)]
     pub alignment_axis: Option<GroupAlignmentAxis>,
