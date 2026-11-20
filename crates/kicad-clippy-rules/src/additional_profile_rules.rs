@@ -187,7 +187,7 @@ fn validate_global_label_policy(
 ///
 /// # Arguments
 ///
-/// * `policy` — Validated label-name-to-scope requirements.
+/// * `policy` — Label-scope settings whose global allow/deny sets and required name-to-scope entries passed configuration validation.
 /// * `facts` — Native local, global and hierarchical label facts from the loaded sheet.
 ///
 /// # Returns
