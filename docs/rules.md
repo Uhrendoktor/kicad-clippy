@@ -37,7 +37,7 @@ The current built-in catalogue defines stable schematic IDs SCH001–SCH028 plus
 
 ## Descriptor catalogue
 
-The core crate exports `builtin_rule_registry()`, which builds one descriptive `RuleDescriptor` for every value in `BuiltinRuleId::ALL` (SCH001–SCH027, PCB001 and PCB009). A regression test keeps the typed identifiers and descriptor catalogue in one-to-one correspondence and requires each descriptor to include a category, summary, rationale, documentation link, and searchable tags. The registry is deterministic and rejects duplicate IDs.
+The core crate exports `builtin_rule_registry()`, which builds one descriptive `RuleDescriptor` for every value in `BuiltinRuleId::ALL` (SCH001–SCH028, PCB001 and PCB009). A regression test keeps the typed identifiers and descriptor catalogue in one-to-one correspondence and requires each descriptor to include a category, summary, rationale, documentation link, and searchable tags. The registry is deterministic and rejects duplicate IDs.
 
 When `--policy FILE` is supplied, the CLI uses descriptor `default_level` values as the `default` preset and supports `strict` and `advisory` baselines plus per-rule `allow`, `warn`, and `deny` overrides. Without a policy file, existing rule-emitted severities remain unchanged. Policy changes apply only to built-in `SCHnnn` diagnostics; native KiCad ERC findings are not altered. See [rule policy](rule-policy.md).
 
