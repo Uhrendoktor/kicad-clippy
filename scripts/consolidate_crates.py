@@ -41,13 +41,13 @@ for source in SOURCE_ROOT.rglob("*.rs"):
         content = content.replace(old, new)
     if source.is_relative_to(SOURCE_ROOT / "core"):
         content = re.sub(
-            r"\\bcrate::(?!core::|parser::|erc::|rules::)",
+            r"\bcrate::(?!core::|parser::|erc::|rules::)",
             "crate::core::",
             content,
         )
     elif source.is_relative_to(SOURCE_ROOT / "rules"):
         content = re.sub(
-            r"\\bcrate::(?!core::|parser::|erc::|rules::)",
+            r"\bcrate::(?!core::|parser::|erc::|rules::)",
             "crate::rules::",
             content,
         )
