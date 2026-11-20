@@ -56,7 +56,7 @@ The first required contracts are:
 | Diode reverse_polarity | input, protected_output |
 | Inductor / ferrite bead | input, output |
 | Transistor / FET | control, switched_high, switched_low |
-| Connector | interface_standard attribute and at least one pin.N mapping |
+| Connector | interface_standard attribute and at least one expected pin mapping through `connections.pin.N` or `pin_nets.N` |
 
 Example resistor metadata:
 
@@ -152,11 +152,11 @@ Without `netlist_separate`, the rule only forbids a shared physical wire island;
 ## Implemented checks
 
 - SCH020: every metadata-declared component needs a function and rationale.
-- SCH021: strict-mode component-intent coverage, profile references to unknown components, and required connection fields for supported component/role pairs. Connector intent also requires an `interface_standard` attribute and at least one `pin.N` connection mapping.
+- SCH021: strict-mode component-intent coverage, profile references to unknown components, and required connection fields for supported component/role pairs. Connector intent also requires an `interface_standard` attribute and at least one non-empty `connections.pin.N` or `pin_nets.N` mapping.
 - SCH014: explicit component pin-to-net contracts against exported KiCad netlist membership, including connector `pin.N` maps.
 - SCH022: decoupling metadata completeness, valid `REF.PIN` target notation, distinct capacitor target/return terminals, netlist-backed target and return membership, and consistent return-net/cluster declarations among capacitors serving the same target pin.
 
-SCH021's supported connection requirements are intentionally narrow and explicit: bulk capacitors require `rail` and `return`; pull-up/pull-down resistors require `signal` and `rail`; divider resistors require `high`, `tap`, and `low`; series, current-limit, and current-sense resistors require `input` and `output`; gate-bias resistors require `gate`, `bias`, and `return`; discharge/bleeder resistors require `storage` and `return`; ESD/clamp diodes require `protected` and `return`; flyback diodes require `anode`, `cathode`, `switched_node`, and `return`; reverse-polarity diodes require `input` and `protected_output`; inductors and ferrite beads require `input` and `output`; and transistors require `control`, `switched_high`, and `switched_low`. Other kind/role combinations are not assigned inferred requirements. For connectors, SCH021 checks for a non-empty `interface_standard` and at least one `pin.N` connection key; SCH014 separately checks declared pin mappings against the exported netlist.
+SCH021's supported connection requirements are intentionally narrow and explicit: bulk capacitors require `rail` and `return`; pull-up/pull-down resistors require `signal` and `rail`; divider resistors require `high`, `tap`, and `low`; series, current-limit, and current-sense resistors require `input` and `output`; gate-bias resistors require `gate`, `bias`, and `return`; discharge/bleeder resistors require `storage` and `return`; ESD/clamp diodes require `protected` and `return`; flyback diodes require `anode`, `cathode`, `switched_node`, and `return`; reverse-polarity diodes require `input` and `protected_output`; inductors and ferrite beads require `input` and `output`; and transistors require `control`, `switched_high`, and `switched_low`. Other kind/role combinations are not assigned inferred requirements. For connectors, SCH021 checks for a non-empty `interface_standard` and at least one expected pin mapping through `connections.pin.N` or `pin_nets.N`; SCH014 separately checks declared pin mappings against the exported netlist.
 
 SCH022 requires each capacitor declared with role `decoupling` to provide `decoupling.target_pin`, `target_terminal`, `return_terminal`, `return_net`, and `cluster`. The target and return terminals must be different. When a netlist is supplied, the capacitor target terminal must share the target IC pin's net, and the return terminal must resolve to the declared return net. Capacitors assigned to the same target pin must agree on the return net; differing cluster identifiers are reported as a warning. These checks validate explicit declarations and do not infer a decoupling requirement for every IC supply pin.
 
