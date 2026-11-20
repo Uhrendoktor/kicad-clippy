@@ -13,9 +13,9 @@ pub(super) struct Sch028;
 ///
 /// # Arguments
 ///
-/// * group_id — Stable profile key identifying the functional group.
-/// * group — Group intent containing frame, title-tab, and title-text-box UUIDs.
-/// * facts — Normalized frame, graphic, and text-box geometry from the loaded schematic.
+/// * `group_id` — Stable profile key identifying the functional group.
+/// * `group` — Group intent containing frame, title-tab, and title-text-box UUIDs.
+/// * `facts` — Normalized frame, graphic, and text-box geometry from the loaded schematic.
 ///
 /// # Returns
 ///
@@ -86,12 +86,16 @@ fn validate_group_title_layout(
 ///
 /// # Arguments
 ///
-/// * facts — Normalized schematic facts containing parsed top-level rectangles.
-/// * uuid — UUID declared as the functional group's frame.
+/// * `facts` — Normalized schematic facts containing parsed top-level rectangles.
+/// * `uuid` — UUID declared as the functional group's frame.
 ///
 /// # Returns
 ///
 /// The rectangle bounds, or a static explanation when the UUID is missing, ambiguous, or invalid.
+///
+/// # Errors
+///
+/// Returns an error when the UUID is missing, ambiguous, or has invalid geometry.
 fn unique_frame_bounds(facts: &SchematicFacts, uuid: &str) -> Result<Rectangle, &'static str> {
     let mut matches = facts.frames.iter().filter(|frame| frame.uuid == uuid);
     let Some(frame) = matches.next() else {
@@ -107,12 +111,16 @@ fn unique_frame_bounds(facts: &SchematicFacts, uuid: &str) -> Result<Rectangle, 
 ///
 /// # Arguments
 ///
-/// * facts — Normalized schematic facts containing top-level graphic geometry.
-/// * uuid — UUID declared as the group's title tab.
+/// * `facts` — Normalized schematic facts containing top-level graphic geometry.
+/// * `uuid` — UUID declared as the group's title tab.
 ///
 /// # Returns
 ///
 /// The matching rectangular graphic, or a static explanation when missing or ambiguous.
+///
+/// # Errors
+///
+/// Returns an error when the title-tab UUID is missing or ambiguous.
 fn unique_title_tab<'a>(
     facts: &'a SchematicFacts,
     uuid: &str,
@@ -134,12 +142,16 @@ fn unique_title_tab<'a>(
 ///
 /// # Arguments
 ///
-/// * facts — Normalized schematic facts containing parsed text boxes.
-/// * uuid — UUID declared as the group's title text box.
+/// * `facts` — Normalized schematic facts containing parsed text boxes.
+/// * `uuid` — UUID declared as the group's title text box.
 ///
 /// # Returns
 ///
 /// The title text-box rectangle, None for unresolved geometry, or an error for a missing or ambiguous UUID.
+///
+/// # Errors
+///
+/// Returns an error when the title text-box UUID is missing or ambiguous.
 fn unique_text_box_bounds(
     facts: &SchematicFacts,
     uuid: &str,
@@ -161,7 +173,7 @@ fn unique_text_box_bounds(
 ///
 /// # Arguments
 ///
-/// * graphic — Top-level rectangle graphic whose path points define the title tab.
+/// * `graphic` — Top-level rectangle graphic whose path points define the title tab.
 ///
 /// # Returns
 ///
@@ -221,7 +233,7 @@ fn raw_rectangle_bounds(graphic: &SchematicGraphicFact) -> Option<Rectangle> {
 ///
 /// # Arguments
 ///
-/// * bounds — Left, top, right, and bottom coordinates in schematic millimetres.
+/// * `bounds` — Left, top, right, and bottom coordinates in schematic millimetres.
 ///
 /// # Returns
 ///
@@ -241,8 +253,8 @@ fn valid_rectangle(bounds: Rectangle) -> Option<Rectangle> {
 ///
 /// # Arguments
 ///
-/// * frame — Functional-frame rectangle bounds.
-/// * tab — Title-tab rectangle bounds.
+/// * `frame` — Functional-frame rectangle bounds.
+/// * `tab` — Title-tab rectangle bounds.
 ///
 /// # Returns
 ///
@@ -263,8 +275,8 @@ fn rectangles_share_edge(frame: Rectangle, tab: Rectangle) -> bool {
 ///
 /// # Arguments
 ///
-/// * outer — Title-tab rectangle.
-/// * inner — Title text-box rectangle.
+/// * `outer` — Title-tab rectangle.
+/// * `inner` — Title text-box rectangle.
 ///
 /// # Returns
 ///
@@ -280,8 +292,8 @@ fn rectangle_contains(outer: Rectangle, inner: Rectangle) -> bool {
 ///
 /// # Arguments
 ///
-/// * first — First schematic coordinate.
-/// * second — Second schematic coordinate.
+/// * `first` — First schematic coordinate.
+/// * `second` — Second schematic coordinate.
 ///
 /// # Returns
 ///
@@ -295,8 +307,8 @@ fn points_close(first: (f64, f64), second: (f64, f64)) -> bool {
 ///
 /// # Arguments
 ///
-/// * profile — Profile containing per-group minimum frame-gap declarations.
-/// * facts — Normalized schematic frame rectangles from the currently loaded sheet.
+/// * `profile` — Profile containing per-group minimum frame-gap declarations.
+/// * `facts` — Normalized schematic frame rectangles from the currently loaded sheet.
 ///
 /// # Returns
 ///
@@ -348,7 +360,7 @@ fn validate_minimum_frame_gaps(profile: &LintProfile, facts: &SchematicFacts) ->
 ///
 /// # Arguments
 ///
-/// * declared — Groups with valid minimum-gap declarations and resolved rectangular frames.
+/// * `declared` — Groups with valid minimum-gap declarations and resolved rectangular frames.
 ///
 /// # Returns
 ///
@@ -377,8 +389,8 @@ fn compare_declared_frame_gaps(declared: &[DeclaredFrame<'_>]) -> Vec<Diagnostic
 ///
 /// # Arguments
 ///
-/// * first — First frame rectangle.
-/// * second — Second frame rectangle.
+/// * `first` — First frame rectangle.
+/// * `second` — Second frame rectangle.
 ///
 /// # Returns
 ///
@@ -393,7 +405,7 @@ fn rectangle_gap(first: Rectangle, second: Rectangle) -> f64 {
 ///
 /// # Arguments
 ///
-/// * message — Actionable explanation of the frame-title contract violation.
+/// * `message` — Actionable explanation of the frame-title contract violation.
 ///
 /// # Returns
 ///
@@ -406,7 +418,7 @@ fn error(message: impl Into<String>) -> Diagnostic {
 ///
 /// # Arguments
 ///
-/// * message — Explanation of the unresolved frame-title geometry.
+/// * `message` — Explanation of the unresolved frame-title geometry.
 ///
 /// # Returns
 ///
@@ -429,7 +441,7 @@ impl<'a> Rule<ProfileRuleContext<'a>> for Sch028 {
     ///
     /// # Arguments
     ///
-    /// * context — Group profile declarations and normalized schematic geometry.
+    /// * `context` — Group profile declarations and normalized schematic geometry.
     ///
     /// # Returns
     ///
@@ -473,9 +485,9 @@ mod tests {
     ///
     /// # Arguments
     ///
-    /// * frame — Frame bounds in left/top/right/bottom order.
-    /// * tab — Title-tab bounds in left/top/right/bottom order.
-    /// * title — Optional title-text-box bounds in left/top/right/bottom order.
+    /// * `frame` — Frame bounds in left/top/right/bottom order.
+    /// * `tab` — Title-tab bounds in left/top/right/bottom order.
+    /// * `title` — Optional title-text-box bounds in left/top/right/bottom order.
     ///
     /// # Returns
     ///
