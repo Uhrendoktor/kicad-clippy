@@ -480,11 +480,12 @@ mod tests {
     fn rejects_invalid_grid_configuration() {
         let profile = profile(
             r#"{
-                "spacing_mm":0.0,
+                "spacing_mm":5.0,
                 "tolerance_mm":3.0,
                 "targets":[],
                 "exempt_pins":["U1."],
-                "exempt_coordinates_mm":[[1.0,1e999]]
+                "exempt_labels":["missing-colon"],
+                "exempt_coordinates_mm":[[1.0,1.0]]
             }"#,
         );
         let diagnostics = validate_grid_alignment(&profile, &facts());
@@ -530,6 +531,15 @@ mod tests {
             item.code == "SCH026" && item.message.contains("local label")
         }));
         Ok(())
+    }
+
+    /// Rejects a zero grid spacing before attempting any coordinate calculation.
+    #[test]
+    fn rejects_non_positive_grid_spacing() {
+        let profile = profile(r#"{"spacing_mm":0.0}"#);
+        let diagnostics = validate_grid_alignment(&profile, &facts());
+        assert_eq!(diagnostics.len(), 1);
+        assert!(diagnostics[0].message.contains("finite positive"));
     }
 
 }
