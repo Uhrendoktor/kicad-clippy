@@ -556,7 +556,7 @@ fn validate_project_global_labels(
 ///
 /// # Arguments
 ///
-/// * `policy` — Validated project-wide required-label-scope declarations.
+/// * `policy` — Project-wide policy naming each required label and the local, global, or hierarchical scope every occurrence must use.
 /// * `root_path` — Canonical root file used to locate labels missing from the hierarchy.
 /// * `occurrences` — Label objects collected from every readable root/child schematic file.
 /// * `hierarchy_complete` — Whether every referenced child sheet could be resolved and parsed.
