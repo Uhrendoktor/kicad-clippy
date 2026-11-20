@@ -150,7 +150,7 @@ pub struct CommonPinNetGroup {
     /// Require all listed pins to share one continuous wire-only component.
     #[serde(default)]
     pub wire_connected: bool,
-    /// Require all listed pins to resolve to the same net in the exported `KiCad` netlist.
+    /// Require all listed pins to resolve to the same exported logical net; SCH014 owns this check.
     #[serde(default)]
     pub netlist_connected: bool,
     /// Require exactly one matching label across the resolved wire components.
@@ -177,7 +177,7 @@ pub struct SeparateWirePair {
     pub first: String,
     /// Second pin reference in REF.PIN form.
     pub second: String,
-    /// Also require the pins to resolve to different nets in the exported `KiCad` netlist.
+    /// Also require the pins to resolve to different exported logical nets; SCH014 owns this check.
     #[serde(default)]
     pub netlist_separate: bool,
 }
@@ -921,7 +921,7 @@ mod tests {
             Some(&common_pin_netlist(Some("SENSE"), Some("SENSE"))),
         );
         assert!(!diagnostics.iter().any(|item| {
-            item.code == "SCH004" && item.message.contains("different exported KiCad nets")
+            item.code == "SCH014" && item.message.contains("different exported KiCad nets")
         }));
     }
     /// Regression test: verifies that common pin group rejects different exported `KiCad` nets.
@@ -978,7 +978,7 @@ mod tests {
         .expect("profile parses");
         let diagnostics = profile.validate(&schematic);
         assert!(diagnostics.iter().any(|item| {
-            item.code == "SCH004"
+            item.code == "SCH014"
                 && item.severity == Severity::Warning
                 && item
                     .message
@@ -1885,7 +1885,7 @@ mod tests {
         )
         .expect("profile parses");
         assert!(profile.validate(&schematic).iter().any(|item| {
-            item.code == "SCH004"
+            item.code == "SCH014"
                 && item.severity == Severity::Warning
                 && item.message.contains("no exported KiCad netlist")
         }));
