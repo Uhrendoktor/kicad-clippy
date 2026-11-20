@@ -45,7 +45,7 @@ fn validate_grid_configuration(intent: &GridAlignmentIntent) -> Vec<Diagnostic> 
         ));
     }
     for pin in &intent.exempt_pins {
-        if !super::super::valid_pin_ref(pin) {
+        if !super::valid_pin_ref(pin) {
             diagnostics.push(configuration_error(format!(
                 "grid_alignment.exempt_pins contains invalid pin reference {pin:?}"
             )));
@@ -292,6 +292,7 @@ mod tests {
         ComponentFact, SchematicFacts, SchematicLabelFact, SchematicPinFact, SchematicWireFact,
     };
     use crate::{GridAlignmentIntent, GridAlignmentTarget, LintProfile};
+    use kicad_clippy_core::Severity;
     use std::collections::BTreeSet;
 
     /// Parses a version-one profile with the supplied grid alignment object.
