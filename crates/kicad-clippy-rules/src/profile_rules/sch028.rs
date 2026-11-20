@@ -1,6 +1,7 @@
 //! Checks UUID-linked functional-frame title tabs, title containment, and frame spacing.
 
-use super::{GroupIntent, LintProfile, ProfileRuleContext, SchematicFacts, SchematicGraphicFact};
+use super::{GroupIntent, LintProfile, ProfileRuleContext, SchematicFacts};
+use crate::generic::SchematicGraphicFact;
 use crate::Rule;
 use crate::generic::GEOMETRY_TOLERANCE_MM;
 use kicad_clippy_core::{BuiltinRuleId, Diagnostic, Severity};
@@ -475,10 +476,8 @@ mod tests {
         DeclaredFrame, compare_declared_frame_gaps, rectangle_gap, validate_group_title_layout,
         validate_minimum_frame_gaps,
     };
-    use crate::{
-        GroupIntent, LintProfile, SchematicFacts, SchematicFrameFact, SchematicGraphicFact,
-        TextBoxFact,
-    };
+    use crate::{GroupIntent, LintProfile, SchematicFacts, SchematicFrameFact, TextBoxFact};
+    use crate::generic::SchematicGraphicFact;
     use kicad_clippy_core::Severity;
 
     /// Creates normalized facts with one frame, one rectangular title tab, and one title text box.
