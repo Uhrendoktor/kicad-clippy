@@ -942,7 +942,7 @@ mod tests {
             Some(&common_pin_netlist(Some("SENSE"), Some("OTHER"))),
         );
         assert!(diagnostics.iter().any(|item| {
-            item.code == "SCH004" && item.message.contains("different exported KiCad nets")
+            item.code == "SCH014" && item.message.contains("different exported KiCad nets")
         }));
     }
     /// Regression test: verifies that common pin group reports pins missing from exported netlist.
@@ -1867,7 +1867,7 @@ mod tests {
                 .validate_with_netlist(&schematic, Some(&netlist))
                 .iter()
                 .any(|item| {
-                    item.code == "SCH004" && item.message.contains("different exported KiCad nets")
+                    item.code == "SCH014" && item.message.contains("different exported KiCad nets")
                 })
         );
     }
