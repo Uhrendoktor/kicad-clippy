@@ -1,6 +1,5 @@
 //! PCB facts and profile-driven board checks that complement native KiCad DRC.
 
-
 use kicad_clippy_core::{BuiltinRuleId, Diagnostic, Severity};
 use kicad_clippy_erc::Netlist;
 use kicad_clippy_parser::BoardDocument;
@@ -61,11 +60,7 @@ impl BoardFacts {
                 continue;
             }
             let (scale_x, scale_y) = footprint_scale(footprint).unwrap_or((1.0, 1.0));
-            if !scale_x.is_finite()
-                || !scale_y.is_finite()
-                || scale_x <= 0.0
-                || scale_y <= 0.0
-            {
+            if !scale_x.is_finite() || !scale_y.is_finite() || scale_x <= 0.0 || scale_y <= 0.0 {
                 continue;
             }
             // KiCad serializes the flipped pad-local coordinates and the adjusted footprint angle.
@@ -167,7 +162,10 @@ fn coordinate_at(node: &Node) -> Option<(f64, f64, f64)> {
 /// The X/Y scale pair, or None when no explicit scale is serialized.
 fn footprint_scale(footprint: &Node) -> Option<(f64, f64)> {
     let items = child_list(footprint, "scale").and_then(list_items)?;
-    Some((items.get(1).and_then(number)?, items.get(2).and_then(number)?))
+    Some((
+        items.get(1).and_then(number)?,
+        items.get(2).and_then(number)?,
+    ))
 }
 
 /// Resolves a unique board pad by footprint reference and pad number.
@@ -513,7 +511,6 @@ mod tests {
     }
 }
 
-
 #[cfg(test)]
 mod contract_tests {
     use super::{validate_decoupling_pad_distances, validate_missing_board};
@@ -554,11 +551,7 @@ mod contract_tests {
     /// # Returns
     ///
     /// A parsed PCB containing U1.1 and C1.1 at actual transformed pad anchors.
-    fn board(
-        capacitor_x: f64,
-        capacitor_net: &str,
-        return_net: &str,
-    ) -> BoardDocument {
+    fn board(capacitor_x: f64, capacitor_net: &str, return_net: &str) -> BoardDocument {
         let source = format!(
             r#"(kicad_pcb
                 (footprint "Package:IC" (layer "F.Cu") (at 100 50 90)
@@ -602,9 +595,11 @@ mod contract_tests {
     fn pcb001_rejects_mismatched_board_pad_nets() {
         let diagnostics =
             validate_decoupling_pad_distances(&profile(10.0), &board(104.0, "GND", "GND"), None);
-        assert!(diagnostics.iter().any(|item| {
-            item.code == "PCB001" && item.message.contains("but U1.1 is on")
-        }));
+        assert!(
+            diagnostics
+                .iter()
+                .any(|item| { item.code == "PCB001" && item.message.contains("but U1.1 is on") })
+        );
     }
 
     /// Warns when the declared target or capacitor pad cannot be uniquely resolved.
@@ -620,8 +615,7 @@ mod contract_tests {
             )"#,
         )
         .expect("board fixture parses");
-        let unresolved =
-            validate_decoupling_pad_distances(&profile(10.0), &missing_board, None);
+        let unresolved = validate_decoupling_pad_distances(&profile(10.0), &missing_board, None);
         assert!(unresolved.iter().any(|item| {
             item.code == "PCB001"
                 && item.severity == kicad_clippy_core::Severity::Warning
@@ -629,7 +623,6 @@ mod contract_tests {
         }));
     }
 
- 
     /// Rejects a capacitor return pad that is assigned to a different board net than its contract.
     #[test]
     fn pcb001_rejects_mismatched_return_pad_net() {

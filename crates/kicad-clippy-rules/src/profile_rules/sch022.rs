@@ -86,7 +86,9 @@ pub(super) fn validate_decoupling_intent(
         diagnostics.push(Diagnostic::for_builtin_rule(
             BuiltinRuleId::Sch022,
             Severity::Error,
-            format!("{reference} max_target_pad_distance_mm must be a finite non-negative distance"),
+            format!(
+                "{reference} max_target_pad_distance_mm must be a finite non-negative distance"
+            ),
         ));
     }
     if let Some(netlist) = netlist {

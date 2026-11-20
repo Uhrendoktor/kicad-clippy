@@ -17,13 +17,13 @@ pub(crate) const TWO_SIDED_FACTOR: f64 = 2.0;
 mod additional_profile_rules;
 /// Extracts shared schematic facts and orchestrates the dedicated geometry, connectivity, layout, and obstacle rule modules.
 mod generic;
+/// Defines the shared project-profile schema and orchestrates its dedicated connectivity, group, component-intent, and decoupling validators.
+mod metadata;
+/// Parses board pad coordinates and enforces declared PCB design-intent distances.
+mod pcb_rules;
 /// Checks UUID uniqueness within the currently loaded schematic document.
 #[path = "rules/sch024.rs"]
 mod sch024;
-/// Parses board pad coordinates and enforces declared PCB design-intent distances.
-mod pcb_rules;
-/// Defines the shared project-profile schema and orchestrates its dedicated connectivity, group, component-intent, and decoupling validators.
-mod metadata;
 
 pub use generic::{
     ComponentFact, MILLIMETRES_PER_MIL, RuleRun, SchematicArcFact, SchematicFacts,

@@ -74,7 +74,10 @@ fn collect_uuid_occurrences(node: &Node, occurrences: &mut BTreeMap<String, Vec<
         return;
     };
     for child in items.iter().skip(1) {
-        if let Node::List { items: child_items, .. } = child {
+        if let Node::List {
+            items: child_items, ..
+        } = child
+        {
             let is_uuid = matches!(
                 child_items.first(),
                 Some(Node::Atom {
@@ -132,8 +135,8 @@ mod tests {
     ///
     /// Diagnostics emitted under SCH024 for the supplied schematic document.
     fn findings(source: &str) -> Vec<kicad_clippy_core::Diagnostic> {
-        let document =
-            SchematicDocument::from_text("duplicate-uuid.kicad_sch", source).expect("fixture parses");
+        let document = SchematicDocument::from_text("duplicate-uuid.kicad_sch", source)
+            .expect("fixture parses");
         RuleEngine::with_builtins()
             .run(&document)
             .diagnostics

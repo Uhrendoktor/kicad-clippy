@@ -1855,7 +1855,11 @@ fn collect_title_block_fields(root: &Node) -> BTreeMap<String, String> {
         let Some(items) = list_items(comment) else {
             continue;
         };
-        let Some(index) = items.get(1).and_then(atom_value).and_then(|value| value.parse::<u8>().ok()) else {
+        let Some(index) = items
+            .get(1)
+            .and_then(atom_value)
+            .and_then(|value| value.parse::<u8>().ok())
+        else {
             continue;
         };
         if !(1..=9).contains(&index) {

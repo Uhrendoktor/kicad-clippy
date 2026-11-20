@@ -472,9 +472,7 @@ impl LintProfile {
         diagnostics.extend(sch004::Sch004.check(&context));
         match board {
             Some(board) => diagnostics.extend(crate::pcb_rules::validate_decoupling_pad_distances(
-                self,
-                board,
-                netlist,
+                self, board, netlist,
             )),
             None => diagnostics.extend(crate::pcb_rules::validate_missing_board(self)),
         }
