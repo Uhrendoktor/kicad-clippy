@@ -207,7 +207,7 @@ struct BuiltinRuleMetadata {
 }
 
 /// Canonical metadata for the complete stable built-in rule set.
-const BUILTIN_RULE_METADATA: [BuiltinRuleMetadata; 24] = [
+const BUILTIN_RULE_METADATA: [BuiltinRuleMetadata; 25] = [
     BuiltinRuleMetadata {
         id: BuiltinRuleId::Sch001,
         name: "wire geometry",
@@ -423,6 +423,15 @@ const BUILTIN_RULE_METADATA: [BuiltinRuleMetadata; 24] = [
         explanation: "Duplicate object identifiers make selection, grouping and cross-reference behavior ambiguous. This rule checks the parsed document only; hierarchy-wide aggregation across separately loaded sheets is a distinct future capability.",
         level: RuleLevel::Deny,
         tags: &["uuid", "document-integrity", "hierarchy"],
+    },
+    BuiltinRuleMetadata {
+        id: BuiltinRuleId::Pcb001,
+        name: "decoupling pad proximity",
+        category: "pcb-design-intent",
+        summary: "Checks profile-declared maximum center-to-center distance between a target IC supply pad and its decoupling capacitor pad.",
+        explanation: "PCB001 measures actual placed pad anchors after footprint rotation and side transforms. It does not analyze routed copper length, ground vias, zones, or return-loop quality; those require a copper connectivity model.",
+        level: RuleLevel::Deny,
+        tags: &["pcb", "decoupling", "pad-distance", "profile"],
     },
 ];
 

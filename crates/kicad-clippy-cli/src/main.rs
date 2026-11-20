@@ -18,7 +18,7 @@ use std::{
 use clap::{Parser, Subcommand, ValueEnum};
 use kicad_clippy_core::{Diagnostic, RulePolicy, Severity, SourceFile, builtin_rule_registry};
 use kicad_clippy_erc::{Netlist, NetlistError, export_netlist, run_native_erc};
-use kicad_clippy_parser::SchematicDocument;
+use kicad_clippy_parser::{BoardDocument, SchematicDocument};
 use kicad_clippy_rules::{
     LintProfile, MILLIMETRES_PER_MIL, ProfileMode, RuleEngine, SchematicFacts,
     physical_wire_component_ids, physical_wire_component_key,
@@ -63,6 +63,9 @@ enum Commands {
         /// Optional TOML policy for built-in rule levels and named presets.
         #[arg(long, value_name = "FILE")]
         policy: Option<PathBuf>,
+        /// Optional KiCad PCB file for board-level checks such as PCB001 (requires --profile).
+        #[arg(long, value_name = "FILE")]
+        board: Option<PathBuf>,
         /// Require complete component-intent metadata (requires --profile).
         #[arg(long)]
         strict: bool,
@@ -90,6 +93,8 @@ struct LintOptions<'a> {
     profile_path: Option<PathBuf>,
     /// Optional TOML rule policy, borrowed because policy loading does not consume the path.
     policy_path: Option<&'a Path>,
+    /// Optional PCB document used for board-level design-intent checks.
+    board_path: Option<PathBuf>,
     /// Whether complete component-intent metadata is required.
     strict: bool,
 }
@@ -100,6 +105,12 @@ enum CliError {
     /// Schematic file reading or parsing failed.
     #[error(transparent)]
     Schematic(#[from] kicad_clippy_parser::SchematicParseError),
+    /// Board file reading or parsing failed.
+    #[error(transparent)]
+    Board(#[from] kicad_clippy_parser::BoardParseError),
+    /// Board-level checks need a component-intent profile.
+    #[error("--board requires --profile FILE")]
+    BoardNeedsProfile,
     /// Native `KiCad` ERC invocation or report decoding failed.
     #[error(transparent)]
     Erc(#[from] kicad_clippy_erc::ErcError),
@@ -234,6 +245,7 @@ fn execute(cli: Cli) -> Result<ExitCode, CliError> {
             project,
             profile,
             policy,
+            board,
             strict,
         } => lint(
             &schematic,
@@ -244,6 +256,7 @@ fn execute(cli: Cli) -> Result<ExitCode, CliError> {
                 project_path: project.as_deref(),
                 profile_path: profile,
                 policy_path: policy.as_deref(),
+                board_path: board,
                 strict,
             },
         ),
@@ -271,12 +284,20 @@ fn lint(schematic_path: &Path, options: LintOptions<'_>) -> Result<ExitCode, Cli
         project_path,
         profile_path,
         policy_path,
+        board_path,
         strict,
     } = options;
     if strict && profile_path.is_none() {
         return Err(CliError::StrictNeedsProfile);
     }
+    if board_path.is_some() && profile_path.is_none() {
+        return Err(CliError::BoardNeedsProfile);
+    }
     let schematic = SchematicDocument::from_path(schematic_path)?;
+    let board = board_path
+        .as_ref()
+        .map(BoardDocument::from_path)
+        .transpose()?;
     let project = project_path
         .map(project_settings_from_project)
         .transpose()?;
@@ -332,7 +353,10 @@ fn lint(schematic_path: &Path, options: LintOptions<'_>) -> Result<ExitCode, Cli
         if strict {
             profile.mode = ProfileMode::Strict;
         }
-        diagnostics.extend(profile.validate_with_netlist(&schematic, netlist.as_ref()));
+        diagnostics.extend(match board.as_ref() {
+            Some(board) => profile.validate_with_board(&schematic, netlist.as_ref(), board),
+            None => profile.validate_with_netlist(&schematic, netlist.as_ref()),
+        });
     }
     diagnostics = apply_optional_rule_policy(policy_path, diagnostics)?;
     let summary = Summary::from_diagnostics(&diagnostics);
