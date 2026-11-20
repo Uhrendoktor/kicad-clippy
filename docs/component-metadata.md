@@ -21,7 +21,8 @@ Profiles are versioned JSON documents passed with --profile. The initial schema 
             "target_terminal": "1",
             "return_terminal": "2",
             "return_net": "GND",
-            "cluster": "U1.VREG_1V2"
+            "cluster": "U1.VREG_1V2",
+            "max_target_distance_mm": 4.0
           }
         }
       },
@@ -159,6 +160,10 @@ SCH021's supported connection requirements are intentionally narrow and explicit
 
 SCH022 requires each capacitor declared with role `decoupling` to provide `decoupling.target_pin`, `target_terminal`, `return_terminal`, `return_net`, and `cluster`. The target and return terminals must be different. When a netlist is supplied, the capacitor target terminal must share the target IC pin's net, and the return terminal must resolve to the declared return net. Capacitors assigned to the same target pin must agree on the return net; differing cluster identifiers are reported as a warning. These checks validate explicit declarations and do not infer a decoupling requirement for every IC supply pin.
 
+A decoupling capacitor may additionally set `max_target_distance_mm`. SCH022 measures the Euclidean distance between the transformed target IC pin anchor and transformed capacitor target-terminal anchor in schematic space. Missing or ambiguous pin geometry produces an unverified warning, not an assumed distance. This is a schematic-placement check only: it does not measure PCB pad distance, copper-path length, or return-loop area.
+
+An IC may declare an opt-in comma-separated `attributes.required_decoupling_pins` list, such as `"1, 2, 7"`. SCH022 requires at least one capacitor decoupling contract targeting every listed `REF.PIN`. When a KiCad netlist is available, each listed IC pin must also exist in that netlist. This list is the project's explicit supply-pin contract; the linter does not guess that every pin with a particular library electrical type requires a capacitor.
+
 The netlist adapter verifies actual target-pin and return-terminal net membership for decoupling capacitors. SCH004 separately checks profile-declared direct-wire pairs and common-pin groups against the physical wire graph built from transformed embedded-symbol pin coordinates. The graph never uses matching label names as connectivity edges. Automatic inference of every physical connection, physical proximity constraints, and shared-copper geometry analysis remain pending.
 
 ## Functional group documentation
@@ -252,4 +257,32 @@ A component may declare pins that are intentionally unused in the current design
 }
 ~~~
 
-SCH015 resolves those pin numbers through the placed symbol's embedded library geometry and requires a no-connect flag at each transformed pin coordinate. It also resolves the effective electrical type from the selected library pin alternate when the placed instance overrides the base pin. Do not list pins whose effective library electrical type is `unconnected` or `no_connect`: those types already denote a non-connectable pin and are distinct from a schematic no-connect flag. If pin geometry cannot be resolved, the profile requirement is reported as unverified. KiCad native ERC remains authoritative for the electrical meaning of both.
+SCH015 resolves those pin numbers through the placed symbol's embedded library geometry and requires a no-connect flag at each transformed pin coordinate. It also resolves the effective electrical type from the selected library pin alternate when the placed instance overrides the base pin. Do not list pins whose effective library electrical type is `unconnected` or `no_connect`: those types already denote a non-connectable pin and are distinct from a schematic no-connect flag. If pin geometry cannot be resolved, the profile requirement is reported as unverified. Independently of any profile, SCH015 also scans every resolved placed pin and reports an explicit marker on a pin whose effective type is `unconnected` or `no_connect`. KiCad native ERC remains authoritative for the electrical meaning of both.
+
+## Complete connector pin maps
+
+A connector can declare its full expected pin set with the comma-separated `attributes.required_pins` field:
+
+~~~json
+{
+  "components": {
+    "J1": {
+      "kind": "connector",
+      "role": "power_input",
+      "function": "External supply input",
+      "rationale": "Connects the external supply to the board",
+      "connections": {
+        "pin.1": "VBUS",
+        "pin.2": "GND",
+        "pin.3": "SHIELD"
+      },
+      "attributes": {
+        "interface_standard": "USB-C",
+        "required_pins": "1, 2, 3"
+      }
+    }
+  }
+}
+~~~
+
+SCH021 verifies that every listed pin has an expected net mapping in `connections.pin.N` or `pin_nets.N`. SCH014 independently verifies those mappings against the exported KiCad netlist. This check is opt-in because unpopulated, reserved, shield, and intentionally unused connector contacts differ by interface and product variant.

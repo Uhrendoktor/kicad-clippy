@@ -137,6 +137,10 @@ pub struct DecouplingIntent {
     pub return_net: String,
     /// Stable cluster identifier for capacitors serving the same target.
     pub cluster: String,
+    /// Optional maximum schematic distance between the target IC pin and capacitor terminal anchor, in millimetres.
+    /// This is a symbol-pin placement contract, not a PCB copper-path measurement.
+    #[serde(default)]
+    pub max_target_distance_mm: Option<f64>,
 }
 
 /// A pair of placed pins that must share one physical wire-only network.

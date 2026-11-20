@@ -95,18 +95,18 @@ These are candidates for separate identifiers or separately configurable child r
 | Hierarchical UUID uniqueness | Duplicate object UUIDs across all sheets and hierarchy paths | Complete hierarchical traversal; deterministic duplicate locations | P1 |
 | Label-scope policy | Forbid/allow global labels by scope; require hierarchical labels at declared sheet boundaries; detect unintended cross-sheet scope | Profile allowlist/denylist and hierarchy model; do not reimplement native name resolution | P1 |
 | Required no-connect intent | Explicit markers for profile-declared intentionally unused pins | Implemented by SCH015 using transformed embedded-pin coordinates and effective library pin type, including selected alternates | Done |
-| Redundant no-connect flags | Find all explicit markers placed on pins whose effective library type is `unconnected` or `no_connect`, whether or not the pin appears in a profile | Automatic marker-to-pin scan across all placed symbols and selected unit/convert | P2 |
+| Redundant no-connect flags | Report explicit markers on pins whose effective library type is `unconnected` or `no_connect`, whether or not the pin appears in a profile | Implemented by SCH015 for all resolved placed pin facts, including selected units/alternates; ambiguous/unresolved pin geometry is not guessed | Done (resolved pins) |
 | Field-to-body maximum gap | Per-reference Reference/Value gap from transformed symbol body | Implemented by SCH010 with per-component/per-field thresholds and estimated glyph rectangles; curve-based body outlines remain unverified | Done (partial geometry) |
 | Functional-group spacing | Body clearance, alignment, adjacency and subgroup nesting | SCH006 implements body clearance and axis alignment; adjacency, cluster compactness and subgroup nesting remain future work | P1 (partial) |
 | Title-block metadata | Required title, revision, company, date, sheet number/count and project fields | Project policy and variable expansion rules | P2 |
 | Component population/DNP | Optional parts retain real populated value and use DNP property rather than NC/DNP text in Value | Approved BOM/variant metadata and schematic DNP flag | P2 |
-| Decoupling coverage | Broaden declared decoupling contracts beyond their current terminal-to-target/return consistency checks | SCH022 provides declared target-pin/terminal and return-terminal/net consistency; deriving required supply-pin/domain coverage and rating policies remains future work | P1 (partial) |
-| Decoupler placement | Maximum capacitor-to-target-pin distance and cluster compactness | Embedded pin coordinates, capacitor footprint geometry on PCB, per-device thresholds | P1 schematic intent / P1 PCB |
+| Decoupling coverage | Require every explicitly declared IC supply pin to have at least one decoupling capacitor contract | Implemented by SCH022 with `attributes.required_decoupling_pins`; exported netlist verifies each required target pin exists | Done (opt-in contract) |
+| Decoupler placement | Maximum capacitor-to-target-pin distance in the schematic and cluster compactness/PCB return-loop quality | SCH022 checks optional `max_target_distance_mm` using transformed symbol-pin anchors. Capacitor cluster compactness beyond target distance and PCB pad/copper return-loop analysis remain future work | P1 (partial) |
 | Bulk-capacitor contract | Rail served, polarity, placement region and minimum voltage margin | Component ratings, rail voltage/tolerance/transient policy | P2 |
 | Pull-up/pull-down topology | Required pull-ups for declared open-drain interfaces; divider endpoints and bias requirements | Interface role and expected voltage/current ranges | P2 |
 | LED current limiting | Required series current-limiting path for declared indicator LEDs | LED Vf/current, supply range and resistor value/tolerance/power | P2 |
 | Protection path | Declared fuse, reverse-polarity, TVS/clamp, flyback or discharge path exists and has correct orientation | Role metadata, topology path and component ratings | P2 |
-| Connector interface completeness | All expected pins mapped; direction, standard, mating interface and sheet-boundary ownership are consistent | Interface schema and parent/child boundary contract | P1 |
+| Connector interface completeness | Required pin set is mapped; direction, standard, mating interface and sheet-boundary ownership are consistent | SCH021 checks opt-in `attributes.required_pins` against expected `connections.pin.N`/`pin_nets.N` mappings; direction/mating/boundary contracts remain future work | P1 (partial) |
 | Test-point coverage | Required power/reset/programming/measurement nets have accessible test points | Critical-net list and project test strategy | P2 |
 | Oscillator support network | Crystal pins, load capacitors and target MCU pins are mapped and documented | Device-specific oscillator topology and load-capacitor calculation | P2 |
 | Analog DC return path | Declared high-impedance/analog node has a valid bias/DC return path | Circuit role and analysis of conductive paths; avoid guessing from labels | P2 |
@@ -186,6 +186,8 @@ The following milestones are implemented in the current PR #28 branch:
 - Separation of SCH004 physical wire topology from SCH014 exported logical pin-to-net assertions.
 - SCH006 body-to-body clearance/alignment and SCH010 per-field maximum body-gap contracts.
 - SCH009 independently declared frame-overlap detection, alongside the wider rule and profile documentation updates.
+
+The following PR #27/#28 cases have now been implemented in this follow-up: universal redundant no-connect-marker detection for resolved pins, opt-in required decoupling coverage per IC supply pin, opt-in schematic target-pin distance checks for decouplers, and opt-in required connector pin-map completeness. The contracts remain explicit and do not promote library-family guesses into universal rules.
 
 Recommended future work, ordered by prerequisites:
 
