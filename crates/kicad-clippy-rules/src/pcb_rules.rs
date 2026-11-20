@@ -302,8 +302,7 @@ pub(crate) fn validate_decoupling_pad_distances(
                         ),
                     ));
                 }
-                if let Some(actual_return_net) =
-                    return_pad.and_then(|pad| pad.net_name.as_deref())
+                if let Some(actual_return_net) = return_pad.and_then(|pad| pad.net_name.as_deref())
                 {
                     if actual_return_net != expected_return_net {
                         diagnostics.push(Diagnostic::for_builtin_rule(
