@@ -282,8 +282,7 @@ fn validate_member_alignment(
                     BuiltinRuleId::Sch006,
                     Severity::Error,
                     format!(
-                        "group {group_id} members {first_reference} and {second_reference} deviate {:.2} mm from a shared {axis_name}; tolerance is {:.2} mm",
-                        deviation_mm, tolerance_mm
+                        "group {group_id} members {first_reference} and {second_reference} deviate {deviation_mm:.2} mm from a shared {axis_name}; tolerance is {tolerance_mm:.2} mm"
                     ),
                 ));
             }
@@ -358,20 +357,22 @@ mod tests {
     /// Confirms body-to-body clearance is checked between transformed rectangles rather than origins.
     #[test]
     fn group_minimum_body_clearance_uses_transformed_outlines() {
-        let mut facts = SchematicFacts::default();
-        facts.components = vec![
-            ComponentFact {
-                reference: "R1".to_owned(),
-                uuid: None,
-                position_mm: Some((0.0, 0.0)),
-            },
-            ComponentFact {
-                reference: "C1".to_owned(),
-                uuid: None,
-                position_mm: Some((5.0, 0.0)),
-            },
-        ];
-        facts.symbol_primitives = vec![rectangle("R1", 0.0, 2.0), rectangle("C1", 5.0, 7.0)];
+        let facts = SchematicFacts {
+            components: vec![
+                ComponentFact {
+                    reference: "R1".to_owned(),
+                    uuid: None,
+                    position_mm: Some((0.0, 0.0)),
+                },
+                ComponentFact {
+                    reference: "C1".to_owned(),
+                    uuid: None,
+                    position_mm: Some((5.0, 0.0)),
+                },
+            ],
+            symbol_primitives: vec![rectangle("R1", 0.0, 2.0), rectangle("C1", 5.0, 7.0)],
+            ..SchematicFacts::default()
+        };
         let group = GroupIntent {
             members: vec!["R1".to_owned(), "C1".to_owned()],
             minimum_member_body_clearance_mm: Some(4.0),
@@ -388,19 +389,21 @@ mod tests {
     /// Confirms horizontal and vertical origin alignment use a perpendicular tolerance.
     #[test]
     fn group_member_alignment_checks_perpendicular_axis() {
-        let mut facts = SchematicFacts::default();
-        facts.components = vec![
-            ComponentFact {
-                reference: "R1".to_owned(),
-                uuid: None,
-                position_mm: Some((0.0, 0.0)),
-            },
-            ComponentFact {
-                reference: "C1".to_owned(),
-                uuid: None,
-                position_mm: Some((5.0, 0.5)),
-            },
-        ];
+        let facts = SchematicFacts {
+            components: vec![
+                ComponentFact {
+                    reference: "R1".to_owned(),
+                    uuid: None,
+                    position_mm: Some((0.0, 0.0)),
+                },
+                ComponentFact {
+                    reference: "C1".to_owned(),
+                    uuid: None,
+                    position_mm: Some((5.0, 0.5)),
+                },
+            ],
+            ..SchematicFacts::default()
+        };
         let group = GroupIntent {
             members: vec!["R1".to_owned(), "C1".to_owned()],
             alignment_axis: Some(GroupAlignmentAxis::Horizontal),
