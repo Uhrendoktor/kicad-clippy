@@ -265,6 +265,64 @@ mod tests {
     use crate::metadata::{ComponentIntent, ComponentKind, ComponentRole};
     use std::collections::BTreeMap;
 
+
+    /// Builds test-point metadata with the supplied role and pin-to-net mappings.
+    ///
+    /// # Arguments
+    ///
+    /// * `role` — Declared semantic role for the test-point component.
+    /// * `mappings` — Pin number and expected net-name pairs recorded in `pin_nets`.
+    ///
+    /// # Returns
+    ///
+    /// A complete test-point component intent suitable for SCH021 role validation.
+    fn test_point_intent(role: &str, mappings: &[(&str, &str)]) -> ComponentIntent {
+        ComponentIntent {
+            kind: ComponentKind::TestPoint,
+            role: ComponentRole(role.to_owned()),
+            function: Some("VDD measurement access".to_owned()),
+            rationale: Some("Provides a production test pad".to_owned()),
+            evidence: None,
+            decoupling: None,
+            connections: BTreeMap::new(),
+            pin_nets: mappings
+                .iter()
+                .map(|(pin, net)| ((*pin).to_owned(), (*net).to_owned()))
+                .collect(),
+            attributes: BTreeMap::new(),
+            max_field_body_gap_mm: BTreeMap::new(),
+            voltage_rating_min_v: None,
+            power_rating_min_w: None,
+        }
+    }
+
+    /// Accepts a test point with the required semantic role and pin-net mapping.
+    #[test]
+    fn test_point_role_requires_complete_pin_mapping() {
+        let intent = test_point_intent("test_point", &[("1", "VDD")]);
+        assert!(validate_role_contract("TP1", &intent).is_empty());
+    }
+
+    /// Rejects test-point components that omit their pin mapping or declare another role.
+    #[test]
+    fn test_point_role_rejects_missing_mapping_and_wrong_role() {
+        let missing_mapping = test_point_intent("test_point", &[]);
+        let wrong_role = test_point_intent("debug", &[("1", "VDD")]);
+        let missing = validate_role_contract("TP1", &missing_mapping);
+        let wrong = validate_role_contract("TP2", &wrong_role);
+        assert!(missing.iter().any(|item| item.message.contains("at least one pin_nets")));
+        assert!(wrong.iter().any(|item| item.message.contains("must use role")));
+    }
+
+    /// Rejects blank test-point pin-net fields.
+    #[test]
+    fn test_point_role_rejects_blank_pin_net_fields() {
+        let intent = test_point_intent("test_point", &[("1", "   ")]);
+        assert!(validate_role_contract("TP1", &intent)
+            .iter()
+            .any(|item| item.message.contains("trimmed, non-empty")));
+    }
+
     /// Builds connector metadata with the supplied required-pin list and expected net mappings.
     ///
     /// # Arguments

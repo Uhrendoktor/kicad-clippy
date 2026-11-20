@@ -719,13 +719,12 @@ fn pad_has_copper_and_mask_layers(pad: &Node) -> bool {
     let Some(items) = child_list(pad, "layers").and_then(list_items) else {
         return false;
     };
-    let mut has_copper = false;
-    let mut has_mask = false;
-    for layer in items.iter().skip(1).filter_map(atom_text) {
-        has_copper |= layer == "*.Cu" || layer.ends_with(".Cu");
-        has_mask |= layer == "*.Mask" || layer.ends_with(".Mask");
-    }
-    has_copper && has_mask
+    let layers: Vec<_> = items.iter().skip(1).filter_map(atom_text).collect();
+    let front_exposed = (layers.contains(&"F.Cu") || layers.contains(&"*.Cu"))
+        && (layers.contains(&"F.Mask") || layers.contains(&"*.Mask"));
+    let back_exposed = (layers.contains(&"B.Cu") || layers.contains(&"*.Cu"))
+        && (layers.contains(&"B.Mask") || layers.contains(&"*.Mask"));
+    front_exposed || back_exposed
 }
 
 /// Returns the direct list items of an S-expression list.
@@ -1157,13 +1156,31 @@ mod test_point_tests {
     /// # Returns
     ///
     /// A parsed PCB containing a single placed TP1 footprint and its pin-1 test pad.
-    fn test_point_board(net: Option<&str>, layers: &str) -> BoardDocument {
-        let net_expression = net.map_or_else(String::new, |name| format!("(net 1 \"{name}\")"));
+    /// Builds a board containing TP1.1 with configurable net, footprint side, pad kind and layers.
+    ///
+    /// # Arguments
+    ///
+    /// * `net` — Optional net name serialized on TP1.1.
+    /// * `footprint_layer` — Side on which the test-point footprint is placed, F.Cu or B.Cu.
+    /// * `pad_kind` — Serialized pad kind, such as smd or thru_hole.
+    /// * `layers` — Complete pad layer expression, including the outer layers list.
+    ///
+    /// # Returns
+    ///
+    /// A parsed PCB containing a single placed TP1 footprint and its pin-1 test pad.
+    fn test_point_board(
+        net: Option<&str>,
+        footprint_layer: &str,
+        pad_kind: &str,
+        layers: &str,
+    ) -> BoardDocument {
+        let net_expression =
+            net.map_or_else(String::new, |name| format!("(net 1 \\"{name}\\")"));
         let source = format!(
             r#"(kicad_pcb
-                (footprint "TestPoint:TP" (layer "F.Cu") (at 10 10)
+                (footprint "TestPoint:TP" (layer "{footprint_layer}") (at 10 10)
                     (property "Reference" "TP1")
-                    (pad "1" smd circle (at 0 0) (size 1 1) {layers} {net_expression})
+                    (pad "1" {pad_kind} circle (at 0 0) (size 1 1) {layers} {net_expression})
                 )
             )"#
         );
@@ -1172,20 +1189,20 @@ mod test_point_tests {
 
     /// Accepts a test-point pad assigned to the required net with both copper and mask exposure.
     #[test]
-    fn pcb002_accepts_exposed_test_point_pad_on_required_net() {
+    fn pcb009_accepts_exposed_test_point_pad_on_required_net() {
         let diagnostics = validate_test_point_pad_access(
             &test_point_profile(),
-            &test_point_board(Some("VDD"), r#"(layers "F.Cu" "F.Mask")"#),
+            &test_point_board(Some("VDD"), "F.Cu", "smd", r#"(layers "F.Cu" "F.Mask")"#),
         );
         assert!(diagnostics.is_empty());
     }
 
     /// Rejects a placed test-point pad assigned to the wrong board net.
     #[test]
-    fn pcb002_rejects_test_point_pad_on_wrong_net() {
+    fn pcb009_rejects_test_point_pad_on_wrong_net() {
         let diagnostics = validate_test_point_pad_access(
             &test_point_profile(),
-            &test_point_board(Some("GND"), r#"(layers "F.Cu" "F.Mask")"#),
+            &test_point_board(Some("GND"), "F.Cu", "smd", r#"(layers "F.Cu" "F.Mask")"#),
         );
         assert!(diagnostics.iter().any(|item| {
             item.code == "PCB009"
@@ -1196,10 +1213,10 @@ mod test_point_tests {
 
     /// Rejects a test-point pad that lacks a solder-mask opening layer.
     #[test]
-    fn pcb002_rejects_tented_test_point_pad() {
+    fn pcb009_rejects_tented_test_point_pad() {
         let diagnostics = validate_test_point_pad_access(
             &test_point_profile(),
-            &test_point_board(Some("VDD"), r#"(layers "F.Cu")"#),
+            &test_point_board(Some("VDD"), "F.Cu", "smd", r#"(layers "F.Cu")"#),
         );
         assert!(diagnostics.iter().any(|item| {
             item.code == "PCB009" && item.message.contains("exposed solder-mask layer")
@@ -1208,7 +1225,7 @@ mod test_point_tests {
 
     /// Rejects a profile-declared test-point footprint pin that is absent from the PCB.
     #[test]
-    fn pcb002_rejects_missing_test_point_pad() {
+    fn pcb009_rejects_missing_test_point_pad() {
         let board =
             BoardDocument::from_text("missing-test-point.kicad_pcb", "(kicad_pcb)")
                 .expect("board parses");
@@ -1220,18 +1237,43 @@ mod test_point_tests {
 
     /// Warns when required test-point exposure cannot be evaluated without a board.
     #[test]
-    fn pcb002_warns_when_board_is_not_supplied() {
+    fn pcb009_warns_when_board_is_not_supplied() {
         let diagnostics = validate_missing_test_point_board(&test_point_profile());
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].code, "PCB009");
         assert_eq!(diagnostics[0].severity, kicad_clippy_core::Severity::Warning);
     }
 
+
+    /// Accepts a back-side SMD test-point pad only when its back-side mask is exposed.
+    #[test]
+    fn pcb009_accepts_back_side_test_point_exposure() {
+        let diagnostics = validate_test_point_pad_access(
+            &test_point_profile(),
+            &test_point_board(Some("VDD"), "B.Cu", "smd", r#"(layers "B.Cu" "B.Mask")"#),
+        );
+        assert!(diagnostics.is_empty());
+    }
+
+    /// Rejects a front-side copper pad whose only solder-mask opening is on the back side.
+    #[test]
+    fn pcb009_rejects_mask_exposure_on_the_wrong_side() {
+        let diagnostics = validate_test_point_pad_access(
+            &test_point_profile(),
+            &test_point_board(Some("VDD"), "F.Cu", "smd", r#"(layers "F.Cu" "B.Mask")"#),
+        );
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "PCB009" && item.message.contains("exposed solder-mask layer")
+        }));
+    }
+
     /// Accepts plated through-hole test-point pads whose wildcard layers expose copper and mask on both sides.
     #[test]
-    fn pcb002_accepts_through_hole_wildcard_copper_and_mask_layers() {
+    fn pcb009_accepts_through_hole_wildcard_copper_and_mask_layers() {
         let board = test_point_board(
             Some("VDD"),
+            "F.Cu",
+            "thru_hole",
             r#"(layers "*.Cu" "*.Mask")"#,
         );
         let facts = BoardFacts::from_document(&board);

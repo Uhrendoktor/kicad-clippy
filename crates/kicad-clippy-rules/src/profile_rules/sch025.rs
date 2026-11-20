@@ -206,6 +206,16 @@ mod tests {
         assert!(diagnostics[0].message.contains("not verified"));
     }
 
+
+    /// Rejects a declared test-point pin that is missing from the exported netlist.
+    #[test]
+    fn test_point_pin_must_exist_in_exported_netlist() {
+        let diagnostics = validate_required_test_point_nets(&profile(true), Some(&netlist(None)));
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].code, "SCH025");
+        assert!(diagnostics[0].message.contains("absent from the exported"));
+    }
+
     /// Rejects a test-point pin assigned to a different net in the exported netlist.
     #[test]
     fn test_point_pin_must_belong_to_required_net() {
