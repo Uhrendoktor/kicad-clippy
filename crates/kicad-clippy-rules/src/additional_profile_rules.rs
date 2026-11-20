@@ -31,7 +31,6 @@ pub fn validate_profile_extensions(
     diagnostics
 }
 
-
 /// Enforces explicit project policy for global-label usage and required label scopes.
 ///
 /// This check evaluates only labels present in the currently loaded schematic document.
@@ -47,10 +46,7 @@ pub fn validate_profile_extensions(
 ///
 /// SCH027 configuration errors, global-label allow/deny findings, missing required labels,
 /// and required-scope mismatches on the currently loaded sheet.
-fn validate_label_scope_policy(
-    profile: &LintProfile,
-    facts: &SchematicFacts,
-) -> Vec<Diagnostic> {
+fn validate_label_scope_policy(profile: &LintProfile, facts: &SchematicFacts) -> Vec<Diagnostic> {
     let Some(policy) = profile.label_scope_policy.as_ref() else {
         return Vec::new();
     };
@@ -73,9 +69,7 @@ fn validate_label_scope_policy(
 /// # Returns
 ///
 /// SCH027 configuration errors; an empty vector means the label policy is internally consistent.
-fn validate_label_scope_configuration(
-    policy: &crate::LabelScopePolicy,
-) -> Vec<Diagnostic> {
+fn validate_label_scope_configuration(policy: &crate::LabelScopePolicy) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let valid_name = |name: &str| !name.trim().is_empty() && name.trim() == name;
 
@@ -104,11 +98,12 @@ fn validate_label_scope_configuration(
             diagnostics.push(Diagnostic::for_builtin_rule(
                 BuiltinRuleId::Sch027,
                 Severity::Error,
-                format!("label_scope_policy.required_label_scopes contains invalid label name {name:?}"),
+                format!(
+                    "label_scope_policy.required_label_scopes contains invalid label name {name:?}"
+                ),
             ));
         }
-        if *scope == crate::LabelScopeKind::Global
-            && policy.forbidden_global_labels.contains(name)
+        if *scope == crate::LabelScopeKind::Global && policy.forbidden_global_labels.contains(name)
         {
             diagnostics.push(Diagnostic::for_builtin_rule(
                 BuiltinRuleId::Sch027,
@@ -156,12 +151,19 @@ fn validate_global_label_policy(
     facts: &SchematicFacts,
 ) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
-    for label in facts.labels.iter().filter(|label| label.kind == "global_label") {
+    for label in facts
+        .labels
+        .iter()
+        .filter(|label| label.kind == "global_label")
+    {
         if policy.forbidden_global_labels.contains(&label.name) {
             diagnostics.push(Diagnostic::for_builtin_rule(
                 BuiltinRuleId::Sch027,
                 Severity::Error,
-                format!("global label {:?} is forbidden by label_scope_policy on the loaded sheet", label.name),
+                format!(
+                    "global label {:?} is forbidden by label_scope_policy on the loaded sheet",
+                    label.name
+                ),
             ));
         } else if policy
             .allowed_global_labels
@@ -171,7 +173,10 @@ fn validate_global_label_policy(
             diagnostics.push(Diagnostic::for_builtin_rule(
                 BuiltinRuleId::Sch027,
                 Severity::Error,
-                format!("global label {:?} is not listed in allowed_global_labels", label.name),
+                format!(
+                    "global label {:?} is not listed in allowed_global_labels",
+                    label.name
+                ),
             ));
         }
     }
@@ -862,9 +867,7 @@ mod label_scope_policy_tests {
     ///
     /// A profile with the supplied label-scope policy.
     fn profile(policy: &str) -> LintProfile {
-        let source = format!(
-            r#"{{"schema_version":1,"label_scope_policy":{policy}}}"#
-        );
+        let source = format!(r#"{{"schema_version":1,"label_scope_policy":{policy}}}"#);
         serde_json::from_str(&source).expect("label-scope profile parses")
     }
 
@@ -907,22 +910,21 @@ mod label_scope_policy_tests {
     #[test]
     fn empty_global_allow_list_forbids_all_global_labels() {
         let profile = profile(r#"{"allowed_global_labels":[]}"#);
-        let diagnostics = validate_label_scope_policy(
-            &profile,
-            &facts(&[("global_label", "VDD")]),
-        );
+        let diagnostics = validate_label_scope_policy(&profile, &facts(&[("global_label", "VDD")]));
         assert_eq!(diagnostics.len(), 1);
-        assert!(diagnostics[0].message.contains("not listed in allowed_global_labels"));
+        assert!(
+            diagnostics[0]
+                .message
+                .contains("not listed in allowed_global_labels")
+        );
     }
 
     /// Rejects global labels on the explicit deny-list.
     #[test]
     fn forbidden_global_labels_are_rejected() {
         let profile = profile(r#"{"forbidden_global_labels":["RESET"]}"#);
-        let diagnostics = validate_label_scope_policy(
-            &profile,
-            &facts(&[("global_label", "RESET")]),
-        );
+        let diagnostics =
+            validate_label_scope_policy(&profile, &facts(&[("global_label", "RESET")]));
         assert_eq!(diagnostics.len(), 1);
         assert!(diagnostics[0].message.contains("is forbidden"));
     }
@@ -967,8 +969,16 @@ mod label_scope_policy_tests {
             &facts(&[("global_label", "RESET"), ("label", "VDD")]),
         );
         assert_eq!(diagnostics.len(), 3);
-        assert!(diagnostics.iter().any(|item| item.message.contains("RESET") && item.message.contains("requires")));
-        assert!(diagnostics.iter().any(|item| item.message.contains("VDD") && item.message.contains("requires")));
+        assert!(
+            diagnostics
+                .iter()
+                .any(|item| item.message.contains("RESET") && item.message.contains("requires"))
+        );
+        assert!(
+            diagnostics
+                .iter()
+                .any(|item| item.message.contains("VDD") && item.message.contains("requires"))
+        );
         assert!(diagnostics.iter().any(|item| item.message.contains("MISSING") && item.message.contains("is missing")));
     }
 
@@ -993,10 +1003,7 @@ mod label_scope_policy_tests {
         let profile: LintProfile =
             serde_json::from_str(r#"{"schema_version":1}"#).expect("plain profile parses");
         assert_eq!(
-            validate_label_scope_policy(
-                &profile,
-                &facts(&[("global_label", "ANY_NAME")])
-            ),
+            validate_label_scope_policy(&profile, &facts(&[("global_label", "ANY_NAME")])),
             Vec::new()
         );
     }
@@ -1006,9 +1013,11 @@ mod label_scope_policy_tests {
     fn label_scope_kind_values_round_trip_through_profile_deserialization() {
         let profile = profile(r#"{"required_label_scopes":{"RESET":"hierarchical"}}"#);
         assert_eq!(
-            profile.label_scope_policy.as_ref().and_then(|policy| policy.required_label_scopes.get("RESET")),
+            profile
+                .label_scope_policy
+                .as_ref()
+                .and_then(|policy| policy.required_label_scopes.get("RESET")),
             Some(&LabelScopeKind::Hierarchical)
         );
     }
 }
-
