@@ -1146,16 +1146,6 @@ mod test_point_tests {
         .expect("test-point profile parses")
     }
 
-    /// Builds a board containing TP1.1 with configurable net and pad-layer declarations.
-    ///
-    /// # Arguments
-    ///
-    /// * `net` — Optional net name serialized on TP1.1.
-    /// * `layers` — Complete pad layer expression, including the outer layers list.
-    ///
-    /// # Returns
-    ///
-    /// A parsed PCB containing a single placed TP1 footprint and its pin-1 test pad.
     /// Builds a board containing TP1.1 with configurable net, footprint side, pad kind and layers.
     ///
     /// # Arguments
@@ -1175,7 +1165,7 @@ mod test_point_tests {
         layers: &str,
     ) -> BoardDocument {
         let net_expression =
-            net.map_or_else(String::new, |name| format!("(net 1 \\"{name}\\")"));
+            net.map_or_else(String::new, |name| format!("(net 1 \"{name}\")"));
         let source = format!(
             r#"(kicad_pcb
                 (footprint "TestPoint:TP" (layer "{footprint_layer}") (at 10 10)

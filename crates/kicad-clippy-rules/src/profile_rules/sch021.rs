@@ -100,7 +100,11 @@ pub(super) fn validate_role_contract(reference: &str, intent: &ComponentIntent) 
             ));
         }
         for (pin, net) in &intent.pin_nets {
-            if pin.trim().is_empty() || net.trim().is_empty() || pin.trim() != pin {
+            if pin.trim().is_empty()
+                || net.trim().is_empty()
+                || pin.trim() != pin
+                || net.trim() != net
+            {
                 diagnostics.push(Diagnostic::for_builtin_rule(
                     BuiltinRuleId::Sch021,
                     Severity::Error,
@@ -318,6 +322,15 @@ mod tests {
     #[test]
     fn test_point_role_rejects_blank_pin_net_fields() {
         let intent = test_point_intent("test_point", &[("1", "   ")]);
+        assert!(validate_role_contract("TP1", &intent)
+            .iter()
+            .any(|item| item.message.contains("trimmed, non-empty")));
+    }
+
+    /// Rejects test-point net mappings with leading or trailing whitespace.
+    #[test]
+    fn test_point_role_rejects_untrimmed_net_names() {
+        let intent = test_point_intent("test_point", &[("1", "VDD ")]);
         assert!(validate_role_contract("TP1", &intent)
             .iter()
             .any(|item| item.message.contains("trimmed, non-empty")));
