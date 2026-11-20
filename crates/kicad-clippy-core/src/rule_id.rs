@@ -61,11 +61,13 @@ pub enum BuiltinRuleId {
     Sch025,
     /// Represents the `PCB009` rule: Verifies required test-point pads exist, match their nets, and have exposed copper/mask layers.
     Pcb009,
+    /// Represents the `SCH026` rule: Checks selected schematic anchors against a profile-declared project grid.
+    Sch026,
 }
 
 impl BuiltinRuleId {
     /// All built-in rules in stable identifier order.
-    pub const ALL: [Self; 27] = [
+    pub const ALL: [Self; 28] = [
         Self::Sch001,
         Self::Sch002,
         Self::Sch003,
@@ -93,6 +95,7 @@ impl BuiltinRuleId {
         Self::Pcb001,
         Self::Sch025,
         Self::Pcb009,
+        Self::Sch026,
     ];
 
     /// Returns the canonical external code for this built-in rule, preserving the stable `SCHnnn` identifier.
@@ -130,6 +133,7 @@ impl BuiltinRuleId {
             Self::Pcb001 => "PCB001",
             Self::Sch025 => "SCH025",
             Self::Pcb009 => "PCB009",
+            Self::Sch026 => "SCH026",
         }
     }
 

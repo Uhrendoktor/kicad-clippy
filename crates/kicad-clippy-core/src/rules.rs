@@ -207,7 +207,7 @@ struct BuiltinRuleMetadata {
 }
 
 /// Canonical metadata for the complete stable built-in rule set.
-const BUILTIN_RULE_METADATA: [BuiltinRuleMetadata; 27] = [
+const BUILTIN_RULE_METADATA: [BuiltinRuleMetadata; 28] = [
     BuiltinRuleMetadata {
         id: BuiltinRuleId::Sch001,
         name: "wire geometry",
@@ -456,6 +456,15 @@ const BUILTIN_RULE_METADATA: [BuiltinRuleMetadata; 27] = [
             "accessibility",
             "profile",
         ],
+    },
+    BuiltinRuleMetadata {
+        id: BuiltinRuleId::Sch026,
+        name: "project grid alignment",
+        category: "schematic-layout",
+        summary: "Checks selected schematic anchors against an opt-in profile-declared grid spacing and origin.",
+        explanation: "SCH026 checks only the object families named by the profile, defaulting to placed symbol origins and label anchors. Pin anchors, junctions and wire endpoints are opt-in to avoid duplicating native ERC reports by default. Component, pin, label and coordinate exceptions are explicit; the rule does not infer or modify KiCad project grid settings.",
+        level: RuleLevel::Deny,
+        tags: &["grid", "alignment", "layout", "profile"],
     },
 ];
 

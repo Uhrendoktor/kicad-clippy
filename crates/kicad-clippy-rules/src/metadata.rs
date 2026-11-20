@@ -69,6 +69,10 @@ mod sch022;
 #[path = "profile_rules/sch025.rs"]
 mod sch025;
 
+/// Checks `SCH026` configurable alignment of selected schematic anchors to a project grid.
+#[path = "profile_rules/sch026.rs"]
+mod sch026;
+
 /// Currently supported project-profile schema version.
 const SUPPORTED_PROFILE_SCHEMA_VERSION: u32 = 1;
 /// Minimum number of distinct pins required in a group contract.
@@ -203,6 +207,72 @@ pub struct SeparateWirePair {
     /// Also require the pins to resolve to different exported logical nets; SCH014 owns this check.
     #[serde(default)]
     pub netlist_separate: bool,
+}
+
+
+/// Default coordinate tolerance for comparing schematic anchors with the configured grid, in millimetres.
+const DEFAULT_GRID_ALIGNMENT_TOLERANCE_MM: f64 = 0.001;
+
+/// A schematic object family selected for project grid-alignment validation.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GridAlignmentTarget {
+    /// Placed component symbol origins.
+    SymbolOrigins,
+    /// Transformed embedded-symbol pin anchors.
+    PinAnchors,
+    /// Local, global and hierarchical label anchors.
+    LabelAnchors,
+    /// Explicit schematic junction anchors.
+    Junctions,
+    /// Both endpoints of each physical wire segment.
+    WireEndpoints,
+}
+
+/// Returns the default grid targets: symbol origins and label anchors.
+fn default_grid_alignment_targets() -> BTreeSet<GridAlignmentTarget> {
+    BTreeSet::from([
+        GridAlignmentTarget::SymbolOrigins,
+        GridAlignmentTarget::LabelAnchors,
+    ])
+}
+
+/// Returns the default grid origin at the sheet coordinate origin.
+fn default_grid_origin_mm() -> [f64; 2] {
+    [0.0, 0.0]
+}
+
+/// Returns the default coordinate tolerance for grid comparisons, in millimetres.
+fn default_grid_alignment_tolerance_mm() -> f64 {
+    DEFAULT_GRID_ALIGNMENT_TOLERANCE_MM
+}
+
+/// Opt-in project contract for aligning selected schematic anchors to a regular grid.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct GridAlignmentIntent {
+    /// Positive grid spacing in millimetres.
+    pub spacing_mm: f64,
+    /// Sheet-space grid origin as [x, y], in millimetres.
+    #[serde(default = "default_grid_origin_mm")]
+    pub origin_mm: [f64; 2],
+    /// Maximum allowed per-axis distance from the nearest grid coordinate, in millimetres.
+    #[serde(default = "default_grid_alignment_tolerance_mm")]
+    pub tolerance_mm: f64,
+    /// Object families to check. Defaults to symbol origins and label anchors; pin/junction/wire checks are explicit opt-ins.
+    #[serde(default = "default_grid_alignment_targets")]
+    pub targets: BTreeSet<GridAlignmentTarget>,
+    /// Component references exempt from symbol-origin grid checks.
+    #[serde(default)]
+    pub exempt_components: BTreeSet<String>,
+    /// Pin references in REF.PIN form exempt from pin-anchor grid checks.
+    #[serde(default)]
+    pub exempt_pins: BTreeSet<String>,
+    /// Label selectors in kind:name form, such as local:VDD, exempt from label-anchor grid checks.
+    #[serde(default)]
+    pub exempt_labels: BTreeSet<String>,
+    /// Exact sheet-space anchors exempt from coordinate checks, within the geometry equality tolerance.
+    #[serde(default)]
+    pub exempt_coordinates_mm: Vec<[f64; 2]>,
 }
 
 /// Declared purpose and engineering constraints for one component.
@@ -352,6 +422,9 @@ pub struct LintProfile {
     /// Named critical nets that must have at least one profile-declared test-point pin.
     #[serde(default)]
     pub required_test_point_nets: BTreeSet<String>,
+    /// Optional grid-alignment policy for selected symbol, pin, label and wire anchors.
+    #[serde(default)]
+    pub grid_alignment: Option<GridAlignmentIntent>,
 }
 
 /// Immutable data shared by all project-profile rule implementations.
@@ -471,6 +544,7 @@ impl LintProfile {
         diagnostics.extend(sch020::Sch020.check(&context));
         diagnostics.extend(sch022::Sch022.check(&context));
         diagnostics.extend(sch025::Sch025.check(&context));
+        diagnostics.extend(sch026::Sch026.check(&context));
         diagnostics.extend(sch014::Sch014.check(&context));
         diagnostics.extend(sch010::Sch010.check(&context));
         diagnostics.extend(sch017::Sch017.check(&context));
