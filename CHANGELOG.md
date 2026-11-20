@@ -4,6 +4,9 @@ Notable changes are documented here. This project is in early development and ha
 
 ## Unreleased
 
+- Added SCH023 opt-in title-block completeness using `required_title_block_fields` and SCH024 duplicate UUID detection within the currently loaded schematic document.
+- Added a lossless `.kicad_pcb` parser and optional CLI `--board` input. PCB001 checks declared decoupling target/capacitor pad-center distance after footprint side/rotation transforms and verifies board-net agreement; track/via/zone and return-loop analysis remain future work.
+
 - SCH015 now scans all resolved placed pins and reports explicit no-connect markers on effective `unconnected` or `no_connect` library pin types, including selected alternates.
 - SCH021 connectors may declare `attributes.required_pins`; every listed pin must have an expected net mapping in `connections.pin.N` or `pin_nets.N`.
 - SCH022 IC profiles may declare `attributes.required_decoupling_pins`, requiring a decoupling intent for each listed supply pin. Decoupling contracts may set `max_target_distance_mm` to enforce a maximum distance between transformed target-pin and capacitor-terminal anchors in schematic space.

@@ -4,14 +4,14 @@
 
 A Rust-based linter for KiCad schematic files. `kicad-clippy` combines repository-specific schematic quality rules with KiCad's native Electrical Rules Checker (ERC). Native ERC remains the authority for electrical-rule findings; custom rules add layout, annotation, documentation, and project-profile checks.
 
-> **Project status: early development.** The current Rust implementation includes a lossless S-expression parser, shared source/diagnostic contracts, typed built-in rule identifiers, a deterministic extensible rule-pass engine, native ERC/netlist adapters, custom schematic rules SCH001–SCH022, project-profile checks, and a CLI. Some geometric and profile rules remain explicitly partial; see [rule coverage](docs/rules.md) and [scope and roadmap](docs/roadmap.md).
+> **Project status: early development.** The current Rust implementation includes a lossless S-expression parser, shared source/diagnostic contracts, typed built-in rule identifiers, a deterministic extensible rule-pass engine, native ERC/netlist adapters, custom schematic rules SCH001–SCH024, an initial board-level rule PCB001, project-profile checks, and a CLI. Some geometric and profile rules remain explicitly partial; see [rule coverage](docs/rules.md) and [scope and roadmap](docs/roadmap.md).
 
 ## What it does
 
-- Parses a `.kicad_sch` file as a lossless S-expression document and checks its root type.
+- Parses `.kicad_sch` and `.kicad_pcb` files as lossless S-expression documents and checks their root types.
 - Runs native ERC using `kicad-cli sch erc --format json --severity-all`.
 - Exports the flattened netlist for profile-declared pin/net contracts.
-- Runs built-in schematic rules and optional project-profile checks.
+- Runs built-in schematic rules, optional project-profile checks, and board pad checks when a `.kicad_pcb` file is supplied.
 - Applies an optional TOML rule policy with `default`, `strict`, or `advisory` presets and per-rule `allow`, `warn`, or `deny` overrides.
 - Checks overlaps between independently declared functional-group frames and enforces profile-declared no-connect pin markers.
 - Preserves source byte spans, physical coordinates, sheet paths and affected item UUIDs where available.
@@ -40,6 +40,7 @@ kicad-clippy lint path/to/design.kicad_sch
 kicad-clippy lint path/to/design.kicad_sch --format json
 kicad-clippy lint path/to/design.kicad_sch --skip-erc
 kicad-clippy lint path/to/design.kicad_sch --profile project-profile.json
+kicad-clippy lint path/to/design.kicad_sch --profile project-profile.json --board path/to/design.kicad_pcb
 kicad-clippy lint path/to/design.kicad_sch --policy kicad-clippy.toml
 ```
 
@@ -50,7 +51,7 @@ Select the KiCad CLI executable explicitly with `--kicad-cli PATH` or the `KICAD
 | Crate | Responsibility |
 | --- | --- |
 | `kicad-clippy-core` | Source spans, diagnostics, typed built-in rule IDs and metadata registry. |
-| `kicad-clippy-parser` | Lossless KiCad schematic S-expression parsing. |
+| `kicad-clippy-parser` | Lossless KiCad schematic and PCB S-expression parsing. |
 | `kicad-clippy-erc` | KiCad CLI ERC and flattened-netlist adapters. |
 | `kicad-clippy-rules` | Built-in schematic rules and project-profile contracts. |
 | `kicad-clippy` | Command-line interface and output formatting. |
