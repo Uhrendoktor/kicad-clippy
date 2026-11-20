@@ -29,7 +29,8 @@ pub use generic::{
 };
 pub use metadata::{
     CommonPinNetGroup, ComponentIntent, ComponentKind, ComponentPurpose, ComponentRole,
-    DecouplingIntent, DirectWirePair, GroupEvidence, GroupIntent, LintProfile, MetadataError,
+    DecouplingIntent, DirectWirePair, GroupAlignmentAxis, GroupEvidence, GroupIntent, LintProfile,
+    MetadataError,
     PhysicalWireGroup, ProfileMode, SeparateWirePair,
 };
 
