@@ -170,122 +170,160 @@ fn body_is_complete(body: &BodyGeometrySet) -> bool {
 ///
 /// The non-negative distance between the two supported shapes after subtracting stroke half-widths.
 fn shape_gap(first: &BodyShape, second: &BodyShape) -> f64 {
-    match (first, second) {
-        (
-            BodyShape::Circle {
-                center_mm: first_center,
-                radius_mm: first_radius,
-                stroke_half_mm: first_stroke,
-            },
-            BodyShape::Circle {
-                center_mm: second_center,
-                radius_mm: second_radius,
-                stroke_half_mm: second_stroke,
-            },
-        ) => circle_circle_shape_gap(
-            *first_center,
-            *first_radius,
-            *first_stroke,
-            *second_center,
-            *second_radius,
-            *second_stroke,
-        ),
-        (
-            BodyShape::Circle {
-                center_mm,
-                radius_mm,
-                stroke_half_mm,
-            },
-            BodyShape::Polygon {
-                points_mm,
-                stroke_half_mm: polygon_stroke,
-            },
-        )
-        | (
-            BodyShape::Polygon {
-                points_mm,
-                stroke_half_mm: polygon_stroke,
-            },
-            BodyShape::Circle {
-                center_mm,
-                radius_mm,
-                stroke_half_mm,
-            },
-        ) => circle_polygon_shape_gap(
+    match first {
+        BodyShape::Circle {
+            center_mm,
+            radius_mm,
+            stroke_half_mm,
+        } => circle_to_shape_gap(*center_mm, *radius_mm, *stroke_half_mm, second),
+        BodyShape::Polygon {
+            points_mm,
+            stroke_half_mm,
+        } => polygon_to_shape_gap(points_mm, *stroke_half_mm, second),
+        BodyShape::Path {
+            points_mm,
+            stroke_half_mm,
+        } => path_to_shape_gap(points_mm, *stroke_half_mm, second),
+    }
+}
+
+/// Calculates clearance from a stroked circle to any supported body shape.
+///
+/// # Arguments
+///
+/// * `center` — Centre of the first circular body in schematic millimetres.
+/// * `radius` — Radius of the first circular body in schematic millimetres.
+/// * `stroke_half` — Half the first circle's rendered stroke width.
+/// * `second` — Second supported body shape.
+///
+/// # Returns
+///
+/// The non-negative edge-to-edge distance after subtracting both shapes' stroke widths.
+fn circle_to_shape_gap(
+    center: (f64, f64),
+    radius: f64,
+    stroke_half: f64,
+    second: &BodyShape,
+) -> f64 {
+    match second {
+        BodyShape::Circle {
+            center_mm,
+            radius_mm,
+            stroke_half_mm,
+        } => circle_circle_shape_gap(
+            center,
+            radius,
+            stroke_half,
             *center_mm,
             *radius_mm,
             *stroke_half_mm,
-            points_mm,
-            *polygon_stroke,
         ),
-        (
-            BodyShape::Circle {
-                center_mm,
-                radius_mm,
-                stroke_half_mm,
-            },
-            BodyShape::Path {
-                points_mm,
-                stroke_half_mm: path_stroke,
-            },
-        )
-        | (
-            BodyShape::Path {
-                points_mm,
-                stroke_half_mm: path_stroke,
-            },
-            BodyShape::Circle {
-                center_mm,
-                radius_mm,
-                stroke_half_mm,
-            },
-        ) => circle_path_shape_gap(
+        BodyShape::Polygon {
+            points_mm,
+            stroke_half_mm,
+        } => circle_polygon_shape_gap(center, radius, stroke_half, points_mm, *stroke_half_mm),
+        BodyShape::Path {
+            points_mm,
+            stroke_half_mm,
+        } => circle_path_shape_gap(center, radius, stroke_half, points_mm, *stroke_half_mm),
+    }
+}
+
+/// Calculates clearance from a stroked polygon to any supported body shape.
+///
+/// # Arguments
+///
+/// * `polygon_vertices` — Ordered outline vertices of the first polygon in schematic millimetres.
+/// * `polygon_stroke_half` — Half the first polygon's rendered stroke width.
+/// * `second` — Second supported body shape.
+///
+/// # Returns
+///
+/// The non-negative edge-to-edge distance after subtracting both shapes' stroke widths.
+fn polygon_to_shape_gap(
+    polygon_vertices: &[(f64, f64)],
+    polygon_stroke_half: f64,
+    second: &BodyShape,
+) -> f64 {
+    match second {
+        BodyShape::Circle {
+            center_mm,
+            radius_mm,
+            stroke_half_mm,
+        } => circle_polygon_shape_gap(
             *center_mm,
             *radius_mm,
             *stroke_half_mm,
-            points_mm,
-            *path_stroke,
+            polygon_vertices,
+            polygon_stroke_half,
         ),
-        (
-            BodyShape::Polygon {
-                points_mm: first_points,
-                stroke_half_mm: first_stroke,
-            },
-            BodyShape::Polygon {
-                points_mm: second_points,
-                stroke_half_mm: second_stroke,
-            },
-        ) => polygon_polygon_shape_gap(first_points, *first_stroke, second_points, *second_stroke),
-        (
-            BodyShape::Polygon {
-                points_mm: polygon,
-                stroke_half_mm: polygon_stroke,
-            },
-            BodyShape::Path {
-                points_mm: path,
-                stroke_half_mm: path_stroke,
-            },
-        )
-        | (
-            BodyShape::Path {
-                points_mm: path,
-                stroke_half_mm: path_stroke,
-            },
-            BodyShape::Polygon {
-                points_mm: polygon,
-                stroke_half_mm: polygon_stroke,
-            },
-        ) => polygon_path_shape_gap(path, *path_stroke, polygon, *polygon_stroke),
-        (
-            BodyShape::Path {
-                points_mm: first_points,
-                stroke_half_mm: first_stroke,
-            },
-            BodyShape::Path {
-                points_mm: second_points,
-                stroke_half_mm: second_stroke,
-            },
-        ) => path_path_shape_gap(first_points, *first_stroke, second_points, *second_stroke),
+        BodyShape::Polygon {
+            points_mm,
+            stroke_half_mm,
+        } => polygon_polygon_shape_gap(
+            polygon_vertices,
+            polygon_stroke_half,
+            points_mm,
+            *stroke_half_mm,
+        ),
+        BodyShape::Path {
+            points_mm,
+            stroke_half_mm,
+        } => polygon_path_shape_gap(
+            points_mm,
+            *stroke_half_mm,
+            polygon_vertices,
+            polygon_stroke_half,
+        ),
+    }
+}
+
+/// Calculates clearance from a stroked open path to any supported body shape.
+///
+/// # Arguments
+///
+/// * `path_vertices` — Ordered centreline points of the first open path in schematic millimetres.
+/// * `path_stroke_half` — Half the first path's rendered stroke width.
+/// * `second` — Second supported body shape.
+///
+/// # Returns
+///
+/// The non-negative edge-to-edge distance after subtracting both shapes' stroke widths.
+fn path_to_shape_gap(
+    path_vertices: &[(f64, f64)],
+    path_stroke_half: f64,
+    second: &BodyShape,
+) -> f64 {
+    match second {
+        BodyShape::Circle {
+            center_mm,
+            radius_mm,
+            stroke_half_mm,
+        } => circle_path_shape_gap(
+            *center_mm,
+            *radius_mm,
+            *stroke_half_mm,
+            path_vertices,
+            path_stroke_half,
+        ),
+        BodyShape::Polygon {
+            points_mm,
+            stroke_half_mm,
+        } => polygon_path_shape_gap(
+            path_vertices,
+            path_stroke_half,
+            points_mm,
+            *stroke_half_mm,
+        ),
+        BodyShape::Path {
+            points_mm,
+            stroke_half_mm,
+        } => path_path_shape_gap(
+            path_vertices,
+            path_stroke_half,
+            points_mm,
+            *stroke_half_mm,
+        ),
     }
 }
 
