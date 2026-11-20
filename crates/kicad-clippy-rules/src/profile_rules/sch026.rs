@@ -156,7 +156,115 @@ fn check_anchor(
     diagnostics.push(diagnostic);
 }
 
-/// Checks required component, pin, label, junction and wire anchors.
+/// Checks component symbol origins when that target family is selected.
+fn validate_symbol_origins(
+    intent: &GridAlignmentIntent,
+    facts: &crate::SchematicFacts,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    for component in &facts.components {
+        if intent.exempt_components.contains(&component.reference) {
+            continue;
+        }
+        if let Some(position) = component.position_mm {
+            check_anchor(
+                intent,
+                &format!("component {} symbol origin", component.reference),
+                position,
+                diagnostics,
+            );
+        } else {
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch026,
+                Severity::Warning,
+                format!(
+                    "component {} symbol origin is unverified because its placement coordinate could not be resolved",
+                    component.reference
+                ),
+            ));
+        }
+    }
+}
+
+/// Checks transformed pin anchors when pin-anchor validation is selected.
+fn validate_pin_anchors(
+    intent: &GridAlignmentIntent,
+    facts: &crate::SchematicFacts,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    for pin in &facts.pins {
+        let reference = format!("{}.{}", pin.reference, pin.number);
+        if intent.exempt_pins.contains(&reference) {
+            continue;
+        }
+        check_anchor(
+            intent,
+            &format!("pin {reference} anchor"),
+            pin.position_mm,
+            diagnostics,
+        );
+    }
+}
+
+/// Checks local, global and hierarchical label anchors when selected.
+fn validate_label_anchors(
+    intent: &GridAlignmentIntent,
+    facts: &crate::SchematicFacts,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    for label in &facts.labels {
+        let selector = format!("{}:{}", label.kind, label.name);
+        if intent.exempt_labels.contains(&selector) {
+            continue;
+        }
+        check_anchor(
+            intent,
+            &format!("{} label {:?} anchor", label.kind, label.name),
+            label.position_mm,
+            diagnostics,
+        );
+    }
+}
+
+/// Checks explicit junction anchors when junction validation is selected.
+fn validate_junctions(
+    intent: &GridAlignmentIntent,
+    facts: &crate::SchematicFacts,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    for (index, junction) in facts.junctions.iter().enumerate() {
+        check_anchor(
+            intent,
+            &format!("junction {} anchor", index + 1),
+            *junction,
+            diagnostics,
+        );
+    }
+}
+
+/// Checks both endpoints of physical wire segments when wire-endpoint validation is selected.
+fn validate_wire_endpoints(
+    intent: &GridAlignmentIntent,
+    facts: &crate::SchematicFacts,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    for wire in &facts.wires {
+        check_anchor(
+            intent,
+            &format!("wire endpoint at start of segment byte {}", wire.span_start),
+            wire.start_mm,
+            diagnostics,
+        );
+        check_anchor(
+            intent,
+            &format!("wire endpoint at end of segment byte {}", wire.span_start),
+            wire.end_mm,
+            diagnostics,
+        );
+    }
+}
+
+/// Checks selected component, pin, label, junction and wire anchors.
 ///
 /// # Arguments
 ///
@@ -178,82 +286,19 @@ pub(super) fn validate_grid_alignment(
         return diagnostics;
     }
     if intent.targets.contains(&GridAlignmentTarget::SymbolOrigins) {
-        for component in &facts.components {
-            if intent.exempt_components.contains(&component.reference) {
-                continue;
-            }
-            if let Some(position) = component.position_mm {
-                check_anchor(
-                    intent,
-                    &format!("component {} symbol origin", component.reference),
-                    position,
-                    &mut diagnostics,
-                );
-            } else {
-                diagnostics.push(Diagnostic::for_builtin_rule(
-                    BuiltinRuleId::Sch026,
-                    Severity::Warning,
-                    format!(
-                        "component {} symbol origin is unverified because its placement coordinate could not be resolved",
-                        component.reference
-                    ),
-                ));
-            }
-        }
+        validate_symbol_origins(intent, facts, &mut diagnostics);
     }
     if intent.targets.contains(&GridAlignmentTarget::PinAnchors) {
-        for pin in &facts.pins {
-            let reference = format!("{}.{}", pin.reference, pin.number);
-            if intent.exempt_pins.contains(&reference) {
-                continue;
-            }
-            check_anchor(
-                intent,
-                &format!("pin {reference} anchor"),
-                pin.position_mm,
-                &mut diagnostics,
-            );
-        }
+        validate_pin_anchors(intent, facts, &mut diagnostics);
     }
     if intent.targets.contains(&GridAlignmentTarget::LabelAnchors) {
-        for label in &facts.labels {
-            let selector = format!("{}:{}", label.kind, label.name);
-            if intent.exempt_labels.contains(&selector) {
-                continue;
-            }
-            check_anchor(
-                intent,
-                &format!("{} label {:?} anchor", label.kind, label.name),
-                label.position_mm,
-                &mut diagnostics,
-            );
-        }
+        validate_label_anchors(intent, facts, &mut diagnostics);
     }
     if intent.targets.contains(&GridAlignmentTarget::Junctions) {
-        for (index, junction) in facts.junctions.iter().enumerate() {
-            check_anchor(
-                intent,
-                &format!("junction {} anchor", index + 1),
-                *junction,
-                &mut diagnostics,
-            );
-        }
+        validate_junctions(intent, facts, &mut diagnostics);
     }
     if intent.targets.contains(&GridAlignmentTarget::WireEndpoints) {
-        for wire in &facts.wires {
-            check_anchor(
-                intent,
-                &format!("wire endpoint at start of segment byte {}", wire.span_start),
-                wire.start_mm,
-                &mut diagnostics,
-            );
-            check_anchor(
-                intent,
-                &format!("wire endpoint at end of segment byte {}", wire.span_start),
-                wire.end_mm,
-                &mut diagnostics,
-            );
-        }
+        validate_wire_endpoints(intent, facts, &mut diagnostics);
     }
     diagnostics
 }
