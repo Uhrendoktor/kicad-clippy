@@ -41,7 +41,7 @@ pub fn validate_profile_extensions(
 /// # Arguments
 ///
 /// * `profile` — Project profile containing the optional label-scope policy.
-/// * `facts` — Normalized label names and native KiCad label-kind facts from the loaded sheet.
+/// * `facts` — Normalized label names and native `KiCad` label-kind facts from the loaded sheet.
 ///
 /// # Returns
 ///
@@ -54,6 +54,28 @@ fn validate_label_scope_policy(
     let Some(policy) = profile.label_scope_policy.as_ref() else {
         return Vec::new();
     };
+    let configuration = validate_label_scope_configuration(policy);
+    if !configuration.is_empty() {
+        return configuration;
+    }
+
+    let mut diagnostics = validate_global_label_policy(policy, facts);
+    diagnostics.extend(validate_required_label_scopes(policy, facts));
+    diagnostics
+}
+
+/// Validates label-scope names and rejects contradictory policy declarations.
+///
+/// # Arguments
+///
+/// * `policy` — Typed global-label allow/deny sets and required name-to-scope declarations.
+///
+/// # Returns
+///
+/// SCH027 configuration errors; an empty vector means the label policy is internally consistent.
+fn validate_label_scope_configuration(
+    policy: &crate::LabelScopePolicy,
+) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let valid_name = |name: &str| !name.trim().is_empty() && name.trim() == name;
 
@@ -116,10 +138,24 @@ fn validate_label_scope_policy(
             ));
         }
     }
-    if !diagnostics.is_empty() {
-        return diagnostics;
-    }
+    diagnostics
+}
 
+/// Checks every global label against the optional allow-list and explicit deny-list.
+///
+/// # Arguments
+///
+/// * `policy` — Validated policy containing global-label restrictions.
+/// * `facts` — Label facts collected from the currently loaded schematic.
+///
+/// # Returns
+///
+/// SCH027 findings for global labels that are forbidden or missing from a configured allow-list.
+fn validate_global_label_policy(
+    policy: &crate::LabelScopePolicy,
+    facts: &SchematicFacts,
+) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
     for label in facts.labels.iter().filter(|label| label.kind == "global_label") {
         if policy.forbidden_global_labels.contains(&label.name) {
             diagnostics.push(Diagnostic::for_builtin_rule(
@@ -139,7 +175,24 @@ fn validate_label_scope_policy(
             ));
         }
     }
+    diagnostics
+}
 
+/// Checks that every named label exists on the loaded sheet and uses its required scope.
+///
+/// # Arguments
+///
+/// * `policy` — Validated label-name-to-scope requirements.
+/// * `facts` — Native local, global and hierarchical label facts from the loaded sheet.
+///
+/// # Returns
+///
+/// SCH027 findings for missing required label names and labels whose actual scope differs from policy.
+fn validate_required_label_scopes(
+    policy: &crate::LabelScopePolicy,
+    facts: &SchematicFacts,
+) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
     for (name, expected_scope) in &policy.required_label_scopes {
         let matching: Vec<_> = facts.labels.iter().filter(|label| label.name == *name).collect();
         if matching.is_empty() {
