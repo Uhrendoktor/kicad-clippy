@@ -28,7 +28,7 @@ pub fn validate_profile_extensions(
     profile: &LintProfile,
     facts: &SchematicFacts,
 ) -> Vec<Diagnostic> {
-    validate_profile_extensions_with_document(profile, facts, None)
+    validate_profile_extensions_inner(profile, facts, None)
 }
 
 /// Runs supplemental profile checks with optional source-file access for hierarchy-wide policy.
@@ -43,6 +43,25 @@ pub fn validate_profile_extensions(
 ///
 /// Diagnostics for violated profile extensions and unverified hierarchy evidence.
 pub(crate) fn validate_profile_extensions_with_document(
+    profile: &LintProfile,
+    facts: &SchematicFacts,
+    document: &SchematicDocument,
+) -> Vec<Diagnostic> {
+    validate_profile_extensions_inner(profile, facts, Some(document))
+}
+
+/// Runs all supplemental profile checks with optional path-based evidence for project-wide scope.
+///
+/// # Arguments
+///
+/// * `profile` — Project-level contracts that opt into extra presentation and connectivity checks.
+/// * `facts` — Normalized schematic objects collected for the root sheet.
+/// * `document` — Optional parsed root document used by hierarchy-wide label policies.
+///
+/// # Returns
+///
+/// Diagnostics for every violated profile extension and every unverified hierarchy boundary.
+fn validate_profile_extensions_inner(
     profile: &LintProfile,
     facts: &SchematicFacts,
     document: Option<&SchematicDocument>,
@@ -74,7 +93,20 @@ pub(crate) fn validate_profile_extensions_with_document(
 /// SCH027 configuration errors, global-label allow/deny findings, missing required labels,
 /// and required-scope mismatches on the currently loaded sheet.
 fn validate_label_scope_policy(profile: &LintProfile, facts: &SchematicFacts) -> Vec<Diagnostic> {
-    validate_label_scope_policy_with_document(profile, facts, None)
+    let Some(policy) = profile.label_scope_policy.as_ref() else {
+        return Vec::new();
+    };
+    let configuration = validate_label_scope_configuration(policy);
+    if !configuration.is_empty() {
+        return configuration;
+    }
+    if policy.project_wide {
+        return validate_project_wide_label_scope_policy(policy, None);
+    }
+
+    let mut diagnostics = validate_global_label_policy(policy, facts);
+    diagnostics.extend(validate_required_label_scopes(policy, facts));
+    diagnostics
 }
 
 /// Applies current-sheet or project-hierarchy label policy using the requested verification scope.
@@ -96,17 +128,14 @@ fn validate_label_scope_policy_with_document(
     let Some(policy) = profile.label_scope_policy.as_ref() else {
         return Vec::new();
     };
+    if !policy.project_wide {
+        return validate_label_scope_policy(profile, facts);
+    }
     let configuration = validate_label_scope_configuration(policy);
     if !configuration.is_empty() {
         return configuration;
     }
-    if policy.project_wide {
-        return validate_project_wide_label_scope_policy(policy, document);
-    }
-
-    let mut diagnostics = validate_global_label_policy(policy, facts);
-    diagnostics.extend(validate_required_label_scopes(policy, facts));
-    diagnostics
+    validate_project_wide_label_scope_policy(policy, document)
 }
 
 /// Validates label-scope names and rejects contradictory policy declarations.

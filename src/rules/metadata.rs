@@ -597,13 +597,23 @@ impl LintProfile {
             netlist,
         };
         let mut diagnostics = Vec::new();
-        diagnostics.extend(
-            crate::rules::additional_profile_rules::validate_profile_extensions_with_document(
-                self,
-                &facts,
-                Some(document),
-            ),
-        );
+        if self
+            .label_scope_policy
+            .as_ref()
+            .is_some_and(|policy| policy.project_wide)
+        {
+            diagnostics.extend(
+                crate::rules::additional_profile_rules::validate_profile_extensions_with_document(
+                    self,
+                    &facts,
+                    document,
+                ),
+            );
+        } else {
+            diagnostics.extend(
+                crate::rules::additional_profile_rules::validate_profile_extensions(self, &facts),
+            );
+        }
         diagnostics.extend(sch021::Sch021.check(&context));
         diagnostics.extend(sch020::Sch020.check(&context));
         diagnostics.extend(sch022::Sch022.check(&context));
