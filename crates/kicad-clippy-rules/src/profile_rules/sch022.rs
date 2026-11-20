@@ -3,8 +3,8 @@
 use super::ComponentIntent;
 use super::ComponentKind;
 use super::DecouplingIntent;
-use super::valid_pin_ref;
 use super::SchematicFacts;
+use super::valid_pin_ref;
 use crate::generic::GEOMETRY_TOLERANCE_MM;
 use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::Diagnostic;
@@ -230,7 +230,10 @@ fn validate_decoupling_target_distance(
             Severity::Error,
             format!(
                 "{reference} target terminal {} is {:.2} mm from {}, exceeding max_target_distance_mm of {:.2} mm",
-                contract.target_terminal, actual_distance_mm, contract.target_pin, maximum_distance_mm
+                contract.target_terminal,
+                actual_distance_mm,
+                contract.target_pin,
+                maximum_distance_mm
             ),
         )];
     }
@@ -263,7 +266,9 @@ fn validate_required_decoupling_coverage(
             diagnostics.push(Diagnostic::for_builtin_rule(
                 BuiltinRuleId::Sch022,
                 Severity::Error,
-                format!("{reference} declares required_decoupling_pins but is not an integrated_circuit"),
+                format!(
+                    "{reference} declares required_decoupling_pins but is not an integrated_circuit"
+                ),
             ));
             continue;
         }
@@ -274,7 +279,9 @@ fn validate_required_decoupling_coverage(
                 diagnostics.push(Diagnostic::for_builtin_rule(
                     BuiltinRuleId::Sch022,
                     Severity::Error,
-                    format!("{reference} required_decoupling_pins contains invalid pin number {pin:?}"),
+                    format!(
+                        "{reference} required_decoupling_pins contains invalid pin number {pin:?}"
+                    ),
                 ));
                 continue;
             }
@@ -442,15 +449,14 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch022 {
     }
 }
 
-
 #[cfg(test)]
 /// Tests optional decoupling coverage and transformed pin-distance contracts.
 mod tests {
     #![allow(clippy::expect_used)]
 
     use super::{
-        validate_decoupling_target_distance, validate_required_decoupling_coverage,
-        validate_decoupling_intent,
+        validate_decoupling_intent, validate_decoupling_target_distance,
+        validate_required_decoupling_coverage,
     };
     use crate::generic::{SchematicFacts, SchematicPinFact};
     use crate::metadata::{ComponentIntent, ComponentKind, ComponentRole, DecouplingIntent};
@@ -525,11 +531,13 @@ mod tests {
         )]);
         let diagnostics = validate_required_decoupling_coverage(&components, None);
         assert!(diagnostics.iter().any(|item| {
-            item.code == "SCH022" && item.message.contains("U1.1")
+            item.code == "SCH022"
+                && item.message.contains("U1.1")
                 && item.message.contains("no decoupling capacitor targets it")
         }));
         assert!(diagnostics.iter().any(|item| {
-            item.code == "SCH022" && item.message.contains("U1.2")
+            item.code == "SCH022"
+                && item.message.contains("U1.2")
                 && item.message.contains("no decoupling capacitor targets it")
         }));
     }
@@ -583,20 +591,21 @@ mod tests {
             ],
             ..SchematicFacts::default()
         };
-        let diagnostics =
-            validate_decoupling_target_distance("C1", &decoupling(Some(4.0)), &facts);
+        let diagnostics = validate_decoupling_target_distance("C1", &decoupling(Some(4.0)), &facts);
         assert!(diagnostics.iter().any(|item| {
-            item.code == "SCH022" && item.message.contains("5.00 mm")
+            item.code == "SCH022"
+                && item.message.contains("5.00 mm")
                 && item.message.contains("exceeding max_target_distance_mm")
         }));
-        assert!(validate_decoupling_target_distance("C1", &decoupling(Some(5.0)), &facts).is_empty());
+        assert!(
+            validate_decoupling_target_distance("C1", &decoupling(Some(5.0)), &facts).is_empty()
+        );
     }
 
     /// Rejects an invalid negative placement-distance threshold.
     #[test]
     fn negative_decoupler_distance_threshold_is_rejected() {
-        let diagnostics =
-            validate_decoupling_intent("C1", Some(&decoupling(Some(-1.0))), None);
+        let diagnostics = validate_decoupling_intent("C1", Some(&decoupling(Some(-1.0))), None);
         assert!(diagnostics.iter().any(|item| {
             item.code == "SCH022" && item.message.contains("finite non-negative distance")
         }));
@@ -624,12 +633,16 @@ mod tests {
             )]),
             ..Netlist::default()
         };
-        assert!(validate_required_decoupling_coverage(&components, Some(&netlist))
-            .iter()
-            .any(|item| {
-                item.code == "SCH022"
-                    && item.message.contains("U1.7")
-                    && item.message.contains("absent from the exported KiCad netlist")
-            }));
+        assert!(
+            validate_required_decoupling_coverage(&components, Some(&netlist))
+                .iter()
+                .any(|item| {
+                    item.code == "SCH022"
+                        && item.message.contains("U1.7")
+                        && item
+                            .message
+                            .contains("absent from the exported KiCad netlist")
+                })
+        );
     }
 }

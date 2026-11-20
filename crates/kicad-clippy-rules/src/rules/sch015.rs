@@ -61,14 +61,11 @@ pub(super) fn check_no_connect_markers(root: &Node) -> Vec<Diagnostic> {
 /// # Returns
 ///
 /// SCH015 errors for redundant flags on pins of effective type `unconnected` or `no_connect`.
-fn check_redundant_no_connect_markers(
-    facts: &crate::generic::SchematicFacts,
-) -> Vec<Diagnostic> {
+fn check_redundant_no_connect_markers(facts: &crate::generic::SchematicFacts) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     for marker in &facts.no_connects {
         for pin in facts.pins.iter().filter(|pin| {
-            (pin.position_mm.0 - marker.center_mm.0)
-                .hypot(pin.position_mm.1 - marker.center_mm.1)
+            (pin.position_mm.0 - marker.center_mm.0).hypot(pin.position_mm.1 - marker.center_mm.1)
                 < GEOMETRY_TOLERANCE_MM
         }) {
             if let Some(electrical_type @ ("unconnected" | "no_connect")) =
@@ -117,7 +114,6 @@ impl<'a> crate::Rule<crate::RuleContext<'a>> for Sch015 {
         diagnostics
     }
 }
-
 
 #[cfg(test)]
 /// Tests redundant no-connect marker detection against effective library pin types.

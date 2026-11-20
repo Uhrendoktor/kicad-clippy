@@ -123,21 +123,24 @@ pub(super) fn validate_role_contract(reference: &str, intent: &ComponentIntent) 
 /// # Returns
 ///
 /// SCH021 diagnostics for malformed pin lists or required pins without an expected net mapping.
-fn validate_required_connector_pins(
-    reference: &str,
-    intent: &ComponentIntent,
-) -> Vec<Diagnostic> {
+fn validate_required_connector_pins(reference: &str, intent: &ComponentIntent) -> Vec<Diagnostic> {
     let Some(raw_required_pins) = intent.attributes.get("required_pins") else {
         return Vec::new();
     };
     let mut diagnostics = Vec::new();
     let mut required_pins = BTreeSet::new();
     for token in raw_required_pins.split(',').map(str::trim) {
-        if token.is_empty() || !token.chars().all(|character| character.is_ascii_alphanumeric()) {
+        if token.is_empty()
+            || !token
+                .chars()
+                .all(|character| character.is_ascii_alphanumeric())
+        {
             diagnostics.push(Diagnostic::for_builtin_rule(
                 BuiltinRuleId::Sch021,
                 Severity::Error,
-                format!("{reference} connector required_pins contains invalid pin number {token:?}"),
+                format!(
+                    "{reference} connector required_pins contains invalid pin number {token:?}"
+                ),
             ));
             continue;
         }
@@ -227,7 +230,6 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch021 {
     }
 }
 
-
 #[cfg(test)]
 /// Tests connector interface completeness contracts.
 mod tests {
@@ -261,7 +263,10 @@ mod tests {
                 .collect(),
             pin_nets: BTreeMap::new(),
             attributes: BTreeMap::from([
-                ("interface_standard".to_owned(), "declared-interface".to_owned()),
+                (
+                    "interface_standard".to_owned(),
+                    "declared-interface".to_owned(),
+                ),
                 ("required_pins".to_owned(), required_pins.to_owned()),
             ]),
             max_field_body_gap_mm: BTreeMap::new(),
@@ -275,21 +280,22 @@ mod tests {
     fn required_connector_pins_must_all_have_net_mappings() {
         let intent = connector_intent("1, 2, 3", &[("pin.1", "VBUS"), ("pin.3", "GND")]);
         let diagnostics = validate_role_contract("J1", &intent);
-        assert!(diagnostics.iter().any(|item| {
-            item.code == "SCH021" && item.message.contains("required pin 2")
-        }));
-        assert!(!diagnostics.iter().any(|item| {
-            item.code == "SCH021" && item.message.contains("required pin 1")
-        }));
+        assert!(
+            diagnostics
+                .iter()
+                .any(|item| { item.code == "SCH021" && item.message.contains("required pin 2") })
+        );
+        assert!(
+            !diagnostics
+                .iter()
+                .any(|item| { item.code == "SCH021" && item.message.contains("required pin 1") })
+        );
     }
 
     /// Accepts a connector whose full declared required-pin set is mapped.
     #[test]
     fn fully_mapped_required_connector_pins_are_accepted() {
-        let intent = connector_intent(
-            "1, 2",
-            &[("pin.1", "VBUS"), ("pin.2", "GND")],
-        );
+        let intent = connector_intent("1, 2", &[("pin.1", "VBUS"), ("pin.2", "GND")]);
         assert!(validate_role_contract("J1", &intent).is_empty());
     }
 
@@ -297,8 +303,10 @@ mod tests {
     #[test]
     fn malformed_required_connector_pin_list_is_rejected() {
         let intent = connector_intent("1, ,2", &[("pin.1", "VBUS"), ("pin.2", "GND")]);
-        assert!(validate_role_contract("J1", &intent).iter().any(|item| {
-            item.code == "SCH021" && item.message.contains("invalid pin number")
-        }));
+        assert!(
+            validate_role_contract("J1", &intent).iter().any(|item| {
+                item.code == "SCH021" && item.message.contains("invalid pin number")
+            })
+        );
     }
 }
