@@ -5,7 +5,7 @@ use kicad_clippy_erc::Netlist;
 use kicad_clippy_parser::BoardDocument;
 use kiutils_sexpr::{Atom, Node};
 
-use crate::{ComponentKind, LintProfile};
+use crate::{ComponentKind, DecouplingIntent, LintProfile};
 
 /// Millimetre tolerance used when comparing PCB pad-center distances.
 const PCB_DISTANCE_TOLERANCE_MM: f64 = 0.001;
