@@ -305,22 +305,32 @@ fn validate_minimum_frame_gaps(
     profile: &LintProfile,
     facts: &SchematicFacts,
 ) -> Vec<Diagnostic> {
+    if !profile
+        .groups
+        .values()
+        .any(|group| group.minimum_frame_gap_mm.is_some())
+    {
+        return Vec::new();
+    }
     let mut diagnostics = Vec::new();
     let mut declared = Vec::new();
     for (group_id, group) in &profile.groups {
-        let Some(minimum_gap) = group.minimum_frame_gap_mm else {
-            continue;
+        let minimum_gap = match group.minimum_frame_gap_mm {
+            Some(value) if value.is_finite() && value >= 0.0 => value,
+            Some(_) => {
+                diagnostics.push(error(format!(
+                    "group {group_id} minimum_frame_gap_mm must be finite and non-negative"
+                )));
+                GEOMETRY_TOLERANCE_MM
+            }
+            None => 0.0,
         };
-        if !minimum_gap.is_finite() || minimum_gap < 0.0 {
-            diagnostics.push(error(format!(
-                "group {group_id} minimum_frame_gap_mm must be finite and non-negative"
-            )));
-            continue;
-        }
         let Some(frame_uuid) = group.frame_uuid.as_deref() else {
-            diagnostics.push(error(format!(
-                "group {group_id} requests minimum_frame_gap_mm but has no frame_uuid"
-            )));
+            if group.minimum_frame_gap_mm.is_some() {
+                diagnostics.push(error(format!(
+                    "group {group_id} requests minimum_frame_gap_mm but has no frame_uuid"
+                )));
+            }
             continue;
         };
         match unique_frame_bounds(facts, frame_uuid) {
@@ -636,6 +646,41 @@ mod tests {
         let diagnostics = compare_declared_frame_gaps(&declared);
         assert_eq!(diagnostics.len(), 1);
         assert!(diagnostics[0].message.contains("minimum is 5.10 mm"));
+    }
+
+    /// Applies one group's minimum gap to every other profile-declared frame.
+    #[test]
+    fn configured_frame_gap_applies_to_peer_without_its_own_threshold() {
+        let mut profile: LintProfile = serde_json::from_str(r#"{"schema_version":1}"#)
+            .expect("valid profile");
+        profile.groups.insert(
+            "first".to_owned(),
+            GroupIntent {
+                frame_uuid: Some("frame-1".to_owned()),
+                minimum_frame_gap_mm: Some(5.0),
+                ..GroupIntent::default()
+            },
+        );
+        profile.groups.insert(
+            "second".to_owned(),
+            GroupIntent {
+                frame_uuid: Some("frame-2".to_owned()),
+                ..GroupIntent::default()
+            },
+        );
+        let mut facts = title_facts(
+            (0.0, 0.0, 10.0, 10.0),
+            (2.0, -4.0, 8.0, 0.0),
+            Some((3.0, -3.0, 7.0, -1.0)),
+        );
+        facts.frames.push(SchematicFrameFact {
+            uuid: "frame-2".to_owned(),
+            bounds_mm: (12.0, 0.0, 20.0, 10.0),
+        });
+
+        let diagnostics = validate_minimum_frame_gaps(&profile, &facts);
+        assert_eq!(diagnostics.len(), 1);
+        assert!(diagnostics[0].message.contains("minimum is 5.00 mm"));
     }
 
     /// Accepts groups intentionally referencing one shared frame UUID.
