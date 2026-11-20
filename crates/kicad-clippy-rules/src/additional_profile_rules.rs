@@ -875,7 +875,7 @@ mod label_scope_policy_tests {
     ///
     /// # Arguments
     ///
-    /// * `labels` — Pairs of serialized KiCad label kind and label name.
+    /// * `labels` — Pairs of serialized `KiCad` label kind and label name.
     ///
     /// # Returns
     ///
