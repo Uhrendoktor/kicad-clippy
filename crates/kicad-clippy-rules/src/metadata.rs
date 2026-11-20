@@ -245,7 +245,7 @@ fn default_grid_alignment_targets() -> BTreeSet<GridAlignmentTarget> {
 /// # Returns
 ///
 /// The two-dimensional sheet coordinate origin, [0.0, 0.0], in millimetres.
-fn default_grid_origin_mm() -> [f64; 2] {
+const fn default_grid_origin_mm() -> [f64; 2] {
     [0.0, 0.0]
 }
 
@@ -254,7 +254,7 @@ fn default_grid_origin_mm() -> [f64; 2] {
 /// # Returns
 ///
 /// The shared 0.001 mm coordinate tolerance.
-fn default_grid_alignment_tolerance_mm() -> f64 {
+const fn default_grid_alignment_tolerance_mm() -> f64 {
     DEFAULT_GRID_ALIGNMENT_TOLERANCE_MM
 }
 

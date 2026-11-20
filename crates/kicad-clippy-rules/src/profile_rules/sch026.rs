@@ -135,10 +135,12 @@ fn check_anchor(
     if coordinate_is_exempt(intent, point) {
         return;
     }
-    let nearest_x = intent.origin_mm[0]
-        + ((point.0 - intent.origin_mm[0]) / intent.spacing_mm).round() * intent.spacing_mm;
-    let nearest_y = intent.origin_mm[1]
-        + ((point.1 - intent.origin_mm[1]) / intent.spacing_mm).round() * intent.spacing_mm;
+    let nearest_x = ((point.0 - intent.origin_mm[0]) / intent.spacing_mm)
+        .round()
+        .mul_add(intent.spacing_mm, intent.origin_mm[0]);
+    let nearest_y = ((point.1 - intent.origin_mm[1]) / intent.spacing_mm)
+        .round()
+        .mul_add(intent.spacing_mm, intent.origin_mm[1]);
     let deviation_x = (point.0 - nearest_x).abs();
     let deviation_y = (point.1 - nearest_y).abs();
     if deviation_x <= intent.tolerance_mm && deviation_y <= intent.tolerance_mm {
@@ -391,7 +393,7 @@ mod tests {
     ///
     /// # Arguments
     ///
-    /// * `grid` — JSON contents for the profile's grid_alignment property.
+    /// * `grid` — JSON contents for the profile's `grid_alignment` property.
     ///
     /// # Returns
     ///
@@ -443,7 +445,7 @@ mod tests {
         facts.components[0].position_mm = Some((11.05, 21.95));
         facts.labels[0].position_mm = (10.95, 22.05);
         let diagnostics = validate_grid_alignment(&profile, &facts);
-        assert!(diagnostics.is_empty());
+        assert_eq!(diagnostics, Vec::new());
     }
 
     /// Reports selected default symbol-origin and label anchors outside the configured grid.
@@ -551,7 +553,7 @@ mod tests {
         }));
     }
 
-    /// Maps native KiCad global-label facts to the profile's concise global exemption selector.
+    /// Maps native `KiCad` global-label facts to the profile's concise global exemption selector.
     #[test]
     fn global_label_exemption_matches_native_kicad_label_kind() {
         let mut facts = facts();
@@ -565,7 +567,7 @@ mod tests {
                 "exempt_labels":["global:RESET"]
             }"#,
         );
-        assert!(validate_grid_alignment(&profile, &facts).is_empty());
+        assert_eq!(validate_grid_alignment(&profile, &facts), Vec::new());
     }
 
     /// Rejects unsupported scope names rather than accepting an exemption that can never match.
