@@ -1,6 +1,6 @@
 # Built-in rules
 
-The current built-in catalogue defines stable schematic IDs SCH001–SCH027 plus PCB001 and PCB009 and separates reusable schematic checks from project-profile and board-level contracts.
+The current built-in catalogue defines stable schematic IDs SCH001–SCH028 plus PCB001 and PCB009 and separates reusable schematic checks from project-profile and board-level contracts.
 
 | ID | Historical rule | Rust status |
 | --- | --- | --- |
@@ -31,6 +31,7 @@ The current built-in catalogue defines stable schematic IDs SCH001–SCH027 plus
 | SCH025 | Required test-point coverage | Implemented opt-in: checks `required_test_point_nets` against declared `test_point` component pin mappings and exported netlist assignments |
 | SCH026 | Project grid alignment | Implemented opt-in: checks selected schematic anchors against configured grid spacing, origin and per-axis tolerance; defaults to symbol origins and label anchors, while pin/junction/wire-endpoint checks and object/coordinate exemptions are explicit |
 | SCH027 | Label scope policy | Implemented opt-in: applies a global-label allow-list and deny-list, and requires selected label names to use local/global/hierarchical scope on the currently loaded sheet; cross-sheet hierarchy validation remains future work |
+| SCH028 | Functional-frame title layout | Implemented opt-in: verifies UUID-linked rectangular title-tab attachment, title text-box containment within the tab, and configured minimum spacing between distinct group frames; title geometry uses serialized rectangles rather than exact font-rendering/clipping |
 | PCB001 | Decoupling pad proximity | Implemented partial: checks opt-in `decoupling.max_target_pad_distance_mm` between transformed target IC pad and capacitor target-pad centers, verifies capacitor return-pad agreement with `return_net`, and checks optional board/netlist parity; routed copper, vias, zones and return-loop checks remain future work |
 | PCB009 | Test-point pad exposure | Implemented partial, opt-in: verifies required test-point reference/pad numbers exist on the PCB, match the declared net, and include copper plus solder-mask layers; probe approach and fixture/enclosure access remain future work |
 
