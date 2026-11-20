@@ -1,4 +1,4 @@
-//! Functional-group placement spacing, body clearance, and alignment contracts.
+//! Functional-group placement spacing, cluster compactness, body clearance, and alignment contracts.
 
 use super::GroupAlignmentAxis;
 use super::GroupIntent;
@@ -9,7 +9,7 @@ use crate::core::Diagnostic;
 use crate::core::Severity;
 use crate::rules::generic::GEOMETRY_TOLERANCE_MM;
 
-/// Checks a group's origin spacing, supported body clearance, and row/column alignment.
+/// Checks a group's origin spacing and cluster span, supported body clearance, and row/column alignment.
 ///
 /// # Arguments
 ///
@@ -19,7 +19,7 @@ use crate::rules::generic::GEOMETRY_TOLERANCE_MM;
 ///
 /// # Returns
 ///
-/// SCH006 diagnostics for invalid constraints, member origins that violate spacing/alignment,
+/// SCH006 diagnostics for invalid constraints, member origins that violate spacing/span/alignment,
 /// body outlines that violate the configured clearance, or geometry that cannot be verified.
 pub(super) fn validate_group_spacing(
     group_id: &str,
@@ -541,6 +541,22 @@ mod tests {
             item.code == BuiltinRuleId::Sch006.as_str()
                 && item.message.contains("symbol-origin span")
         }));
+    }
+
+    /// Rejects negative or non-finite maximum member-origin span thresholds.
+    #[test]
+    fn group_maximum_member_origin_span_requires_finite_nonnegative_value() {
+        for invalid_span in [-1.0, f64::INFINITY] {
+            let group = GroupIntent {
+                maximum_member_origin_span_mm: Some(invalid_span),
+                ..GroupIntent::default()
+            };
+            let diagnostics = validate_group_spacing("power", &group, &SchematicFacts::default());
+            assert!(diagnostics.iter().any(|item| {
+                item.code == BuiltinRuleId::Sch006.as_str()
+                    && item.message.contains("maximum_member_origin_span_mm must be a finite non-negative distance")
+            }));
+        }
     }
 
     /// Warns rather than guessing cluster compactness when a member origin is unresolved.
