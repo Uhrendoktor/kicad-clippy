@@ -70,16 +70,12 @@ pub(super) fn validate_group_spacing(
         (Some(_), None) => diagnostics.push(Diagnostic::for_builtin_rule(
             BuiltinRuleId::Sch006,
             Severity::Error,
-            format!(
-                "group {group_id} alignment_axis requires alignment_tolerance_mm"
-            ),
+            format!("group {group_id} alignment_axis requires alignment_tolerance_mm"),
         )),
         (None, Some(_)) => diagnostics.push(Diagnostic::for_builtin_rule(
             BuiltinRuleId::Sch006,
             Severity::Error,
-            format!(
-                "group {group_id} alignment_tolerance_mm requires alignment_axis"
-            ),
+            format!("group {group_id} alignment_tolerance_mm requires alignment_axis"),
         )),
         (Some(axis), Some(tolerance_mm)) => {
             if !tolerance_mm.is_finite() || tolerance_mm < 0.0 {
@@ -304,12 +300,7 @@ mod tests {
     fn rectangle(reference: &str, left: f64, right: f64) -> SchematicPrimitiveFact {
         SchematicPrimitiveFact {
             reference: reference.to_owned(),
-            points_mm: vec![
-                (left, 0.0),
-                (right, 0.0),
-                (right, 2.0),
-                (left, 2.0),
-            ],
+            points_mm: vec![(left, 0.0), (right, 0.0), (right, 2.0), (left, 2.0)],
             closed: true,
             circle_mm: None,
             arc_mm: None,
@@ -370,9 +361,11 @@ mod tests {
             alignment_tolerance_mm: Some(0.2),
             ..GroupIntent::default()
         };
-        assert!(validate_group_spacing("power", &group, &facts)
-            .iter()
-            .any(|item| item.message.contains("horizontal row")));
+        assert!(
+            validate_group_spacing("power", &group, &facts)
+                .iter()
+                .any(|item| item.message.contains("horizontal row"))
+        );
     }
 
     /// Confirms curve-based or absent member body outlines are reported as unverified.
@@ -393,8 +386,10 @@ mod tests {
             minimum_member_body_clearance_mm: Some(0.5),
             ..GroupIntent::default()
         };
-        assert!(validate_group_spacing("power", &group, &facts)
-            .iter()
-            .any(|item| item.severity == kicad_clippy_core::Severity::Warning));
+        assert!(
+            validate_group_spacing("power", &group, &facts)
+                .iter()
+                .any(|item| item.severity == kicad_clippy_core::Severity::Warning)
+        );
     }
 }

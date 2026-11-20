@@ -159,9 +159,7 @@ mod tests {
     fn field_body_gap_accepts_glyph_inside_body() {
         let facts = body_and_field_facts((0.5, 0.5, 1.5, 1.5));
         let thresholds = BTreeMap::from([("Reference".to_owned(), 1.0)]);
-        assert!(
-            validate_component_field_body_gaps("U1", &thresholds, &facts).is_empty()
-        );
+        assert!(validate_component_field_body_gaps("U1", &thresholds, &facts).is_empty());
     }
 
     /// Confirms an excessive field-to-body gap is reported using visible glyph bounds.

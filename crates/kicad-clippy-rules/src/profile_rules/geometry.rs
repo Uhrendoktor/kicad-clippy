@@ -1,7 +1,7 @@
 //! Supported transformed symbol-body shapes and distance calculations for profile layout checks.
 
-use crate::generic::{GEOMETRY_TOLERANCE_MM, SchematicFacts, SchematicPrimitiveFact};
 use crate::HALF_FACTOR;
+use crate::generic::{GEOMETRY_TOLERANCE_MM, SchematicFacts, SchematicPrimitiveFact};
 
 /// Resolved symbol-body geometry for one placed reference.
 ///
@@ -83,10 +83,7 @@ pub(super) fn body_geometry_for_reference(
 ///
 /// The non-negative minimum edge-to-edge clearance in millimetres, or `None`
 /// when either body is missing or contains unsupported geometry.
-pub(super) fn minimum_body_gap(
-    first: &BodyGeometrySet,
-    second: &BodyGeometrySet,
-) -> Option<f64> {
+pub(super) fn minimum_body_gap(first: &BodyGeometrySet, second: &BodyGeometrySet) -> Option<f64> {
     if !body_is_complete(first) || !body_is_complete(second) {
         return None;
     }
@@ -118,18 +115,15 @@ pub(super) fn minimum_body_to_bounds_gap(
         return None;
     }
     let (left, top, right, bottom) = bounds_mm;
-    if ![left, top, right, bottom].iter().all(|value| value.is_finite())
+    if ![left, top, right, bottom]
+        .iter()
+        .all(|value| value.is_finite())
         || right <= left
         || bottom <= top
     {
         return None;
     }
-    let rectangle = [
-        (left, top),
-        (right, top),
-        (right, bottom),
-        (left, bottom),
-    ];
+    let rectangle = [(left, top), (right, top), (right, bottom), (left, bottom)];
     let mut minimum = f64::INFINITY;
     for shape in &body.shapes {
         let gap = match shape {
@@ -137,11 +131,7 @@ pub(super) fn minimum_body_to_bounds_gap(
                 center_mm,
                 radius_mm,
                 stroke_half_mm,
-            } => {
-                point_polygon_gap(*center_mm, &rectangle)
-                    - radius_mm
-                    - stroke_half_mm
-            }
+            } => point_polygon_gap(*center_mm, &rectangle) - radius_mm - stroke_half_mm,
             BodyShape::Polygon {
                 points_mm,
                 stroke_half_mm,
@@ -175,11 +165,13 @@ fn shape_gap(first: &BodyShape, second: &BodyShape) -> f64 {
                 radius_mm: second_radius,
                 stroke_half_mm: second_stroke,
             },
-        ) => point_distance(*first_center, *second_center)
-            - first_radius
-            - second_radius
-            - first_stroke
-            - second_stroke,
+        ) => {
+            point_distance(*first_center, *second_center)
+                - first_radius
+                - second_radius
+                - first_stroke
+                - second_stroke
+        }
         (
             BodyShape::Circle {
                 center_mm,
@@ -201,10 +193,7 @@ fn shape_gap(first: &BodyShape, second: &BodyShape) -> f64 {
                 radius_mm,
                 stroke_half_mm,
             },
-        ) => point_polygon_gap(*center_mm, points_mm)
-            - radius_mm
-            - stroke_half_mm
-            - polygon_stroke,
+        ) => point_polygon_gap(*center_mm, points_mm) - radius_mm - stroke_half_mm - polygon_stroke,
         (
             BodyShape::Circle {
                 center_mm,
@@ -226,10 +215,7 @@ fn shape_gap(first: &BodyShape, second: &BodyShape) -> f64 {
                 radius_mm,
                 stroke_half_mm,
             },
-        ) => point_path_distance(*center_mm, points_mm)
-            - radius_mm
-            - stroke_half_mm
-            - path_stroke,
+        ) => point_path_distance(*center_mm, points_mm) - radius_mm - stroke_half_mm - path_stroke,
         (
             BodyShape::Polygon {
                 points_mm: first_points,
@@ -290,9 +276,8 @@ fn polygon_polygon_gap(first: &[(f64, f64)], second: &[(f64, f64)]) -> f64 {
     }
     if point_in_polygon(first[0], second)
         || point_in_polygon(second[0], first)
-        || polygon_edges(first).any(|(a, b)| {
-            polygon_edges(second).any(|(c, d)| segments_intersect(a, b, c, d))
-        })
+        || polygon_edges(first)
+            .any(|(a, b)| polygon_edges(second).any(|(c, d)| segments_intersect(a, b, c, d)))
     {
         return 0.0;
     }
@@ -310,8 +295,7 @@ fn path_polygon_gap(path: &[(f64, f64)], polygon: &[(f64, f64)]) -> f64 {
     }
     if path.iter().any(|point| point_in_polygon(*point, polygon))
         || path.windows(2).any(|segment| {
-            polygon_edges(polygon)
-                .any(|(a, b)| segments_intersect(segment[0], segment[1], a, b))
+            polygon_edges(polygon).any(|(a, b)| segments_intersect(segment[0], segment[1], a, b))
         })
     {
         return 0.0;
@@ -364,16 +348,16 @@ fn point_in_polygon(point: (f64, f64), polygon: &[(f64, f64)]) -> bool {
     if polygon.len() < 3 {
         return false;
     }
-    if polygon_edges(polygon).any(|(start, end)| {
-        point_segment_distance(point, start, end) <= GEOMETRY_TOLERANCE_MM
-    }) {
+    if polygon_edges(polygon)
+        .any(|(start, end)| point_segment_distance(point, start, end) <= GEOMETRY_TOLERANCE_MM)
+    {
         return true;
     }
     let mut inside = false;
     for (start, end) in polygon_edges(polygon) {
         if (start.1 > point.1) != (end.1 > point.1) {
-            let crossing_x = (end.0 - start.0)
-                .mul_add((point.1 - start.1) / (end.1 - start.1), start.0);
+            let crossing_x =
+                (end.0 - start.0).mul_add((point.1 - start.1) / (end.1 - start.1), start.0);
             if point.0 < crossing_x {
                 inside = !inside;
             }
@@ -436,8 +420,7 @@ fn segments_intersect(
 
 /// Returns the tolerance-aware orientation sign of three points.
 fn orientation_sign(start: (f64, f64), end: (f64, f64), point: (f64, f64)) -> i8 {
-    let cross = (end.0 - start.0) * (point.1 - start.1)
-        - (end.1 - start.1) * (point.0 - start.0);
+    let cross = (end.0 - start.0) * (point.1 - start.1) - (end.1 - start.1) * (point.0 - start.0);
     let scale = point_distance(start, end).max(1.0);
     if cross.abs() <= GEOMETRY_TOLERANCE_MM * scale {
         0
@@ -494,7 +477,11 @@ fn body_shape_from_primitive(primitive: &SchematicPrimitiveFact) -> Option<BodyS
     if primitive.arc_mm.is_some() || primitive.bezier_mm.is_some() {
         return None;
     }
-    if primitive.points_mm.iter().any(|point| !finite_point(*point)) {
+    if primitive
+        .points_mm
+        .iter()
+        .any(|point| !finite_point(*point))
+    {
         return None;
     }
     if primitive.closed && primitive.points_mm.len() >= 3 {
