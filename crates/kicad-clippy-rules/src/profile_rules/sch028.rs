@@ -322,7 +322,7 @@ fn validate_minimum_frame_gaps(
                 diagnostics.push(error(format!(
                     "group {group_id} minimum_frame_gap_mm must be finite and non-negative"
                 )));
-                GEOMETRY_TOLERANCE_MM
+                0.0
             }
             None => 0.0,
         };
