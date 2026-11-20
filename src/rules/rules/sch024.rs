@@ -105,7 +105,7 @@ fn collect_hierarchy_uuids(
 
     let mut child_files = BTreeSet::<PathBuf>::new();
     collect_child_sheet_files(root, &mut child_files);
-    let parent_directory = source_path.parent().unwrap_or(Path::new("."));
+    let parent_directory = source_path.parent().unwrap_or_else(|| Path::new("."));
 
     for child_file in child_files {
         if child_file.is_absolute() {
