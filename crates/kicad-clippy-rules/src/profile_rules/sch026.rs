@@ -62,9 +62,13 @@ fn validate_grid_configuration(intent: &GridAlignmentIntent) -> Vec<Diagnostic> 
             )));
             continue;
         };
-        if kind.trim().is_empty() || name.trim().is_empty() {
+        if !matches!(kind, "local" | "global" | "hierarchical")
+            || kind.trim().is_empty()
+            || name.trim().is_empty()
+            || name.trim() != name
+        {
             diagnostics.push(configuration_error(format!(
-                "grid_alignment.exempt_labels entry {label:?} must contain non-empty kind and label name"
+                "grid_alignment.exempt_labels entry {label:?} must use local, global, or hierarchical kind and a trimmed non-empty label name"
             )));
         }
     }
@@ -237,7 +241,13 @@ fn validate_label_anchors(
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     for label in &facts.labels {
-        let selector = format!("{}:{}", label.kind, label.name);
+        let scope = match label.kind.as_str() {
+            "label" => "local",
+            "global_label" => "global",
+            "hierarchical_label" => "hierarchical",
+            other => other,
+        };
+        let selector = format!("{scope}:{}", label.name);
         if intent.exempt_labels.contains(&selector) {
             continue;
         }
@@ -410,7 +420,7 @@ mod tests {
                 electrical_type: None,
             }],
             labels: vec![SchematicLabelFact {
-                kind: "local".to_owned(),
+                kind: "label".to_owned(),
                 name: "VDD".to_owned(),
                 position_mm: (11.3, 22.0),
                 bounds_mm: None,
@@ -538,6 +548,40 @@ mod tests {
             item.code == "SCH026"
                 && item.severity == Severity::Warning
                 && item.message.contains("origin is unverified")
+        }));
+    }
+
+
+    /// Maps native KiCad global-label facts to the profile's concise global exemption selector.
+    #[test]
+    fn global_label_exemption_matches_native_kicad_label_kind() {
+        let mut facts = facts();
+        facts.labels[0].kind = "global_label".to_owned();
+        facts.labels[0].name = "RESET".to_owned();
+        let profile = profile(
+            r#"{
+                "spacing_mm":5.0,
+                "tolerance_mm":0.01,
+                "targets":["label_anchors"],
+                "exempt_labels":["global:RESET"]
+            }"#,
+        );
+        assert!(validate_grid_alignment(&profile, &facts).is_empty());
+    }
+
+    /// Rejects unsupported scope names rather than accepting an exemption that can never match.
+    #[test]
+    fn rejects_unknown_label_exemption_scope() {
+        let profile = profile(
+            r#"{
+                "spacing_mm":5.0,
+                "targets":["label_anchors"],
+                "exempt_labels":["global_label:RESET"]
+            }"#,
+        );
+        let diagnostics = validate_grid_alignment(&profile, &facts());
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "SCH026" && item.message.contains("local, global, or hierarchical")
         }));
     }
 
