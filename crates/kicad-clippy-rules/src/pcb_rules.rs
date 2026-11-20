@@ -546,6 +546,39 @@ mod tests {
     use super::BoardFacts;
     use kicad_clippy_parser::BoardDocument;
 
+    /// Resolves front-side and back-side pad anchors after their footprint transforms.
+    #[test]
+    fn board_pad_anchors_apply_rotation_and_back_side_mirroring() {
+        let board = BoardDocument::from_text(
+            "pad-transform.kicad_pcb",
+            r#"(kicad_pcb
+                (footprint "Package:Part" (layer "F.Cu") (at 100 50 90)
+                    (property "Reference" "U1")
+                    (pad "1" smd rect (at 2 1) (size 1 1) (layers "F.Cu") (net 1 "VDD"))
+                )
+                (footprint "Package:Part" (layer "B.Cu") (at 100 50 90)
+                    (property "Reference" "C1")
+                    (pad "1" smd rect (at 2 -1) (size 1 1) (layers "B.Cu") (net 1 "VDD"))
+                )
+            )"#,
+        )
+        .expect("board fixture parses");
+        let facts = BoardFacts::from_document(&board);
+        let target = super::unique_pad(&facts, "U1", "1").expect("front pad found");
+        let capacitor = super::unique_pad(&facts, "C1", "1").expect("back pad found");
+        assert!((target.position_mm.0 - 101.0).abs() < 0.001);
+        assert!((target.position_mm.1 - 48.0).abs() < 0.001);
+        assert!((capacitor.position_mm.0 - 99.0).abs() < 0.001);
+        assert!((capacitor.position_mm.1 - 48.0).abs() < 0.001);
+    }
+}
+
+#[cfg(test)]
+mod contract_tests {
+    use super::{validate_decoupling_pad_distances, validate_missing_board};
+    use crate::LintProfile;
+    use kicad_clippy_parser::BoardDocument;
+
     /// Builds an exported netlist containing only the supplied decoupling target and terminal mappings.
     ///
     /// # Arguments
@@ -656,39 +689,6 @@ mod tests {
             item.code == "PCB001" && item.message.contains("differs from schematic netlist net")
         }));
     }
-
-    /// Resolves front-side and back-side pad anchors after their footprint transforms.
-    #[test]
-    fn board_pad_anchors_apply_rotation_and_back_side_mirroring() {
-        let board = BoardDocument::from_text(
-            "pad-transform.kicad_pcb",
-            r#"(kicad_pcb
-                (footprint "Package:Part" (layer "F.Cu") (at 100 50 90)
-                    (property "Reference" "U1")
-                    (pad "1" smd rect (at 2 1) (size 1 1) (layers "F.Cu") (net 1 "VDD"))
-                )
-                (footprint "Package:Part" (layer "B.Cu") (at 100 50 90)
-                    (property "Reference" "C1")
-                    (pad "1" smd rect (at 2 -1) (size 1 1) (layers "B.Cu") (net 1 "VDD"))
-                )
-            )"#,
-        )
-        .expect("board fixture parses");
-        let facts = BoardFacts::from_document(&board);
-        let target = super::unique_pad(&facts, "U1", "1").expect("front pad found");
-        let capacitor = super::unique_pad(&facts, "C1", "1").expect("back pad found");
-        assert!((target.position_mm.0 - 101.0).abs() < 0.001);
-        assert!((target.position_mm.1 - 48.0).abs() < 0.001);
-        assert!((capacitor.position_mm.0 - 99.0).abs() < 0.001);
-        assert!((capacitor.position_mm.1 - 48.0).abs() < 0.001);
-    }
-}
-
-#[cfg(test)]
-mod contract_tests {
-    use super::{validate_decoupling_pad_distances, validate_missing_board};
-    use crate::LintProfile;
-    use kicad_clippy_parser::BoardDocument;
 
     /// Parses a profile containing a single declared decoupling pad-distance contract.
     ///
