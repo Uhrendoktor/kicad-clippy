@@ -368,19 +368,42 @@ fn lint(schematic_path: &Path, options: LintOptions<'_>) -> Result<ExitCode, Cli
         summary,
     };
 
+    render_output(format, &output, schematic.source())
+}
+
+
+/// Renders a completed lint result and chooses the process exit code from its active errors.
+///
+/// # Arguments
+///
+/// * `format` — Output format selected for this invocation.
+/// * `output` — Completed lint result containing diagnostics and their summary.
+/// * `source` — Original schematic source used for text-renderer line context.
+///
+/// # Returns
+///
+/// `ExitCode::FAILURE` when the summary contains active errors, otherwise `ExitCode::SUCCESS`.
+///
+/// # Errors
+///
+/// Returns a renderer, JSON serialization, or standard-output I/O error when the result cannot be written.
+fn render_output(
+    format: OutputFormat,
+    output: &LintOutput,
+    source: &SourceFile,
+) -> Result<ExitCode, CliError> {
     match format {
-        OutputFormat::Text => render_text(&output, schematic.source())?,
+        OutputFormat::Text => render_text(output, source)?,
         OutputFormat::Json => {
-            let json = serde_json::to_string_pretty(&output)?;
+            let json = serde_json::to_string_pretty(output)?;
             writeln!(io::stdout().lock(), "{json}")?;
         }
     }
-
-    if output.summary.errors > 0 {
-        Ok(ExitCode::FAILURE)
+    Ok(if output.summary.errors > 0 {
+        ExitCode::FAILURE
     } else {
-        Ok(ExitCode::SUCCESS)
-    }
+        ExitCode::SUCCESS
+    })
 }
 
 /// Loads the optional component profile and validates it against schematic and board evidence.
