@@ -166,9 +166,9 @@ fn check_anchor(
 ///
 /// # Arguments
 ///
-/// * intent — Validated grid settings and component-reference exemptions.
-/// * facts — Normalized placed-component origins for the current schematic.
-/// * diagnostics — Findings accumulated for selected symbol origins.
+/// * `intent` — Validated grid settings and component-reference exemptions.
+/// * `facts` — Normalized placed-component origins for the current schematic.
+/// * `diagnostics` — Findings accumulated for selected symbol origins.
 fn validate_symbol_origins(
     intent: &GridAlignmentIntent,
     facts: &crate::SchematicFacts,
@@ -202,9 +202,9 @@ fn validate_symbol_origins(
 ///
 /// # Arguments
 ///
-/// * intent — Validated grid settings and exact REF.PIN exemptions.
-/// * facts — Resolved transformed pin anchors for placed symbols.
-/// * diagnostics — Findings accumulated for selected pin anchors.
+/// * `intent` — Validated grid settings and exact REF.PIN exemptions.
+/// * `facts` — Resolved transformed pin anchors for placed symbols.
+/// * `diagnostics` — Findings accumulated for selected pin anchors.
 fn validate_pin_anchors(
     intent: &GridAlignmentIntent,
     facts: &crate::SchematicFacts,
@@ -228,9 +228,9 @@ fn validate_pin_anchors(
 ///
 /// # Arguments
 ///
-/// * intent — Validated grid settings and kind:name label exemptions.
-/// * facts — Resolved local, global and hierarchical label anchors.
-/// * diagnostics — Findings accumulated for selected label anchors.
+/// * `intent` — Validated grid settings and kind:name label exemptions.
+/// * `facts` — Resolved local, global and hierarchical label anchors.
+/// * `diagnostics` — Findings accumulated for selected label anchors.
 fn validate_label_anchors(
     intent: &GridAlignmentIntent,
     facts: &crate::SchematicFacts,
@@ -254,9 +254,9 @@ fn validate_label_anchors(
 ///
 /// # Arguments
 ///
-/// * intent — Validated grid settings and exact coordinate exemptions.
-/// * facts — Explicit junction locations collected from the schematic.
-/// * diagnostics — Findings accumulated for junction anchors.
+/// * `intent` — Validated grid settings and exact coordinate exemptions.
+/// * `facts` — Explicit junction locations collected from the schematic.
+/// * `diagnostics` — Findings accumulated for junction anchors.
 fn validate_junctions(
     intent: &GridAlignmentIntent,
     facts: &crate::SchematicFacts,
@@ -276,9 +276,9 @@ fn validate_junctions(
 ///
 /// # Arguments
 ///
-/// * intent — Validated grid settings and exact coordinate exemptions.
-/// * facts — Physical wire segments with their start/end sheet coordinates.
-/// * diagnostics — Findings accumulated for wire endpoints.
+/// * `intent` — Validated grid settings and exact coordinate exemptions.
+/// * `facts` — Physical wire segments with their start/end sheet coordinates.
+/// * `diagnostics` — Findings accumulated for wire endpoints.
 fn validate_wire_endpoints(
     intent: &GridAlignmentIntent,
     facts: &crate::SchematicFacts,
