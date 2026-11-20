@@ -2,41 +2,34 @@
 
 `kicad-clippy` is a standalone Rust schematic linter. Its design follows the separation of lint declarations, registration, passes and diagnostics used by the Rust compiler/Clippy without embedding Clippy or depending on rustc-private APIs. The rationale and comparison of reusable libraries are recorded in [architecture research](architecture-research.md).
 
-## Current workspace
+## Single-crate module structure
 
-```text
-.kicad_sch
-   |
-   v
-kicad-clippy-parser ---- lossless S-expression CST + source text
-   |
-   v
-kicad-clippy-core ------ source spans, diagnostics, typed built-in IDs,
-   |                    rule descriptors, deterministic registry
-   |
-   +-------------------- kicad-clippy-erc
-   |                         |
-   |                         v
-   |                    kicad-cli sch erc --format json
-   |                         |
-   +-------------------------+
-                 |
-                 v
-          kicad-clippy-rules
-          generic schematic checks + profile contracts
-                 |
-                 v
-          kicad-clippy CLI
-          text / JSON output
-```
+    .kicad_sch
+       |
+       v
+    parser ---------------- lossless S-expression CST + original source
+       |
+       +------------------- core
+       |                    source spans, diagnostics, rule IDs, policy
+       |
+       +------------------- erc
+       |                    native KiCad CLI + netlist adapters
+       |
+       +------------------- rules
+       |                    schematic checks + profile contracts
+       |
+       v
+    cli ------------------- orchestration + text / JSON output
 
-| Crate | Responsibility |
+| Module | Responsibility |
 | --- | --- |
-| `kicad-clippy-core` | Shared source mapping, diagnostics, severity, typed built-in rule IDs, rule metadata and deterministic registry. |
-| `kicad-clippy-parser` | Loads and parses a KiCad schematic while retaining original text and CST spans. |
-| `kicad-clippy-erc` | Invokes KiCad CLI ERC, exports netlists and normalizes native reports. |
-| `kicad-clippy-rules` | Built-in schematic checks, extracted schematic facts and project-profile contracts. |
-| `kicad-clippy` | CLI arguments, orchestration, text output, JSON output and process exit status. |
+| core | Shared source mapping, diagnostics, severity, typed built-in rule IDs, rule metadata, and deterministic registry. |
+| parser | Loads and parses a KiCad schematic while retaining original text and CST spans. |
+| erc | Invokes KiCad CLI ERC, exports netlists, and normalizes native reports. |
+| rules | Built-in schematic checks, extracted schematic facts, and project-profile contracts. |
+| cli | CLI arguments, orchestration, text output, JSON output, and process exit status. |
+
+All five responsibilities compile into the single kicad-clippy package. Internal module paths make their dependency boundaries explicit without publishing separate Cargo packages.
 
 ## Parser and source locations
 
@@ -65,7 +58,7 @@ A `Diagnostic` includes a stable code and severity, message, optional explanatio
 
 Built-in IDs are represented in Rust by `BuiltinRuleId` (SCH001–SCH022). Conversion to strings occurs at the diagnostic/serialization boundary, preserving the existing external JSON code. Open-ended native ERC identifiers remain strings because KiCad controls that namespace.
 
-`RuleDescriptor` is metadata, `RuleRegistry` rejects duplicate IDs, and neither is the implementation of a rule. The core crate's `builtin_rule_registry()` creates the complete descriptor catalogue for all 22 values in `BuiltinRuleId::ALL`; a test enforces one-to-one ID coverage. When an optional TOML policy is supplied, descriptor default levels feed its `default` preset, while `strict` and `advisory` named presets and explicit per-rule overrides control built-in diagnostic severity. Without a policy file, descriptor metadata does not alter existing rule-emitted severities. Native ERC diagnostics remain outside this policy. The rules crate now exposes a deterministic RuleEngine, an immutable RuleContext, and a RulePass extension trait. The engine collects SchematicFacts once, shares them with every registered pass, rejects duplicate pass names, and executes passes in stable name order. A pass can emit diagnostics for several rule IDs; a rule may be emitted by more than one pass. External Rust crates can implement RulePass and register it in-process. The CLI currently registers the three built-in passes; dynamic library and WASM loading are intentionally not part of this initial extension contract. The built-in checks are currently split into three deterministic passes: geometry/pin placement, physical-wire topology/labels, and annotation/field layout. Parsed source, schematic facts, wire segments and junction points are collected once and shared. Further extraction should separate semantic resolution, spatial indexing, physical connectivity and project-profile contracts as those shared analysis boundaries stabilize.
+`RuleDescriptor` is metadata, `RuleRegistry` rejects duplicate IDs, and neither is the implementation of a rule. The core module's `builtin_rule_registry()` creates the complete descriptor catalogue for all 22 values in `BuiltinRuleId::ALL`; a test enforces one-to-one ID coverage. When an optional TOML policy is supplied, descriptor default levels feed its `default` preset, while `strict` and `advisory` named presets and explicit per-rule overrides control built-in diagnostic severity. Without a policy file, descriptor metadata does not alter existing rule-emitted severities. Native ERC diagnostics remain outside this policy. The rules module now exposes a deterministic RuleEngine, an immutable RuleContext, and a RulePass extension trait. The engine collects SchematicFacts once, shares them with every registered pass, rejects duplicate pass names, and executes passes in stable name order. A pass can emit diagnostics for several rule IDs; a rule may be emitted by more than one pass. External Rust crates can implement RulePass and register it in-process. The CLI currently registers the three built-in passes; dynamic library and WASM loading are intentionally not part of this initial extension contract. The built-in checks are currently split into three deterministic passes: geometry/pin placement, physical-wire topology/labels, and annotation/field layout. Parsed source, schematic facts, wire segments and junction points are collected once and shared. Further extraction should separate semantic resolution, spatial indexing, physical connectivity and project-profile contracts as those shared analysis boundaries stabilize.
 
 
 ## Reused geometry and diagnostic libraries

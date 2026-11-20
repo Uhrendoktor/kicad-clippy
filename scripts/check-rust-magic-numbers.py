@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE_ROOT = ROOT / "crates"
+SOURCE_ROOT = ROOT / "src"
 FLOAT_PATTERN = re.compile(
     r"(?<![A-Za-z0-9_])"
     r"(?:\d[\d_]*\.\d[\d_]*|\.\d[\d_]+)"

@@ -323,59 +323,16 @@ name = "kicad-clippy"
 version = "0.1.0"
 dependencies = [
  "clap",
- "kicad-clippy-core",
- "kicad-clippy-erc",
- "kicad-clippy-parser",
- "kicad-clippy-rules",
+ "geo",
+ "kiutils_sexpr",
+ "kurbo",
  "miette",
  "serde",
  "serde_json",
- "thiserror",
- "toml",
-]
-
-[[package]]
-name = "kicad-clippy-core"
-version = "0.1.0"
-dependencies = [
- "serde",
- "thiserror",
-]
-
-[[package]]
-name = "kicad-clippy-erc"
-version = "0.1.0"
-dependencies = [
- "kicad-clippy-core",
- "kiutils_sexpr",
- "serde_json",
  "tempfile",
  "thiserror",
-]
-
-[[package]]
-name = "kicad-clippy-parser"
-version = "0.1.0"
-dependencies = [
- "kicad-clippy-core",
- "kiutils_sexpr",
- "thiserror",
+ "toml",
  "unescaper",
-]
-
-[[package]]
-name = "kicad-clippy-rules"
-version = "0.1.0"
-dependencies = [
- "geo",
- "kicad-clippy-core",
- "kicad-clippy-erc",
- "kicad-clippy-parser",
- "kiutils_sexpr",
- "kurbo",
- "serde",
- "serde_json",
- "thiserror",
  "vector-text-core",
  "vector-text-newstroke",
 ]

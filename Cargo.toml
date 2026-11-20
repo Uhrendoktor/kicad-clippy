@@ -1,15 +1,6 @@
-[workspace]
-resolver = "2"
-members = [
-    "crates/kicad-clippy-core",
-    "crates/kicad-clippy-parser",
-    "crates/kicad-clippy-erc",
-    "crates/kicad-clippy-rules",
-    "crates/kicad-clippy-cli",
-]
-default-members = ["crates/kicad-clippy-cli"]
-
-[workspace.package]
+[package]
+name = "kicad-clippy"
+description = "Clippy-inspired linting front end for KiCad schematics."
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
@@ -18,28 +9,28 @@ rust-version = "1.85"
 keywords = ["kicad", "electronics", "schematic", "linting"]
 categories = ["development-tools", "command-line-utilities"]
 
-[workspace.dependencies]
+[dependencies]
 clap = { version = "4.5", features = ["derive"] }
+geo = { version = "0.31", default-features = false }
 kiutils_sexpr = "0.1.1"
 kurbo = "0.13.1"
-geo = { version = "0.31", default-features = false }
 miette = { version = "7.6.0", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tempfile = "3.23"
 thiserror = "2.0"
+toml = "1.2.1"
 unescaper = "0.2.0"
 vector-text-core = "0.1.0"
 vector-text-newstroke = "0.1.1"
-toml = "1.2.1"
 
-[workspace.lints.rust]
+[lints.rust]
 unsafe_code = "forbid"
 warnings = "deny"
 missing_docs = "deny"
 unused_must_use = "deny"
 
-[workspace.lints.clippy]
+[lints.clippy]
 all = { level = "deny", priority = -1 }
 pedantic = { level = "deny", priority = -1 }
 nursery = { level = "deny", priority = -1 }
