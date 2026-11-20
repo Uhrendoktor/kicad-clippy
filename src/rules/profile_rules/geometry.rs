@@ -840,7 +840,10 @@ fn body_shape_from_primitive(primitive: &SchematicPrimitiveFact) -> Option<BodyS
 
 #[cfg(test)]
 mod tests {
-    use super::{BodyGeometrySet, BodyShape, minimum_body_gap, minimum_body_to_bounds_gap};
+    use super::{
+        BODY_CURVE_FLATTEN_TOLERANCE_MM, BodyGeometrySet, BodyShape, minimum_body_gap,
+        minimum_body_to_bounds_gap,
+    };
 
     /// Checks polygon and circle distances, including overlap and field bounds inside a body.
     #[test]
