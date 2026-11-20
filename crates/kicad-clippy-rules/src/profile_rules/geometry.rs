@@ -368,21 +368,23 @@ fn circle_path_shape_gap(
 ///
 /// # Arguments
 ///
-/// * `first` — First polygon's ordered vertices.
-/// * `first_stroke` — Half the first polygon stroke width.
-/// * `second` — Second polygon's ordered vertices.
-/// * `second_stroke` — Half the second polygon stroke width.
+/// * `first_polygon_vertices` — Complete ordered vertex list defining the first polygon outline in schematic millimetres.
+/// * `first_stroke` — Half the first polygon's rendered outline stroke width.
+/// * `second_polygon_vertices` — Complete ordered vertex list defining the second polygon outline in schematic millimetres.
+/// * `second_stroke` — Half the second polygon's rendered outline stroke width.
 ///
 /// # Returns
 ///
 /// The non-negative edge-to-edge distance between the polygonal areas.
 fn polygon_polygon_shape_gap(
-    first: &[(f64, f64)],
+    first_polygon_vertices: &[(f64, f64)],
     first_stroke: f64,
-    second: &[(f64, f64)],
+    second_polygon_vertices: &[(f64, f64)],
     second_stroke: f64,
 ) -> f64 {
-    polygon_polygon_gap(first, second) - first_stroke - second_stroke
+    polygon_polygon_gap(first_polygon_vertices, second_polygon_vertices)
+        - first_stroke
+        - second_stroke
 }
 
 /// Measures clearance between a stroked polygon and a stroked open path.
