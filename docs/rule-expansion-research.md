@@ -47,13 +47,13 @@ The value is a comma-separated list of pin numbers, for example:
 
 Each listed pin must resolve to an embedded placed-symbol pin and have a no-connect marker at its transformed coordinate. If pin geometry cannot be resolved, the check emits a warning that the contract is unverified instead of claiming the marker is absent.
 
-Important boundary: KiCad distinguishes an electrical pin of type unconnected from a schematic no-connect flag. The former is intrinsically not connectable and does not require the latter. Do not add such pins to required_no_connect_pins. A future parser-fact extension may identify the electrical pin type and detect redundant flags explicitly. Native ERC remains the authority for native pin semantics.
+Electrical boundary: the validator resolves the effective embedded library pin electrical type, including a selected alternate, before requiring a marker. It rejects declarations for `unconnected` and `no_connect` pin types because those types already denote a non-connectable pin. This prevents redundant requirements within the explicit profile contract; automatically scanning every existing marker for redundant placement remains future work. Native ERC remains authoritative for electrical pin semantics.
 
 ## 3. Existing rule refactoring decisions
 
 ### 3.1 SCH013: split by obstacle family, not by primitive
 
-Current SCH013 covers materially different obstacle families and exception models. Recommended decomposition:
+SCH013's obstacle-family implementation has been extracted into internal modules for annotations, electrical graphics, sheet graphics and pins, while retaining SCH013 as the single public aggregate rule ID. The module boundary keeps distinct geometry and endpoint exceptions isolated without multiplying public identifiers. The obstacle families remain:
 
 | Proposed rule family | Included objects | Distinct reason |
 |---|---|---|
@@ -64,15 +64,16 @@ Current SCH013 covers materially different obstacle families and exception model
 
 Keep one stable parent identifier or provide compatibility aliases when diagnostic codes are split. Do not create separate rules for every primitive shape. The objective is independent configuration and clear remediation, not a larger catalogue.
 
-Suggested migration sequence:
-1. Extract obstacle-family checkers behind separate functions/passes without changing diagnostic behavior.
-2. Add family-specific tests and parity snapshots while retaining SCH013 output.
-3. Introduce child identifiers and per-rule severity only after the rule-policy/configuration layer is available.
-4. Preserve an aggregate SCH013 preset for existing users during a schema-versioned transition.
+Current status and remaining guardrails:
+- [x] Extract obstacle-family implementations into internal modules while retaining the SCH013 diagnostic identifier.
+- [x] Add the TOML policy layer with `default`, `strict` and `advisory` presets plus per-rule `allow`, `warn` and `deny` levels.
+- [x] Preserve SCH013 as the aggregate compatibility identifier; no child rule IDs have been introduced.
+- Continue adding family-specific positive/negative cases and diagnostic-parity regressions whenever an obstacle family changes.
+- Introduce public child identifiers only if independent configuration/remediation proves valuable and a schema-versioned transition can preserve the aggregate SCH013 behavior.
 
 ### 3.2 SCH004 and SCH014: physical versus logical connectivity
 
-SCH004 should own profile-declared physical wire topology: required direct joins, common physical wire groups, required physical separation and scoped label policy. SCH014 should own exported logical pin-to-net contracts, including expected commonality/separation. Avoid duplicating the same exported-netlist assertion in both rules.
+The separation is implemented. SCH004 owns profile-declared physical wire topology: direct joins, common physical wire groups, physical wire groups, required physical separation, expected labels and label-cardinality/forbidden-label policy. It does not consume exported netlist facts. SCH014 owns logical pin-to-net contracts from KiCad's exported netlist, including component/connector pin mappings and expected commonality/separation. Avoid duplicating the same exported-netlist assertion in both rules.
 
 A label can join separate physical islands in KiCad's logical netlist; it must not be treated as proof that visible wire continuity exists. KiCad's schematic documentation explicitly states that same-named labels connect according to their scope and that wire endpoints, rather than arbitrary crossings, establish direct wire connections.
 
@@ -93,13 +94,13 @@ These are candidates for separate identifiers or separately configurable child r
 | Grid alignment | Symbol origins, pins, labels, junctions and wire endpoints on project grid | Grid spacing and per-object exceptions; native ERC already reports some off-grid pin/wire ends | P1 |
 | Hierarchical UUID uniqueness | Duplicate object UUIDs across all sheets and hierarchy paths | Complete hierarchical traversal; deterministic duplicate locations | P1 |
 | Label-scope policy | Forbid/allow global labels by scope; require hierarchical labels at declared sheet boundaries; detect unintended cross-sheet scope | Profile allowlist/denylist and hierarchy model; do not reimplement native name resolution | P1 |
-| Required no-connect intent | Explicit markers for profile-declared intentionally unused pins | Component/pin contract; partially implemented under SCH015 here | P1 |
-| Redundant no-connect flags | Flag markers on library pins whose electrical type is unconnected | Embedded pin electrical type and selected unit/convert | P2 |
-| Field-to-body maximum gap | Per-reference Reference/Value gap from actual symbol outline | Per-component/per-field maximum distance; transformed symbol geometry | P1 |
-| Functional-group spacing | Body clearance, alignment, adjacency and subgroup nesting | Group membership plus body outline, not just origin distance | P1 |
+| Required no-connect intent | Explicit markers for profile-declared intentionally unused pins | Implemented by SCH015 using transformed embedded-pin coordinates and effective library pin type, including selected alternates | Done |
+| Redundant no-connect flags | Find all explicit markers placed on pins whose effective library type is `unconnected` or `no_connect`, whether or not the pin appears in a profile | Automatic marker-to-pin scan across all placed symbols and selected unit/convert | P2 |
+| Field-to-body maximum gap | Per-reference Reference/Value gap from transformed symbol body | Implemented by SCH010 with per-component/per-field thresholds and estimated glyph rectangles; curve-based body outlines remain unverified | Done (partial geometry) |
+| Functional-group spacing | Body clearance, alignment, adjacency and subgroup nesting | SCH006 implements body clearance and axis alignment; adjacency, cluster compactness and subgroup nesting remain future work | P1 (partial) |
 | Title-block metadata | Required title, revision, company, date, sheet number/count and project fields | Project policy and variable expansion rules | P2 |
 | Component population/DNP | Optional parts retain real populated value and use DNP property rather than NC/DNP text in Value | Approved BOM/variant metadata and schematic DNP flag | P2 |
-| Decoupling coverage | Every declared IC supply pin/domain has required capacitors and terminals/return nets | Datasheet/app-note evidence, target pin, capacitor value/rating and cluster metadata | P1 |
+| Decoupling coverage | Broaden declared decoupling contracts beyond their current terminal-to-target/return consistency checks | SCH022 provides declared target-pin/terminal and return-terminal/net consistency; deriving required supply-pin/domain coverage and rating policies remains future work | P1 (partial) |
 | Decoupler placement | Maximum capacitor-to-target-pin distance and cluster compactness | Embedded pin coordinates, capacitor footprint geometry on PCB, per-device thresholds | P1 schematic intent / P1 PCB |
 | Bulk-capacitor contract | Rail served, polarity, placement region and minimum voltage margin | Component ratings, rail voltage/tolerance/transient policy | P2 |
 | Pull-up/pull-down topology | Required pull-ups for declared open-drain interfaces; divider endpoints and bias requirements | Interface role and expected voltage/current ranges | P2 |
@@ -175,17 +176,24 @@ The following primary and vendor sources support the proposed design checks. Dat
 - [Microchip/Atmel AVR186: Best Practices for the PCB Layout of Oscillators](https://www.microchip.com/content/dam/mchp/documents/OTH/ApplicationNotes/ApplicationNotes/Atmel-8128-Best-Practices-for-the-PCB-Layout-of-Oscillators_ApplicationNote_AVR186.pdf) — keep crystal pins/load capacitors close, short local ground returns, avoid noisy/high-frequency traces, and use an oscillator-ground reference area where appropriate.
 - [Analog Devices: Should digital and analog ground planes be separated?](https://www.analog.com/en/resources/faqs/faq_dds_digital_and_analog_gnd_planes.html) — cautions against mechanically splitting analog and digital grounds; low-impedance return planes and actual current paths matter.
 
-## 8. Recommended order for future agents
+## 8. Completed handoff milestones and future work
 
-1. Complete rule catalogue and diagnostic-schema consistency; make SCH021 and SCH022 accurately documented everywhere.
-2. Add the opt-in rule-policy layer (allow, warn, deny) and stable child-rule identifiers before multiplying public rules.
-3. Finish SCH015 required marker coverage and identify unconnected pin types to avoid redundant flags.
-4. Extract SCH013 obstacle-family implementations with parity tests; preserve parent compatibility.
-5. Separate SCH004 physical-wire/label policy from SCH014 logical pin-to-net assertions.
-6. Add SCH010 body-relative per-field maximum-gap constraints and extend SCH006 to body geometry.
-7. Add frame title/tab, UUID uniqueness, grid, label-scope and title-block checks as explicit profile/policy features.
-8. Expand role-specific schematic contracts (decoupling, pull-ups/dividers, LED current limiting, protection paths, connector completeness, test-point coverage).
-9. Build the .kicad_pcb parser and board-fact model; first implement PCB001, PCB003 and PCB008 against annotated board fixtures.
-10. Add board-layer/stackup/zone return-path analysis only after path connectivity and KiCad DRC integration are validated.
+The following milestones are implemented in the current PR #28 branch:
+
+- Complete SCH001–SCH022 descriptor catalogue and opt-in TOML rule policy with named presets and per-rule overrides.
+- SCH015 required no-connect profile intent, validated against transformed pin geometry and effective electrical type including selected alternates.
+- SCH013 obstacle-family module extraction, retaining one aggregate public rule identifier.
+- Separation of SCH004 physical wire topology from SCH014 exported logical pin-to-net assertions.
+- SCH006 body-to-body clearance/alignment and SCH010 per-field maximum body-gap contracts.
+- SCH009 independently declared frame-overlap detection, alongside the wider rule and profile documentation updates.
+
+Recommended future work, ordered by prerequisites:
+
+1. Add frame title/tab geometry, hierarchical UUID uniqueness, configurable grid alignment, label-scope policy and title-block metadata contracts.
+2. Continue strengthening family-specific SCH013 tests and diagnostic-parity regressions; extend the conservative netclass resolver only when KiCad project semantics can be resolved without guessing.
+3. Improve SCH009/SCH012 coverage for unsupported image encodings and remaining annotation types; add exact curve-based body geometry where a validated transform/distance model is available.
+4. Expand role-specific schematic contracts beyond the current SCH021/SCH022 coverage (pull-ups/dividers, LED current limiting, protection paths, connector completeness and test-point coverage).
+5. Build the `.kicad_pcb` parser and board-fact model; prioritize PCB001, PCB003 and PCB008 against annotated board fixtures.
+6. Add board-layer/stackup/zone return-path analysis only after path connectivity and KiCad DRC integration are validated.
 
 **Do not implement every candidate at once.** Each rule should arrive with a narrow contract, exact input facts, a documented false-positive policy, positive/negative fixtures and an explicit statement of what native ERC/DRC continues to own.
