@@ -1,4 +1,4 @@
-//! Functional-group placement spacing, body clearance, and alignment contracts.
+//! Functional-group placement spacing, cluster compactness, body clearance, and alignment contracts.
 
 use super::GroupAlignmentAxis;
 use super::GroupIntent;
@@ -9,7 +9,7 @@ use crate::core::Diagnostic;
 use crate::core::Severity;
 use crate::rules::generic::GEOMETRY_TOLERANCE_MM;
 
-/// Checks a group's origin spacing, supported body clearance, and row/column alignment.
+/// Checks a group's origin spacing and cluster span, supported body clearance, and row/column alignment.
 ///
 /// # Arguments
 ///
@@ -19,7 +19,7 @@ use crate::rules::generic::GEOMETRY_TOLERANCE_MM;
 ///
 /// # Returns
 ///
-/// SCH006 diagnostics for invalid constraints, member origins that violate spacing/alignment,
+/// SCH006 diagnostics for invalid constraints, member origins that violate spacing/span/alignment,
 /// body outlines that violate the configured clearance, or geometry that cannot be verified.
 pub(super) fn validate_group_spacing(
     group_id: &str,
@@ -42,6 +42,25 @@ pub(super) fn validate_group_spacing(
                 group,
                 facts,
                 minimum_spacing,
+            ));
+        }
+    }
+
+    if let Some(maximum_span) = group.maximum_member_origin_span_mm {
+        if !maximum_span.is_finite() || maximum_span < 0.0 {
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch006,
+                Severity::Error,
+                format!(
+                    "group {group_id} maximum_member_origin_span_mm must be a finite non-negative distance"
+                ),
+            ));
+        } else {
+            diagnostics.extend(validate_member_origin_span(
+                group_id,
+                group,
+                facts,
+                maximum_span,
             ));
         }
     }
@@ -151,6 +170,65 @@ fn validate_member_origin_spacing(
                     format!(
                         "group {group_id} members {} and {} have symbol-origin spacing {:.2} mm; minimum is {:.2} mm",
                         first.0, second.0, actual_spacing, minimum_spacing
+                    ),
+                ));
+            }
+        }
+    }
+    diagnostics
+}
+
+/// Checks the maximum Euclidean distance between every pair of resolved member origins.
+///
+/// # Arguments
+///
+/// * `group_id` — Stable group key used to identify the profile declaration in emitted diagnostics.
+/// * `group` — Group declaration containing the member references whose cluster diameter is constrained.
+/// * `facts` — Normalized placed-component facts containing resolved symbol origins.
+/// * `maximum_span` — Maximum allowed pairwise origin distance, in millimetres.
+///
+/// # Returns
+///
+/// SCH006 errors for member pairs beyond the configured span and warnings when an origin is unresolved.
+fn validate_member_origin_span(
+    group_id: &str,
+    group: &GroupIntent,
+    facts: &SchematicFacts,
+    maximum_span: f64,
+) -> Vec<Diagnostic> {
+    let mut positions = Vec::new();
+    let mut diagnostics = Vec::new();
+    for reference in &group.members {
+        let Some(component) = facts
+            .components
+            .iter()
+            .find(|component| component.reference == *reference)
+        else {
+            continue;
+        };
+        let Some((x_mm, y_mm)) = component.position_mm else {
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch006,
+                Severity::Warning,
+                format!(
+                    "group {group_id} member {reference} has no resolved symbol origin; cluster span is unverified"
+                ),
+            ));
+            continue;
+        };
+        positions.push((reference.as_str(), x_mm, y_mm));
+    }
+
+    for (index, first) in positions.iter().enumerate() {
+        for second in positions.iter().skip(index + 1) {
+            let actual_span = (first.1 - second.1).hypot(first.2 - second.2);
+            if actual_span > maximum_span + GEOMETRY_TOLERANCE_MM {
+                diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch006,
+                    Severity::Error,
+                    format!(
+                        "group {group_id} members {} and {} have symbol-origin span {:.2} mm; maximum is {:.2} mm",
+                        first.0, second.0, actual_span, maximum_span
                     ),
                 ));
             }
@@ -304,7 +382,7 @@ impl<'a> crate::rules::Rule<super::ProfileRuleContext<'a>> for Sch006 {
         BuiltinRuleId::Sch006
     }
 
-    /// Evaluates all declared group origin-spacing, body-clearance, and alignment constraints.
+    /// Evaluates declared origin spacing/span, body-clearance, and alignment constraints.
     ///
     /// # Arguments
     ///
@@ -312,7 +390,7 @@ impl<'a> crate::rules::Rule<super::ProfileRuleContext<'a>> for Sch006 {
     ///
     /// # Returns
     ///
-    /// Diagnostics for invalid spacing/alignment settings, excessive body proximity, or unverified outlines.
+    /// Diagnostics for invalid spacing/span/alignment settings, excessive body proximity, or unverified outlines.
     fn check(&self, context: &super::ProfileRuleContext<'a>) -> Vec<Diagnostic> {
         context
             .profile
@@ -415,6 +493,93 @@ mod tests {
                 .iter()
                 .any(|item| item.message.contains("horizontal row"))
         );
+    }
+
+    /// Rejects a functional group whose resolved member origins exceed the declared cluster diameter.
+    #[test]
+    fn group_maximum_member_origin_span_enforces_cluster_compactness() {
+        let facts = SchematicFacts {
+            components: vec![
+                ComponentFact { reference: "R1".to_owned(), uuid: None, position_mm: Some((0.0, 0.0)) },
+                ComponentFact { reference: "C1".to_owned(), uuid: None, position_mm: Some((5.0, 0.0)) },
+                ComponentFact { reference: "Q1".to_owned(), uuid: None, position_mm: Some((15.0, 0.0)) },
+            ],
+            ..SchematicFacts::default()
+        };
+        let group = GroupIntent {
+            members: vec!["R1".to_owned(), "C1".to_owned(), "Q1".to_owned()],
+            maximum_member_origin_span_mm: Some(12.0),
+            ..GroupIntent::default()
+        };
+        let diagnostics = validate_group_spacing("power", &group, &facts);
+        assert!(diagnostics.iter().any(|item| {
+            item.code == BuiltinRuleId::Sch006.as_str()
+                && item.message.contains("R1 and Q1")
+                && item.message.contains("15.00 mm")
+                && item.message.contains("maximum is 12.00 mm")
+        }));
+    }
+
+    /// Accepts a functional group whose full pairwise origin span is within the configured bound.
+    #[test]
+    fn group_maximum_member_origin_span_accepts_compact_clusters() {
+        let facts = SchematicFacts {
+            components: vec![
+                ComponentFact { reference: "R1".to_owned(), uuid: None, position_mm: Some((0.0, 0.0)) },
+                ComponentFact { reference: "C1".to_owned(), uuid: None, position_mm: Some((5.0, 0.0)) },
+                ComponentFact { reference: "Q1".to_owned(), uuid: None, position_mm: Some((9.0, 0.0)) },
+            ],
+            ..SchematicFacts::default()
+        };
+        let group = GroupIntent {
+            members: vec!["R1".to_owned(), "C1".to_owned(), "Q1".to_owned()],
+            maximum_member_origin_span_mm: Some(10.0),
+            ..GroupIntent::default()
+        };
+        let diagnostics = validate_group_spacing("power", &group, &facts);
+        assert!(!diagnostics.iter().any(|item| {
+            item.code == BuiltinRuleId::Sch006.as_str()
+                && item.message.contains("symbol-origin span")
+        }));
+    }
+
+    /// Rejects negative or non-finite maximum member-origin span thresholds.
+    #[test]
+    fn group_maximum_member_origin_span_requires_finite_nonnegative_value() {
+        for invalid_span in [-1.0, f64::INFINITY] {
+            let group = GroupIntent {
+                maximum_member_origin_span_mm: Some(invalid_span),
+                ..GroupIntent::default()
+            };
+            let diagnostics = validate_group_spacing("power", &group, &SchematicFacts::default());
+            assert!(diagnostics.iter().any(|item| {
+                item.code == BuiltinRuleId::Sch006.as_str()
+                    && item.message.contains("maximum_member_origin_span_mm must be a finite non-negative distance")
+            }));
+        }
+    }
+
+    /// Warns rather than guessing cluster compactness when a member origin is unresolved.
+    #[test]
+    fn group_maximum_member_origin_span_warns_for_unresolved_origin() {
+        let facts = SchematicFacts {
+            components: vec![
+                ComponentFact { reference: "R1".to_owned(), uuid: None, position_mm: Some((0.0, 0.0)) },
+                ComponentFact { reference: "C1".to_owned(), uuid: None, position_mm: None },
+            ],
+            ..SchematicFacts::default()
+        };
+        let group = GroupIntent {
+            members: vec!["R1".to_owned(), "C1".to_owned()],
+            maximum_member_origin_span_mm: Some(10.0),
+            ..GroupIntent::default()
+        };
+        let diagnostics = validate_group_spacing("power", &group, &facts);
+        assert!(diagnostics.iter().any(|item| {
+            item.code == BuiltinRuleId::Sch006.as_str()
+                && item.severity == crate::core::Severity::Warning
+                && item.message.contains("cluster span is unverified")
+        }));
     }
 
     /// Confirms curve-based or absent member body outlines are reported as unverified.
