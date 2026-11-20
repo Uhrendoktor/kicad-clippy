@@ -116,6 +116,8 @@ impl<'a> Rule<ProfileRuleContext<'a>> for Sch025 {
 #[cfg(test)]
 /// Tests profile-declared test-point coverage and netlist confirmation.
 mod tests {
+    #![allow(clippy::expect_used, clippy::unwrap_used)]
+
     use super::validate_required_test_point_nets;
     use crate::LintProfile;
     use kicad_clippy_core::Severity;

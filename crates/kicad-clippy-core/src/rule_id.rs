@@ -59,8 +59,8 @@ pub enum BuiltinRuleId {
     Pcb001,
     /// Represents the `SCH025` rule: Requires profile-declared test points for project-critical nets.
     Sch025,
-    /// Represents the `PCB002` rule: Verifies required test-point pads exist, match their nets, and have exposed copper/mask layers.
-    Pcb002,
+    /// Represents the `PCB009` rule: Verifies required test-point pads exist, match their nets, and have exposed copper/mask layers.
+    Pcb009,
 }
 
 impl BuiltinRuleId {
@@ -92,7 +92,7 @@ impl BuiltinRuleId {
         Self::Sch024,
         Self::Pcb001,
         Self::Sch025,
-        Self::Pcb002,
+        Self::Pcb009,
     ];
 
     /// Returns the canonical external code for this built-in rule, preserving the stable `SCHnnn` identifier.
@@ -129,7 +129,7 @@ impl BuiltinRuleId {
             Self::Sch024 => "SCH024",
             Self::Pcb001 => "PCB001",
             Self::Sch025 => "SCH025",
-            Self::Pcb002 => "PCB002",
+            Self::Pcb009 => "PCB009",
         }
     }
 

@@ -591,7 +591,7 @@ pub fn validate_missing_board(profile: &LintProfile) -> Vec<Diagnostic> {
 ///
 /// # Returns
 ///
-/// PCB002 errors for missing/ambiguous pads, mismatched board nets, and pads without exposed copper/mask layers.
+/// PCB009 errors for missing/ambiguous pads, mismatched board nets, and pads without exposed copper/mask layers.
 pub fn validate_test_point_pad_access(
     profile: &LintProfile,
     board: &BoardDocument,
@@ -602,7 +602,7 @@ pub fn validate_test_point_pad_access(
         let candidates = test_point_pin_mappings(profile, expected_net);
         if candidates.is_empty() {
             diagnostics.push(Diagnostic::for_builtin_rule(
-                BuiltinRuleId::Pcb002,
+                BuiltinRuleId::Pcb009,
                 Severity::Error,
                 format!(
                     "required test-point net {expected_net:?} has no declared test-point pin mapping to resolve on the PCB"
@@ -613,7 +613,7 @@ pub fn validate_test_point_pad_access(
         for (reference, number) in candidates {
             let Some(pad) = unique_pad(&facts, &reference, &number) else {
                 diagnostics.push(Diagnostic::for_builtin_rule(
-                    BuiltinRuleId::Pcb002,
+                    BuiltinRuleId::Pcb009,
                     Severity::Error,
                     format!(
                         "{reference}.{number} is a required test point for net {expected_net:?}, but its PCB footprint pad is missing or ambiguous"
@@ -624,7 +624,7 @@ pub fn validate_test_point_pad_access(
             match pad.net_name.as_deref() {
                 Some(actual_net) if actual_net != expected_net => {
                     diagnostics.push(Diagnostic::for_builtin_rule(
-                        BuiltinRuleId::Pcb002,
+                        BuiltinRuleId::Pcb009,
                         Severity::Error,
                         format!(
                             "{reference}.{number} board pad is on {actual_net:?}, but required test-point net is {expected_net:?}"
@@ -632,7 +632,7 @@ pub fn validate_test_point_pad_access(
                     ));
                 }
                 None => diagnostics.push(Diagnostic::for_builtin_rule(
-                    BuiltinRuleId::Pcb002,
+                    BuiltinRuleId::Pcb009,
                     Severity::Warning,
                     format!(
                         "{reference}.{number} board pad net is unverified because KiCad assigned no net to the test-point pad"
@@ -642,7 +642,7 @@ pub fn validate_test_point_pad_access(
             }
             if !pad.probe_exposed {
                 diagnostics.push(Diagnostic::for_builtin_rule(
-                    BuiltinRuleId::Pcb002,
+                    BuiltinRuleId::Pcb009,
                     Severity::Error,
                     format!(
                         "{reference}.{number} test-point pad for net {expected_net:?} must include both a copper layer and an exposed solder-mask layer"
@@ -662,14 +662,14 @@ pub fn validate_test_point_pad_access(
 ///
 /// # Returns
 ///
-/// PCB002 warnings for required test-point nets when no PCB document was supplied.
+/// PCB009 warnings for required test-point nets when no PCB document was supplied.
 pub fn validate_missing_test_point_board(profile: &LintProfile) -> Vec<Diagnostic> {
     profile
         .required_test_point_nets
         .iter()
         .map(|net| {
             Diagnostic::for_builtin_rule(
-                BuiltinRuleId::Pcb002,
+                BuiltinRuleId::Pcb009,
                 Severity::Warning,
                 format!(
                     "test-point pad exposure for required net {net:?} is unverified because no .kicad_pcb board was supplied"
@@ -1188,7 +1188,7 @@ mod test_point_tests {
             &test_point_board(Some("GND"), r#"(layers "F.Cu" "F.Mask")"#),
         );
         assert!(diagnostics.iter().any(|item| {
-            item.code == "PCB002"
+            item.code == "PCB009"
                 && item.severity == kicad_clippy_core::Severity::Error
                 && item.message.contains("on \"GND\"")
         }));
@@ -1202,7 +1202,7 @@ mod test_point_tests {
             &test_point_board(Some("VDD"), r#"(layers "F.Cu")"#),
         );
         assert!(diagnostics.iter().any(|item| {
-            item.code == "PCB002" && item.message.contains("exposed solder-mask layer")
+            item.code == "PCB009" && item.message.contains("exposed solder-mask layer")
         }));
     }
 
@@ -1214,7 +1214,7 @@ mod test_point_tests {
                 .expect("board parses");
         let diagnostics = validate_test_point_pad_access(&test_point_profile(), &board);
         assert!(diagnostics.iter().any(|item| {
-            item.code == "PCB002" && item.message.contains("missing or ambiguous")
+            item.code == "PCB009" && item.message.contains("missing or ambiguous")
         }));
     }
 
@@ -1223,7 +1223,7 @@ mod test_point_tests {
     fn pcb002_warns_when_board_is_not_supplied() {
         let diagnostics = validate_missing_test_point_board(&test_point_profile());
         assert_eq!(diagnostics.len(), 1);
-        assert_eq!(diagnostics[0].code, "PCB002");
+        assert_eq!(diagnostics[0].code, "PCB009");
         assert_eq!(diagnostics[0].severity, kicad_clippy_core::Severity::Warning);
     }
 
