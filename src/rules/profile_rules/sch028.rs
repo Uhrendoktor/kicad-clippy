@@ -456,15 +456,21 @@ impl<'a> Rule<ProfileRuleContext<'a>> for Sch028 {
     }
 }
 
+/// Axis-aligned schematic rectangle as left, top, right and bottom sheet coordinates, in millimetres.
 type Rectangle = (f64, f64, f64, f64);
 
 /// Minimum number of corners in a rectangular tab path.
 const FOUR_RECTANGLE_CORNERS: usize = 4;
 
+/// One profile group with a resolved frame and its optional inter-frame spacing requirement.
 struct DeclaredFrame<'a> {
+    /// Profile key identifying the group that owns this frame.
     group_id: &'a str,
+    /// Schematic UUID of the resolved frame rectangle.
     uuid: &'a str,
+    /// Resolved frame rectangle in sheet-space millimetres.
     bounds: Rectangle,
+    /// Minimum Euclidean separation required from other distinct declared frames, in millimetres.
     minimum_gap_mm: f64,
 }
 
@@ -548,7 +554,7 @@ mod tests {
             (14.0, 6.0, 20.0, 10.0),
             Some((15.0, 7.0, 19.0, 9.0)),
         );
-        assert!(validate_group_title_layout("power", &title_group(), &facts).is_empty());
+        assert_eq!(validate_group_title_layout("power", &title_group(), &facts), Vec::new());
     }
 
     /// Rejects a title tab that is near the frame but does not share an edge.
@@ -627,8 +633,8 @@ mod tests {
                 minimum_gap_mm: 5.0,
             },
         ];
-        assert!(compare_declared_frame_gaps(&declared).is_empty());
-        assert!((rectangle_gap(declared[0].bounds, declared[1].bounds) - 5.0).abs() < 0.000001);
+        assert_eq!(compare_declared_frame_gaps(&declared), Vec::new());
+        assert!((rectangle_gap(declared[0].bounds, declared[1].bounds) - 5.0).abs() < 0.000_001);
     }
 
     /// Rejects distinct frames whose diagonal Euclidean gap is below the configured minimum.
@@ -714,6 +720,6 @@ mod tests {
             (14.0, 6.0, 20.0, 10.0),
             Some((15.0, 7.0, 19.0, 9.0)),
         );
-        assert!(validate_minimum_frame_gaps(&profile, &facts).is_empty());
+        assert_eq!(validate_minimum_frame_gaps(&profile, &facts), Vec::new());
     }
 }
