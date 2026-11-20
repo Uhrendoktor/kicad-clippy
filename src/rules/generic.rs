@@ -624,7 +624,7 @@ fn collect_component_facts(root: &Node) -> Vec<ComponentFact> {
 /// Extracts the base-design Value and DNP state for every placed symbol.
 ///
 /// Variant overrides are detected separately because this fact set describes only
-/// the base design, not an arbitrarily selected KiCad project variant.
+/// the base design, not an arbitrarily selected `KiCad` project variant.
 ///
 /// # Arguments
 ///
