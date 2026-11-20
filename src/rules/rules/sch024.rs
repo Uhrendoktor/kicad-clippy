@@ -108,15 +108,11 @@ fn collect_hierarchy_uuids(
     let parent_directory = source_path.parent().unwrap_or_else(|| Path::new("."));
 
     for child_file in child_files {
-        if child_file.is_absolute() {
-            diagnostics.push(child_sheet_warning(
-                &child_file,
-                "absolute Sheetfile references are not followed",
-            ));
-            continue;
-        }
-
-        let referenced_path = parent_directory.join(&child_file);
+        let referenced_path = if child_file.is_absolute() {
+            child_file
+        } else {
+            parent_directory.join(child_file)
+        };
         let canonical_path = match fs::canonicalize(&referenced_path) {
             Ok(path) => path,
             Err(error) => {
@@ -367,8 +363,11 @@ mod tests {
 
         let directory = tempfile::tempdir().expect("temporary project directory is created");
         let root_path = directory.path().join("root.kicad_sch");
-        let child_path = directory.path().join("child.kicad_sch");
-        let grandchild_path = directory.path().join("grandchild.kicad_sch");
+        let child_directory = directory.path().join("sub");
+        let grandchild_directory = child_directory.join("nested");
+        fs::create_dir_all(&grandchild_directory).expect("nested sheet directories are created");
+        let child_path = child_directory.join("child.kicad_sch");
+        let grandchild_path = grandchild_directory.join("grandchild.kicad_sch");
 
         fs::write(
             &root_path,
@@ -377,7 +376,7 @@ mod tests {
                 (symbol (uuid "shared-across-sheets"))
                 (sheet (uuid "child-sheet")
                     (property "Sheetname" "Child")
-                    (property "Sheetfile" "child.kicad_sch"))
+                    (property "Sheetfile" "sub/child.kicad_sch"))
             )"#,
         )
         .expect("root schematic is written");
@@ -387,7 +386,7 @@ mod tests {
                 (uuid "child-root-uuid")
                 (sheet (uuid "grandchild-sheet")
                     (property "Sheetname" "Grandchild")
-                    (property "Sheetfile" "grandchild.kicad_sch"))
+                    (property "Sheetfile" "nested/grandchild.kicad_sch"))
             )"#,
         )
         .expect("child schematic is written");
@@ -414,6 +413,93 @@ mod tests {
         assert!(diagnostics[0].message.contains("grandchild.kicad_sch"));
         assert!(diagnostics[0].message.contains("symbol"));
         assert!(diagnostics[0].message.contains("rectangle"));
+    }
+
+    /// Follows absolute Sheetfile paths and detects duplicate UUIDs in the referenced child file.
+    #[test]
+    fn absolute_child_sheet_path_is_followed() {
+        use std::fs;
+
+        let directory = tempfile::tempdir().expect("temporary project directory is created");
+        let root_path = directory.path().join("root.kicad_sch");
+        let child_path = directory.path().join("external").join("absolute_child.kicad_sch");
+        fs::create_dir_all(child_path.parent().expect("child has a parent directory"))
+            .expect("external child directory is created");
+        fs::write(
+            &child_path,
+            r#"(kicad_sch
+                (uuid "child-root-uuid")
+                (rectangle (uuid "shared-absolute-uuid"))
+            )"#,
+        )
+        .expect("absolute child schematic is written");
+        let root = format!(
+            r#"(kicad_sch
+                (uuid "root-uuid")
+                (symbol (uuid "shared-absolute-uuid"))
+                (sheet (uuid "child-sheet")
+                    (property "Sheetname" "External")
+                    (property "Sheetfile" "{}"))
+            )"#,
+            child_path.display()
+        );
+        fs::write(&root_path, root).expect("root schematic is written");
+
+        let document = SchematicDocument::from_path(&root_path).expect("root schematic parses");
+        let diagnostics = RuleEngine::with_builtins()
+            .run(&document)
+            .diagnostics
+            .into_iter()
+            .filter(|item| item.code == BuiltinRuleId::Sch024.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(diagnostics.len(), 1);
+        assert!(diagnostics[0].message.contains("shared-absolute-uuid"));
+        assert!(diagnostics[0].message.contains("absolute_child.kicad_sch"));
+    }
+
+    /// Loads a repeated child file once and stops a cycle back to an already visited ancestor.
+    #[test]
+    fn repeated_child_references_and_hierarchy_cycles_are_loaded_once() {
+        use std::fs;
+
+        let directory = tempfile::tempdir().expect("temporary project directory is created");
+        let root_path = directory.path().join("root.kicad_sch");
+        let child_path = directory.path().join("child.kicad_sch");
+        fs::write(
+            &root_path,
+            r#"(kicad_sch
+                (uuid "root-uuid")
+                (sheet (uuid "first-child-instance")
+                    (property "Sheetname" "First")
+                    (property "Sheetfile" "child.kicad_sch"))
+                (sheet (uuid "second-child-instance")
+                    (property "Sheetname" "Second")
+                    (property "Sheetfile" "child.kicad_sch"))
+            )"#,
+        )
+        .expect("root schematic is written");
+        fs::write(
+            &child_path,
+            r#"(kicad_sch
+                (uuid "child-root-uuid")
+                (symbol (uuid "child-only-uuid"))
+                (sheet (uuid "back-to-root")
+                    (property "Sheetname" "Root")
+                    (property "Sheetfile" "root.kicad_sch"))
+            )"#,
+        )
+        .expect("child schematic is written");
+
+        let document = SchematicDocument::from_path(&root_path).expect("root schematic parses");
+        let diagnostics = RuleEngine::with_builtins()
+            .run(&document)
+            .diagnostics
+            .into_iter()
+            .filter(|item| item.code == BuiltinRuleId::Sch024.as_str())
+            .collect::<Vec<_>>();
+
+        assert!(diagnostics.is_empty());
     }
 
     /// Reports a warning instead of claiming complete hierarchy coverage when a child sheet is missing.
