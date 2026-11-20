@@ -217,7 +217,7 @@ impl Summary {
 ///
 /// # Returns
 ///
-/// ExitCode::SUCCESS when linting completes without active errors, or a failure code otherwise.
+/// `ExitCode::SUCCESS` when linting completes without active errors, or a failure code otherwise.
 pub fn run() -> ExitCode {
     match execute(Cli::parse()) {
         Ok(code) => code,
