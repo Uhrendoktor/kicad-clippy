@@ -192,6 +192,32 @@ fn unique_pad<'a>(
     matches.next().is_none().then_some(first)
 }
 
+
+/// Resolved board-pad context shared by the independent PCB001 checks.
+struct ResolvedDecouplingPads<'a> {
+    /// Reference designator of the target IC.
+    target_reference: &'a str,
+    /// Serialized pin number of the IC supply pad.
+    target_number: &'a str,
+    /// Resolved board pad belonging to the target IC supply pin.
+    target_pad: &'a BoardPadFact,
+    /// Resolved board pad belonging to the capacitor target terminal.
+    capacitor_pad: &'a BoardPadFact,
+    /// Optional resolved board pad belonging to the capacitor return terminal.
+    return_pad: Option<&'a BoardPadFact>,
+}
+
+/// Runs PCB001 for each capacitor whose profile declares a maximum target pad-center distance.
+///
+/// # Arguments
+///
+/// * `profile` — Component-intent metadata containing optional decoupling pad-distance thresholds.
+/// * `board` — Parsed PCB with transformed footprint pad anchors and board net names.
+/// * `netlist` — Optional exported schematic netlist used to cross-check target and return pad nets.
+///
+/// # Returns
+///
+/// PCB001 errors for excessive or inconsistent pad distances, and warnings when board facts are incomplete.
 pub(super) fn validate_decoupling_pad_distances(
     profile: &LintProfile,
     board: &BoardDocument,
@@ -260,24 +286,25 @@ fn validate_one_decoupling_contract(
     };
 
     let return_pad = unique_pad(facts, reference, &contract.return_terminal);
-    let mut diagnostics =
-        validate_board_pad_nets(reference, contract, &target_pad, &capacitor_pad, return_pad);
+    let resolved_pads = ResolvedDecouplingPads {
+        target_reference,
+        target_number,
+        target_pad: &target_pad,
+        capacitor_pad: &capacitor_pad,
+        return_pad,
+    };
+    let mut diagnostics = validate_board_pad_nets(reference, contract, &resolved_pads);
     diagnostics.extend(validate_schematic_board_net_parity(
         reference,
         contract,
-        target_reference,
-        target_number,
-        &target_pad,
-        &capacitor_pad,
-        return_pad,
+        &resolved_pads,
         netlist,
     ));
     diagnostics.extend(validate_target_pad_distance(
         reference,
         contract,
         maximum_distance,
-        &target_pad,
-        &capacitor_pad,
+        &resolved_pads,
     ));
     diagnostics
 }
@@ -298,12 +325,10 @@ fn validate_one_decoupling_contract(
 fn validate_board_pad_nets(
     reference: &str,
     contract: &DecouplingIntent,
-    target_pad: &BoardPadFact,
-    capacitor_pad: &BoardPadFact,
-    return_pad: Option<&BoardPadFact>,
+    pads: &ResolvedDecouplingPads<'_>,
 ) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
-    match return_pad.and_then(|pad| pad.net_name.as_deref()) {
+    match pads.return_pad.and_then(|pad| pad.net_name.as_deref()) {
         Some(actual_return_net) if actual_return_net != contract.return_net => {
             diagnostics.push(Diagnostic::for_builtin_rule(
                 BuiltinRuleId::Pcb001,
@@ -324,7 +349,7 @@ fn validate_board_pad_nets(
         )),
         _ => {}
     }
-    match (&target_pad.net_name, &capacitor_pad.net_name) {
+    match (&pads.target_pad.net_name, &pads.capacitor_pad.net_name) {
         (Some(target_net), Some(capacitor_net)) if target_net != capacitor_net => {
             diagnostics.push(Diagnostic::for_builtin_rule(
                 BuiltinRuleId::Pcb001,
@@ -367,11 +392,7 @@ fn validate_board_pad_nets(
 fn validate_schematic_board_net_parity(
     reference: &str,
     contract: &DecouplingIntent,
-    target_reference: &str,
-    target_number: &str,
-    target_pad: &BoardPadFact,
-    capacitor_pad: &BoardPadFact,
-    return_pad: Option<&BoardPadFact>,
+    pads: &ResolvedDecouplingPads<'_>,
     netlist: Option<&Netlist>,
 ) -> Vec<Diagnostic> {
     let Some(netlist) = netlist else {
@@ -385,7 +406,7 @@ fn validate_schematic_board_net_parity(
     };
 
     let mut diagnostics = Vec::new();
-    let target_net = netlist.net_for_pin(target_reference, target_number);
+    let target_net = netlist.net_for_pin(pads.target_reference, pads.target_number);
     let capacitor_net = netlist.net_for_pin(reference, &contract.target_terminal);
     let return_net = netlist.net_for_pin(reference, &contract.return_terminal);
     if let Some(expected_return_net) = return_net {
@@ -399,7 +420,7 @@ fn validate_schematic_board_net_parity(
                 ),
             ));
         }
-        if let Some(actual_return_net) = return_pad.and_then(|pad| pad.net_name.as_deref()) {
+        if let Some(actual_return_net) = pads.return_pad.and_then(|pad| pad.net_name.as_deref()) {
             if actual_return_net != expected_return_net {
                 diagnostics.push(Diagnostic::for_builtin_rule(
                     BuiltinRuleId::Pcb001,
@@ -435,7 +456,8 @@ fn validate_schematic_board_net_parity(
             ));
         }
         (Some(expected_target), _)
-            if target_pad
+            if pads
+                .target_pad
                 .net_name
                 .as_deref()
                 .is_some_and(|actual| actual != expected_target) =>
@@ -445,12 +467,13 @@ fn validate_schematic_board_net_parity(
                 Severity::Error,
                 format!(
                     "{reference} board pad net {:?} for {} differs from schematic netlist net {expected_target:?}",
-                    target_pad.net_name, contract.target_pin
+                    pads.target_pad.net_name, contract.target_pin
                 ),
             ));
         }
         (Some(_), Some(expected_capacitor))
-            if capacitor_pad
+            if pads
+                .capacitor_pad
                 .net_name
                 .as_deref()
                 .is_some_and(|actual| actual != expected_capacitor) =>
@@ -460,7 +483,7 @@ fn validate_schematic_board_net_parity(
                 Severity::Error,
                 format!(
                     "{reference} capacitor board pad net {:?} differs from schematic netlist net {expected_capacitor:?}",
-                    capacitor_pad.net_name
+                    pads.capacitor_pad.net_name
                 ),
             ));
         }
@@ -494,11 +517,10 @@ fn validate_target_pad_distance(
     reference: &str,
     contract: &DecouplingIntent,
     maximum_distance: f64,
-    target_pad: &BoardPadFact,
-    capacitor_pad: &BoardPadFact,
+    pads: &ResolvedDecouplingPads<'_>,
 ) -> Vec<Diagnostic> {
-    let distance = (target_pad.position_mm.0 - capacitor_pad.position_mm.0)
-        .hypot(target_pad.position_mm.1 - capacitor_pad.position_mm.1);
+    let distance = (pads.target_pad.position_mm.0 - pads.capacitor_pad.position_mm.0)
+        .hypot(pads.target_pad.position_mm.1 - pads.capacitor_pad.position_mm.1);
     if distance > maximum_distance + PCB_DISTANCE_TOLERANCE_MM {
         vec![Diagnostic::for_builtin_rule(
             BuiltinRuleId::Pcb001,
