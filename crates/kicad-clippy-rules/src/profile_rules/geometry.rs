@@ -64,52 +64,9 @@ pub(super) fn body_geometry_for_reference(
         .iter()
         .filter(|primitive| primitive.reference == reference)
     {
-        if primitive.arc_mm.is_some() || primitive.bezier_mm.is_some() {
-            body.has_unsupported_geometry = true;
-            continue;
-        }
-        let stroke_half_mm = if primitive.stroke_width_mm.is_finite() {
-            primitive.stroke_width_mm.max(0.0) * HALF_FACTOR
-        } else {
-            body.has_unsupported_geometry = true;
-            continue;
-        };
-        if let Some((center_x, center_y, radius_mm)) = primitive.circle_mm {
-            if center_x.is_finite()
-                && center_y.is_finite()
-                && radius_mm.is_finite()
-                && radius_mm > 0.0
-            {
-                body.shapes.push(BodyShape::Circle {
-                    center_mm: (center_x, center_y),
-                    radius_mm,
-                    stroke_half_mm,
-                });
-            } else {
-                body.has_unsupported_geometry = true;
-            }
-            continue;
-        }
-        if primitive.points_mm.iter().any(|point| !finite_point(*point)) {
-            body.has_unsupported_geometry = true;
-            continue;
-        }
-        if primitive.closed {
-            if primitive.points_mm.len() >= 3 {
-                body.shapes.push(BodyShape::Polygon {
-                    points_mm: primitive.points_mm.clone(),
-                    stroke_half_mm,
-                });
-            } else {
-                body.has_unsupported_geometry = true;
-            }
-        } else if primitive.points_mm.len() >= 2 {
-            body.shapes.push(BodyShape::Path {
-                points_mm: primitive.points_mm.clone(),
-                stroke_half_mm,
-            });
-        } else {
-            body.has_unsupported_geometry = true;
+        match body_shape_from_primitive(primitive) {
+            Some(shape) => body.shapes.push(shape),
+            None => body.has_unsupported_geometry = true,
         }
     }
     body
