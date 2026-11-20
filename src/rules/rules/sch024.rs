@@ -7,6 +7,7 @@ use std::{
 };
 
 use crate::core::{BuiltinRuleId, Diagnostic, Severity};
+use crate::parser::SchematicDocument;
 use kiutils_sexpr::{Atom, Node};
 
 use crate::rules::{RuleContext, RulePass};
