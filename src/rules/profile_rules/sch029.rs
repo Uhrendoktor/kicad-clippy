@@ -187,7 +187,7 @@ mod tests {
     /// # Arguments
     ///
     /// * `value` — Value property text serialized on the placed symbol.
-    /// * `dnp` — Base-design DNP flag value serialized by KiCad, either `yes` or `no`.
+    /// * `dnp` — Base-design DNP flag value serialized by `KiCad`, either `yes` or `no`.
     /// * `variant_override` — Whether a design-variant override node is included.
     ///
     /// # Returns
