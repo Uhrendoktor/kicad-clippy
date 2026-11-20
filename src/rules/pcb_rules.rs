@@ -1316,7 +1316,7 @@ mod test_point_tests {
     /// * `net` — Optional board net assigned to the pad.
     /// * `footprint_layer` — Front or back copper layer on which the footprint is placed.
     /// * `pad_kind` — Serialized pad technology token such as `smd` or `thru_hole`.
-    /// * `shape` — Serialized KiCad pad-shape token that selects the supported nominal contact-geometry model.
+    /// * `shape` — Serialized `KiCad` pad-shape token that selects the supported nominal contact-geometry model.
     /// * `size` — Serialized X/Y pad dimensions in millimetres.
     /// * `scale` — Optional complete `(scale x y)` footprint expression.
     /// * `layers` — Complete serialized pad layer-list expression.
