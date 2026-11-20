@@ -39,6 +39,18 @@ for source in SOURCE_ROOT.rglob("*.rs"):
     content = source.read_text(encoding="utf-8")
     for old, new in crate_paths.items():
         content = content.replace(old, new)
+    if source.is_relative_to(SOURCE_ROOT / "core"):
+        content = re.sub(
+            r"\\bcrate::(?!core::|parser::|erc::|rules::)",
+            "crate::core::",
+            content,
+        )
+    elif source.is_relative_to(SOURCE_ROOT / "rules"):
+        content = re.sub(
+            r"\\bcrate::(?!core::|parser::|erc::|rules::)",
+            "crate::rules::",
+            content,
+        )
     if source.name == "cli.rs":
         matches = list(re.finditer(r"(?m)^fn main\s*\(", content))
         if len(matches) != 1:
@@ -268,36 +280,7 @@ All five responsibilities compile into the single kicad-clippy package. Internal
 content = content[:start] + module_section + content[end:]
 architecture.write_text(content, encoding="utf-8")
 
-workflow = ROOT / ".github/workflows/ci.yml"
-content = workflow.read_text(encoding="utf-8")
-content = content.replace("      - refactor/single-crate-modules\n", "")
-if "  consolidate:\n" not in content:
-    raise SystemExit("Temporary consolidation job was not found in ci.yml.")
-job_start = content.index("  consolidate:\n")
-job_end = content.index("  rust-quality:\n", job_start)
-content = content[:job_start] + content[job_end:]
-content = content.replace(
-    "    if: github.ref != 'refs/heads/refactor/single-crate-modules'\n", ""
-)
-content = content.replace(
-    "Resolve workspace dependencies and refresh the lock file",
-    "Resolve crate dependencies and refresh the lock file",
-)
-content = content.replace("cargo check --workspace --all-targets", "cargo check --all-targets")
-content = content.replace('Path("crates").rglob("*.rs")', 'Path("src").rglob("*.rs")')
-content = content.replace("git add crates Cargo.lock", "git add src Cargo.lock")
-content = content.replace(
-    "cargo clippy --workspace --all-targets --all-features --locked -- -D warnings",
-    "cargo clippy --all-targets --all-features --locked -- -D warnings",
-)
-content = content.replace("cargo test --workspace --all-features --locked", "cargo test --all-features --locked")
-content = content.replace("cargo test --workspace --doc --locked", "cargo test --doc --locked")
-content = content.replace("Run workspace tests", "Run crate tests")
-content = content.replace(
-    "cargo build --release --package kicad-clippy --locked",
-    "cargo build --release --locked",
-)
-workflow.write_text(content, encoding="utf-8")
+# The temporary CI hook is restored separately through the GitHub contents API.
 
 Path(__file__).unlink()
 print("Consolidated core, parser, ERC, rules, and CLI into the kicad-clippy crate.")
