@@ -35,7 +35,7 @@ pub fn validate_profile_extensions(
 /// Enforces explicit project policy for global-label usage and required label scopes.
 ///
 /// This check evaluates only labels present in the currently loaded schematic document.
-/// It does not resolve hierarchical sheet pins across child files or replace KiCad's
+/// It does not resolve hierarchical sheet pins across child files or replace `KiCad`'s
 /// native global/hierarchical connectivity and ERC validation.
 ///
 /// # Arguments
@@ -194,16 +194,9 @@ fn validate_required_label_scopes(
 ) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     for (name, expected_scope) in &policy.required_label_scopes {
-        let matching: Vec<_> = facts.labels.iter().filter(|label| label.name == *name).collect();
-        if matching.is_empty() {
-            diagnostics.push(Diagnostic::for_builtin_rule(
-                BuiltinRuleId::Sch027,
-                Severity::Error,
-                format!("required label {name:?} with scope {expected_scope:?} is missing from the loaded sheet"),
-            ));
-            continue;
-        }
-        for label in matching {
+        let mut found = false;
+        for label in facts.labels.iter().filter(|label| label.name == *name) {
+            found = true;
             let actual_scope = match label.kind.as_str() {
                 "label" => Some(crate::LabelScopeKind::Local),
                 "global_label" => Some(crate::LabelScopeKind::Global),
@@ -219,6 +212,13 @@ fn validate_required_label_scopes(
                     ),
                 ));
             }
+        }
+        if !found {
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch027,
+                Severity::Error,
+                format!("required label {name:?} with scope {expected_scope:?} is missing from the loaded sheet"),
+            ));
         }
     }
     diagnostics
@@ -868,7 +868,7 @@ mod label_scope_policy_tests {
         serde_json::from_str(&source).expect("label-scope profile parses")
     }
 
-    /// Builds normalized label facts from native KiCad label-kind names.
+    /// Builds normalized label facts from native `KiCad` label-kind names.
     ///
     /// # Arguments
     ///
