@@ -971,7 +971,10 @@ mod tests {
 
         let body = body_geometry_for_reference("U1", &facts);
         assert!(!body.has_unsupported_geometry);
-        assert!(matches!(body.shapes.as_slice(), [BodyShape::Polygon { .. }]));
+        assert!(matches!(
+            body.shapes.as_slice(),
+            [BodyShape::Polygon { .. }]
+        ));
     }
 
     /// Checks that open paths contribute their stroke width to body-to-body clearance.
