@@ -84,6 +84,32 @@ pub(super) fn validate_role_contract(reference: &str, intent: &ComponentIntent) 
         })
         .collect();
 
+    if intent.kind == ComponentKind::TestPoint {
+        if intent.role.0 != "test_point" {
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch021,
+                Severity::Error,
+                format!("{reference} test-point component must use role \"test_point\""),
+            ));
+        }
+        if intent.pin_nets.is_empty() {
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch021,
+                Severity::Error,
+                format!("{reference} test-point metadata must declare at least one pin_nets mapping"),
+            ));
+        }
+        for (pin, net) in &intent.pin_nets {
+            if pin.trim().is_empty() || net.trim().is_empty() || pin.trim() != pin {
+                diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch021,
+                    Severity::Error,
+                    format!("{reference} test-point pin_nets entries must have trimmed, non-empty pin numbers and net names"),
+                ));
+            }
+        }
+    }
+
     if intent.kind == ComponentKind::Connector {
         if intent
             .attributes

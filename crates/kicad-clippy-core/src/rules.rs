@@ -207,7 +207,7 @@ struct BuiltinRuleMetadata {
 }
 
 /// Canonical metadata for the complete stable built-in rule set.
-const BUILTIN_RULE_METADATA: [BuiltinRuleMetadata; 25] = [
+const BUILTIN_RULE_METADATA: [BuiltinRuleMetadata; 27] = [
     BuiltinRuleMetadata {
         id: BuiltinRuleId::Sch001,
         name: "wire geometry",
@@ -432,6 +432,24 @@ const BUILTIN_RULE_METADATA: [BuiltinRuleMetadata; 25] = [
         explanation: "PCB001 measures actual placed pad anchors after applying the serialized footprint transform, verifies target-side and return-side board net assignments, and optionally compares them with the exported schematic netlist. It does not analyze routed copper length, ground vias, zones, or return-loop quality; those require a copper connectivity model.",
         level: RuleLevel::Deny,
         tags: &["pcb", "decoupling", "pad-distance", "profile"],
+    },
+    BuiltinRuleMetadata {
+        id: BuiltinRuleId::Sch025,
+        name: "required test-point coverage",
+        category: "testability",
+        summary: "Requires profile-declared test-point component pins for each project-critical net.",
+        explanation: "Critical nets should expose an intentionally declared test point. SCH025 verifies that the profile identifies a test-point component and pin for every required net, then confirms the pin-to-net assignment against KiCad's exported netlist when available.",
+        level: RuleLevel::Deny,
+        tags: &["test-point", "coverage", "netlist", "profile"],
+    },
+    BuiltinRuleMetadata {
+        id: BuiltinRuleId::Pcb002,
+        name: "test-point pad exposure",
+        category: "pcb-testability",
+        summary: "Checks that each required test-point component pin has a placed board pad on its expected net with copper and solder-mask layers.",
+        explanation: "PCB002 resolves test-point reference/pad numbers against placed footprints, checks board net assignments, and verifies that the pad layer list includes copper and solder mask. This is an exposure-layer check only; it does not model probe approach, fixture geometry, enclosure access, or physical clearance around the pad.",
+        level: RuleLevel::Deny,
+        tags: &["pcb", "test-point", "solder-mask", "accessibility", "profile"],
     },
 ];
 

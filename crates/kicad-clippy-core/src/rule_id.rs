@@ -57,11 +57,15 @@ pub enum BuiltinRuleId {
     Sch024,
     /// Represents the `PCB001` rule: Checks declared decoupling target-to-capacitor pad-center distance on the placed PCB.
     Pcb001,
+    /// Represents the `SCH025` rule: Requires profile-declared test points for project-critical nets.
+    Sch025,
+    /// Represents the `PCB002` rule: Verifies required test-point pads exist, match their nets, and have exposed copper/mask layers.
+    Pcb002,
 }
 
 impl BuiltinRuleId {
     /// All built-in rules in stable identifier order.
-    pub const ALL: [Self; 25] = [
+    pub const ALL: [Self; 27] = [
         Self::Sch001,
         Self::Sch002,
         Self::Sch003,
@@ -87,6 +91,8 @@ impl BuiltinRuleId {
         Self::Sch023,
         Self::Sch024,
         Self::Pcb001,
+        Self::Sch025,
+        Self::Pcb002,
     ];
 
     /// Returns the canonical external code for this built-in rule, preserving the stable `SCHnnn` identifier.
@@ -122,6 +128,8 @@ impl BuiltinRuleId {
             Self::Sch023 => "SCH023",
             Self::Sch024 => "SCH024",
             Self::Pcb001 => "PCB001",
+            Self::Sch025 => "SCH025",
+            Self::Pcb002 => "PCB002",
         }
     }
 
