@@ -849,7 +849,6 @@ mod title_block_tests {
     }
 }
 
-
 #[cfg(test)]
 /// Tests current-sheet label scope policy, including global allow/deny and required named scopes.
 mod label_scope_policy_tests {

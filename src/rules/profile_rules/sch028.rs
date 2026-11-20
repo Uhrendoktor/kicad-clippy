@@ -1,10 +1,10 @@
 //! Checks UUID-linked functional-frame title tabs, title containment, and frame spacing.
 
 use super::{GroupIntent, LintProfile, ProfileRuleContext, SchematicFacts};
+use crate::core::{BuiltinRuleId, Diagnostic, Severity};
 use crate::rules::Rule;
 use crate::rules::generic::GEOMETRY_TOLERANCE_MM;
 use crate::rules::generic::SchematicGraphicFact;
-use crate::core::{BuiltinRuleId, Diagnostic, Severity};
 
 /// Concrete implementation of SCH028.
 pub(super) struct Sch028;
@@ -477,9 +477,9 @@ mod tests {
         DeclaredFrame, compare_declared_frame_gaps, rectangle_gap, validate_group_title_layout,
         validate_minimum_frame_gaps,
     };
+    use crate::core::Severity;
     use crate::rules::generic::SchematicGraphicFact;
     use crate::rules::{GroupIntent, LintProfile, SchematicFacts, SchematicFrameFact, TextBoxFact};
-    use crate::core::Severity;
 
     /// Creates normalized facts with one frame, one rectangular title tab, and one title text box.
     ///

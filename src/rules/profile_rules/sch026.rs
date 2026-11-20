@@ -1,9 +1,9 @@
 //! Checks selected schematic anchors against the project-declared grid.
 
 use super::{GridAlignmentIntent, GridAlignmentTarget, LintProfile, ProfileRuleContext};
+use crate::core::{BuiltinRuleId, Diagnostic, SchematicLocation, Severity};
 use crate::rules::Rule;
 use crate::rules::generic::GEOMETRY_TOLERANCE_MM;
-use crate::core::{BuiltinRuleId, Diagnostic, SchematicLocation, Severity};
 
 /// Concrete implementation of SCH026.
 pub(super) struct Sch026;
@@ -381,12 +381,12 @@ mod tests {
     #![allow(clippy::expect_used)]
 
     use super::validate_grid_alignment;
+    use crate::core::Severity;
+    use crate::parser::SchematicDocument;
     use crate::rules::generic::{
         ComponentFact, SchematicFacts, SchematicLabelFact, SchematicPinFact, SchematicWireFact,
     };
     use crate::rules::{GridAlignmentIntent, GridAlignmentTarget, LintProfile};
-    use crate::core::Severity;
-    use crate::parser::SchematicDocument;
     use std::collections::BTreeSet;
 
     /// Parses a version-one profile with the supplied grid alignment object.
