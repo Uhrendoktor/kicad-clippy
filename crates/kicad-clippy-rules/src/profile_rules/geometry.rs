@@ -194,7 +194,7 @@ fn shape_gap(first: &BodyShape, second: &BodyShape) -> f64 {
 /// * `center` — Centre of the first circular body in schematic millimetres.
 /// * `radius` — Radius of the first circular body in schematic millimetres.
 /// * `stroke_half` — Half the first circle's rendered stroke width.
-/// * `second` — Second supported body shape.
+/// * `second_shape` — Second circle, polygon, or open-path body geometry compared with the first shape.
 ///
 /// # Returns
 ///
@@ -203,9 +203,9 @@ fn circle_to_shape_gap(
     center: (f64, f64),
     radius: f64,
     stroke_half: f64,
-    second: &BodyShape,
+    second_shape: &BodyShape,
 ) -> f64 {
-    match second {
+    match second_shape {
         BodyShape::Circle {
             center_mm,
             radius_mm,
@@ -235,7 +235,7 @@ fn circle_to_shape_gap(
 ///
 /// * `polygon_vertices` — Ordered outline vertices of the first polygon in schematic millimetres.
 /// * `polygon_stroke_half` — Half the first polygon's rendered stroke width.
-/// * `second` — Second supported body shape.
+/// * `second_shape` — Second circle, polygon, or open-path body geometry compared with the first shape.
 ///
 /// # Returns
 ///
@@ -243,9 +243,9 @@ fn circle_to_shape_gap(
 fn polygon_to_shape_gap(
     polygon_vertices: &[(f64, f64)],
     polygon_stroke_half: f64,
-    second: &BodyShape,
+    second_shape: &BodyShape,
 ) -> f64 {
-    match second {
+    match second_shape {
         BodyShape::Circle {
             center_mm,
             radius_mm,
@@ -284,7 +284,7 @@ fn polygon_to_shape_gap(
 ///
 /// * `path_vertices` — Ordered centreline points of the first open path in schematic millimetres.
 /// * `path_stroke_half` — Half the first path's rendered stroke width.
-/// * `second` — Second supported body shape.
+/// * `second_shape` — Second circle, polygon, or open-path body geometry compared with the first shape.
 ///
 /// # Returns
 ///
@@ -292,9 +292,9 @@ fn polygon_to_shape_gap(
 fn path_to_shape_gap(
     path_vertices: &[(f64, f64)],
     path_stroke_half: f64,
-    second: &BodyShape,
+    second_shape: &BodyShape,
 ) -> f64 {
-    match second {
+    match second_shape {
         BodyShape::Circle {
             center_mm,
             radius_mm,
