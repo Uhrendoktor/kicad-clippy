@@ -28,7 +28,7 @@ fn validate_grid_configuration(intent: &GridAlignmentIntent) -> Vec<Diagnostic> 
         || intent.tolerance_mm < 0.0
         || (intent.spacing_mm.is_finite()
             && intent.spacing_mm > 0.0
-            && intent.tolerance_mm >= intent.spacing_mm * crate::HALF_FACTOR)
+            && intent.tolerance_mm >= intent.spacing_mm * crate::rules::HALF_FACTOR)
     {
         diagnostics.push(configuration_error(
             "grid_alignment.tolerance_mm must be finite, non-negative, and less than half the grid spacing",
@@ -177,7 +177,7 @@ fn check_anchor(
 /// * `diagnostics` — Findings accumulated for selected symbol origins.
 fn validate_symbol_origins(
     intent: &GridAlignmentIntent,
-    facts: &crate::SchematicFacts,
+    facts: &crate::rules::SchematicFacts,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     for component in &facts.components {
@@ -213,7 +213,7 @@ fn validate_symbol_origins(
 /// * `diagnostics` — Findings accumulated for selected pin anchors.
 fn validate_pin_anchors(
     intent: &GridAlignmentIntent,
-    facts: &crate::SchematicFacts,
+    facts: &crate::rules::SchematicFacts,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     for pin in &facts.pins {
@@ -239,7 +239,7 @@ fn validate_pin_anchors(
 /// * `diagnostics` — Findings accumulated for selected label anchors.
 fn validate_label_anchors(
     intent: &GridAlignmentIntent,
-    facts: &crate::SchematicFacts,
+    facts: &crate::rules::SchematicFacts,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     for label in &facts.labels {
@@ -271,7 +271,7 @@ fn validate_label_anchors(
 /// * `diagnostics` — Findings accumulated for junction anchors.
 fn validate_junctions(
     intent: &GridAlignmentIntent,
-    facts: &crate::SchematicFacts,
+    facts: &crate::rules::SchematicFacts,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     for (index, junction) in facts.junctions.iter().enumerate() {
@@ -293,7 +293,7 @@ fn validate_junctions(
 /// * `diagnostics` — Findings accumulated for wire endpoints.
 fn validate_wire_endpoints(
     intent: &GridAlignmentIntent,
-    facts: &crate::SchematicFacts,
+    facts: &crate::rules::SchematicFacts,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     for wire in &facts.wires {
@@ -324,7 +324,7 @@ fn validate_wire_endpoints(
 /// SCH026 errors for selected anchors outside the configured grid and warnings for unresolved selected symbol origins.
 pub(super) fn validate_grid_alignment(
     profile: &LintProfile,
-    facts: &crate::SchematicFacts,
+    facts: &crate::rules::SchematicFacts,
 ) -> Vec<Diagnostic> {
     let Some(intent) = profile.grid_alignment.as_ref() else {
         return Vec::new();
@@ -384,7 +384,7 @@ mod tests {
     use crate::rules::generic::{
         ComponentFact, SchematicFacts, SchematicLabelFact, SchematicPinFact, SchematicWireFact,
     };
-    use crate::{GridAlignmentIntent, GridAlignmentTarget, LintProfile};
+    use crate::rules::{GridAlignmentIntent, GridAlignmentTarget, LintProfile};
     use crate::core::Severity;
     use kicad_clippy_parser::SchematicDocument;
     use std::collections::BTreeSet;
