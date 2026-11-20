@@ -822,7 +822,7 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch004 {
     ///
     /// # Arguments
     ///
-    /// * `context` — Project profile, normalized physical wire facts, and optional exported netlist.
+    /// * `context` — Project profile and normalized physical wire facts.
     ///
     /// # Returns
     ///
