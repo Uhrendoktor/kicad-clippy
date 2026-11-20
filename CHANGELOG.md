@@ -5,7 +5,7 @@ Notable changes are documented here. This project is in early development and ha
 ## Unreleased
 
 - Added SCH025 opt-in critical-net test-point coverage using `required_test_point_nets` and explicit test-point component pin maps; exported netlists verify the schematic assignments.
-- Added PCB002 test-point pad-exposure verification for placed reference/pad numbers, board-net assignment, and copper plus solder-mask layer presence. Physical probe/fixture reach remains out of scope.
+- Added PCB009 test-point pad-exposure verification for placed reference/pad numbers, board-net assignment, and copper plus solder-mask layer presence. Physical probe/fixture reach remains out of scope.
 
 - Added SCH023 opt-in title-block completeness using `required_title_block_fields` and SCH024 duplicate UUID detection within the currently loaded schematic document.
 - Added a lossless `.kicad_pcb` parser and optional CLI `--board` input. PCB001 checks declared decoupling target/capacitor pad-center distance using KiCad's serialized footprint transform, verifies the capacitor return pad against `return_net`, and checks board/netlist parity when available; track/via/zone and return-loop analysis remain future work.
