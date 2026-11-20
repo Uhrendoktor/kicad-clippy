@@ -255,12 +255,7 @@ fn shape_gap(first: &BodyShape, second: &BodyShape) -> f64 {
                 points_mm: second_points,
                 stroke_half_mm: second_stroke,
             },
-        ) => polygon_polygon_shape_gap(
-            first_points,
-            *first_stroke,
-            second_points,
-            *second_stroke,
-        ),
+        ) => polygon_polygon_shape_gap(first_points, *first_stroke, second_points, *second_stroke),
         (
             BodyShape::Polygon {
                 points_mm: polygon,
@@ -619,8 +614,7 @@ fn point_segment_distance(point: (f64, f64), start: (f64, f64), end: (f64, f64))
     if length_squared <= GEOMETRY_TOLERANCE_MM * GEOMETRY_TOLERANCE_MM {
         return point_distance(point, start);
     }
-    let projection = ((point.1 - start.1)
-        .mul_add(delta_y, (point.0 - start.0) * delta_x)
+    let projection = ((point.1 - start.1).mul_add(delta_y, (point.0 - start.0) * delta_x)
         / length_squared)
         .clamp(0.0, 1.0);
     let nearest = (
@@ -698,8 +692,10 @@ fn segments_intersect(
 ///
 /// A negative, zero, or positive sign for clockwise, collinear, or counter-clockwise orientation.
 fn orientation_sign(start: (f64, f64), end: (f64, f64), point: (f64, f64)) -> i8 {
-    let cross = (end.1 - start.1)
-        .mul_add(-(point.0 - start.0), (end.0 - start.0) * (point.1 - start.1));
+    let cross = (end.1 - start.1).mul_add(
+        -(point.0 - start.0),
+        (end.0 - start.0) * (point.1 - start.1),
+    );
     let scale = point_distance(start, end).max(1.0);
     if cross.abs() <= GEOMETRY_TOLERANCE_MM * scale {
         0
