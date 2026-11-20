@@ -27,6 +27,205 @@ pub fn validate_profile_extensions(
     let mut diagnostics = validate_declared_frame_overlaps(profile, facts);
     diagnostics.extend(validate_required_no_connect_pins(profile, facts));
     diagnostics.extend(validate_required_title_block_fields(profile, facts));
+    diagnostics.extend(validate_label_scope_policy(profile, facts));
+    diagnostics
+}
+
+/// Enforces explicit project policy for global-label usage and required label scopes.
+///
+/// This check evaluates only labels present in the currently loaded schematic document.
+/// It does not resolve hierarchical sheet pins across child files or replace `KiCad`'s
+/// native global/hierarchical connectivity and ERC validation.
+///
+/// # Arguments
+///
+/// * `profile` — Project profile containing the optional label-scope policy.
+/// * `facts` — Normalized label names and native `KiCad` label-kind facts from the loaded sheet.
+///
+/// # Returns
+///
+/// SCH027 configuration errors, global-label allow/deny findings, missing required labels,
+/// and required-scope mismatches on the currently loaded sheet.
+fn validate_label_scope_policy(profile: &LintProfile, facts: &SchematicFacts) -> Vec<Diagnostic> {
+    let Some(policy) = profile.label_scope_policy.as_ref() else {
+        return Vec::new();
+    };
+    let configuration = validate_label_scope_configuration(policy);
+    if !configuration.is_empty() {
+        return configuration;
+    }
+
+    let mut diagnostics = validate_global_label_policy(policy, facts);
+    diagnostics.extend(validate_required_label_scopes(policy, facts));
+    diagnostics
+}
+
+/// Validates label-scope names and rejects contradictory policy declarations.
+///
+/// # Arguments
+///
+/// * `policy` — Typed global-label allow/deny sets and required name-to-scope declarations.
+///
+/// # Returns
+///
+/// SCH027 configuration errors; an empty vector means the label policy is internally consistent.
+fn validate_label_scope_configuration(policy: &super::LabelScopePolicy) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+    let valid_name = |name: &str| !name.trim().is_empty() && name.trim() == name;
+
+    if let Some(allowed) = &policy.allowed_global_labels {
+        for name in allowed {
+            if !valid_name(name) {
+                diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch027,
+                    Severity::Error,
+                    format!("label_scope_policy.allowed_global_labels contains invalid label name {name:?}"),
+                ));
+            }
+        }
+    }
+    for name in &policy.forbidden_global_labels {
+        if !valid_name(name) {
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch027,
+                Severity::Error,
+                format!("label_scope_policy.forbidden_global_labels contains invalid label name {name:?}"),
+            ));
+        }
+    }
+    for (name, scope) in &policy.required_label_scopes {
+        if !valid_name(name) {
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch027,
+                Severity::Error,
+                format!(
+                    "label_scope_policy.required_label_scopes contains invalid label name {name:?}"
+                ),
+            ));
+        }
+        if *scope == super::LabelScopeKind::Global && policy.forbidden_global_labels.contains(name)
+        {
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch027,
+                Severity::Error,
+                format!("label {name:?} is required to be global but is also listed in forbidden_global_labels"),
+            ));
+        }
+        if *scope == super::LabelScopeKind::Global
+            && policy
+                .allowed_global_labels
+                .as_ref()
+                .is_some_and(|allowed| !allowed.contains(name))
+        {
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch027,
+                Severity::Error,
+                format!("label {name:?} is required to be global but is absent from allowed_global_labels"),
+            ));
+        }
+    }
+    if let Some(allowed) = &policy.allowed_global_labels {
+        for name in allowed.intersection(&policy.forbidden_global_labels) {
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch027,
+                Severity::Error,
+                format!("global label {name:?} is listed in both allowed_global_labels and forbidden_global_labels"),
+            ));
+        }
+    }
+    diagnostics
+}
+
+/// Checks every global label against the optional allow-list and explicit deny-list.
+///
+/// # Arguments
+///
+/// * `policy` — Validated policy containing global-label restrictions.
+/// * `facts` — Label facts collected from the currently loaded schematic.
+///
+/// # Returns
+///
+/// SCH027 findings for global labels that are forbidden or missing from a configured allow-list.
+fn validate_global_label_policy(
+    policy: &super::LabelScopePolicy,
+    facts: &SchematicFacts,
+) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+    for label in facts
+        .labels
+        .iter()
+        .filter(|label| label.kind == "global_label")
+    {
+        if policy.forbidden_global_labels.contains(&label.name) {
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch027,
+                Severity::Error,
+                format!(
+                    "global label {:?} is forbidden by label_scope_policy on the loaded sheet",
+                    label.name
+                ),
+            ));
+        } else if policy
+            .allowed_global_labels
+            .as_ref()
+            .is_some_and(|allowed| !allowed.contains(&label.name))
+        {
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch027,
+                Severity::Error,
+                format!(
+                    "global label {:?} is not listed in allowed_global_labels",
+                    label.name
+                ),
+            ));
+        }
+    }
+    diagnostics
+}
+
+/// Checks that every named label exists on the loaded sheet and uses its required scope.
+///
+/// # Arguments
+///
+/// * `policy` — Label-scope settings whose global allow/deny sets and required name-to-scope entries passed configuration validation.
+/// * `facts` — Native local, global and hierarchical label facts from the loaded sheet.
+///
+/// # Returns
+///
+/// SCH027 findings for missing required label names and labels whose actual scope differs from policy.
+fn validate_required_label_scopes(
+    policy: &super::LabelScopePolicy,
+    facts: &SchematicFacts,
+) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+    for (name, expected_scope) in &policy.required_label_scopes {
+        let mut found = false;
+        for label in facts.labels.iter().filter(|label| label.name == *name) {
+            found = true;
+            let actual_scope = match label.kind.as_str() {
+                "label" => Some(super::LabelScopeKind::Local),
+                "global_label" => Some(super::LabelScopeKind::Global),
+                "hierarchical_label" => Some(super::LabelScopeKind::Hierarchical),
+                _ => None,
+            };
+            if actual_scope != Some(*expected_scope) {
+                diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch027,
+                    Severity::Error,
+                    format!(
+                        "label {name:?} has scope {actual_scope:?}, but label_scope_policy requires {expected_scope:?} on the loaded sheet"
+                    ),
+                ));
+            }
+        }
+        if !found {
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch027,
+                Severity::Error,
+                format!("required label {name:?} with scope {expected_scope:?} is missing from the loaded sheet"),
+            ));
+        }
+    }
     diagnostics
 }
 
@@ -647,5 +846,179 @@ mod title_block_tests {
             validate_required_title_block_fields(&profile(r#"["sheet_number"]"#), &facts);
         assert_eq!(diagnostics.len(), 1);
         assert!(diagnostics[0].message.contains("unsupported field"));
+    }
+}
+
+
+#[cfg(test)]
+/// Tests current-sheet label scope policy, including global allow/deny and required named scopes.
+mod label_scope_policy_tests {
+    #![allow(clippy::expect_used)]
+
+    use super::validate_label_scope_policy;
+    use crate::{LabelScopeKind, LintProfile, SchematicFacts, SchematicLabelFact};
+
+    /// Parses a version-one profile containing the supplied label-scope policy object.
+    ///
+    /// # Arguments
+    ///
+    /// * `policy` — JSON object for the optional `label_scope_policy` profile property.
+    ///
+    /// # Returns
+    ///
+    /// A profile with the supplied label-scope policy.
+    fn profile(policy: &str) -> LintProfile {
+        let source = format!(r#"{{"schema_version":1,"label_scope_policy":{policy}}}"#);
+        serde_json::from_str(&source).expect("label-scope profile parses")
+    }
+
+    /// Builds normalized label facts from native `KiCad` label-kind names.
+    ///
+    /// # Arguments
+    ///
+    /// * `labels` — Pairs of serialized `KiCad` label kind and label name.
+    ///
+    /// # Returns
+    ///
+    /// Schematic facts containing those labels and no unrelated schematic objects.
+    fn facts(labels: &[(&str, &str)]) -> SchematicFacts {
+        SchematicFacts {
+            labels: labels
+                .iter()
+                .map(|(kind, name)| SchematicLabelFact {
+                    kind: (*kind).to_owned(),
+                    name: (*name).to_owned(),
+                    position_mm: (0.0, 0.0),
+                    bounds_mm: None,
+                })
+                .collect(),
+            ..SchematicFacts::default()
+        }
+    }
+
+    /// Accepts global labels listed in the configured allow-list.
+    #[test]
+    fn allowed_global_labels_are_accepted() {
+        let profile = profile(r#"{"allowed_global_labels":["VDD","GND"]}"#);
+        let diagnostics = validate_label_scope_policy(
+            &profile,
+            &facts(&[("global_label", "VDD"), ("global_label", "GND")]),
+        );
+        assert_eq!(diagnostics, Vec::new());
+    }
+
+    /// An explicitly empty allow-list forbids every global label on the loaded sheet.
+    #[test]
+    fn empty_global_allow_list_forbids_all_global_labels() {
+        let profile = profile(r#"{"allowed_global_labels":[]}"#);
+        let diagnostics = validate_label_scope_policy(&profile, &facts(&[("global_label", "VDD")]));
+        assert_eq!(diagnostics.len(), 1);
+        assert!(
+            diagnostics[0]
+                .message
+                .contains("not listed in allowed_global_labels")
+        );
+    }
+
+    /// Rejects global labels on the explicit deny-list.
+    #[test]
+    fn forbidden_global_labels_are_rejected() {
+        let profile = profile(r#"{"forbidden_global_labels":["RESET"]}"#);
+        let diagnostics =
+            validate_label_scope_policy(&profile, &facts(&[("global_label", "RESET")]));
+        assert_eq!(diagnostics.len(), 1);
+        assert!(diagnostics[0].message.contains("is forbidden"));
+    }
+
+    /// Accepts required local, global and hierarchical label scopes.
+    #[test]
+    fn required_label_scopes_match_native_label_kinds() {
+        let profile = profile(
+            r#"{
+                "required_label_scopes":{
+                    "VDD":"local",
+                    "RESET":"global",
+                    "SDA":"hierarchical"
+                }
+            }"#,
+        );
+        let diagnostics = validate_label_scope_policy(
+            &profile,
+            &facts(&[
+                ("label", "VDD"),
+                ("global_label", "RESET"),
+                ("hierarchical_label", "SDA"),
+            ]),
+        );
+        assert_eq!(diagnostics, Vec::new());
+    }
+
+    /// Reports both missing required labels and labels using the wrong requested scope.
+    #[test]
+    fn missing_and_mismatched_required_label_scopes_are_reported() {
+        let profile = profile(
+            r#"{
+                "required_label_scopes":{
+                    "RESET":"hierarchical",
+                    "VDD":"global",
+                    "MISSING":"local"
+                }
+            }"#,
+        );
+        let diagnostics = validate_label_scope_policy(
+            &profile,
+            &facts(&[("global_label", "RESET"), ("label", "VDD")]),
+        );
+        assert_eq!(diagnostics.len(), 3);
+        assert!(
+            diagnostics
+                .iter()
+                .any(|item| item.message.contains("RESET") && item.message.contains("requires"))
+        );
+        assert!(
+            diagnostics
+                .iter()
+                .any(|item| item.message.contains("VDD") && item.message.contains("requires"))
+        );
+        assert!(diagnostics.iter().any(|item| item.message.contains("MISSING") && item.message.contains("is missing")));
+    }
+
+    /// Rejects contradictory, empty and untrimmed policy names before evaluating sheet labels.
+    #[test]
+    fn invalid_and_contradictory_label_scope_configuration_is_rejected() {
+        let profile = profile(
+            r#"{
+                "allowed_global_labels":["VDD"," RESET "],
+                "forbidden_global_labels":["VDD"],
+                "required_label_scopes":{"   ":"local","RESET":"global"}
+            }"#,
+        );
+        let diagnostics = validate_label_scope_policy(&profile, &facts(&[]));
+        assert!(diagnostics.len() >= 4);
+        assert!(diagnostics.iter().all(|item| item.code == "SCH027"));
+    }
+
+    /// Leaves label scope unrestricted when the project omits the policy entirely.
+    #[test]
+    fn omitted_label_scope_policy_does_not_change_existing_schematics() {
+        let profile: LintProfile =
+            serde_json::from_str(r#"{"schema_version":1}"#).expect("plain profile parses");
+        assert_eq!(
+            validate_label_scope_policy(&profile, &facts(&[("global_label", "ANY_NAME")])),
+            Vec::new()
+        );
+    }
+
+    /// Keeps scope comparisons tied to exact project-selected label kinds.
+    #[test]
+    fn label_scope_kind_values_round_trip_through_profile_deserialization() {
+        let profile = profile(r#"{"required_label_scopes":{"RESET":"hierarchical"}}"#);
+        assert_eq!(
+            profile
+                .label_scope_policy
+                .as_ref()
+                .and_then(|policy| policy.required_label_scopes.get("RESET")),
+            Some(&LabelScopeKind::Hierarchical)
+        );
     }
 }
