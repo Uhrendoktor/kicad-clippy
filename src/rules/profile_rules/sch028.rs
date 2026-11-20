@@ -389,8 +389,8 @@ fn compare_declared_frame_gaps(declared: &[DeclaredFrame<'_>]) -> Vec<Diagnostic
 ///
 /// # Arguments
 ///
-/// * `first` — First frame rectangle.
-/// * `second` — Second frame rectangle.
+/// * `first` — Resolved sheet-space bounds of the first declared functional frame, in millimetres.
+/// * `second` — Resolved sheet-space bounds of the second declared functional frame, in millimetres.
 ///
 /// # Returns
 ///
