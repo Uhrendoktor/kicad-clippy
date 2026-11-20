@@ -2,7 +2,7 @@
 
 **Status:** living design backlog for PR #27/#28 and follow-on implementation through PR #32.
 **Integration baseline:** PR #27 was merged into `main` as squash commit `9fb78ebe9924c7d557c5ca0b1a400a12761283cc` on 2026-11-19. PR #28 is rebased directly onto `main`; the candidates below remain future work unless explicitly marked implemented.  
-**Scope distinction:** the current implementation parses both `.kicad_sch` and `.kicad_pcb` S-expressions. SCH023–SCH026, PCB001 and the first PCB009 test-point exposure contract are implemented as described below. PCB002–PCB008 and PCB010–PCB012 remain research candidates; full PCB path/zone/stackup analysis still requires a copper connectivity model and dedicated board fixtures.
+**Scope distinction:** the current implementation parses both `.kicad_sch` and `.kicad_pcb` S-expressions. SCH023–SCH027, PCB001 and the first PCB009 test-point exposure contract are implemented as described below. PCB002–PCB008 and PCB010–PCB012 remain research candidates; full PCB path/zone/stackup analysis still requires a copper connectivity model and dedicated board fixtures.
 
 ## 1. Design principles
 
@@ -93,7 +93,7 @@ These are candidates for separate identifiers or separately configurable child r
 | Frame title/tab geometry | Tab attached to frame, title inside tab, title text not clipped, frame-to-frame gap | Explicit frame/title UUIDs and renderer-aware bounds | P1 |
 | Grid alignment | Symbol origins, pins, labels, junctions and wire endpoints on project grid | SCH026 is implemented with explicit spacing/origin/tolerance, symbol-origin and label-anchor defaults, opt-in pins/junctions/wire endpoints, and narrowly scoped exemptions; the profile does not duplicate native ERC anchor checks by default | Done (opt-in project contract) |
 | Hierarchical UUID uniqueness | Duplicate object UUIDs across all sheets and hierarchy paths | SCH024 detects duplicates inside the currently loaded schematic document; traversing and aggregating UUIDs across every hierarchical child sheet remains future work | P1 (partial) |
-| Label-scope policy | Forbid/allow global labels by scope; require hierarchical labels at declared sheet boundaries; detect unintended cross-sheet scope | Profile allowlist/denylist and hierarchy model; do not reimplement native name resolution | P1 |
+| Label-scope policy | Forbid/allow global labels; require named labels to use local/global/hierarchical scope on the loaded sheet | SCH027 implements global-label allow-list/deny-list and required named-label scopes on the loaded sheet. Parent/child sheet-boundary checks and project-wide aggregation remain future work; do not reimplement native name resolution | Done (partial) |
 | Required no-connect intent | Explicit markers for profile-declared intentionally unused pins | Implemented by SCH015 using transformed embedded-pin coordinates and effective library pin type, including selected alternates | Done |
 | Redundant no-connect flags | Report explicit markers on pins whose effective library type is `unconnected` or `no_connect`, whether or not the pin appears in a profile | Implemented by SCH015 for all resolved placed pin facts, including selected units/alternates; ambiguous/unresolved pin geometry is not guessed | Done (resolved pins) |
 | Field-to-body maximum gap | Per-reference Reference/Value gap from transformed symbol body | Implemented by SCH010 with per-component/per-field thresholds and estimated glyph rectangles; curve-based body outlines remain unverified | Done (partial geometry) |
@@ -209,3 +209,8 @@ The new `BoardDocument` parser retains the source text and S-expression spans fo
 ### Implemented test-point evidence boundary
 
 SCH025 is profile-driven: every critical net listed in `required_test_point_nets` must map to at least one component declared with kind/role `test_point`, using an explicit `pin_nets` mapping. The exported schematic netlist confirms that the mapped pin belongs to the requested net. PCB009 resolves the same reference/pad number in the board, verifies the assigned net, and checks for copper plus solder-mask layers. This does not prove that a probe can physically reach the pad or that an automated fixture has sufficient approach clearance.
+
+
+### Implemented label-scope boundary
+
+SCH027 applies `label_scope_policy.allowed_global_labels`, `forbidden_global_labels`, and `required_label_scopes` to labels parsed from the currently loaded schematic. An omitted allow-list means unrestricted global labels; an explicit empty list forbids all global labels. Required names must be present and every matching instance must use the requested scope. This check does not aggregate labels across project sheets or resolve hierarchical parent-sheet pins; native KiCad net resolution remains authoritative.
