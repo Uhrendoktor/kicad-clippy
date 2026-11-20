@@ -125,7 +125,7 @@ pub struct ComponentRole(
 );
 
 /// Pin-specific intent for a decoupling capacitor.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct DecouplingIntent {
     /// Reference and pin number, e.g. U1.21.
     pub target_pin: String,
@@ -137,6 +137,10 @@ pub struct DecouplingIntent {
     pub return_net: String,
     /// Stable cluster identifier for capacitors serving the same target.
     pub cluster: String,
+    /// Optional maximum schematic distance between the target IC pin and capacitor terminal anchor, in millimetres.
+    /// This is a symbol-pin placement contract, not a PCB copper-path measurement.
+    #[serde(default)]
+    pub max_target_distance_mm: Option<f64>,
 }
 
 /// A pair of placed pins that must share one physical wire-only network.
