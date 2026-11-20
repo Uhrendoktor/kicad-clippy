@@ -7,8 +7,10 @@ use kiutils_sexpr::{Atom, Node};
 
 use crate::rules::{ComponentKind, DecouplingIntent, LintProfile};
 
-/// Millimetre tolerance used when comparing PCB pad-center distances.
+/// Millimetre tolerance used when comparing PCB pad-center distances and uniform pad scaling.
 const PCB_DISTANCE_TOLERANCE_MM: f64 = 0.001;
+/// Component metadata key for the opt-in minimum width of a test-point contact pad.
+const MINIMUM_PROBE_PAD_WIDTH_ATTRIBUTE: &str = "minimum_probe_pad_width_mm";
 
 /// A placed PCB pad with its board-space anchor and connectivity label.
 #[derive(Clone, Debug)]
@@ -23,9 +25,11 @@ struct BoardPadFact {
     position_mm: (f64, f64),
     /// Whether the pad is assigned to copper and solder-mask layers for surface exposure.
     probe_exposed: bool,
+    /// Minimum supported contact width after a uniform footprint scale, or None when the shape/transform is unsupported.
+    probe_contact_width_mm: Option<f64>,
 }
 
-/// Normalized board facts currently required by PCB001.
+/// Normalized board facts currently required by PCB001 and PCB009.
 #[derive(Clone, Debug, Default)]
 struct BoardFacts {
     /// Placed footprint pads with transformed board-space anchors.
@@ -33,7 +37,7 @@ struct BoardFacts {
 }
 
 impl BoardFacts {
-    /// Extracts placed footprint pad anchors from a parsed PCB.
+    /// Extracts placed footprint pad anchors and supported probe-contact geometry from a parsed PCB.
     ///
     /// # Arguments
     ///
@@ -61,7 +65,9 @@ impl BoardFacts {
             if !matches!(layer, Some("F.Cu" | "B.Cu")) {
                 continue;
             }
-            let (scale_x, scale_y) = footprint_scale(footprint).unwrap_or((1.0, 1.0));
+            let serialized_scale_present = child_list(footprint, "scale").is_some();
+            let resolved_scale = footprint_scale(footprint);
+            let (scale_x, scale_y) = resolved_scale.unwrap_or((1.0, 1.0));
             if !scale_x.is_finite() || !scale_y.is_finite() || scale_x <= 0.0 || scale_y <= 0.0 {
                 continue;
             }
@@ -97,6 +103,12 @@ impl BoardFacts {
                     net_name,
                     position_mm: (origin_x + rotated_x, origin_y + rotated_y),
                     probe_exposed: pad_has_copper_and_mask_layers(pad),
+                    probe_contact_width_mm: if serialized_scale_present && resolved_scale.is_none()
+                    {
+                        None
+                    } else {
+                        pad_minimum_contact_width_mm(pad, scale_x, scale_y)
+                    },
                 });
             }
         }
@@ -169,6 +181,43 @@ fn footprint_scale(footprint: &Node) -> Option<(f64, f64)> {
         items.get(1).and_then(number)?,
         items.get(2).and_then(number)?,
     ))
+}
+
+/// Resolves the supported minimum contact width of a test-point pad after its footprint scale.
+///
+/// Only circle, rectangle, oval, and round-rectangle pads are handled. Non-uniform
+/// footprint scaling and custom or other pad shapes remain unresolved rather than
+/// being approximated as probeable contact area.
+///
+/// # Arguments
+///
+/// * `pad` — Serialized footprint pad expression containing its shape and size.
+/// * `scale_x` — Dimensionless factor applied to pad-local X coordinates by the placed-footprint transform.
+/// * `scale_y` — Dimensionless factor applied to pad-local Y coordinates by the placed-footprint transform.
+///
+/// # Returns
+///
+/// The smaller scaled pad dimension in millimetres, or `None` when the shape,
+/// dimensions, or footprint scale cannot be measured conservatively.
+fn pad_minimum_contact_width_mm(pad: &Node, scale_x: f64, scale_y: f64) -> Option<f64> {
+    if !scale_x.is_finite()
+        || !scale_y.is_finite()
+        || (scale_x - scale_y).abs() > PCB_DISTANCE_TOLERANCE_MM
+    {
+        return None;
+    }
+    let shape = list_items(pad)?.get(3).and_then(atom_text)?;
+    if !matches!(shape, "circle" | "rect" | "oval" | "roundrect") {
+        return None;
+    }
+    let size = child_list(pad, "size").and_then(list_items)?;
+    let width_mm = number(size.get(1)?)?;
+    let height_mm = number(size.get(2)?)?;
+    if width_mm <= 0.0 || height_mm <= 0.0 {
+        return None;
+    }
+    let contact_width_mm = width_mm.min(height_mm) * scale_x;
+    (contact_width_mm.is_finite() && contact_width_mm > 0.0).then_some(contact_width_mm)
 }
 
 /// Resolves a unique board pad by footprint reference and pad number.
@@ -648,9 +697,74 @@ pub fn validate_test_point_pad_access(
                     ),
                 ));
             }
+            if let Some(diagnostic) =
+                validate_minimum_probe_pad_width(profile, &reference, &number, pad)
+            {
+                diagnostics.push(diagnostic);
+            }
         }
     }
     diagnostics
+}
+
+/// Enforces an optional minimum test-point pad contact width declared by the component profile.
+///
+/// # Arguments
+///
+/// * `profile` — Project component intent containing an optional `minimum_probe_pad_width_mm` attribute.
+/// * `reference` — Test-point reference designator associated with the resolved board pad.
+/// * `number` — Serialized pad number mapped to the required net.
+/// * `pad` — Resolved board pad with a supported minimum contact-width measurement when available.
+///
+/// # Returns
+///
+/// A PCB009 error for an invalid threshold or too-small pad, a warning when the requested width
+/// cannot be measured conservatively, or `None` when no threshold is declared or it passes.
+fn validate_minimum_probe_pad_width(
+    profile: &LintProfile,
+    reference: &str,
+    number: &str,
+    pad: &BoardPadFact,
+) -> Option<Diagnostic> {
+    let raw_threshold = profile
+        .components
+        .get(reference)?
+        .attributes
+        .get(MINIMUM_PROBE_PAD_WIDTH_ATTRIBUTE)?;
+    let invalid_configuration = || {
+        Diagnostic::for_builtin_rule(
+            BuiltinRuleId::Pcb009,
+            Severity::Error,
+            format!(
+                "{reference}.{number} {MINIMUM_PROBE_PAD_WIDTH_ATTRIBUTE} must be a finite positive distance in millimetres, but was {raw_threshold:?}"
+            ),
+        )
+    };
+    let Ok(minimum_width_mm) = raw_threshold.parse::<f64>() else {
+        return Some(invalid_configuration());
+    };
+    if !minimum_width_mm.is_finite() || minimum_width_mm <= 0.0 {
+        return Some(invalid_configuration());
+    }
+    let Some(actual_width_mm) = pad.probe_contact_width_mm else {
+        return Some(Diagnostic::for_builtin_rule(
+            BuiltinRuleId::Pcb009,
+            Severity::Warning,
+            format!(
+                "{reference}.{number} minimum probe-pad contact width is unverified because its pad shape or footprint scale is unsupported"
+            ),
+        ));
+    };
+    if actual_width_mm + PCB_DISTANCE_TOLERANCE_MM < minimum_width_mm {
+        return Some(Diagnostic::for_builtin_rule(
+            BuiltinRuleId::Pcb009,
+            Severity::Error,
+            format!(
+                "{reference}.{number} test-point pad has minimum contact width {actual_width_mm:.2} mm; {MINIMUM_PROBE_PAD_WIDTH_ATTRIBUTE} requires {minimum_width_mm:.2} mm"
+            ),
+        ));
+    }
+    None
 }
 
 /// Reports required test-point nets whose board-level exposure cannot be checked without a PCB.
@@ -671,7 +785,7 @@ pub fn validate_missing_test_point_board(profile: &LintProfile) -> Vec<Diagnosti
                 BuiltinRuleId::Pcb009,
                 Severity::Warning,
                 format!(
-                    "test-point pad exposure for required net {net:?} is unverified because no .kicad_pcb board was supplied"
+                    "test-point pad net, exposure, and any declared minimum contact width for required net {net:?} are unverified because no .kicad_pcb board was supplied"
                 ),
             )
         })
@@ -1144,6 +1258,28 @@ mod test_point_tests {
         .expect("test-point profile parses")
     }
 
+    /// Builds a profile requiring the supplied minimum test-point contact width.
+    ///
+    /// # Arguments
+    ///
+    /// * `minimum_width` — Required smaller pad dimension in millimetres, serialized as a component attribute.
+    ///
+    /// # Returns
+    ///
+    /// A profile whose TP1.1 test-point pad must meet the requested minimum contact width.
+    fn minimum_probe_width_profile(minimum_width: &str) -> LintProfile {
+        let source = format!(
+            r#"{{"schema_version":1,"required_test_point_nets":["VDD"],"components":{{"TP1":{{
+                "kind":"test_point","role":"test_point",
+                "function":"VDD measurement access",
+                "rationale":"Provides a production test pad",
+                "pin_nets":{{"1":"VDD"}},
+                "attributes":{{"minimum_probe_pad_width_mm":"{minimum_width}"}}
+            }}}}}}"#
+        );
+        serde_json::from_str(&source).expect("minimum probe-width profile parses")
+    }
+
     /// Builds a board containing TP1.1 with configurable net, footprint side, pad kind and layers.
     ///
     /// # Arguments
@@ -1162,12 +1298,48 @@ mod test_point_tests {
         pad_kind: &str,
         layers: &str,
     ) -> BoardDocument {
+        test_point_board_with_pad_geometry(
+            net,
+            footprint_layer,
+            pad_kind,
+            "circle",
+            "1 1",
+            "",
+            layers,
+        )
+    }
+
+    /// Builds a board fixture containing TP1.1 with explicit pad shape, size, and optional footprint scale.
+    ///
+    /// # Arguments
+    ///
+    /// * `net` — Optional board net assigned to the pad.
+    /// * `footprint_layer` — Front or back copper layer on which the footprint is placed.
+    /// * `pad_kind` — Serialized pad technology token such as `smd` or `thru_hole`.
+    /// * `shape` — Serialized `KiCad` pad-shape token that selects the supported nominal contact-geometry model.
+    /// * `size` — Serialized X/Y pad dimensions in millimetres.
+    /// * `scale` — Optional complete `(scale x y)` footprint expression.
+    /// * `layers` — Complete serialized pad layer-list expression.
+    ///
+    /// # Returns
+    ///
+    /// A parsed PCB containing one placed TP1 footprint and its configured pad.
+    fn test_point_board_with_pad_geometry(
+        net: Option<&str>,
+        footprint_layer: &str,
+        pad_kind: &str,
+        shape: &str,
+        size: &str,
+        scale: &str,
+        layers: &str,
+    ) -> BoardDocument {
         let net_expression = net.map_or_else(String::new, |name| format!("(net 1 \"{name}\")"));
         let source = format!(
             r#"(kicad_pcb
                 (footprint "TestPoint:TP" (layer "{footprint_layer}") (at 10 10)
+                    {scale}
                     (property "Reference" "TP1")
-                    (pad "1" {pad_kind} circle (at 0 0) (size 1 1) {layers} {net_expression})
+                    (pad "1" {pad_kind} {shape} (at 0 0) (size {size}) {layers} {net_expression})
                 )
             )"#
         );
@@ -1249,6 +1421,127 @@ mod test_point_tests {
         );
         assert!(diagnostics.iter().any(|item| {
             item.code == "PCB009" && item.message.contains("exposed solder-mask layer")
+        }));
+    }
+
+    /// Accepts a standard test-point pad whose smaller dimension meets the declared minimum.
+    #[test]
+    fn pcb009_accepts_declared_minimum_probe_pad_width() {
+        let diagnostics = validate_test_point_pad_access(
+            &minimum_probe_width_profile("0.8"),
+            &test_point_board_with_pad_geometry(
+                Some("VDD"),
+                "F.Cu",
+                "smd",
+                "roundrect",
+                "1.0 0.9",
+                "",
+                r#"(layers "F.Cu" "F.Mask")"#,
+            ),
+        );
+        assert_eq!(diagnostics, Vec::new());
+    }
+
+    /// Rejects a supported test-point pad whose smaller dimension is below the declared minimum.
+    #[test]
+    fn pcb009_rejects_test_point_pad_below_minimum_probe_width() {
+        let diagnostics = validate_test_point_pad_access(
+            &minimum_probe_width_profile("0.8"),
+            &test_point_board_with_pad_geometry(
+                Some("VDD"),
+                "F.Cu",
+                "smd",
+                "rect",
+                "0.6 1.2",
+                "",
+                r#"(layers "F.Cu" "F.Mask")"#,
+            ),
+        );
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "PCB009"
+                && item.severity == crate::core::Severity::Error
+                && item.message.contains("0.60 mm")
+                && item.message.contains("requires 0.80 mm")
+        }));
+    }
+
+    /// Reports contact width as unverified for a custom pad whose usable contact area is not modelled.
+    #[test]
+    fn pcb009_warns_for_custom_test_point_pad_contact_geometry() {
+        let diagnostics = validate_test_point_pad_access(
+            &minimum_probe_width_profile("0.8"),
+            &test_point_board_with_pad_geometry(
+                Some("VDD"),
+                "F.Cu",
+                "smd",
+                "custom",
+                "1.0 1.0",
+                "",
+                r#"(layers "F.Cu" "F.Mask")"#,
+            ),
+        );
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "PCB009"
+                && item.severity == crate::core::Severity::Warning
+                && item.message.contains("contact width is unverified")
+        }));
+    }
+
+    /// Reports contact width as unverified when a non-uniform footprint scale makes the pad transform ambiguous.
+    #[test]
+    fn pcb009_warns_for_non_uniform_test_point_footprint_scale() {
+        let diagnostics = validate_test_point_pad_access(
+            &minimum_probe_width_profile("0.8"),
+            &test_point_board_with_pad_geometry(
+                Some("VDD"),
+                "F.Cu",
+                "smd",
+                "rect",
+                "1.0 1.0",
+                "(scale 2 1)",
+                r#"(layers "F.Cu" "F.Mask")"#,
+            ),
+        );
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "PCB009"
+                && item.severity == crate::core::Severity::Warning
+                && item.message.contains("footprint scale is unsupported")
+        }));
+    }
+
+    /// Reports minimum probe-pad width as unverified when an explicit footprint scale is malformed.
+    #[test]
+    fn pcb009_warns_for_malformed_test_point_footprint_scale() {
+        let diagnostics = validate_test_point_pad_access(
+            &minimum_probe_width_profile("0.8"),
+            &test_point_board_with_pad_geometry(
+                Some("VDD"),
+                "F.Cu",
+                "smd",
+                "rect",
+                "1.0 1.0",
+                "(scale malformed 1)",
+                r#"(layers "F.Cu" "F.Mask")"#,
+            ),
+        );
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "PCB009"
+                && item.severity == crate::core::Severity::Warning
+                && item.message.contains("footprint scale is unsupported")
+        }));
+    }
+
+    /// Rejects a profile-declared minimum contact width that is not a finite positive distance.
+    #[test]
+    fn pcb009_rejects_invalid_minimum_probe_pad_width_configuration() {
+        let diagnostics = validate_test_point_pad_access(
+            &minimum_probe_width_profile("NaN"),
+            &test_point_board(Some("VDD"), "F.Cu", "smd", r#"(layers "F.Cu" "F.Mask")"#),
+        );
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "PCB009"
+                && item.severity == crate::core::Severity::Error
+                && item.message.contains("must be a finite positive distance")
         }));
     }
 
