@@ -604,9 +604,7 @@ impl LintProfile {
         {
             diagnostics.extend(
                 crate::rules::additional_profile_rules::validate_profile_extensions_with_document(
-                    self,
-                    &facts,
-                    document,
+                    self, &facts, document,
                 ),
             );
         } else {

@@ -70,9 +70,7 @@ fn validate_profile_extensions_inner(
     diagnostics.extend(validate_required_no_connect_pins(profile, facts));
     diagnostics.extend(validate_required_title_block_fields(profile, facts));
     diagnostics.extend(validate_label_scope_policy_with_document(
-        profile,
-        facts,
-        document,
+        profile, facts, document,
     ));
     diagnostics
 }
@@ -1487,13 +1485,19 @@ mod label_scope_policy_tests {
         .expect("grandchild sheet is written");
         let document = SchematicDocument::from_path(&root).expect("root schematic parses");
         let facts = SchematicFacts::from_document(&document);
-        let profile = profile(r#"{"project_wide":true,"forbidden_global_labels":["DEBUG_INTERNAL"]}"#);
+        let profile =
+            profile(r#"{"project_wide":true,"forbidden_global_labels":["DEBUG_INTERNAL"]}"#);
 
         let diagnostics =
             validate_label_scope_policy_with_document(&profile, &facts, Some(&document));
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].severity, crate::core::Severity::Error);
-        assert!(diagnostics[0].source.as_ref().is_some_and(|path| path.ends_with("grandchild.kicad_sch")));
+        assert!(
+            diagnostics[0]
+                .source
+                .as_ref()
+                .is_some_and(|path| path.ends_with("grandchild.kicad_sch"))
+        );
     }
 
     /// Uses an unverified warning rather than a missing-label error when a referenced child cannot be read.
@@ -1513,9 +1517,8 @@ mod label_scope_policy_tests {
         .expect("root sheet is written");
         let document = SchematicDocument::from_path(&root).expect("root schematic parses");
         let facts = SchematicFacts::from_document(&document);
-        let profile = profile(
-            r#"{"project_wide":true,"required_label_scopes":{"REQUIRED":"local"}}"#,
-        );
+        let profile =
+            profile(r#"{"project_wide":true,"required_label_scopes":{"REQUIRED":"local"}}"#);
 
         let diagnostics =
             validate_label_scope_policy_with_document(&profile, &facts, Some(&document));
@@ -1562,7 +1565,8 @@ mod label_scope_policy_tests {
         .expect("child sheet is written");
         let document = SchematicDocument::from_path(&root).expect("root schematic parses");
         let facts = SchematicFacts::from_document(&document);
-        let profile = profile(r#"{"project_wide":true,"forbidden_global_labels":["DEBUG_INTERNAL"]}"#);
+        let profile =
+            profile(r#"{"project_wide":true,"forbidden_global_labels":["DEBUG_INTERNAL"]}"#);
 
         let diagnostics =
             validate_label_scope_policy_with_document(&profile, &facts, Some(&document));
