@@ -515,7 +515,7 @@ mod tests {
             symbol_primitives: vec![
                 SchematicPrimitiveFact {
                     reference: "R1".to_owned(),
-                    points_mm: vec![(0.0, 0.0), (1.0, 1.0), (2.0, 0.0)],
+                    points_mm: Vec::new(),
                     closed: false,
                     circle_mm: None,
                     arc_mm: None,
