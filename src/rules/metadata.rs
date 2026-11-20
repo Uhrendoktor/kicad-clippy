@@ -598,10 +598,10 @@ impl LintProfile {
         };
         let mut diagnostics = Vec::new();
         diagnostics.extend(
-            crate::rules::additional_profile_rules::validate_profile_extensions(
+            crate::rules::additional_profile_rules::validate_profile_extensions_with_document(
                 self,
                 &facts,
-                document,
+                Some(document),
             ),
         );
         diagnostics.extend(sch021::Sch021.check(&context));
