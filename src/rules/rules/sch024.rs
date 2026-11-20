@@ -1,4 +1,4 @@
-//! Checks uniqueness of UUIDs within the currently loaded schematic document.
+//! Checks UUID uniqueness across a root schematic and its referenced child-sheet hierarchy.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -12,7 +12,7 @@ use kiutils_sexpr::{Atom, Node};
 
 use crate::rules::{RuleContext, RulePass};
 
-/// A rule pass that detects duplicate object UUIDs in one parsed schematic document.
+/// A rule pass that detects duplicate object UUIDs across a path-based root schematic and its distinct referenced child sheets.
 pub struct DuplicateUuidPass;
 
 impl RulePass for DuplicateUuidPass {
@@ -25,7 +25,7 @@ impl RulePass for DuplicateUuidPass {
         "sch024.document-uuid-uniqueness"
     }
 
-    /// Reports UUID values assigned to more than one object in the loaded schematic document.
+    /// Reports UUID values assigned to more than one object in the root schematic hierarchy.
     ///
     /// # Arguments
     ///
@@ -33,7 +33,7 @@ impl RulePass for DuplicateUuidPass {
     ///
     /// # Returns
     ///
-    /// One SCH024 error for each UUID used by more than one object in this document.
+    /// SCH024 errors for UUIDs reused across readable hierarchy files, plus warnings for child files whose contents could not be verified.
     fn run(&self, context: &RuleContext<'_>) -> Vec<Diagnostic> {
         let mut occurrences = BTreeMap::<String, Vec<String>>::new();
         let mut visited_paths = BTreeSet::<PathBuf>::new();
@@ -282,7 +282,7 @@ fn atom_text(node: &Node) -> Option<&str> {
 }
 
 #[cfg(test)]
-/// Tests duplicate-UUID detection on a loaded schematic document.
+/// Tests duplicate-UUID detection for standalone documents and referenced child-sheet hierarchies.
 mod tests {
     #![allow(clippy::expect_used, clippy::unwrap_used)]
 
