@@ -392,12 +392,13 @@ Exemptions are explicit and scoped: `exempt_components` contains symbol referenc
 
 ## Label scope policy
 
-A project can explicitly constrain global labels and require selected label names to use a particular scope on the currently loaded sheet:
+A project can explicitly constrain global labels and require selected label names to use a particular scope on the currently loaded sheet. Set `project_wide` to `true` to apply the same policy across the root schematic and every readable child file referenced by its `Sheetfile` properties:
 
 ~~~json
 {
   "schema_version": 1,
   "label_scope_policy": {
+    "project_wide": true,
     "allowed_global_labels": ["GND", "VBUS"],
     "forbidden_global_labels": ["DEBUG_INTERNAL"],
     "required_label_scopes": {
@@ -411,7 +412,7 @@ A project can explicitly constrain global labels and require selected label name
 
 SCH027 treats an omitted `allowed_global_labels` as no allow-list restriction. An explicitly empty list permits no global labels. `forbidden_global_labels` always rejects the named global labels. `required_label_scopes` maps a label name to `local`, `global`, or `hierarchical`; every matching instance on the loaded sheet must use the requested scope, and a required label that is absent from that sheet is reported.
 
-The rule checks the serialized label objects in the current `.kicad_sch` file only. It does not confirm that a hierarchical label is connected to a matching parent-sheet pin, aggregate global labels across other loaded project sheets, or reimplement KiCad's native label/net resolution. Native ERC and KiCad's exported netlist remain authoritative for actual connectivity.
+Without `project_wide`, the rule checks only serialized label objects in the current `.kicad_sch` file. With `project_wide`, it traverses relative and absolute `Sheetfile` references, loads each canonical child file once, and applies the allow/deny and required-scope contracts to every readable sheet. Missing, unreadable, or invalid children produce unverified warnings; when such a child prevents proving a required label is absent, SCH027 warns rather than reporting a false missing-label error. Project-variable expansion in `Sheetfile` values is not performed. This check does not confirm that a hierarchical label is connected to a matching parent-sheet pin or reimplement KiCad's native label/net resolution. Native ERC and KiCad's exported netlist remain authoritative for actual connectivity.
 
 
 ## Functional-frame title tabs and spacing

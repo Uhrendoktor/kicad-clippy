@@ -1,8 +1,13 @@
 //! Additional profile-driven checks that complement native ERC.
 
-use crate::core::{BuiltinRuleId, Diagnostic, SchematicLocation, Severity};
+use std::collections::BTreeSet;
+use std::fs;
+use std::path::{Path, PathBuf};
 
+use crate::core::{BuiltinRuleId, Diagnostic, SchematicLocation, Severity};
+use crate::parser::SchematicDocument;
 use crate::rules::{HALF_FACTOR, LintProfile, SchematicFacts};
+use kiutils_sexpr::{Atom, Node};
 
 /// Coordinates within this distance are treated as the same schematic anchor.
 const GEOMETRY_TOLERANCE_MM: f64 = 0.001;
@@ -16,6 +21,7 @@ const REQUIRED_NO_CONNECT_PINS_ATTRIBUTE: &str = "required_no_connect_pins";
 ///
 /// * `profile` — Project-level contracts that opt into extra presentation and connectivity checks.
 /// * `facts` — Normalized schematic objects, frames, pins, and markers collected once for this lint run.
+/// * `document` — Parsed source document, used when a profile explicitly requests hierarchy-wide label policy.
 ///
 /// # Returns
 ///
@@ -23,11 +29,16 @@ const REQUIRED_NO_CONNECT_PINS_ATTRIBUTE: &str = "required_no_connect_pins";
 pub fn validate_profile_extensions(
     profile: &LintProfile,
     facts: &SchematicFacts,
+    document: &SchematicDocument,
 ) -> Vec<Diagnostic> {
     let mut diagnostics = validate_declared_frame_overlaps(profile, facts);
     diagnostics.extend(validate_required_no_connect_pins(profile, facts));
     diagnostics.extend(validate_required_title_block_fields(profile, facts));
-    diagnostics.extend(validate_label_scope_policy(profile, facts));
+    diagnostics.extend(validate_label_scope_policy_with_document(
+        profile,
+        facts,
+        Some(document),
+    ));
     diagnostics
 }
 
@@ -47,12 +58,34 @@ pub fn validate_profile_extensions(
 /// SCH027 configuration errors, global-label allow/deny findings, missing required labels,
 /// and required-scope mismatches on the currently loaded sheet.
 fn validate_label_scope_policy(profile: &LintProfile, facts: &SchematicFacts) -> Vec<Diagnostic> {
+    validate_label_scope_policy_with_document(profile, facts, None)
+}
+
+/// Applies current-sheet or project-hierarchy label policy using the requested verification scope.
+///
+/// # Arguments
+///
+/// * `profile` — Project profile containing the optional label-scope policy.
+/// * `facts` — Normalized label objects from the root schematic.
+/// * `document` — Parsed root schematic when its filesystem path is available for hierarchy traversal.
+///
+/// # Returns
+///
+/// SCH027 configuration, scope, global-label, or unverified hierarchy diagnostics.
+fn validate_label_scope_policy_with_document(
+    profile: &LintProfile,
+    facts: &SchematicFacts,
+    document: Option<&SchematicDocument>,
+) -> Vec<Diagnostic> {
     let Some(policy) = profile.label_scope_policy.as_ref() else {
         return Vec::new();
     };
     let configuration = validate_label_scope_configuration(policy);
     if !configuration.is_empty() {
         return configuration;
+    }
+    if policy.project_wide {
+        return validate_project_wide_label_scope_policy(policy, document);
     }
 
     let mut diagnostics = validate_global_label_policy(policy, facts);
@@ -235,7 +268,338 @@ const SUPPORTED_TITLE_BLOCK_FIELDS: [&str; 13] = [
     "comment6", "comment7", "comment8", "comment9",
 ];
 
-/// Validates only the sheet title-block fields explicitly required by the project profile.
+/// One label occurrence with the source sheet from which its scope was read.
+#[derive(Clone, Debug)]
+struct ProjectLabelOccurrence {
+    /// Serialized label name.
+    name: String,
+    /// Native KiCad label kind.
+    kind: String,
+    /// Source schematic file containing the label.
+    source: PathBuf,
+}
+
+/// Traverses the root schematic and its referenced child sheets, collecting labels once per canonical file.
+///
+/// # Arguments
+///
+/// * `document` — Already parsed root schematic whose retained path anchors project traversal.
+/// * `path` — Canonical filesystem path of the document being visited.
+/// * `visited` — Canonical file paths already loaded, used for cycle and repeated-reference protection.
+/// * `occurrences` — Accumulated label occurrences with source paths.
+/// * `diagnostics` — Unverified warnings for missing, unreadable, or invalid child sheets.
+///
+/// # Returns
+///
+/// No value; readable sheet labels and hierarchy-verification warnings are appended to the supplied collections.
+fn collect_project_label_occurrences(
+    document: &SchematicDocument,
+    path: &Path,
+    visited: &mut BTreeSet<PathBuf>,
+    occurrences: &mut Vec<ProjectLabelOccurrence>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if !visited.insert(path.to_path_buf()) {
+        return;
+    }
+
+    occurrences.extend(
+        SchematicFacts::from_document(document)
+            .labels
+            .into_iter()
+            .map(|label| ProjectLabelOccurrence {
+                name: label.name,
+                kind: label.kind,
+                source: path.to_path_buf(),
+            }),
+    );
+
+    let mut sheetfiles = BTreeSet::new();
+    if let Some(root) = document.cst().nodes.first() {
+        collect_project_sheetfile_values(root, &mut sheetfiles);
+    }
+
+    for sheetfile in sheetfiles {
+        let candidate = Path::new(&sheetfile);
+        let child_path = if candidate.is_absolute() {
+            candidate.to_path_buf()
+        } else {
+            path.parent()
+                .unwrap_or_else(|| Path::new("."))
+                .join(candidate)
+        };
+        let child_path = match fs::canonicalize(&child_path) {
+            Ok(path) => path,
+            Err(error) => {
+                diagnostics.push(project_label_hierarchy_warning(
+                    path,
+                    &format!("referenced child sheet {sheetfile:?} could not be resolved: {error}"),
+                ));
+                continue;
+            }
+        };
+        if visited.contains(&child_path) {
+            continue;
+        }
+        match SchematicDocument::from_path(&child_path) {
+            Ok(child_document) => collect_project_label_occurrences(
+                &child_document,
+                &child_path,
+                visited,
+                occurrences,
+                diagnostics,
+            ),
+            Err(error) => diagnostics.push(project_label_hierarchy_warning(
+                &child_path,
+                &format!("referenced child sheet could not be parsed: {error}"),
+            )),
+        }
+    }
+}
+
+/// Collects native `Sheetfile` property values from all nested sheet objects in a schematic CST.
+///
+/// # Arguments
+///
+/// * `node` — Current S-expression node being recursively examined.
+/// * `sheetfiles` — Set receiving each distinct non-empty referenced child filename.
+///
+/// # Returns
+///
+/// No value; discovered sheet paths are appended to the deterministic set.
+fn collect_project_sheetfile_values(node: &Node, sheetfiles: &mut BTreeSet<String>) {
+    let Node::List { items, .. } = node else {
+        return;
+    };
+    if items.first().and_then(project_atom_value) == Some("sheet") {
+        for property in project_children(node, "property") {
+            let Some(property_items) = project_list_items(property) else {
+                continue;
+            };
+            if property_items.get(1).and_then(project_atom_value) == Some("Sheetfile") {
+                if let Some(value) = property_items.get(2).and_then(project_atom_value) {
+                    if !value.trim().is_empty() {
+                        sheetfiles.insert(value.to_owned());
+                    }
+                }
+            }
+        }
+    }
+    for child in items.iter().skip(1) {
+        collect_project_sheetfile_values(child, sheetfiles);
+    }
+}
+
+/// Creates a hierarchy-specific warning that leaves project-wide label verification explicitly incomplete.
+///
+/// # Arguments
+///
+/// * `source` — Schematic path whose hierarchy reference could not be verified.
+/// * `reason` — Human-readable explanation of the unreadable or unresolved hierarchy member.
+///
+/// # Returns
+///
+/// A non-blocking SCH027 warning associated with the affected source path.
+fn project_label_hierarchy_warning(source: &Path, reason: &str) -> Diagnostic {
+    let mut diagnostic = Diagnostic::for_builtin_rule(
+        BuiltinRuleId::Sch027,
+        Severity::Warning,
+        format!("project-wide label-scope verification is incomplete: {reason}"),
+    );
+    diagnostic.source = Some(source.to_path_buf());
+    diagnostic
+}
+
+/// Validates global-label restrictions and required scopes across every readable project sheet.
+///
+/// # Arguments
+///
+/// * `policy` — Validated label policy configured for project-wide operation.
+/// * `document` — Parsed root schematic with a real filesystem path and readable referenced child sheets.
+///
+/// # Returns
+///
+/// SCH027 findings for project-wide global-label restrictions, required-scope violations, and incomplete hierarchy evidence.
+fn validate_project_wide_label_scope_policy(
+    policy: &super::LabelScopePolicy,
+    document: Option<&SchematicDocument>,
+) -> Vec<Diagnostic> {
+    let Some(document) = document else {
+        return vec![project_label_hierarchy_warning(
+            Path::new("<in-memory schematic>"),
+            "project_wide requires a path-based root schematic",
+        )];
+    };
+    let root_path = document.source().path();
+    let canonical_root = match fs::canonicalize(root_path) {
+        Ok(path) => path,
+        Err(error) => {
+            return vec![project_label_hierarchy_warning(
+                root_path,
+                &format!("root schematic path could not be resolved: {error}"),
+            )];
+        }
+    };
+    let mut occurrences = Vec::new();
+    let mut diagnostics = Vec::new();
+    collect_project_label_occurrences(
+        document,
+        &canonical_root,
+        &mut BTreeSet::new(),
+        &mut occurrences,
+        &mut diagnostics,
+    );
+
+    for occurrence in occurrences
+        .iter()
+        .filter(|occurrence| occurrence.kind == "global_label")
+    {
+        let violation = if policy.forbidden_global_labels.contains(&occurrence.name) {
+            Some(format!(
+                "global label {:?} is forbidden by project-wide label_scope_policy",
+                occurrence.name
+            ))
+        } else if policy
+            .allowed_global_labels
+            .as_ref()
+            .is_some_and(|allowed| !allowed.contains(&occurrence.name))
+        {
+            Some(format!(
+                "global label {:?} is not listed in project-wide allowed_global_labels",
+                occurrence.name
+            ))
+        } else {
+            None
+        };
+        if let Some(message) = violation {
+            let mut diagnostic =
+                Diagnostic::for_builtin_rule(BuiltinRuleId::Sch027, Severity::Error, message);
+            diagnostic.source = Some(occurrence.source.clone());
+            diagnostics.push(diagnostic);
+        }
+    }
+
+    let hierarchy_complete = !diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.severity == Severity::Warning);
+    for (name, expected_scope) in &policy.required_label_scopes {
+        let matching: Vec<_> = occurrences
+            .iter()
+            .filter(|occurrence| occurrence.name == *name)
+            .collect();
+        if matching.is_empty() {
+            let severity = if hierarchy_complete {
+                Severity::Error
+            } else {
+                Severity::Warning
+            };
+            let message = if hierarchy_complete {
+                format!(
+                    "required label {name:?} with scope {expected_scope:?} is missing from the project hierarchy"
+                )
+            } else {
+                format!(
+                    "required label {name:?} with scope {expected_scope:?} is unverified because part of the project hierarchy could not be read"
+                )
+            };
+            let mut diagnostic =
+                Diagnostic::for_builtin_rule(BuiltinRuleId::Sch027, severity, message);
+            diagnostic.source = Some(canonical_root.clone());
+            diagnostics.push(diagnostic);
+            continue;
+        }
+        for occurrence in matching {
+            let actual_scope = match occurrence.kind.as_str() {
+                "label" => Some(super::LabelScopeKind::Local),
+                "global_label" => Some(super::LabelScopeKind::Global),
+                "hierarchical_label" => Some(super::LabelScopeKind::Hierarchical),
+                _ => None,
+            };
+            if actual_scope != Some(*expected_scope) {
+                let mut diagnostic = Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch027,
+                    Severity::Error,
+                    format!(
+                        "label {name:?} in project sheet has scope {actual_scope:?}, but project-wide label_scope_policy requires {expected_scope:?}"
+                    ),
+                );
+                diagnostic.source = Some(occurrence.source.clone());
+                diagnostics.push(diagnostic);
+            }
+        }
+    }
+    diagnostics
+}
+
+/// Returns the symbolic or quoted value of an S-expression atom.
+///
+/// # Arguments
+///
+/// * `node` — S-expression node that may contain a scalar atom.
+///
+/// # Returns
+///
+/// The contained symbol or quoted string, or `None` for a nested list.
+fn project_atom_value(node: &Node) -> Option<&str> {
+    let Node::Atom { atom, .. } = node else {
+        return None;
+    };
+    match atom {
+        Atom::Symbol(value) | Atom::Quoted(value) => Some(value),
+    }
+}
+
+/// Iterates over direct child lists with the requested symbolic head.
+///
+/// # Arguments
+///
+/// * `node` — Parent S-expression whose immediate list children are searched.
+/// * `name` — Symbolic list-head name identifying the requested expressions.
+///
+/// # Returns
+///
+/// An iterator over the direct child lists matching `name`.
+fn project_children<'a>(node: &'a Node, name: &'a str) -> impl Iterator<Item = &'a Node> + 'a {
+    project_list_items(node)
+        .into_iter()
+        .flatten()
+        .skip(1)
+        .filter(move |child| project_head(child) == Some(name))
+}
+
+/// Returns a list node's items or `None` when the node is not a list.
+///
+/// # Arguments
+///
+/// * `node` — S-expression node whose list elements are requested.
+///
+/// # Returns
+///
+/// A borrowed list slice, or `None` for an atom.
+fn project_list_items(node: &Node) -> Option<&[Node]> {
+    let Node::List { items, .. } = node else {
+        return None;
+    };
+    Some(items)
+}
+
+/// Returns a symbolic list head.
+///
+/// # Arguments
+///
+/// * `node` — S-expression node whose first item may identify the expression kind.
+///
+/// # Returns
+///
+/// The symbolic head, or `None` if the node is not a symbolic list.
+fn project_head(node: &Node) -> Option<&str> {
+    let Node::List { items, .. } = node else {
+        return None;
+    };
+    items.first().and_then(project_atom_value)
+}
+
+/// Validates only the sheet title-block fields explicitly required by the project profile./// Validates only the sheet title-block fields explicitly required by the project profile.
 ///
 /// # Arguments
 ///
@@ -1006,6 +1370,180 @@ mod label_scope_policy_tests {
             validate_label_scope_policy(&profile, &facts(&[("global_label", "ANY_NAME")])),
             Vec::new()
         );
+    }
+
+    /// Applies global-label and required-scope policies to labels in referenced child sheets.
+    #[test]
+    fn project_wide_label_policy_checks_referenced_child_sheets() {
+        use super::validate_label_scope_policy_with_document;
+        use crate::parser::SchematicDocument;
+        use std::fs;
+        use tempfile::tempdir;
+
+        let directory = tempdir().expect("temporary project directory is created");
+        let root = directory.path().join("root.kicad_sch");
+        let child = directory.path().join("child.kicad_sch");
+        fs::write(
+            &root,
+            r#"(kicad_sch
+                (sheet (property "Sheetfile" "child.kicad_sch"))
+                (global_label "VDD" (at 1 1 0))
+            )"#,
+        )
+        .expect("root sheet is written");
+        fs::write(
+            &child,
+            r#"(kicad_sch
+                (hierarchical_label "SDA" (at 2 2 0))
+            )"#,
+        )
+        .expect("child sheet is written");
+        let document = SchematicDocument::from_path(&root).expect("root schematic parses");
+        let facts = SchematicFacts::from_document(&document);
+        let profile = profile(
+            r#"{
+                "project_wide":true,
+                "allowed_global_labels":["VDD"],
+                "required_label_scopes":{"VDD":"global","SDA":"hierarchical"}
+            }"#,
+        );
+
+        let diagnostics =
+            validate_label_scope_policy_with_document(&profile, &facts, Some(&document));
+        assert!(diagnostics.is_empty(), "{diagnostics:?}");
+    }
+
+    /// Reports a forbidden global label with the source path of its nested sheet.
+    #[test]
+    fn project_wide_label_policy_reports_nested_global_label_source() {
+        use super::validate_label_scope_policy_with_document;
+        use crate::parser::SchematicDocument;
+        use std::fs;
+        use tempfile::tempdir;
+
+        let directory = tempdir().expect("temporary project directory is created");
+        let root = directory.path().join("root.kicad_sch");
+        let child = directory.path().join("child.kicad_sch");
+        let grandchild = directory.path().join("grandchild.kicad_sch");
+        fs::write(
+            &root,
+            r#"(kicad_sch (sheet (property "Sheetfile" "child.kicad_sch")))"#,
+        )
+        .expect("root sheet is written");
+        fs::write(
+            &child,
+            r#"(kicad_sch (sheet (property "Sheetfile" "grandchild.kicad_sch")))"#,
+        )
+        .expect("child sheet is written");
+        fs::write(
+            &grandchild,
+            r#"(kicad_sch (global_label "DEBUG_INTERNAL" (at 3 3 0)))"#,
+        )
+        .expect("grandchild sheet is written");
+        let document = SchematicDocument::from_path(&root).expect("root schematic parses");
+        let facts = SchematicFacts::from_document(&document);
+        let profile = profile(r#"{"project_wide":true,"forbidden_global_labels":["DEBUG_INTERNAL"]}"#);
+
+        let diagnostics =
+            validate_label_scope_policy_with_document(&profile, &facts, Some(&document));
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].severity, crate::core::Severity::Error);
+        assert!(diagnostics[0].source.as_ref().is_some_and(|path| path.ends_with("grandchild.kicad_sch")));
+    }
+
+    /// Uses an unverified warning rather than a missing-label error when a referenced child cannot be read.
+    #[test]
+    fn project_wide_missing_child_does_not_create_false_required_label_error() {
+        use super::validate_label_scope_policy_with_document;
+        use crate::parser::SchematicDocument;
+        use std::fs;
+        use tempfile::tempdir;
+
+        let directory = tempdir().expect("temporary project directory is created");
+        let root = directory.path().join("root.kicad_sch");
+        fs::write(
+            &root,
+            r#"(kicad_sch (sheet (property "Sheetfile" "missing.kicad_sch")))"#,
+        )
+        .expect("root sheet is written");
+        let document = SchematicDocument::from_path(&root).expect("root schematic parses");
+        let facts = SchematicFacts::from_document(&document);
+        let profile = profile(
+            r#"{"project_wide":true,"required_label_scopes":{"REQUIRED":"local"}}"#,
+        );
+
+        let diagnostics =
+            validate_label_scope_policy_with_document(&profile, &facts, Some(&document));
+        assert!(diagnostics.iter().any(|item| {
+            item.severity == crate::core::Severity::Warning
+                && item.message.contains("could not be resolved")
+        }));
+        assert!(diagnostics.iter().any(|item| {
+            item.severity == crate::core::Severity::Warning
+                && item.message.contains("required label")
+                && item.message.contains("unverified")
+        }));
+        assert!(!diagnostics.iter().any(|item| {
+            item.severity == crate::core::Severity::Error && item.message.contains("REQUIRED")
+        }));
+    }
+
+    /// Loads a referenced child once when multiple sheet objects reference it and the child points back to the root.
+    #[test]
+    fn project_wide_label_policy_handles_repeated_child_references_and_cycles() {
+        use super::validate_label_scope_policy_with_document;
+        use crate::parser::SchematicDocument;
+        use std::fs;
+        use tempfile::tempdir;
+
+        let directory = tempdir().expect("temporary project directory is created");
+        let root = directory.path().join("root.kicad_sch");
+        let child = directory.path().join("child.kicad_sch");
+        fs::write(
+            &root,
+            r#"(kicad_sch
+                (sheet (property "Sheetfile" "child.kicad_sch"))
+                (sheet (property "Sheetfile" "child.kicad_sch"))
+            )"#,
+        )
+        .expect("root sheet is written");
+        fs::write(
+            &child,
+            r#"(kicad_sch
+                (sheet (property "Sheetfile" "root.kicad_sch"))
+                (global_label "DEBUG_INTERNAL" (at 4 4 0))
+            )"#,
+        )
+        .expect("child sheet is written");
+        let document = SchematicDocument::from_path(&root).expect("root schematic parses");
+        let facts = SchematicFacts::from_document(&document);
+        let profile = profile(r#"{"project_wide":true,"forbidden_global_labels":["DEBUG_INTERNAL"]}"#);
+
+        let diagnostics =
+            validate_label_scope_policy_with_document(&profile, &facts, Some(&document));
+        assert_eq!(diagnostics.len(), 1);
+        assert!(diagnostics[0].message.contains("DEBUG_INTERNAL"));
+    }
+
+    /// Reports that project-wide label policy cannot be verified for an in-memory root schematic.
+    #[test]
+    fn project_wide_label_policy_warns_for_in_memory_documents() {
+        use super::validate_label_scope_policy_with_document;
+        use crate::parser::SchematicDocument;
+
+        let document = SchematicDocument::from_text(
+            "in-memory.kicad_sch",
+            r#"(kicad_sch (global_label "DEBUG_INTERNAL" (at 1 1 0)))"#,
+        )
+        .expect("in-memory schematic parses");
+        let facts = SchematicFacts::from_document(&document);
+        let profile = profile(r#"{"project_wide":true}"#);
+
+        let diagnostics =
+            validate_label_scope_policy_with_document(&profile, &facts, Some(&document));
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].severity, crate::core::Severity::Warning);
+        assert!(diagnostics[0].message.contains("path-based root schematic"));
     }
 
     /// Keeps scope comparisons tied to exact project-selected label kinds.
