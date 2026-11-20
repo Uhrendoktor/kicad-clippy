@@ -1,8 +1,8 @@
 # Rule expansion research and implementation backlog
 
-**Status:** living design backlog for the Rust implementation merged in PR #27 and follow-on work in PR #28.
+**Status:** living design backlog for PR #27/#28 and follow-on implementation through PR #31.
 **Integration baseline:** PR #27 was merged into `main` as squash commit `9fb78ebe9924c7d557c5ca0b1a400a12761283cc` on 2026-11-19. PR #28 is rebased directly onto `main`; the candidates below remain future work unless explicitly marked implemented.  
-**Scope distinction:** the current implementation parses both `.kicad_sch` and `.kicad_pcb` S-expressions. SCH023/SCH024 and the first PCB001 pad-center contract are implemented as described below. PCB002–PCB012 remain research candidates; full PCB path/zone/stackup analysis still requires a copper connectivity model and dedicated board fixtures.
+**Scope distinction:** the current implementation parses both `.kicad_sch` and `.kicad_pcb` S-expressions. SCH023–SCH025, PCB001 and the first PCB002 test-point exposure contract are implemented as described below. PCB003–PCB012 remain research candidates; full PCB path/zone/stackup analysis still requires a copper connectivity model and dedicated board fixtures.
 
 ## 1. Design principles
 
@@ -107,7 +107,7 @@ These are candidates for separate identifiers or separately configurable child r
 | LED current limiting | Required series current-limiting path for declared indicator LEDs | LED Vf/current, supply range and resistor value/tolerance/power | P2 |
 | Protection path | Declared fuse, reverse-polarity, TVS/clamp, flyback or discharge path exists and has correct orientation | Role metadata, topology path and component ratings | P2 |
 | Connector interface completeness | Required pin set is mapped; direction, standard, mating interface and sheet-boundary ownership are consistent | SCH021 checks opt-in `attributes.required_pins` against expected `connections.pin.N`/`pin_nets.N` mappings; direction/mating/boundary contracts remain future work | P1 (partial) |
-| Test-point coverage | Required power/reset/programming/measurement nets have accessible test points | Critical-net list and project test strategy | P2 |
+| Test-point coverage | Required power/reset/programming/measurement nets have accessible test points | SCH025 checks profile-declared test-point component pin mappings and exported netlist assignments for each `required_test_point_nets` entry; PCB002 verifies the placed board pad uses the expected net and includes copper plus solder-mask layers. Physical probe approach, fixture reach, and enclosure access remain future work | P2 (partial) |
 | Oscillator support network | Crystal pins, load capacitors and target MCU pins are mapped and documented | Device-specific oscillator topology and load-capacitor calculation | P2 |
 | Analog DC return path | Declared high-impedance/analog node has a valid bias/DC return path | Circuit role and analysis of conductive paths; avoid guessing from labels | P2 |
 
@@ -115,7 +115,7 @@ Native ERC overlap must be reviewed before implementation. For example, do not a
 
 ## 5. PCB rules that merit their own checks
 
-PCB001 has a first implementation for declared decoupling pad-center distance. The other PCB002–PCB012 items below remain candidates. KiCad PCB DRC already covers ordinary electrical/manufacturing constraints and includes configurable high-speed constraints. The custom PCB rule family should check circuit intent and physical relationships that generic DRC cannot know from the board alone.
+PCB001 implements the first decoupling pad-center contract, and PCB002 implements the first test-point pad-exposure contract. PCB003–PCB012 remain candidates. KiCad PCB DRC already covers ordinary electrical/manufacturing constraints and includes configurable high-speed constraints. The custom PCB rule family should check circuit intent and physical relationships that generic DRC cannot know from the board alone.
 
 | Candidate | Proposed rule family | What it should check | Required metadata / caveats | Priority |
 |---|---|---|---|---|
@@ -127,7 +127,7 @@ PCB001 has a first implementation for declared decoupling pad-center distance. T
 | Ground/return-path integrity | PCB006 | Fast/sensitive signals do not cross gaps in their reference plane; critical return path remains continuous around layer transitions; declared analog return strategy is preserved | Net/layer intent and plane-region mapping; never universally require split AGND/DGND planes | P1 |
 | Power-distribution/thermal capacity | PCB007 | Declared current paths do not neck down below project limits; copper area/via arrays/thermal paths meet component and board assumptions | Continuous current, peak current, copper thickness, layer count, temperature rise and manufacturer/IPC guidance; requires a validated model, not a generic width guess | P2 |
 | Protection-device placement | PCB008 | TVS/ESD parts close to entry connector; low-inductance path to reference return; protected route proceeds from device to protected circuitry; fuse/reverse-protection ordering | Interface and source-protection topology; device manufacturer layout guide | P1 |
-| Testability/accessibility | PCB009 | Declared test nets have accessible pads; programming/debug interfaces are reachable; connector orientation/board-edge clearance and probe access meet project policy | Test-point roles, probe/fixture geometry and enclosure/connector constraints | P2 |
+| Testability/accessibility | PCB009 | Programming/debug interfaces are reachable; connector orientation/board-edge clearance and full probe/fixture access meet project policy | Test-point pad presence/net/exposure is implemented by PCB002; fixture geometry, probe approach/clearance, connector edge offsets and enclosure constraints remain future work | P2 (partial) |
 | RF/antenna keepout | PCB010 | Antenna copper/trace keepout and component/ground restrictions; matching network proximity and feed topology | Antenna vendor reference layout, board stackup and exact 3D keepout; vendor-specific and never generic | P2 |
 | Creepage/safety insulation | PCB011 | Surface creepage across board edges, slots, coatings, pollution category and altitude assumptions where planar DRC clearance is insufficient | Applicable safety standard, working/impulse voltage, material group, pollution degree, coating and manufacturing process; never infer a universal distance | P2 |
 | Assembly/board-edge intent | PCB012 | Declared connector-to-edge offsets, mechanical keepouts, tooling/fiducial presence, component access and enclosure constraints | Mechanical drawing, assembly process, enclosure model; allow intentional exceptions | P2 |
@@ -195,7 +195,7 @@ Recommended future work, ordered by prerequisites:
 2. Continue strengthening family-specific SCH013 tests and diagnostic-parity regressions; extend the conservative netclass resolver only when KiCad project semantics can be resolved without guessing.
 3. Improve SCH009/SCH012 coverage for unsupported image encodings and remaining annotation types; add exact curve-based body geometry where a validated transform/distance model is available.
 4. Expand role-specific schematic contracts beyond the current SCH021/SCH022 coverage (pull-ups/dividers, LED current limiting, protection paths, connector completeness and test-point coverage).
-5. Extend the `.kicad_pcb` parser and board-fact model beyond PCB001 pad anchors; prioritize PCB002, PCB003 and PCB008 against annotated board fixtures.
+5. Extend the `.kicad_pcb` parser and board-fact model beyond pad layers/anchors; prioritize PCB003, PCB004 and PCB008 against annotated routing and board-outline fixtures.
 6. Add board-layer/stackup/zone return-path analysis only after path connectivity and KiCad DRC integration are validated.
 
 **Do not implement every candidate at once.** Each rule should arrive with a narrow contract, exact input facts, a documented false-positive policy, positive/negative fixtures and an explicit statement of what native ERC/DRC continues to own.
@@ -203,4 +203,9 @@ Recommended future work, ordered by prerequisites:
 
 ### Implemented PCB evidence boundary
 
-The new `BoardDocument` parser retains the source text and S-expression spans for `.kicad_pcb` documents. PCB001 currently extracts placed F.Cu/B.Cu footprint pad anchors, applies the serialized footprint scale/rotation (KiCad already stores flipped pad-local coordinates and the adjusted footprint orientation), resolves each footprint reference and pad number, and checks the declared target/capacitor distance. It also checks the capacitor return pad against the declared return net and, when available, compares target/return pad net names with the exported schematic netlist. It does not yet extract routed tracks, arcs, vias, filled zones, board stackup or continuous copper regions. PCB002–PCB012 should not be described as implemented until those board facts and positive/negative fixtures exist.
+The new `BoardDocument` parser retains the source text and S-expression spans for `.kicad_pcb` documents. PCB001 currently extracts placed F.Cu/B.Cu footprint pad anchors, applies the serialized footprint scale/rotation (KiCad already stores flipped pad-local coordinates and the adjusted footprint orientation), resolves each footprint reference and pad number, and checks the declared target/capacitor distance. PCB002 additionally reads each pad's layer list and verifies that required test-point pads include both copper and solder-mask layers. It also checks the capacitor return pad against the declared return net and, when available, compares target/return pad net names with the exported schematic netlist. It does not yet extract routed tracks, arcs, vias, filled zones, board stackup or continuous copper regions. PCB002–PCB012 should not be described as implemented until those board facts and positive/negative fixtures exist.
+
+
+### Implemented test-point evidence boundary
+
+SCH025 is profile-driven: every critical net listed in `required_test_point_nets` must map to at least one component declared with kind/role `test_point`, using an explicit `pin_nets` mapping. The exported schematic netlist confirms that the mapped pin belongs to the requested net. PCB002 resolves the same reference/pad number in the board, verifies the assigned net, and checks for copper plus solder-mask layers. This does not prove that a probe can physically reach the pad or that an automated fixture has sufficient approach clearance.
