@@ -158,10 +158,12 @@ fn pin_orientation_diagnostic(
         return None;
     }
     let aligned = touching_segments.iter().any(|segment| {
-        let start_deviation_mm =
-            (axis_x * (segment.start.y - point.y) - axis_y * (segment.start.x - point.x)).abs();
-        let end_deviation_mm =
-            (axis_x * (segment.end.y - point.y) - axis_y * (segment.end.x - point.x)).abs();
+        let start_deviation_mm = axis_y
+            .mul_add(-(segment.start.x - point.x), axis_x * (segment.start.y - point.y))
+            .abs();
+        let end_deviation_mm = axis_y
+            .mul_add(-(segment.end.x - point.x), axis_x * (segment.end.y - point.y))
+            .abs();
         start_deviation_mm <= GEOMETRY_TOLERANCE_MM && end_deviation_mm <= GEOMETRY_TOLERANCE_MM
     });
     if aligned {

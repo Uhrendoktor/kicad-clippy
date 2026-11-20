@@ -5197,7 +5197,7 @@ mod tests {
     #[test]
     fn non_cardinal_pin_wire_must_follow_transformed_pin_axis() {
         let source = EMBEDDED_PIN.replace("(at 10 10 0)", "(at 10 10 45)");
-        let pin_coordinate = 10.0 - 2.54 * HALF_FACTOR.sqrt();
+        let pin_coordinate = 2.54_f64.mul_add(-HALF_FACTOR.sqrt(), 10.0);
         let wire_end_x = pin_coordinate + 1.27;
         let doc = document(&format!(
             "{source} (wire (pts (xy {pin_coordinate:.3} {pin_coordinate:.3}) (xy {wire_end_x:.3} {pin_coordinate:.3})))"
@@ -5214,8 +5214,8 @@ mod tests {
     #[test]
     fn non_cardinal_pin_wire_is_accepted_when_parallel_to_transformed_axis() {
         let source = EMBEDDED_PIN.replace("(at 10 10 0)", "(at 10 10 45)");
-        let pin_coordinate = 10.0 - 2.54 * HALF_FACTOR.sqrt();
-        let wire_end_coordinate = 10.0 - 3.81 * HALF_FACTOR.sqrt();
+        let pin_coordinate = 2.54_f64.mul_add(-HALF_FACTOR.sqrt(), 10.0);
+        let wire_end_coordinate = 3.81_f64.mul_add(-HALF_FACTOR.sqrt(), 10.0);
         let doc = document(&format!(
             "{source} (wire (pts (xy {pin_coordinate:.3} {pin_coordinate:.3}) (xy {wire_end_coordinate:.3} {wire_end_coordinate:.3})))"
         ));
