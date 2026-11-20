@@ -196,7 +196,7 @@ mod tests {
     /// Parses a minimal board and preserves the original serialized source.
     #[test]
     fn parses_kicad_pcb_root_losslessly() {
-        let source = "(kicad_pcb (version 20250101) (generator "pcbnew"))";
+        let source = r#"(kicad_pcb (version 20250101) (generator "pcbnew"))"#;
         let board = BoardDocument::from_text("minimal.kicad_pcb", source).expect("board parses");
         assert_eq!(board.cst().to_lossless_string(), source);
         assert_eq!(board.source().path().to_string_lossy(), "minimal.kicad_pcb");

@@ -469,3 +469,124 @@ mod tests {
         assert!((capacitor.position_mm.1 - 52.0).abs() < 0.001);
     }
 }
+
+
+#[cfg(test)]
+mod contract_tests {
+    use super::{validate_decoupling_pad_distances, validate_missing_board};
+    use crate::LintProfile;
+    use kicad_clippy_parser::BoardDocument;
+
+    /// Parses a profile containing a single declared decoupling pad-distance contract.
+    ///
+    /// # Arguments
+    ///
+    /// * `maximum_distance_mm` — Maximum allowed board-space pad-center distance.
+    ///
+    /// # Returns
+    ///
+    /// A version-one profile with U1.1 as the target pin and C1.1 as the capacitor terminal.
+    fn profile(maximum_distance_mm: f64) -> LintProfile {
+        let source = format!(
+            r#"{{"schema_version":1,"components":{{"C1":{{
+                "kind":"capacitor","role":"decoupling",
+                "function":"Decouples U1 supply","rationale":"Local supply bypass",
+                "decoupling":{{
+                    "target_pin":"U1.1","target_terminal":"1","return_terminal":"2",
+                    "return_net":"GND","cluster":"U1.VDD",
+                    "max_target_pad_distance_mm":{maximum_distance_mm}
+                }}
+            }}}}}}"#
+        );
+        serde_json::from_str(&source).expect("profile fixture parses")
+    }
+
+    /// Builds a board fixture with rotated front-side footprints and one assigned pad net.
+    ///
+    /// # Arguments
+    ///
+    /// * `capacitor_x` — X-origin of capacitor C1 in board coordinates.
+    /// * `capacitor_net` — Net assigned to C1.1.
+    ///
+    /// # Returns
+    ///
+    /// A parsed PCB containing U1.1 and C1.1 at actual transformed pad anchors.
+    fn board(capacitor_x: f64, capacitor_net: &str) -> BoardDocument {
+        let source = format!(
+            r#"(kicad_pcb
+                (footprint "Package:IC" (layer "F.Cu") (at 100 50 90)
+                    (property "Reference" "U1")
+                    (pad "1" smd rect (at 2 0) (size 1 1) (layers "F.Cu") (net 1 "VDD"))
+                )
+                (footprint "Package:Capacitor" (layer "F.Cu") (at {capacitor_x} 50 90)
+                    (property "Reference" "C1")
+                    (pad "1" smd rect (at 2 0) (size 1 1) (layers "F.Cu") (net 1 "{capacitor_net}"))
+                )
+            )"#
+        );
+        BoardDocument::from_text("decoupling.kicad_pcb", source).expect("board fixture parses")
+    }
+
+    /// Reports a target-pad distance that exceeds the project-declared PCB threshold.
+    #[test]
+    fn pcb001_rejects_excessive_pad_center_distance() {
+        let diagnostics =
+            validate_decoupling_pad_distances(&profile(3.0), &board(104.0, "VDD"), None);
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "PCB001"
+                && item.message.contains("4.00 mm")
+                && item.message.contains("max_target_pad_distance_mm")
+        }));
+    }
+
+    /// Accepts pads at the configured distance boundary within the geometry tolerance.
+    #[test]
+    fn pcb001_accepts_pad_distance_at_threshold() {
+        let diagnostics =
+            validate_decoupling_pad_distances(&profile(4.0), &board(104.0, "VDD"), None);
+        assert!(!diagnostics.iter().any(|item| {
+            item.code == "PCB001" && item.severity == kicad_clippy_core::Severity::Error
+        }));
+    }
+
+    /// Rejects a capacitor target pad assigned to a different board net than the target IC pad.
+    #[test]
+    fn pcb001_rejects_mismatched_board_pad_nets() {
+        let diagnostics =
+            validate_decoupling_pad_distances(&profile(10.0), &board(104.0, "GND"), None);
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "PCB001" && item.message.contains("but U1.1 is on")
+        }));
+    }
+
+    /// Warns when the declared target or capacitor pad cannot be uniquely resolved.
+    #[test]
+    fn pcb001_reports_missing_pad_geometry_as_unverified() {
+        let missing_board = BoardDocument::from_text(
+            "missing-pad.kicad_pcb",
+            r#"(kicad_pcb
+                (footprint "Package:Capacitor" (layer "F.Cu") (at 104 50 90)
+                    (property "Reference" "C1")
+                    (pad "1" smd rect (at 2 0) (size 1 1) (layers "F.Cu") (net 1 "VDD"))
+                )
+            )"#,
+        )
+        .expect("board fixture parses");
+        let unresolved =
+            validate_decoupling_pad_distances(&profile(10.0), &missing_board, None);
+        assert!(unresolved.iter().any(|item| {
+            item.code == "PCB001"
+                && item.severity == kicad_clippy_core::Severity::Warning
+                && item.message.contains("absent or ambiguous")
+        }));
+    }
+
+    /// Reports an unverified warning when a profile requests pad distance but no board is supplied.
+    #[test]
+    fn pcb001_warns_when_board_evidence_is_not_supplied() {
+        let diagnostics = validate_missing_board(&profile(2.0));
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].code, "PCB001");
+        assert!(diagnostics[0].message.contains("no .kicad_pcb board"));
+    }
+}
