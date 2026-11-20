@@ -253,8 +253,8 @@ fn valid_rectangle(bounds: Rectangle) -> Option<Rectangle> {
 ///
 /// # Arguments
 ///
-/// * `frame` — Functional-frame rectangle bounds.
-/// * `tab` — Title-tab rectangle bounds.
+/// * `frame` — The functional-frame rectangle used in the title-tab attachment test.
+/// * `tab` — The title-tab rectangle being checked for shared-edge attachment.
 ///
 /// # Returns
 ///
@@ -275,8 +275,8 @@ fn rectangles_share_edge(frame: Rectangle, tab: Rectangle) -> bool {
 ///
 /// # Arguments
 ///
-/// * `outer` — Title-tab rectangle.
-/// * `inner` — Title text-box rectangle.
+/// * `outer` — The outer title-tab rectangle that must contain the title box.
+/// * `inner` — The inner title text-box rectangle that must remain inside the tab.
 ///
 /// # Returns
 ///
@@ -292,8 +292,8 @@ fn rectangle_contains(outer: Rectangle, inner: Rectangle) -> bool {
 ///
 /// # Arguments
 ///
-/// * `first` — First schematic coordinate.
-/// * `second` — Second schematic coordinate.
+/// * `first` — The first schematic coordinate or rectangle in the comparison.
+/// * `second` — The second schematic coordinate or rectangle in the comparison.
 ///
 /// # Returns
 ///
