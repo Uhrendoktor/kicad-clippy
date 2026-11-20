@@ -389,8 +389,8 @@ fn compare_declared_frame_gaps(declared: &[DeclaredFrame<'_>]) -> Vec<Diagnostic
 ///
 /// # Arguments
 ///
-/// * `first` — First frame rectangle.
-/// * `second` — Second frame rectangle.
+/// * `first` — Axis-aligned bounds of the first declared functional frame, ordered as left, top, right, and bottom in schematic millimetres.
+/// * `second` — Axis-aligned bounds of the second declared functional frame, ordered as left, top, right, and bottom in schematic millimetres.
 ///
 /// # Returns
 ///
