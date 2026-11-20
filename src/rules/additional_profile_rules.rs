@@ -14,14 +14,12 @@ const GEOMETRY_TOLERANCE_MM: f64 = 0.001;
 /// Component metadata key containing comma-separated pin numbers that require explicit no-connect flags.
 const REQUIRED_NO_CONNECT_PINS_ATTRIBUTE: &str = "required_no_connect_pins";
 
-/// Runs supplemental opt-in profile checks using schematic facts already extracted
-/// by the main profile-validation pass.
+/// Runs supplemental opt-in profile checks using normalized schematic facts.
 ///
 /// # Arguments
 ///
 /// * `profile` — Project-level contracts that opt into extra presentation and connectivity checks.
 /// * `facts` — Normalized schematic objects, frames, pins, and markers collected once for this lint run.
-/// * `document` — Parsed source document, used when a profile explicitly requests hierarchy-wide label policy.
 ///
 /// # Returns
 ///
@@ -29,7 +27,25 @@ const REQUIRED_NO_CONNECT_PINS_ATTRIBUTE: &str = "required_no_connect_pins";
 pub fn validate_profile_extensions(
     profile: &LintProfile,
     facts: &SchematicFacts,
-    document: &SchematicDocument,
+) -> Vec<Diagnostic> {
+    validate_profile_extensions_with_document(profile, facts, None)
+}
+
+/// Runs supplemental profile checks with optional source-file access for hierarchy-wide policy.
+///
+/// # Arguments
+///
+/// * `profile` — Project-level contracts that opt into extra presentation and connectivity checks.
+/// * `facts` — Normalized schematic objects collected for the root sheet.
+/// * `document` — Optional parsed source document, required only by hierarchy-wide label policy.
+///
+/// # Returns
+///
+/// Diagnostics for violated profile extensions and unverified hierarchy evidence.
+pub(crate) fn validate_profile_extensions_with_document(
+    profile: &LintProfile,
+    facts: &SchematicFacts,
+    document: Option<&SchematicDocument>,
 ) -> Vec<Diagnostic> {
     let mut diagnostics = validate_declared_frame_overlaps(profile, facts);
     diagnostics.extend(validate_required_no_connect_pins(profile, facts));
@@ -37,7 +53,7 @@ pub fn validate_profile_extensions(
     diagnostics.extend(validate_label_scope_policy_with_document(
         profile,
         facts,
-        Some(document),
+        document,
     ));
     diagnostics
 }
