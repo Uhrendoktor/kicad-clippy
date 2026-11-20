@@ -147,6 +147,7 @@ Without `netlist_separate`, the rule only forbids a shared physical wire island;
 | Inductor / ferrite | power_filter, emi_filter, energy_storage, common_mode_choke | Record input/output nets, current rating, saturation and impedance/frequency target. |
 | Transistor / FET | load_switch, power_switch, level_shift, amplifier, gate_driver | Record gate/base control source, switched path, polarity, body-diode orientation and expected state. |
 | Connector | power_input, power_output, data_interface, programming, test, debug | Record interface standard, pin mapping, direction, mating connector and boundary ownership. |
+| Test point | test_point | Record the critical net and explicit component pin mapped to the physical probe pad. |
 | IC | controller, regulator, driver, sensor, protection, logic | Record datasheet/source, power/ground pins, required support circuitry and exposed interfaces. |
 
 ## Implemented checks
@@ -320,3 +321,42 @@ A project may require selected native KiCad title-block fields by adding `requir
 SCH023 supports `title`, `date`, `rev`, `company`, and `comment1` through `comment9`. Only the fields named by the profile are enforced; each must exist in the current sheet's `title_block` and contain non-whitespace text. This keeps the rule opt-in for projects that use their own title-block conventions. Sheet number/count and project-level metadata are not inferred by SCH023.
 
 SCH024 reports duplicate UUID values among objects in the currently loaded schematic document. It helps protect object selection, grouping and references from local duplicate identifiers. The CLI currently loads one `.kicad_sch` file per invocation, so duplicate identifiers across separately loaded hierarchical child sheets remain a distinct project-level check.
+
+
+## Required test-point coverage
+
+A project can list critical nets that must have an intentional test point:
+
+~~~json
+{
+  "schema_version": 1,
+  "required_test_point_nets": ["VDD", "RESET", "SWDIO"],
+  "components": {
+    "TP1": {
+      "kind": "test_point",
+      "role": "test_point",
+      "function": "Main logic-rail measurement access",
+      "rationale": "Allows production verification of the 3.3 V rail",
+      "pin_nets": {"1": "VDD"}
+    },
+    "TP2": {
+      "kind": "test_point",
+      "role": "test_point",
+      "function": "Reset-line programming access",
+      "rationale": "Supports reset-state and programming checks",
+      "pin_nets": {"1": "RESET"}
+    },
+    "TP3": {
+      "kind": "test_point",
+      "role": "test_point",
+      "function": "Debug data measurement access",
+      "rationale": "Supports SWD programming and debug verification",
+      "pin_nets": {"1": "SWDIO"}
+    }
+  }
+}
+~~~
+
+SCH025 requires every name in `required_test_point_nets` to map to at least one declared component with kind and role `test_point`. Each such component uses `pin_nets` to identify the exact footprint/symbol pin. When the CLI exports a KiCad netlist, SCH025 verifies that the declared pin is actually assigned to the required net; profile-only validation without a netlist is reported as unverified.
+
+PCB009 requires `--board design.kicad_pcb` and verifies that each declared reference/pad exists on the board, has the expected net, and has a pad layer list containing both copper and solder mask (including wildcard through-hole layer sets). This is a serialized layer-exposure check. It does not model the physical probe tip, surrounding pad clearance, fixture geometry, enclosure constraints, or whether a manufacturing fixture can reach the pad.

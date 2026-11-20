@@ -1,6 +1,6 @@
 # Built-in rules
 
-The current built-in catalogue defines stable schematic IDs SCH001–SCH024 plus PCB001 and separates reusable schematic checks from project-profile and board-level contracts.
+The current built-in catalogue defines stable schematic IDs SCH001–SCH025 plus PCB001 and PCB009 and separates reusable schematic checks from project-profile and board-level contracts.
 
 | ID | Historical rule | Rust status |
 | --- | --- | --- |
@@ -28,7 +28,9 @@ The current built-in catalogue defines stable schematic IDs SCH001–SCH024 plus
 | SCH022 | Decoupling contracts | Implemented partial: target pin/terminal and return net consistency, cluster consistency, opt-in required supply-pin coverage through `attributes.required_decoupling_pins`, and opt-in schematic pin-anchor distance through `decoupling.max_target_distance_mm` |
 | SCH023 | Required title-block fields | Implemented opt-in: checks profile-declared `required_title_block_fields` against title/date/revision/company/comment1–comment9 fields on the currently loaded sheet |
 | SCH024 | Document UUID uniqueness | Implemented: detects duplicate object UUIDs within the loaded schematic document; cross-sheet hierarchy-wide uniqueness remains future work |
+| SCH025 | Required test-point coverage | Implemented opt-in: checks `required_test_point_nets` against declared `test_point` component pin mappings and exported netlist assignments |
 | PCB001 | Decoupling pad proximity | Implemented partial: checks opt-in `decoupling.max_target_pad_distance_mm` between transformed target IC pad and capacitor target-pad centers, verifies capacitor return-pad agreement with `return_net`, and checks optional board/netlist parity; routed copper, vias, zones and return-loop checks remain future work |
+| PCB009 | Test-point pad exposure | Implemented partial, opt-in: verifies required test-point reference/pad numbers exist on the PCB, match the declared net, and include copper plus solder-mask layers; probe approach and fixture/enclosure access remain future work |
 
 ## Descriptor catalogue
 
@@ -72,5 +74,9 @@ SCH022 optionally accepts `components.<IC>.attributes.required_decoupling_pins` 
 SCH023 optionally enforces `required_title_block_fields` at the profile root. Supported keys are `title`, `date`, `rev`, `company`, and `comment1` through `comment9`; only explicitly requested fields are checked, and required values must be non-empty. SCH024 scans UUIDs on objects in the currently loaded `.kicad_sch` document. It does not yet aggregate UUIDs across every child sheet in a hierarchical project.
 
 PCB001 is opt-in through a decoupling component's `decoupling.max_target_pad_distance_mm`. Run `kicad-clippy lint design.kicad_sch --profile project-profile.json --board design.kicad_pcb` to parse the board, apply each footprint's serialized transform to its pad anchors, check target/capacitor pad-center distance, require the capacitor return pad to use the declared `return_net`, and compare target/return board net names with the exported schematic netlist when present. Missing or ambiguous pads are unverified warnings. PCB001 does not calculate track length, current capacity, via proximity, zone connectivity, or return-loop inductance; KiCad DRC remains responsible for native manufacturing constraints.
+
+SCH025 uses the profile root `required_test_point_nets` list. Each listed net must map to at least one component declared with kind and role `test_point`, with an explicit `pin_nets` entry. When an exported netlist is available, the mapped component pin must actually resolve to the required net; without a netlist, the declaration is reported as unverified.
+
+PCB009 uses the same required-net and test-point pin declarations. With `--board`, it resolves each reference/pad number to a placed footprint pad, checks its board net, and requires the pad layer list to include copper and solder mask. This verifies the serialized pad exposure layers only; it does not calculate probe approach, surrounding physical clearance, probe tip diameter, fixture reach, or enclosure access.
 
 See [rule expansion research](rule-expansion-research.md) for the larger schematic/PCB candidate catalogue, native-rule boundaries, source references and ordered hand-off backlog.

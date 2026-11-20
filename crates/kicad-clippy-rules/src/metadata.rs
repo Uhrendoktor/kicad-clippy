@@ -65,6 +65,10 @@ mod sch021;
 #[path = "profile_rules/sch022.rs"]
 mod sch022;
 
+/// Checks `SCH025` required test-point coverage for project-critical nets.
+#[path = "profile_rules/sch025.rs"]
+mod sch025;
+
 /// Currently supported project-profile schema version.
 const SUPPORTED_PROFILE_SCHEMA_VERSION: u32 = 1;
 /// Minimum number of distinct pins required in a group contract.
@@ -103,6 +107,8 @@ pub enum ComponentKind {
     Transistor,
     /// Electrical interconnect that exposes circuit signals or power to another board, cable, or assembly.
     Connector,
+    /// Probe point intended for manufacturing test, debug, or in-circuit measurement.
+    TestPoint,
     /// Multi-function semiconductor device containing an integrated circuit, such as a controller, regulator, interface, or logic device.
     IntegratedCircuit,
     /// Overcurrent protection element designed to interrupt the circuit when current exceeds its rated limit.
@@ -343,6 +349,9 @@ pub struct LintProfile {
     /// Explicit title-block fields that must be present and non-empty on this schematic sheet.
     #[serde(default)]
     pub required_title_block_fields: BTreeSet<String>,
+    /// Named critical nets that must have at least one profile-declared test-point pin.
+    #[serde(default)]
+    pub required_test_point_nets: BTreeSet<String>,
 }
 
 /// Immutable data shared by all project-profile rule implementations.
@@ -461,6 +470,7 @@ impl LintProfile {
         diagnostics.extend(sch021::Sch021.check(&context));
         diagnostics.extend(sch020::Sch020.check(&context));
         diagnostics.extend(sch022::Sch022.check(&context));
+        diagnostics.extend(sch025::Sch025.check(&context));
         diagnostics.extend(sch014::Sch014.check(&context));
         diagnostics.extend(sch010::Sch010.check(&context));
         diagnostics.extend(sch017::Sch017.check(&context));
@@ -470,11 +480,16 @@ impl LintProfile {
         diagnostics.extend(sch006::Sch006.check(&context));
         diagnostics.extend(sch016::Sch016.check(&context));
         diagnostics.extend(sch004::Sch004.check(&context));
-        match board {
-            Some(board) => diagnostics.extend(crate::pcb_rules::validate_decoupling_pad_distances(
+        if let Some(board) = board {
+            diagnostics.extend(crate::pcb_rules::validate_decoupling_pad_distances(
                 self, board, netlist,
-            )),
-            None => diagnostics.extend(crate::pcb_rules::validate_missing_board(self)),
+            ));
+            diagnostics.extend(crate::pcb_rules::validate_test_point_pad_access(
+                self, board,
+            ));
+        } else {
+            diagnostics.extend(crate::pcb_rules::validate_missing_board(self));
+            diagnostics.extend(crate::pcb_rules::validate_missing_test_point_board(self));
         }
         diagnostics
     }
