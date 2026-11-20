@@ -16,7 +16,7 @@ use std::{
 };
 
 use clap::{Parser, Subcommand, ValueEnum};
-use kicad_clippy_core::{Diagnostic, Severity, SourceFile};
+use kicad_clippy_core::{Diagnostic, RulePolicy, Severity, SourceFile, builtin_rule_registry};
 use kicad_clippy_erc::{Netlist, NetlistError, export_netlist, run_native_erc};
 use kicad_clippy_parser::SchematicDocument;
 use kicad_clippy_rules::{
@@ -60,6 +60,9 @@ enum Commands {
         /// JSON project profile containing component-intent metadata.
         #[arg(long, value_name = "FILE")]
         profile: Option<PathBuf>,
+        /// Optional TOML policy for built-in rule levels and named presets.
+        #[arg(long, value_name = "FILE")]
+        policy: Option<PathBuf>,
         /// Require complete component-intent metadata (requires --profile).
         #[arg(long)]
         strict: bool,
@@ -73,6 +76,24 @@ enum OutputFormat {
     /// Structured JSON diagnostics.
     Json,
 }
+/// Inputs required to run one schematic lint invocation.
+struct LintOptions<'a> {
+    /// Requested diagnostic output encoding.
+    format: OutputFormat,
+    /// Whether native `KiCad` ERC should be skipped.
+    skip_erc: bool,
+    /// Optional explicit path to the `KiCad` CLI executable.
+    explicit_cli: Option<PathBuf>,
+    /// Optional `KiCad` project file providing schematic and netclass settings.
+    project_path: Option<&'a Path>,
+    /// Optional JSON component-intent profile, consumed during profile validation.
+    profile_path: Option<PathBuf>,
+    /// Optional TOML rule policy, borrowed because policy loading does not consume the path.
+    policy_path: Option<&'a Path>,
+    /// Whether complete component-intent metadata is required.
+    strict: bool,
+}
+
 /// Errors that can prevent a lint command from completing.
 #[derive(Debug, Error)]
 enum CliError {
@@ -88,6 +109,15 @@ enum CliError {
     /// The component-intent profile could not be loaded or validated.
     #[error(transparent)]
     Metadata(#[from] kicad_clippy_rules::MetadataError),
+    /// The TOML rule policy could not be decoded.
+    #[error("invalid TOML rule policy: {0}")]
+    RulePolicyToml(#[from] toml::de::Error),
+    /// The policy references an unknown built-in rule.
+    #[error(transparent)]
+    RulePolicy(#[from] kicad_clippy_core::RulePolicyError),
+    /// The built-in rule descriptor catalogue could not be constructed.
+    #[error(transparent)]
+    RuleRegistry(#[from] kicad_clippy_core::RuleRegistryError),
     /// Native netlist export or parsing failed.
     #[error(transparent)]
     Netlist(#[from] NetlistError),
@@ -203,15 +233,19 @@ fn execute(cli: Cli) -> Result<ExitCode, CliError> {
             kicad_cli,
             project,
             profile,
+            policy,
             strict,
         } => lint(
             &schematic,
-            format,
-            skip_erc,
-            kicad_cli,
-            project.as_deref(),
-            profile,
-            strict,
+            LintOptions {
+                format,
+                skip_erc,
+                explicit_cli: kicad_cli,
+                project_path: project.as_deref(),
+                profile_path: profile,
+                policy_path: policy.as_deref(),
+                strict,
+            },
         ),
     }
 }
@@ -220,12 +254,7 @@ fn execute(cli: Cli) -> Result<ExitCode, CliError> {
 /// # Arguments
 ///
 /// * `schematic_path` — Path to the `.kicad_sch` file being analyzed.
-/// * `format` — Requested diagnostic output format (`text` or `json`).
-/// * `skip_erc` — Whether native ERC should be skipped; project/netlist processing may still require the CLI.
-/// * `explicit_cli` — Optional explicit path to `kicad-cli`; it takes precedence over PATH lookup.
-/// * `project_path` — Optional `KiCad` project file providing netclass and schematic drawing settings.
-/// * `profile_path` — Optional component-intent profile JSON file.
-/// * `strict` — Whether the profile must provide all required component-intent metadata.
+/// * `options` — Format, ERC, project, profile, policy, and strict-mode inputs for this invocation.
 ///
 /// # Returns
 ///
@@ -234,15 +263,16 @@ fn execute(cli: Cli) -> Result<ExitCode, CliError> {
 /// # Errors
 ///
 /// Returns `CliError` for schematic parsing, project/profile decoding, native ERC/netlist failures, or output serialization/writing.
-fn lint(
-    schematic_path: &Path,
-    format: OutputFormat,
-    skip_erc: bool,
-    explicit_cli: Option<PathBuf>,
-    project_path: Option<&Path>,
-    profile_path: Option<PathBuf>,
-    strict: bool,
-) -> Result<ExitCode, CliError> {
+fn lint(schematic_path: &Path, options: LintOptions<'_>) -> Result<ExitCode, CliError> {
+    let LintOptions {
+        format,
+        skip_erc,
+        explicit_cli,
+        project_path,
+        profile_path,
+        policy_path,
+        strict,
+    } = options;
     if strict && profile_path.is_none() {
         return Err(CliError::StrictNeedsProfile);
     }
@@ -304,6 +334,7 @@ fn lint(
         }
         diagnostics.extend(profile.validate_with_netlist(&schematic, netlist.as_ref()));
     }
+    diagnostics = apply_optional_rule_policy(policy_path, diagnostics)?;
     let summary = Summary::from_diagnostics(&diagnostics);
     let output = LintOutput {
         schema_version: "1",
@@ -330,6 +361,67 @@ fn lint(
         Ok(ExitCode::SUCCESS)
     }
 }
+/// Reads and decodes an optional rule policy written in TOML.
+///
+/// # Arguments
+///
+/// * `policy_path` — File containing a `[rules]` table and optional named preset.
+///
+/// # Returns
+///
+/// The decoded `RulePolicy` ready for validation against the built-in descriptor catalogue.
+///
+/// # Errors
+///
+/// Returns an I/O error when the file cannot be read, or a TOML error when its contents are invalid.
+fn load_rule_policy(policy_path: &Path) -> Result<RulePolicy, CliError> {
+    let contents = fs::read_to_string(policy_path)?;
+    Ok(parse_rule_policy(&contents)?)
+}
+
+/// Applies the optional TOML rule policy to built-in diagnostics.
+///
+/// # Arguments
+///
+/// * `policy_path` — Optional policy file path; `None` preserves existing rule-emitted severities.
+/// * `diagnostics` — Native and custom diagnostics produced by this lint invocation.
+///
+/// # Returns
+///
+/// The diagnostics after applying the selected preset and explicit built-in rule overrides.
+///
+/// # Errors
+///
+/// Returns a policy decoding, registry construction, or unknown-rule validation error.
+fn apply_optional_rule_policy(
+    policy_path: Option<&Path>,
+    diagnostics: Vec<Diagnostic>,
+) -> Result<Vec<Diagnostic>, CliError> {
+    let Some(policy_path) = policy_path else {
+        return Ok(diagnostics);
+    };
+    let policy = load_rule_policy(policy_path)?;
+    let registry = builtin_rule_registry()?;
+    Ok(policy.apply(&registry, diagnostics)?)
+}
+
+/// Parses a TOML policy string.
+///
+/// # Arguments
+///
+/// * `contents` — TOML source text containing a rule preset and optional rule overrides.
+///
+/// # Returns
+///
+/// The policy configuration parsed from the supplied TOML source text.
+///
+/// # Errors
+///
+/// Returns a TOML deserialization error when the source does not match the policy schema.
+fn parse_rule_policy(contents: &str) -> Result<RulePolicy, toml::de::Error> {
+    toml::from_str(contents)
+}
+
 /// Reads and decodes a `KiCad` project JSON file.
 ///
 /// # Arguments
@@ -914,12 +1006,51 @@ mod tests {
     use kicad_clippy_core::{Diagnostic, Severity};
 
     use super::{
-        Summary, project_default_schematic_line_stroke_width_mm, project_netclass_wire_width_mm,
-        project_wire_stroke_widths_mm, wildcard_pattern_matches,
+        Summary, parse_rule_policy, project_default_schematic_line_stroke_width_mm,
+        project_netclass_wire_width_mm, project_wire_stroke_widths_mm, wildcard_pattern_matches,
     };
     use kicad_clippy_erc::Netlist;
     use kicad_clippy_rules::SchematicFacts;
     use std::collections::{BTreeMap, BTreeSet};
+    /// Checks that TOML policy presets and explicit per-rule levels decode into the typed policy model.
+    ///
+    /// # Returns
+    ///
+    /// Ok when the preset and overrides round-trip to their expected typed values.
+    ///
+    /// # Errors
+    ///
+    /// Returns a TOML error if a valid policy fixture cannot be decoded.
+    #[test]
+    fn rule_policy_toml_decodes_preset_and_overrides() -> Result<(), toml::de::Error> {
+        use kicad_clippy_core::{RuleLevel, RulePreset};
+
+        let policy = parse_rule_policy(
+            r#"
+preset = "strict"
+
+[rules]
+SCH013 = "warn"
+SCH019 = "allow"
+"#,
+        )?;
+
+        assert_eq!(policy.preset, RulePreset::Strict);
+        assert_eq!(policy.rules.get("SCH013"), Some(&RuleLevel::Warn));
+        assert_eq!(policy.rules.get("SCH019"), Some(&RuleLevel::Allow));
+        Ok(())
+    }
+
+    /// Checks that unknown top-level TOML keys are rejected instead of silently ignored.
+    ///
+    /// # Returns
+    ///
+    /// Ok when a misspelled policy key causes TOML decoding to fail.
+    #[test]
+    fn rule_policy_toml_rejects_unknown_keys() {
+        assert!(parse_rule_policy("presett = \"strict\"\n").is_err());
+    }
+
     /// Checks that the project's default schematic line width is interpreted in mils and converted to millimetres.
     #[test]
     fn project_default_schematic_line_width_reads_mils() {
@@ -1117,11 +1248,13 @@ mod tests {
                     reference: "J1".to_owned(),
                     number: "1".to_owned(),
                     position_mm: (0.0, 0.0),
+                    electrical_type: None,
                 },
                 SchematicPinFact {
                     reference: "#PWR01".to_owned(),
                     number: "1".to_owned(),
                     position_mm: (0.0, 0.0),
+                    electrical_type: None,
                 },
             ],
             ..SchematicFacts::default()
@@ -1165,11 +1298,13 @@ mod tests {
                     reference: "J1".to_owned(),
                     number: "1".to_owned(),
                     position_mm: (0.0, 0.0),
+                    electrical_type: None,
                 },
                 SchematicPinFact {
                     reference: "J2".to_owned(),
                     number: "1".to_owned(),
                     position_mm: (10.0, 0.0),
+                    electrical_type: None,
                 },
             ],
             ..facts

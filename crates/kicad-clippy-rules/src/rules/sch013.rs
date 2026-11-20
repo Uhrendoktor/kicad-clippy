@@ -11,7 +11,6 @@ use super::SchematicArcFact;
 use super::SchematicBusObstacleFact;
 use super::SchematicFacts;
 use super::SchematicGraphicFact;
-use super::SchematicNoConnectFact;
 use super::SchematicPinFact;
 use super::SchematicPrimitiveFact;
 use super::SchematicSheetFact;
@@ -47,367 +46,33 @@ use kurbo::Point as CurvePoint;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
-/// Finds wire crossings or clearance violations against transformed embedded-symbol text.
+/// Checks annotation and text obstacles in one SCH013 pass.
+#[path = "sch013/annotations.rs"]
+mod annotations;
+/// Checks electrical marker obstacles and combines sheet/table/bus diagnostics.
+#[path = "sch013/electrical.rs"]
+mod electrical;
+/// Checks symbol, sheet, bus, table, and image obstacles in one SCH013 pass.
+#[path = "sch013/graphics.rs"]
+mod graphics;
+/// Checks wire intersections with non-endpoint symbol pins.
+#[path = "sch013/pins.rs"]
+mod pins;
+
+/// Checks every wire segment against symbol, sheet-graphic, electrical-graphic, and annotation obstacles.
 ///
 /// # Arguments
 ///
-/// * `wire_index` — Stable index of the wire within the current segment collection.
-/// * `wire` — Wire segment whose collision or clearance is being evaluated.
-/// * `texts` — Transformed embedded-symbol text obstacles to compare with the wire.
+/// * `root` — Root S-expression node supplying text boxes and table stroke settings.
+/// * `segments` — Parsed wire segments whose centerlines and effective stroke envelopes are evaluated.
+/// * `facts` — Normalized transformed symbol, graphic, sheet, bus, image, pin, and marker facts.
+/// * `wire_stroke_widths` — Resolved positive wire widths keyed by the source offset of each segment.
+/// * `default_wire_stroke_width_mm` — Optional project default used when a segment has no resolved explicit width.
+/// * `default_marker_pen_width_mm` — Optional project schematic-default pen width applied to no-connect marker strokes.
 ///
 /// # Returns
 ///
-/// SCH013 diagnostics for wires whose stroke envelopes collide with visible text embedded in placed symbols.
-fn embedded_symbol_text_obstacle_diagnostics(
-    wire_index: usize,
-    wire: Segment,
-    texts: &[SchematicSymbolTextFact],
-) -> Vec<Diagnostic> {
-    texts
-        .iter()
-        .filter_map(|text| {
-            let (left, top, right, bottom) = text.bounds_mm;
-            let bounds = Bounds {
-                x: left,
-                y: top,
-                width: right - left,
-                height: bottom - top,
-            };
-            strict_line_hits_bounds(wire, bounds).then(|| {
-                at_segment(
-                    BuiltinRuleId::Sch013,
-                    &format!(
-                        "wire {wire_index} passes through embedded symbol {} {} {:?}",
-                        text.kind, text.reference, text.text
-                    ),
-                    wire,
-                )
-            })
-        })
-        .collect()
-}
-/// Finds wire intersections or insufficient clearance against a schematic bus obstacle.
-///
-/// # Arguments
-///
-/// * `wire_index` — Stable index of the wire within the current segment collection.
-/// * `segment` — Wire segment being checked for obstacle intersection or clearance.
-/// * `obstacles` — Extracted bus or graphic obstacle geometry.
-/// * `wire_stroke_width_mm` — wire stroke width mm to be used in this geometry or parsing operation.
-///
-/// # Returns
-///
-/// SCH013 diagnostics for wire collisions or insufficient stroke clearance around bus paths and their pins.
-fn bus_obstacle_diagnostics(
-    wire_index: usize,
-    segment: Segment,
-    obstacles: &[SchematicBusObstacleFact],
-    wire_stroke_width_mm: f64,
-) -> Vec<Diagnostic> {
-    obstacles
-        .iter()
-        .filter(|obstacle| {
-            wire_crosses_symbol_primitive_with_wire_stroke(
-                segment,
-                &obstacle.primitive,
-                &obstacle.pins,
-                wire_stroke_width_mm,
-            )
-        })
-        .map(|obstacle| {
-            at_segment(
-                BuiltinRuleId::Sch013,
-                &format!(
-                    "wire {wire_index} intersects {} {:?}",
-                    obstacle.kind, obstacle.primitive.reference
-                ),
-                segment,
-            )
-        })
-        .collect()
-}
-/// Finds wire segments that collide with hierarchical sheet frames or their stroke envelopes.
-///
-/// # Arguments
-///
-/// * `wire_index` — Stable index of the wire within the current segment collection.
-/// * `segment` — Wire segment being checked for obstacle intersection or clearance.
-/// * `sheets` — Hierarchical sheet-frame facts used as wire obstacles.
-/// * `wire_stroke_width_mm` — wire stroke width mm to be used in this geometry or parsing operation.
-///
-/// # Returns
-///
-/// SCH013 diagnostics for wire collisions with hierarchical sheet frames or their stroked edges.
-fn sheet_frame_obstacle_diagnostics(
-    wire_index: usize,
-    segment: Segment,
-    sheets: &[SchematicSheetFact],
-    wire_stroke_width_mm: f64,
-) -> Vec<Diagnostic> {
-    sheets
-        .iter()
-        .filter(|sheet| {
-            wire_crosses_symbol_primitive_with_wire_stroke(
-                segment,
-                &sheet.primitive,
-                &sheet.pins,
-                wire_stroke_width_mm,
-            )
-        })
-        .map(|sheet| {
-            at_segment(
-                BuiltinRuleId::Sch013,
-                &format!(
-                    "wire {wire_index} penetrates hierarchical sheet {:?} ({})",
-                    sheet.name, sheet.uuid
-                ),
-                segment,
-            )
-        })
-        .collect()
-}
-/// Finds wire intersections or clearance violations against enabled table border and separator strokes.
-///
-/// # Arguments
-///
-/// * `wire_index` — Stable index of the wire within the current segment collection.
-/// * `segment` — Wire segment being checked for obstacle intersection or clearance.
-/// * `table_strokes` — Enabled table-border and separator strokes used as obstacles.
-/// * `wire_stroke_width_mm` — wire stroke width mm to be used in this geometry or parsing operation.
-///
-/// # Returns
-///
-/// SCH013 diagnostics for wires that intersect enabled table borders or separator strokes.
-fn table_stroke_obstacle_diagnostics(
-    wire_index: usize,
-    segment: Segment,
-    table_strokes: &[SchematicGraphicFact],
-    wire_stroke_width_mm: f64,
-) -> Vec<Diagnostic> {
-    table_strokes
-        .iter()
-        .filter(|table_stroke| {
-            wire_crosses_sheet_graphic_with_wire_stroke(segment, table_stroke, wire_stroke_width_mm)
-        })
-        .map(|table_stroke| {
-            at_segment(
-                BuiltinRuleId::Sch013,
-                &format!(
-                    "wire {wire_index} penetrates sheet graphic {} {:?}",
-                    table_stroke.kind, table_stroke.uuid
-                ),
-                segment,
-            )
-        })
-        .collect()
-}
-/// Tests whether a wire intersects either diagonal stroke of a no-connect marker.
-///
-/// # Arguments
-///
-/// * `wire` — Wire segment whose collision or clearance is being evaluated.
-/// * `diagonal` — diagonal to be used in this geometry or parsing operation.
-/// * `wire_stroke_width_mm` — wire stroke width mm to be used in this geometry or parsing operation.
-///
-/// # Returns
-///
-/// `true` when the wire's stroke envelope intersects either diagonal stroke of the no-connect marker.
-fn wire_crosses_no_connect_diagonal(
-    wire: Segment,
-    diagonal: [(f64, f64); 2],
-    wire_stroke_width_mm: f64,
-) -> bool {
-    let start = Point {
-        x: diagonal[0].0,
-        y: diagonal[0].1,
-    };
-    let end = Point {
-        x: diagonal[1].0,
-        y: diagonal[1].1,
-    };
-    let finite = [
-        wire.start.x,
-        wire.start.y,
-        wire.end.x,
-        wire.end.y,
-        start.x,
-        start.y,
-        end.x,
-        end.y,
-    ]
-    .iter()
-    .all(|value| value.is_finite());
-    (finite && !segment_intersection_points(wire, start, end).is_empty())
-        || wire_within_sampled_path_stroke(wire, &diagonal, false, wire_stroke_width_mm, 0.0)
-}
-/// Finds wires that collide with a no-connect marker, accounting for its fixed marker geometry and available pen width.
-///
-/// # Arguments
-///
-/// * `wire_index` — Stable index of the wire within the current segment collection.
-/// * `segment` — Wire segment being checked for obstacle intersection or clearance.
-/// * `markers` — No-connect marker facts, including marker centers and half-size.
-/// * `wire_stroke_width_mm` — wire stroke width mm to be used in this geometry or parsing operation.
-/// * `default_marker_pen_width_mm` — Optional schematic default line pen width applied to no-connect marker strokes, in millimetres.
-///
-/// # Returns
-///
-/// SCH013 diagnostics for wire strokes that collide with a no-connect marker after applying its fixed marker geometry.
-fn no_connect_marker_obstacle_diagnostics(
-    wire_index: usize,
-    segment: Segment,
-    markers: &[SchematicNoConnectFact],
-    wire_stroke_width_mm: f64,
-    default_marker_pen_width_mm: Option<f64>,
-) -> Vec<Diagnostic> {
-    if !wire_stroke_width_mm.is_finite() || wire_stroke_width_mm < 0.0 {
-        return Vec::new();
-    }
-    let marker_pen_width_mm = default_marker_pen_width_mm
-        .filter(|width| width.is_finite() && *width > 0.0)
-        .unwrap_or(0.0);
-    let combined_stroke_width_mm = wire_stroke_width_mm + marker_pen_width_mm;
-    if !combined_stroke_width_mm.is_finite() {
-        return Vec::new();
-    }
-    markers
-        .iter()
-        .filter(|marker| {
-            let (center_x, center_y) = marker.center_mm;
-            let half = marker.half_size_mm;
-            let first_diagonal = [
-                (center_x - half, center_y - half),
-                (center_x + half, center_y + half),
-            ];
-            let second_diagonal = [
-                (center_x + half, center_y - half),
-                (center_x - half, center_y + half),
-            ];
-            wire_crosses_no_connect_diagonal(segment, first_diagonal, combined_stroke_width_mm)
-                || wire_crosses_no_connect_diagonal(
-                    segment,
-                    second_diagonal,
-                    combined_stroke_width_mm,
-                )
-        })
-        .map(|marker| {
-            at_segment(
-                BuiltinRuleId::Sch013,
-                &format!(
-                    "wire {wire_index} crosses no-connect marker {}",
-                    marker.reference
-                ),
-                segment,
-            )
-        })
-        .collect()
-}
-/// Effective wire width and optional no-connect marker pen width used by obstacle checks.
-#[derive(Clone, Copy)]
-struct WireObstacleStrokeWidths {
-    /// Effective wire stroke width in millimetres.
-    wire_mm: f64,
-    /// Schematic default pen width used for no-connect markers, when the project supplies it.
-    no_connect_marker_pen_mm: Option<f64>,
-}
-/// Combines sheet-frame, table-stroke, bus, and no-connect obstacle diagnostics for one wire.
-///
-/// # Arguments
-///
-/// * `wire_index` — Stable index of the wire within the current segment collection.
-/// * `segment` — Wire segment being checked for obstacle intersection or clearance.
-/// * `sheets` — Hierarchical sheet-frame facts used as wire obstacles.
-/// * `table_strokes` — Enabled table-border and separator strokes used as obstacles.
-/// * `bus_obstacles` — bus obstacles to be used in this geometry or parsing operation.
-/// * `no_connects` — no connects to be used in this geometry or parsing operation.
-/// * `stroke_widths` — Resolved explicit and project-derived stroke widths indexed by wire source offset.
-///
-/// # Returns
-///
-/// Combined SCH013 diagnostics for sheet frames, table strokes, buses, and no-connect markers near the wire.
-fn sheet_table_bus_obstacle_diagnostics(
-    wire_index: usize,
-    segment: Segment,
-    sheets: &[SchematicSheetFact],
-    table_strokes: &[SchematicGraphicFact],
-    bus_obstacles: &[SchematicBusObstacleFact],
-    no_connects: &[SchematicNoConnectFact],
-    stroke_widths: WireObstacleStrokeWidths,
-) -> Vec<Diagnostic> {
-    let wire_stroke_width_mm = stroke_widths.wire_mm;
-    let mut diagnostics =
-        sheet_frame_obstacle_diagnostics(wire_index, segment, sheets, wire_stroke_width_mm);
-    diagnostics.extend(table_stroke_obstacle_diagnostics(
-        wire_index,
-        segment,
-        table_strokes,
-        wire_stroke_width_mm,
-    ));
-    diagnostics.extend(bus_obstacle_diagnostics(
-        wire_index,
-        segment,
-        bus_obstacles,
-        wire_stroke_width_mm,
-    ));
-    diagnostics.extend(no_connect_marker_obstacle_diagnostics(
-        wire_index,
-        segment,
-        no_connects,
-        wire_stroke_width_mm,
-        stroke_widths.no_connect_marker_pen_mm,
-    ));
-    diagnostics
-}
-/// Finds wires that pass through a placed pin that is not a permitted endpoint contact.
-///
-/// # Arguments
-///
-/// * `wire_index` — Stable index of the wire within the current segment collection.
-/// * `segment` — Wire segment being checked for obstacle intersection or clearance.
-/// * `pins` — Placed symbol-pin facts used to allow only local wire endpoint contact.
-///
-/// # Returns
-///
-/// SCH013 diagnostics for wires passing through placed pins that are not permitted wire endpoints.
-fn intermediate_pin_obstacle_diagnostics(
-    wire_index: usize,
-    segment: Segment,
-    pins: &[SchematicPinFact],
-) -> Vec<Diagnostic> {
-    pins.iter()
-        .filter(|pin| {
-            let point = Point {
-                x: pin.position_mm.0,
-                y: pin.position_mm.1,
-            };
-            point_on_segment_any(point, segment.start, segment.end) && !is_endpoint(point, segment)
-        })
-        .map(|pin| {
-            at_segment(
-                BuiltinRuleId::Sch013,
-                &format!(
-                    "wire {wire_index} passes through intermediate pin {}.{}",
-                    pin.reference, pin.number
-                ),
-                segment,
-            )
-        })
-        .collect()
-}
-/// Checks each wire against embedded primitives, labels/text, buses, frames, tables, pins, images, and no-connect markers.
-///
-/// # Arguments
-///
-/// * `root` — Root S-expression node of the parsed schematic.
-/// * `segments` — Parsed wire segments used to determine geometry, topology, or obstacle intersections.
-/// * `facts` — Normalized facts extracted from the schematic.
-/// * `wire_stroke_widths` — wire stroke widths to be used in this geometry or parsing operation.
-/// * `default_wire_stroke_width_mm` — default wire stroke width mm to be used in this geometry or parsing operation.
-/// * `default_marker_pen_width_mm` — Optional schematic default line pen width applied to no-connect marker strokes, in millimetres.
-///
-/// # Returns
-///
-/// SCH013 diagnostics for collisions with symbol primitives, text, buses, frames, tables, pins, images, and no-connect markers.
+/// SCH013 diagnostics aggregated from the supported obstacle families in stable per-wire order.
 pub(super) fn check_wire_obstacles(
     root: &Node,
     segments: &[Segment],
@@ -430,75 +95,41 @@ pub(super) fn check_wire_obstacles(
             .copied()
             .or(default_wire_stroke_width_mm)
             .unwrap_or(0.0);
-        let mut reported_symbols = BTreeSet::new();
-        for primitive in &facts.symbol_primitives {
-            if !reported_symbols.contains(&primitive.reference)
-                && wire_crosses_symbol_primitive_with_wire_stroke(
-                    *segment,
-                    primitive,
-                    &facts.pins,
-                    wire_stroke_width_mm,
-                )
-            {
-                reported_symbols.insert(primitive.reference.clone());
-                diagnostics.push(at_segment(
-                    BuiltinRuleId::Sch013,
-                    &format!(
-                        "wire {wire_index} penetrates symbol body {}",
-                        primitive.reference
-                    ),
-                    *segment,
-                ));
-            }
-        }
-        for graphic in &facts.graphics {
-            if wire_crosses_sheet_graphic_with_wire_stroke(*segment, graphic, wire_stroke_width_mm)
-            {
-                diagnostics.push(at_segment(
-                    BuiltinRuleId::Sch013,
-                    &format!(
-                        "wire {wire_index} penetrates sheet graphic {} {:?}",
-                        graphic.kind, graphic.uuid
-                    ),
-                    *segment,
-                ));
-            }
-        }
-        diagnostics.extend(sheet_table_bus_obstacle_diagnostics(
+        diagnostics.extend(graphics::symbol_primitive_obstacle_diagnostics(
+            wire_index,
+            *segment,
+            facts,
+            wire_stroke_width_mm,
+        ));
+        diagnostics.extend(graphics::sheet_graphic_obstacle_diagnostics(
+            wire_index,
+            *segment,
+            facts,
+            wire_stroke_width_mm,
+        ));
+        diagnostics.extend(electrical::sheet_table_bus_obstacle_diagnostics(
             wire_index,
             *segment,
             &facts.sheets,
             &table_strokes,
             &facts.bus_obstacles,
             &facts.no_connects,
-            WireObstacleStrokeWidths {
+            electrical::WireObstacleStrokeWidths {
                 wire_mm: wire_stroke_width_mm,
                 no_connect_marker_pen_mm: default_marker_pen_width_mm,
             },
         ));
-        for image in &facts.images {
-            if image
-                .corners_mm
-                .is_some_and(|corners| wire_crosses_bitmap_image(*segment, &corners))
-            {
-                diagnostics.push(at_segment(
-                    BuiltinRuleId::Sch013,
-                    &format!(
-                        "wire {wire_index} penetrates embedded bitmap image {:?}",
-                        image.uuid
-                    ),
-                    *segment,
-                ));
-            }
-        }
-        diagnostics.extend(wire_text_annotation_obstacle_diagnostics(
+        diagnostics.extend(graphics::bitmap_image_obstacle_diagnostics(
+            wire_index, *segment, facts,
+        ));
+        diagnostics.extend(annotations::wire_text_annotation_obstacle_diagnostics(
             wire_index,
             *segment,
             facts,
             &fields,
             &text_boxes,
         ));
-        diagnostics.extend(intermediate_pin_obstacle_diagnostics(
+        diagnostics.extend(pins::intermediate_pin_obstacle_diagnostics(
             wire_index,
             *segment,
             &facts.pins,
@@ -506,70 +137,6 @@ pub(super) fn check_wire_obstacles(
     }
     diagnostics
 }
-/// Finds wire collisions with visible fields, labels, plain text, and text boxes.
-///
-/// # Arguments
-///
-/// * `wire_index` — Stable index of the wire within the current segment collection.
-/// * `segment` — Wire segment being checked for obstacle intersection or clearance.
-/// * `facts` — Normalized facts extracted from the schematic.
-/// * `fields` — Visible symbol-field geometry used as wire or label collision obstacles.
-/// * `text_boxes` — Text-box geometries used as wire or annotation obstacles.
-///
-/// # Returns
-///
-/// SCH013 diagnostics for wire collisions with visible fields, labels, plain text, and annotation text boxes.
-fn wire_text_annotation_obstacle_diagnostics(
-    wire_index: usize,
-    segment: Segment,
-    facts: &SchematicFacts,
-    fields: &[(String, Bounds, ByteSpan)],
-    text_boxes: &[(usize, Bounds)],
-) -> Vec<Diagnostic> {
-    let mut diagnostics =
-        embedded_symbol_text_obstacle_diagnostics(wire_index, segment, &facts.symbol_texts);
-    for (text_index, text) in facts.texts.iter().enumerate() {
-        let Some((left, top, right, bottom)) = text.bounds_mm else {
-            continue;
-        };
-        let bounds = Bounds {
-            x: left,
-            y: top,
-            width: right - left,
-            height: bottom - top,
-        };
-        if strict_line_hits_bounds(segment, bounds) {
-            diagnostics.push(at_segment(
-                BuiltinRuleId::Sch013,
-                &format!(
-                    "wire {wire_index} passes through free-standing schematic text {text_index} {:?}",
-                    text.text
-                ),
-                segment,
-            ));
-        }
-    }
-    for (field_name, bounds, _span) in fields {
-        if strict_line_hits_bounds(segment, *bounds) {
-            diagnostics.push(at_segment(
-                BuiltinRuleId::Sch013,
-                &format!("wire {wire_index} passes through symbol field {field_name}"),
-                segment,
-            ));
-        }
-    }
-    for (box_index, bounds) in text_boxes {
-        if strict_line_hits_bounds(segment, *bounds) {
-            diagnostics.push(at_segment(
-                BuiltinRuleId::Sch013,
-                &format!("wire {wire_index} penetrates annotation text box {box_index}"),
-                segment,
-            ));
-        }
-    }
-    diagnostics
-}
-
 /// Calculates the intersection points between a wire segment and the circular sweep of an arc.
 ///
 /// # Arguments

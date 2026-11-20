@@ -21,7 +21,9 @@ Use the open-ended string namespace only for external diagnostics such as `KICAD
 
 ## Metadata and registration
 
-`RuleDescriptor` records the stable ID and explanatory metadata: name, category, summary, explanation, default level, optional documentation URL and tags. `RuleRegistry` is deterministic and rejects duplicate IDs.
+`RuleDescriptor` records the stable ID and explanatory metadata: name, category, summary, explanation, default level, optional documentation URL and tags. `builtin_rule_registry()` in `kicad-clippy-core` populates a deterministic descriptor for every value in `BuiltinRuleId::ALL` (SCH001–SCH022); it is the canonical built-in metadata catalogue. The completeness test ensures that adding a typed built-in ID without a descriptor fails validation. `RuleRegistry` is deterministic and rejects duplicate IDs.
+
+When a policy file is supplied, `default_level` provides the baseline for the `default` preset. The `strict` and `advisory` presets replace that baseline, and explicit per-rule levels take precedence. Without a policy file, descriptor metadata does not change runtime diagnostics; the pre-existing rule-emitted severities remain in force. See [rule policy](rule-policy.md) for the TOML schema and CLI behavior.
 
 A rule declaration is not its implementation. A check can emit more than one diagnostic, several checks can emit the same rule ID, and a single analysis pass can contribute findings to multiple rules. Keep metadata and execution separate.
 

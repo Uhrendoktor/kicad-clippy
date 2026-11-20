@@ -13,6 +13,8 @@ use thiserror::Error;
 pub(crate) const HALF_FACTOR: f64 = 0.5;
 /// Factor used when a dimension applies symmetrically to both sides of an object.
 pub(crate) const TWO_SIDED_FACTOR: f64 = 2.0;
+/// Adds opt-in profile checks for declared frame and no-connect intent.
+mod additional_profile_rules;
 /// Extracts shared schematic facts and orchestrates the dedicated geometry, connectivity, layout, and obstacle rule modules.
 mod generic;
 /// Defines the shared project-profile schema and orchestrates its dedicated connectivity, group, component-intent, and decoupling validators.
@@ -27,8 +29,8 @@ pub use generic::{
 };
 pub use metadata::{
     CommonPinNetGroup, ComponentIntent, ComponentKind, ComponentPurpose, ComponentRole,
-    DecouplingIntent, DirectWirePair, GroupEvidence, GroupIntent, LintProfile, MetadataError,
-    PhysicalWireGroup, ProfileMode, SeparateWirePair,
+    DecouplingIntent, DirectWirePair, GroupAlignmentAxis, GroupEvidence, GroupIntent, LintProfile,
+    MetadataError, PhysicalWireGroup, ProfileMode, SeparateWirePair,
 };
 
 /// Immutable data shared by all rule passes for one schematic.

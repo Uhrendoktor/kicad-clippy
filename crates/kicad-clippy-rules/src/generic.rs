@@ -305,6 +305,8 @@ pub struct SchematicPinFact {
     pub number: String,
     /// Pin anchor coordinate in schematic millimetres.
     pub position_mm: (f64, f64),
+    /// Effective electrical type from the selected embedded library-pin definition, when available.
+    pub electrical_type: Option<String>,
 }
 /// Visible symbol field and its estimated text bounds.
 #[derive(Clone, Debug)]
@@ -1939,15 +1941,65 @@ fn collect_pin_facts(root: &Node) -> Vec<SchematicPinFact> {
             ) else {
                 continue;
             };
+            let selected_alternate = active_instance_pin_alternate(instance, pin_number);
             pins.push(SchematicPinFact {
                 reference: transform.reference.clone(),
                 number: pin_number.to_owned(),
                 position_mm: (transform.origin.x + x_offset, transform.origin.y + y_offset),
+                electrical_type: library_pin_electrical_type(pin, selected_alternate),
             });
         }
     }
     pins
 }
+
+/// Reads the alternate pin designation selected by one placed symbol instance.
+///
+/// # Arguments
+///
+/// * `instance` — Placed symbol node containing any per-pin alternate selections.
+/// * `pin_number` — Serialized pin number whose active alternate is requested.
+///
+/// # Returns
+///
+/// The selected alternate name for the matching placed pin, or `None` when no override is stored.
+fn active_instance_pin_alternate<'a>(instance: &'a Node, pin_number: &str) -> Option<&'a str> {
+    children(instance, "pin").find_map(|instance_pin| {
+        let items = list_items(instance_pin)?;
+        if atom_value(items.get(1)?)? != pin_number {
+            return None;
+        }
+        child_list(instance_pin, "alternate")
+            .and_then(list_items)
+            .and_then(|items| items.get(1))
+            .and_then(atom_value)
+    })
+}
+
+/// Resolves a library pin's electrical-type token, honoring the active alternate when it exists.
+///
+/// # Arguments
+///
+/// * `pin` — Embedded library pin definition containing its base type and optional alternate types.
+/// * `selected_alternate` — Active alternate name serialized on the placed symbol instance.
+///
+/// # Returns
+///
+/// The selected or base electrical-type token, or `None` when the library pin does not expose a type token.
+fn library_pin_electrical_type(pin: &Node, selected_alternate: Option<&str>) -> Option<String> {
+    let alternate_type = selected_alternate.and_then(|selected| {
+        children(pin, "alternate").find_map(|alternate| {
+            let items = list_items(alternate)?;
+            (atom_value(items.get(1)?)? == selected)
+                .then(|| atom_value(items.get(2)?))
+                .flatten()
+        })
+    });
+    alternate_type
+        .or_else(|| list_items(pin)?.get(1).and_then(atom_value))
+        .map(str::to_owned)
+}
+
 /// Extracts hierarchical sheet instances, their frame geometry, and sheet pins.
 ///
 /// # Arguments
@@ -2016,6 +2068,7 @@ fn collect_sheet_facts(root: &Node) -> Vec<SchematicSheetFact> {
                             reference: reference.clone(),
                             number: name.to_owned(),
                             position_mm,
+                            electrical_type: None,
                         }
                     })
                 })
@@ -2156,6 +2209,7 @@ fn collect_bus_obstacle_facts(root: &Node) -> Vec<SchematicBusObstacleFact> {
                 reference: reference.clone(),
                 number: name.to_owned(),
                 position_mm: (x, y),
+                electrical_type: None,
             })
             .collect();
         obstacles.push(SchematicBusObstacleFact {
@@ -4788,6 +4842,7 @@ mod tests {
             reference: "U1".to_owned(),
             number: "1".to_owned(),
             position_mm: (wire.start.x, wire.start.y),
+            electrical_type: None,
         };
         assert!(
             !super::sch013::wire_crosses_symbol_primitive_with_wire_stroke(
@@ -4950,6 +5005,7 @@ mod tests {
             reference: "U1".to_owned(),
             number: "1".to_owned(),
             position_mm: point,
+            electrical_type: None,
         };
         assert!(
             !super::sch013::wire_crosses_symbol_primitive_with_wire_stroke(
@@ -5717,6 +5773,7 @@ mod tests {
             reference: "U1".to_owned(),
             number: "1".to_owned(),
             position_mm: (0.0, 0.0),
+            electrical_type: None,
         };
         assert!(
             super::sch013::wire_crosses_symbol_primitive_with_wire_stroke(

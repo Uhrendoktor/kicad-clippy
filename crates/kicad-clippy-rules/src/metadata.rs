@@ -16,6 +16,10 @@ use thiserror::Error;
 #[path = "profile_rules/sch004.rs"]
 mod sch004;
 
+/// Shared transformed body geometry and clearance calculations for profile layout rules.
+#[path = "profile_rules/geometry.rs"]
+mod geometry;
+
 /// Checks `SCH006` minimum spacing between functional-group member symbols.
 #[path = "profile_rules/sch006.rs"]
 mod sch006;
@@ -23,6 +27,10 @@ mod sch006;
 /// Checks `SCH007` consistency between profile group membership and native `KiCad` groups.
 #[path = "profile_rules/sch007.rs"]
 mod sch007;
+
+/// Checks profile-declared maximum gaps between visible component fields and their own body outlines.
+#[path = "profile_rules/sch010.rs"]
+mod sch010;
 
 /// Checks `SCH009` containment of group members and their associated schematic geometry.
 #[path = "profile_rules/sch009.rs"]
@@ -150,7 +158,7 @@ pub struct CommonPinNetGroup {
     /// Require all listed pins to share one continuous wire-only component.
     #[serde(default)]
     pub wire_connected: bool,
-    /// Require all listed pins to resolve to the same net in the exported `KiCad` netlist.
+    /// Require all listed pins to resolve to the same exported logical net; SCH014 owns this check.
     #[serde(default)]
     pub netlist_connected: bool,
     /// Require exactly one matching label across the resolved wire components.
@@ -177,7 +185,7 @@ pub struct SeparateWirePair {
     pub first: String,
     /// Second pin reference in REF.PIN form.
     pub second: String,
-    /// Also require the pins to resolve to different nets in the exported `KiCad` netlist.
+    /// Also require the pins to resolve to different exported logical nets; SCH014 owns this check.
     #[serde(default)]
     pub netlist_separate: bool,
 }
@@ -206,6 +214,11 @@ pub struct ComponentIntent {
     /// Extensible role-specific attributes such as interface standard or orientation.
     #[serde(default)]
     pub attributes: BTreeMap<String, String>,
+    /// Optional per-field maximum distance from the component's transformed body outline, in millimetres.
+    ///
+    /// Supported keys are `Reference` and `Value`; values are non-negative finite distances.
+    #[serde(default)]
+    pub max_field_body_gap_mm: BTreeMap<String, f64>,
     /// Optional minimum voltage rating in volts.
     pub voltage_rating_min_v: Option<f64>,
     /// Optional minimum power rating in watts.
@@ -234,8 +247,18 @@ pub struct GroupEvidence {
     pub screenshot_asset: Option<String>,
 }
 
+/// Axis used to align functional-group member symbol origins.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GroupAlignmentAxis {
+    /// Member origins share a horizontal row within the configured vertical tolerance.
+    Horizontal,
+    /// Member origins share a vertical column within the configured horizontal tolerance.
+    Vertical,
+}
+
 /// Profile-level description and membership contract for one functional group.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct GroupIntent {
     /// References belonging to the functional group.
     #[serde(default)]
@@ -257,6 +280,15 @@ pub struct GroupIntent {
     /// Optional minimum Euclidean spacing between member symbol origins, in millimetres.
     #[serde(default)]
     pub minimum_member_origin_spacing_mm: Option<f64>,
+    /// Optional minimum edge-to-edge clearance between supported member body outlines, in millimetres.
+    #[serde(default)]
+    pub minimum_member_body_clearance_mm: Option<f64>,
+    /// Optional axis along which all member symbol origins must align.
+    #[serde(default)]
+    pub alignment_axis: Option<GroupAlignmentAxis>,
+    /// Maximum perpendicular deviation from the declared alignment axis, in millimetres.
+    #[serde(default)]
+    pub alignment_tolerance_mm: Option<f64>,
     /// Optional maximum total internal wire length for the group frame, in millimetres.
     #[serde(default)]
     pub wire_length_budget_mm: Option<f64>,
@@ -371,10 +403,13 @@ impl LintProfile {
             netlist,
         };
         let mut diagnostics = Vec::new();
+        diagnostics
+            .extend(crate::additional_profile_rules::validate_profile_extensions(self, &facts));
         diagnostics.extend(sch021::Sch021.check(&context));
         diagnostics.extend(sch020::Sch020.check(&context));
         diagnostics.extend(sch022::Sch022.check(&context));
         diagnostics.extend(sch014::Sch014.check(&context));
+        diagnostics.extend(sch010::Sch010.check(&context));
         diagnostics.extend(sch017::Sch017.check(&context));
         diagnostics.extend(sch007::Sch007.check(&context));
         diagnostics.extend(sch009::Sch009.check(&context));
@@ -919,7 +954,7 @@ mod tests {
             Some(&common_pin_netlist(Some("SENSE"), Some("SENSE"))),
         );
         assert!(!diagnostics.iter().any(|item| {
-            item.code == "SCH004" && item.message.contains("different exported KiCad nets")
+            item.code == "SCH014" && item.message.contains("different exported KiCad nets")
         }));
     }
     /// Regression test: verifies that common pin group rejects different exported `KiCad` nets.
@@ -940,7 +975,7 @@ mod tests {
             Some(&common_pin_netlist(Some("SENSE"), Some("OTHER"))),
         );
         assert!(diagnostics.iter().any(|item| {
-            item.code == "SCH004" && item.message.contains("different exported KiCad nets")
+            item.code == "SCH014" && item.message.contains("different exported KiCad nets")
         }));
     }
     /// Regression test: verifies that common pin group reports pins missing from exported netlist.
@@ -976,7 +1011,7 @@ mod tests {
         .expect("profile parses");
         let diagnostics = profile.validate(&schematic);
         assert!(diagnostics.iter().any(|item| {
-            item.code == "SCH004"
+            item.code == "SCH014"
                 && item.severity == Severity::Warning
                 && item
                     .message
@@ -1865,7 +1900,7 @@ mod tests {
                 .validate_with_netlist(&schematic, Some(&netlist))
                 .iter()
                 .any(|item| {
-                    item.code == "SCH004" && item.message.contains("different exported KiCad nets")
+                    item.code == "SCH014" && item.message.contains("different exported KiCad nets")
                 })
         );
     }
@@ -1883,7 +1918,7 @@ mod tests {
         )
         .expect("profile parses");
         assert!(profile.validate(&schematic).iter().any(|item| {
-            item.code == "SCH004"
+            item.code == "SCH014"
                 && item.severity == Severity::Warning
                 && item.message.contains("no exported KiCad netlist")
         }));
