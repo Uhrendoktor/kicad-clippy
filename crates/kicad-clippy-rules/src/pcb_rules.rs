@@ -1150,7 +1150,7 @@ mod test_point_tests {
     ///
     /// * `net` — Optional net name serialized on TP1.1.
     /// * `footprint_layer` — Side on which the test-point footprint is placed, F.Cu or B.Cu.
-    /// * `pad_kind` — Serialized pad kind, such as smd or thru_hole.
+    /// * `pad_kind` — Serialized pad kind, such as `smd` or `thru_hole`.
     /// * `layers` — Complete pad layer expression, including the outer layers list.
     ///
     /// # Returns
@@ -1181,7 +1181,7 @@ mod test_point_tests {
             &test_point_profile(),
             &test_point_board(Some("VDD"), "F.Cu", "smd", r#"(layers "F.Cu" "F.Mask")"#),
         );
-        assert!(diagnostics.is_empty());
+        assert_eq!(diagnostics, Vec::new());
     }
 
     /// Rejects a placed test-point pad assigned to the wrong board net.
@@ -1240,7 +1240,7 @@ mod test_point_tests {
             &test_point_profile(),
             &test_point_board(Some("VDD"), "B.Cu", "smd", r#"(layers "B.Cu" "B.Mask")"#),
         );
-        assert!(diagnostics.is_empty());
+        assert_eq!(diagnostics, Vec::new());
     }
 
     /// Rejects a front-side copper pad whose only solder-mask opening is on the back side.

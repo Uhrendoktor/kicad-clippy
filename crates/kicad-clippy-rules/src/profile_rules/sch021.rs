@@ -305,7 +305,7 @@ mod tests {
     #[test]
     fn test_point_role_requires_complete_pin_mapping() {
         let intent = test_point_intent("test_point", &[("1", "VDD")]);
-        assert!(validate_role_contract("TP1", &intent).is_empty());
+        assert_eq!(validate_role_contract("TP1", &intent), Vec::new());
     }
 
     /// Rejects test-point components that omit their pin mapping or declare another role.

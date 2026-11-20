@@ -480,19 +480,14 @@ impl LintProfile {
         diagnostics.extend(sch006::Sch006.check(&context));
         diagnostics.extend(sch016::Sch016.check(&context));
         diagnostics.extend(sch004::Sch004.check(&context));
-        match board {
-            Some(board) => {
-                diagnostics.extend(crate::pcb_rules::validate_decoupling_pad_distances(
-                    self, board, netlist,
-                ));
-                diagnostics.extend(crate::pcb_rules::validate_test_point_pad_access(
-                    self, board,
-                ));
-            }
-            None => {
-                diagnostics.extend(crate::pcb_rules::validate_missing_board(self));
-                diagnostics.extend(crate::pcb_rules::validate_missing_test_point_board(self));
-            }
+        if let Some(board) = board {
+            diagnostics.extend(crate::pcb_rules::validate_decoupling_pad_distances(
+                self, board, netlist,
+            ));
+            diagnostics.extend(crate::pcb_rules::validate_test_point_pad_access(self, board));
+        } else {
+            diagnostics.extend(crate::pcb_rules::validate_missing_board(self));
+            diagnostics.extend(crate::pcb_rules::validate_missing_test_point_board(self));
         }
         diagnostics
     }

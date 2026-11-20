@@ -185,7 +185,7 @@ mod tests {
     fn required_test_point_is_confirmed_by_exported_netlist() {
         let diagnostics =
             validate_required_test_point_nets(&profile(true), Some(&netlist(Some("VDD"))));
-        assert!(diagnostics.is_empty());
+        assert_eq!(diagnostics, Vec::new());
     }
 
     /// Rejects a required critical net without a profile-declared test-point pin mapping.
