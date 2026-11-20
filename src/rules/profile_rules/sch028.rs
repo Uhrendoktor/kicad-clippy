@@ -554,7 +554,10 @@ mod tests {
             (14.0, 6.0, 20.0, 10.0),
             Some((15.0, 7.0, 19.0, 9.0)),
         );
-        assert_eq!(validate_group_title_layout("power", &title_group(), &facts), Vec::new());
+        assert_eq!(
+            validate_group_title_layout("power", &title_group(), &facts),
+            Vec::new()
+        );
     }
 
     /// Rejects a title tab that is near the frame but does not share an edge.
