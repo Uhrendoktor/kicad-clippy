@@ -41,8 +41,7 @@ fn validate_component_population(
                 BuiltinRuleId::Sch029,
                 Severity::Error,
                 format!(
-                    "{reference} has invalid population {:?}; expected `populated` or `dnp`",
-                    population
+                    "{reference} has invalid population {population:?}; expected `populated` or `dnp`"
                 ),
             )];
         }
@@ -83,7 +82,7 @@ fn validate_component_population(
     }
 
     match component.value.as_deref().map(str::trim) {
-        None | Some("") | Some("~") => diagnostics.push(Diagnostic::for_builtin_rule(
+        None | Some("" | "~") => diagnostics.push(Diagnostic::for_builtin_rule(
             BuiltinRuleId::Sch029,
             Severity::Error,
             format!("{reference} must retain a non-empty component Value instead of a population placeholder"),
@@ -148,6 +147,8 @@ impl<'a> Rule<ProfileRuleContext<'a>> for Sch029 {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used)]
+
     use super::validate_component_population;
     use crate::core::{BuiltinRuleId, Severity};
     use crate::parser::SchematicDocument;
@@ -221,7 +222,7 @@ mod tests {
             &intent("populated"),
             &population_facts("10k", "no", false),
         );
-        assert!(diagnostics.is_empty());
+        assert_eq!(diagnostics, Vec::new());
     }
 
     /// Accepts a DNP component when the DNP flag is enabled and its real value is retained.
@@ -232,7 +233,7 @@ mod tests {
             &intent("dnp"),
             &population_facts("10k", "yes", false),
         );
-        assert!(diagnostics.is_empty());
+        assert_eq!(diagnostics, Vec::new());
     }
 
     /// Rejects a populated declaration when the saved base design marks the symbol DNP.
