@@ -103,7 +103,8 @@ impl BoardFacts {
                     net_name,
                     position_mm: (origin_x + rotated_x, origin_y + rotated_y),
                     probe_exposed: pad_has_copper_and_mask_layers(pad),
-                    probe_contact_width_mm: if serialized_scale_present && resolved_scale.is_none() {
+                    probe_contact_width_mm: if serialized_scale_present && resolved_scale.is_none()
+                    {
                         None
                     } else {
                         pad_minimum_contact_width_mm(pad, scale_x, scale_y)
