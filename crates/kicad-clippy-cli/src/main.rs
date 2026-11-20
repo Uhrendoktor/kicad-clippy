@@ -371,7 +371,6 @@ fn lint(schematic_path: &Path, options: LintOptions<'_>) -> Result<ExitCode, Cli
     render_output(format, &output, schematic.source())
 }
 
-
 /// Renders a completed lint result and chooses the process exit code from its active errors.
 ///
 /// # Arguments
