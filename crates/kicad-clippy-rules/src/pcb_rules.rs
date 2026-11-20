@@ -192,7 +192,6 @@ fn unique_pad<'a>(
     matches.next().is_none().then_some(first)
 }
 
-
 /// Resolved board-pad context shared by the independent PCB001 checks.
 struct ResolvedDecouplingPads<'a> {
     /// Reference designator of the target IC.
