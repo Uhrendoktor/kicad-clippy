@@ -17,6 +17,9 @@ pub(crate) const TWO_SIDED_FACTOR: f64 = 2.0;
 mod additional_profile_rules;
 /// Extracts shared schematic facts and orchestrates the dedicated geometry, connectivity, layout, and obstacle rule modules.
 mod generic;
+/// Checks UUID uniqueness within the currently loaded schematic document.
+#[path = "rules/sch024.rs"]
+mod sch024;
 /// Defines the shared project-profile schema and orchestrates its dedicated connectivity, group, component-intent, and decoupling validators.
 mod metadata;
 
@@ -156,6 +159,7 @@ impl RuleEngine {
             Box::new(generic::BuiltinGeometryPass) as Box<dyn RulePass>,
             Box::new(generic::BuiltinLabelPass),
             Box::new(generic::BuiltinAnnotationPass),
+            Box::new(sch024::DuplicateUuidPass),
         ] {
             engine.passes.insert(pass.name(), pass);
         }

@@ -51,11 +51,15 @@ pub enum BuiltinRuleId {
     Sch021,
     /// Represents the `SCH022` rule: Verifies decoupling target pins, capacitor terminals, return nets, and shared target clusters.
     Sch022,
+    /// Represents the `SCH023` rule: Checks profile-declared required sheet title-block fields.
+    Sch023,
+    /// Represents the `SCH024` rule: Checks duplicate UUIDs within the currently loaded schematic document.
+    Sch024,
 }
 
 impl BuiltinRuleId {
     /// All built-in rules in stable identifier order.
-    pub const ALL: [Self; 22] = [
+    pub const ALL: [Self; 24] = [
         Self::Sch001,
         Self::Sch002,
         Self::Sch003,
@@ -78,6 +82,8 @@ impl BuiltinRuleId {
         Self::Sch020,
         Self::Sch021,
         Self::Sch022,
+        Self::Sch023,
+        Self::Sch024,
     ];
 
     /// Returns the canonical external code for this built-in rule, preserving the stable `SCHnnn` identifier.
@@ -110,6 +116,8 @@ impl BuiltinRuleId {
             Self::Sch020 => "SCH020",
             Self::Sch021 => "SCH021",
             Self::Sch022 => "SCH022",
+            Self::Sch023 => "SCH023",
+            Self::Sch024 => "SCH024",
         }
     }
 

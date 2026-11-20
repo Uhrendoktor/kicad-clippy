@@ -335,6 +335,9 @@ pub struct LintProfile {
     /// Pin pairs that must remain physically separate, with optional netlist separation.
     #[serde(default)]
     pub separate_wire_pairs: Vec<SeparateWirePair>,
+    /// Explicit title-block fields that must be present and non-empty on this schematic sheet.
+    #[serde(default)]
+    pub required_title_block_fields: BTreeSet<String>,
 }
 
 /// Immutable data shared by all project-profile rule implementations.

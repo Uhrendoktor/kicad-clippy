@@ -26,6 +26,55 @@ pub fn validate_profile_extensions(
 ) -> Vec<Diagnostic> {
     let mut diagnostics = validate_declared_frame_overlaps(profile, facts);
     diagnostics.extend(validate_required_no_connect_pins(profile, facts));
+    diagnostics.extend(validate_required_title_block_fields(profile, facts));
+    diagnostics
+}
+
+
+const SUPPORTED_TITLE_BLOCK_FIELDS: [&str; 13] = [
+    "title", "date", "rev", "company",
+    "comment1", "comment2", "comment3", "comment4", "comment5",
+    "comment6", "comment7", "comment8", "comment9",
+];
+
+/// Validates only the sheet title-block fields explicitly required by the project profile.
+///
+/// # Arguments
+///
+/// * `profile` — Profile declaring the required title-block field keys.
+/// * `facts` — Normalized title-block field values extracted from the current schematic document.
+///
+/// # Returns
+///
+/// SCH023 errors for unsupported keys, absent fields, and fields whose trimmed value is empty.
+fn validate_required_title_block_fields(
+    profile: &LintProfile,
+    facts: &SchematicFacts,
+) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+    for field in &profile.required_title_block_fields {
+        if !SUPPORTED_TITLE_BLOCK_FIELDS.contains(&field.as_str()) {
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch023,
+                Severity::Error,
+                format!("required_title_block_fields contains unsupported field {field:?}"),
+            ));
+            continue;
+        }
+        match facts.title_block_fields.get(field) {
+            Some(value) if !value.trim().is_empty() => {}
+            Some(_) => diagnostics.push(Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch023,
+                Severity::Error,
+                format!("sheet title-block field {field:?} is present but empty"),
+            )),
+            None => diagnostics.push(Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch023,
+                Severity::Error,
+                format!("required sheet title-block field {field:?} is missing"),
+            )),
+        }
+    }
     diagnostics
 }
 
@@ -507,5 +556,97 @@ mod tests {
             item.code == BuiltinRuleId::Sch015.as_str() && item.message.contains("U1.1")
         }));
         Ok(())
+    }
+}
+
+
+#[cfg(test)]
+/// Tests opt-in sheet title-block completeness contracts.
+mod title_block_tests {
+    use super::validate_required_title_block_fields;
+    use crate::{LintProfile, SchematicFacts};
+    use kicad_clippy_parser::SchematicDocument;
+
+    /// Parses a profile requiring the supplied title-block fields.
+    ///
+    /// # Arguments
+    ///
+    /// * `fields` — JSON array of title-block field keys required by the test profile.
+    ///
+    /// # Returns
+    ///
+    /// A valid profile with the supplied required title-block field set.
+    fn profile(fields: &str) -> LintProfile {
+        serde_json::from_str(&format!(
+            r#"{{"schema_version":1,"required_title_block_fields":{fields}}}"#
+        ))
+        .expect("profile fixture parses")
+    }
+
+    /// Reports missing title and revision fields requested by the project.
+    #[test]
+    fn missing_required_title_block_fields_are_reported() {
+        let schematic = SchematicDocument::from_text(
+            "missing-title-block.kicad_sch",
+            "(kicad_sch (title_block (company \"Acme\")))",
+        )
+        .expect("schematic fixture parses");
+        let facts = SchematicFacts::from_document(&schematic);
+        let diagnostics = validate_required_title_block_fields(
+            &profile(r#"["title","rev"]"#),
+            &facts,
+        );
+        assert_eq!(diagnostics.len(), 2);
+        assert!(diagnostics.iter().all(|item| item.code == "SCH023"));
+        assert!(diagnostics.iter().any(|item| item.message.contains("\"title\" is missing")));
+        assert!(diagnostics.iter().any(|item| item.message.contains("\"rev\" is missing")));
+    }
+
+    /// Accepts populated title-block values after trimming surrounding whitespace.
+    #[test]
+    fn populated_required_title_block_fields_are_accepted() {
+        let schematic = SchematicDocument::from_text(
+            "complete-title-block.kicad_sch",
+            "(kicad_sch (title_block (title \"Power board\") (date \"2026-11-20\") (rev \"A\")))",
+        )
+        .expect("schematic fixture parses");
+        let facts = SchematicFacts::from_document(&schematic);
+        let diagnostics = validate_required_title_block_fields(
+            &profile(r#"["title","date","rev"]"#),
+            &facts,
+        );
+        assert!(diagnostics.is_empty());
+    }
+
+    /// Rejects title-block fields that exist but contain only whitespace.
+    #[test]
+    fn blank_required_title_block_fields_are_rejected() {
+        let schematic = SchematicDocument::from_text(
+            "blank-title-block.kicad_sch",
+            "(kicad_sch (title_block (title \"   \")))",
+        )
+        .expect("schematic fixture parses");
+        let facts = SchematicFacts::from_document(&schematic);
+        let diagnostics = validate_required_title_block_fields(
+            &profile(r#"["title"]"#),
+            &facts,
+        );
+        assert_eq!(diagnostics.len(), 1);
+        assert!(diagnostics[0].message.contains("present but empty"));
+    }
+
+    /// Rejects unsupported title-block keys instead of treating them as valid empty fields.
+    #[test]
+    fn unsupported_title_block_fields_are_rejected() {
+        let schematic =
+            SchematicDocument::from_text("unsupported-title-field.kicad_sch", "(kicad_sch)")
+                .expect("schematic fixture parses");
+        let facts = SchematicFacts::from_document(&schematic);
+        let diagnostics = validate_required_title_block_fields(
+            &profile(r#"["sheet_number"]"#),
+            &facts,
+        );
+        assert_eq!(diagnostics.len(), 1);
+        assert!(diagnostics[0].message.contains("unsupported field"));
     }
 }
