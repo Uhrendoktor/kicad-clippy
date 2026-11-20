@@ -4,7 +4,7 @@
 
 A Rust-based linter for KiCad schematic files. `kicad-clippy` combines repository-specific schematic quality rules with KiCad's native Electrical Rules Checker (ERC). Native ERC remains the authority for electrical-rule findings; custom rules add layout, annotation, documentation, and project-profile checks.
 
-> **Project status: early development.** The current Rust implementation includes a lossless S-expression parser, shared source/diagnostic contracts, typed built-in rule identifiers, a deterministic extensible rule-pass engine, native ERC/netlist adapters, custom schematic rules SCH001–SCH026, board-level rules PCB001 and PCB009, project-profile checks, and a CLI. Some geometric and profile rules remain explicitly partial; see [rule coverage](docs/rules.md) and [scope and roadmap](docs/roadmap.md).
+> **Project status: early development.** The current Rust implementation includes a lossless S-expression parser, shared source/diagnostic contracts, typed built-in rule identifiers, a deterministic extensible rule-pass engine, native ERC/netlist adapters, custom schematic rules SCH001–SCH027, board-level rules PCB001 and PCB009, project-profile checks, and a CLI. Some geometric and profile rules remain explicitly partial; see [rule coverage](docs/rules.md) and [scope and roadmap](docs/roadmap.md).
 
 ## What it does
 
@@ -13,6 +13,7 @@ A Rust-based linter for KiCad schematic files. `kicad-clippy` combines repositor
 - Exports the flattened netlist for profile-declared pin/net contracts.
 - Runs built-in schematic rules, optional project-profile checks, decoupling placement checks, and required test-point pad exposure checks when a `.kicad_pcb` file is supplied.
 - Applies an opt-in project grid contract to symbol origins and label anchors, with pin, junction and wire-endpoint checks available explicitly.
+- Applies project label-scope policy checks for global-label allow/deny lists and required local/global/hierarchical scopes on the loaded sheet.
 - Applies an optional TOML rule policy with `default`, `strict`, or `advisory` presets and per-rule `allow`, `warn`, or `deny` overrides.
 - Checks overlaps between independently declared functional-group frames and enforces profile-declared no-connect pin markers.
 - Preserves source byte spans, physical coordinates, sheet paths and affected item UUIDs where available.

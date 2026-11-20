@@ -286,6 +286,32 @@ pub struct GridAlignmentIntent {
     pub exempt_coordinates_mm: Vec<[f64; 2]>,
 }
 
+/// Label scope enforced for a named schematic label.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LabelScopeKind {
+    /// Ordinary sheet-local label.
+    Local,
+    /// Project-wide global label.
+    Global,
+    /// Hierarchical label exposed at the current sheet boundary.
+    Hierarchical,
+}
+
+/// Project-specific policy for global-label use and required label scopes on the loaded sheet.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct LabelScopePolicy {
+    /// When present, the only global label names permitted on the loaded sheet. An empty set forbids all global labels.
+    #[serde(default)]
+    pub allowed_global_labels: Option<BTreeSet<String>>,
+    /// Global label names forbidden on the loaded sheet, even when an allow-list is configured.
+    #[serde(default)]
+    pub forbidden_global_labels: BTreeSet<String>,
+    /// Label names and their required scopes on the loaded sheet.
+    #[serde(default)]
+    pub required_label_scopes: BTreeMap<String, LabelScopeKind>,
+}
+
 /// Declared purpose and engineering constraints for one component.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct ComponentIntent {
@@ -436,6 +462,9 @@ pub struct LintProfile {
     /// Optional grid-alignment policy for selected symbol, pin, label and wire anchors.
     #[serde(default)]
     pub grid_alignment: Option<GridAlignmentIntent>,
+    /// Optional current-sheet label naming and scope policy.
+    #[serde(default)]
+    pub label_scope_policy: Option<LabelScopePolicy>,
 }
 
 /// Immutable data shared by all project-profile rule implementations.

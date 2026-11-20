@@ -207,7 +207,7 @@ struct BuiltinRuleMetadata {
 }
 
 /// Canonical metadata for the complete stable built-in rule set.
-const BUILTIN_RULE_METADATA: [BuiltinRuleMetadata; 28] = [
+const BUILTIN_RULE_METADATA: [BuiltinRuleMetadata; 29] = [
     BuiltinRuleMetadata {
         id: BuiltinRuleId::Sch001,
         name: "wire geometry",
@@ -465,6 +465,15 @@ const BUILTIN_RULE_METADATA: [BuiltinRuleMetadata; 28] = [
         explanation: "SCH026 checks only the object families named by the profile, defaulting to placed symbol origins and label anchors. Pin anchors, junctions and wire endpoints are opt-in to avoid duplicating native ERC reports by default. Component, pin, label and coordinate exceptions are explicit; the rule does not infer or modify KiCad project grid settings.",
         level: RuleLevel::Deny,
         tags: &["grid", "alignment", "layout", "profile"],
+    },
+    BuiltinRuleMetadata {
+        id: BuiltinRuleId::Sch027,
+        name: "label scope policy",
+        category: "connectivity-policy",
+        summary: "Enforces project-declared global-label allow/deny lists and required label scopes on the loaded schematic sheet.",
+        explanation: "SCH027 supports an optional global-label allow-list, a global-label deny-list, and required local/global/hierarchical scope for named labels. It inspects labels on the currently loaded sheet only; it does not resolve hierarchical parent/child sheet pins or reimplement KiCad's native label and net resolution.",
+        level: RuleLevel::Deny,
+        tags: &["labels", "scope", "global", "hierarchical", "profile"],
     },
 ];
 
