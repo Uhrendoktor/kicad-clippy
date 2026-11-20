@@ -207,7 +207,7 @@ struct BuiltinRuleMetadata {
 }
 
 /// Canonical metadata for the complete stable built-in rule set.
-const BUILTIN_RULE_METADATA: [BuiltinRuleMetadata; 29] = [
+const BUILTIN_RULE_METADATA: [BuiltinRuleMetadata; 30] = [
     BuiltinRuleMetadata {
         id: BuiltinRuleId::Sch001,
         name: "wire geometry",
@@ -474,6 +474,15 @@ const BUILTIN_RULE_METADATA: [BuiltinRuleMetadata; 29] = [
         explanation: "SCH027 supports an optional global-label allow-list, a global-label deny-list, and required local/global/hierarchical scope for named labels. It inspects labels on the currently loaded sheet only; it does not resolve hierarchical parent/child sheet pins or reimplement KiCad's native label and net resolution.",
         level: RuleLevel::Deny,
         tags: &["labels", "scope", "global", "hierarchical", "profile"],
+    },
+    BuiltinRuleMetadata {
+        id: BuiltinRuleId::Sch028,
+        name: "functional-frame title layout",
+        category: "schematic-layout",
+        summary: "Checks UUID-linked functional-frame title tabs, title containment, and minimum spacing between distinct declared frames.",
+        explanation: "SCH028 verifies that an explicitly declared rectangular title tab shares a non-zero edge segment with its functional frame and contains the declared title text-box rectangle. Optional minimum_frame_gap_mm uses Euclidean edge-to-edge distance between distinct group frames. Serialized rectangle bounds are used; exact text glyph clipping is not inferred.",
+        level: RuleLevel::Deny,
+        tags: &["frame", "title", "spacing", "layout", "profile"],
     },
 ];
 

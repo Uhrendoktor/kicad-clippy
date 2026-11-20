@@ -7,7 +7,7 @@ This page separates implemented functionality from the remaining migration work.
 - Single-crate Rust package with a strict inherited lint policy and locked dependencies.
 - Lossless KiCad schematic and PCB S-expression parser integration, UTF-8 byte spans, and terminal line/column rendering delegated to `miette`.
 - Shared diagnostic model with severity, source spans, and schematic coordinates.
-- Typed built-in rule IDs for SCH001–SCH027, PCB001 and PCB009, a corresponding descriptor catalogue, deterministic registry, and a deterministic `RulePass` engine with shared immutable analysis facts. An opt-in TOML policy applies named `default`, `strict`, or `advisory` presets and per-rule `allow`, `warn`, or `deny` overrides; no policy file preserves existing rule severities.
+- Typed built-in rule IDs for SCH001–SCH028, PCB001 and PCB009, a corresponding descriptor catalogue, deterministic registry, and a deterministic `RulePass` engine with shared immutable analysis facts. An opt-in TOML policy applies named `default`, `strict`, or `advisory` presets and per-rule `allow`, `warn`, or `deny` overrides; no policy file preserves existing rule severities.
 - KiCad CLI native ERC adapter, per-sheet JSON normalization, and flattened netlist export with component-pin-to-net lookup.
 - Text and JSON CLI output.
 - CI for formatting, strict Clippy, crate tests, documentation tests, release build, and a native KiCad ERC/netlist smoke test.
@@ -93,6 +93,7 @@ Safe automatic application must be restricted to machine-applicable edits. Layou
 - **SCH024** detects duplicate object UUIDs in the loaded `.kicad_sch` document. It does not yet traverse child sheets from the project root or aggregate duplicates across separate files.
 - **SCH026** checks only object families selected in the opt-in `grid_alignment` profile. Symbol origins and label anchors are the defaults; pin anchors, junctions and wire endpoints are opt-in to avoid duplicating native ERC checks. Exemptions are explicit and coordinate-specific; the profile does not change KiCad project grid settings.
 - **SCH027** applies opt-in global-label allow/deny lists and named local/global/hierarchical scopes to labels on the loaded sheet. Project-wide aggregation and parent/child sheet-pin validation remain future work; native KiCad label/net resolution remains authoritative.
+- **SCH028** checks only explicitly declared frame, title-tab and title-text-box UUID relationships. It verifies rectangular edge attachment and title-box containment, and may enforce a minimum Euclidean gap between distinct declared frames; exact glyph clipping remains unverified.
 - **PCB001** checks a declared target IC pad to decoupling capacitor pad-center distance, target-side board-net parity, and the capacitor return pad against its declared return net. It does not build a copper graph: track/arc/via/zone connectivity, path length, return-plane continuity, thermal capacity, and inductive loop quality remain unimplemented. Native PCB DRC remains authoritative for manufacturing/electrical design-rule checks.
 
 

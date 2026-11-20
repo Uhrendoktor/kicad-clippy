@@ -1,6 +1,6 @@
 # Built-in rules
 
-The current built-in catalogue defines stable schematic IDs SCH001–SCH027 plus PCB001 and PCB009 and separates reusable schematic checks from project-profile and board-level contracts.
+The current built-in catalogue defines stable schematic IDs SCH001–SCH028 plus PCB001 and PCB009 and separates reusable schematic checks from project-profile and board-level contracts.
 
 | ID | Historical rule | Rust status |
 | --- | --- | --- |
@@ -31,12 +31,13 @@ The current built-in catalogue defines stable schematic IDs SCH001–SCH027 plus
 | SCH025 | Required test-point coverage | Implemented opt-in: checks `required_test_point_nets` against declared `test_point` component pin mappings and exported netlist assignments |
 | SCH026 | Project grid alignment | Implemented opt-in: checks selected schematic anchors against configured grid spacing, origin and per-axis tolerance; defaults to symbol origins and label anchors, while pin/junction/wire-endpoint checks and object/coordinate exemptions are explicit |
 | SCH027 | Label scope policy | Implemented opt-in: applies global-label allow/deny lists and requires selected label names to use local/global/hierarchical scope on the currently loaded sheet; cross-sheet hierarchy validation remains future work |
+| SCH028 | Functional-frame title layout | Implemented opt-in: verifies UUID-linked rectangular title-tab attachment, title text-box containment within the tab, and configured minimum spacing between distinct group frames; title geometry uses serialized rectangles rather than exact font-rendering/clipping |
 | PCB001 | Decoupling pad proximity | Implemented partial: checks opt-in `decoupling.max_target_pad_distance_mm` between transformed target IC pad and capacitor target-pad centers, verifies capacitor return-pad agreement with `return_net`, and checks optional board/netlist parity; routed copper, vias, zones and return-loop checks remain future work |
 | PCB009 | Test-point pad exposure | Implemented partial, opt-in: verifies required test-point reference/pad numbers exist on the PCB, match the declared net, and include copper plus solder-mask layers; probe approach and fixture/enclosure access remain future work |
 
 ## Descriptor catalogue
 
-The core module exports `builtin_rule_registry()`, which builds one descriptive `RuleDescriptor` for every value in `BuiltinRuleId::ALL` (SCH001–SCH027, PCB001 and PCB009). A regression test keeps the typed identifiers and descriptor catalogue in one-to-one correspondence and requires each descriptor to include a category, summary, rationale, documentation link, and searchable tags. The registry is deterministic and rejects duplicate IDs.
+The core module exports `builtin_rule_registry()`, which builds one descriptive `RuleDescriptor` for every value in `BuiltinRuleId::ALL` (SCH001–SCH028, PCB001 and PCB009). A regression test keeps the typed identifiers and descriptor catalogue in one-to-one correspondence and requires each descriptor to include a category, summary, rationale, documentation link, and searchable tags. The registry is deterministic and rejects duplicate IDs.
 
 When `--policy FILE` is supplied, the CLI uses descriptor `default_level` values as the `default` preset and supports `strict` and `advisory` baselines plus per-rule `allow`, `warn`, and `deny` overrides. Without a policy file, existing rule-emitted severities remain unchanged. Policy changes apply only to built-in `SCHnnn` diagnostics; native KiCad ERC findings are not altered. See [rule policy](rule-policy.md).
 
@@ -84,5 +85,7 @@ PCB009 uses the same required-net and test-point pin declarations. With `--board
 SCH026 is opt-in through the profile root `grid_alignment`. The profile declares `spacing_mm`, optional `origin_mm` (default `[0, 0]`) and `tolerance_mm` (default 0.001 mm). When `targets` is omitted, only `symbol_origins` and `label_anchors` are checked. `pin_anchors`, `junctions` and `wire_endpoints` can be selected explicitly. Exemptions are scoped to component references, `REF.PIN` values, `kind:name` label selectors, or exact sheet coordinates. The rule checks each axis independently against its nearest grid coordinate; it does not modify project settings. Keeping electrical anchors opt-in avoids duplicating native ERC off-grid findings by default.
 
 SCH027 applies `label_scope_policy.allowed_global_labels`, `forbidden_global_labels`, and `required_label_scopes` to labels parsed from the currently loaded schematic. An omitted allow-list means unrestricted global labels; an explicit empty list forbids all global labels. Required names must be present and every matching instance must use the requested scope. This check does not aggregate labels across project sheets or resolve hierarchical parent-sheet pins; native KiCad net resolution remains authoritative.
+
+SCH028 is opt-in per group through `frame_uuid`, `frame_title_tab_uuid`, and `frame_title_text_box_uuid`. The tab must be a unique rectangular graphic sharing a non-zero edge segment with the declared frame; the title must be a unique text box whose serialized rectangle is contained by the tab. `minimum_frame_gap_mm` optionally requires a Euclidean edge-to-edge gap between distinct declared frames. Shared frame UUIDs are ignored as one frame. This does not use exact glyph bounds or prove final renderer clipping.
 
 See [rule expansion research](rule-expansion-research.md) for the larger schematic/PCB candidate catalogue, native-rule boundaries, source references and ordered hand-off backlog.

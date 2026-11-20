@@ -65,11 +65,13 @@ pub enum BuiltinRuleId {
     Sch026,
     /// Represents the `SCH027` rule: Enforces profile-declared global-label allow/deny lists and required label scopes on the loaded sheet.
     Sch027,
+    /// Represents the `SCH028` rule: Checks functional-frame title-tab attachment, title containment, and minimum group-frame spacing.
+    Sch028,
 }
 
 impl BuiltinRuleId {
     /// All built-in rules in stable identifier order.
-    pub const ALL: [Self; 29] = [
+    pub const ALL: [Self; 30] = [
         Self::Sch001,
         Self::Sch002,
         Self::Sch003,
@@ -99,6 +101,7 @@ impl BuiltinRuleId {
         Self::Pcb009,
         Self::Sch026,
         Self::Sch027,
+        Self::Sch028,
     ];
 
     /// Returns the canonical external code for this built-in rule, preserving the stable `SCHnnn` identifier.
@@ -138,6 +141,7 @@ impl BuiltinRuleId {
             Self::Pcb009 => "PCB009",
             Self::Sch026 => "SCH026",
             Self::Sch027 => "SCH027",
+            Self::Sch028 => "SCH028",
         }
     }
 

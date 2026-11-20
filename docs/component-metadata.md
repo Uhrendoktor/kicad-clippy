@@ -411,6 +411,79 @@ SCH027 treats an omitted `allowed_global_labels` as no allow-list restriction. A
 The rule checks the serialized label objects in the current `.kicad_sch` file only. It does not confirm that a hierarchical label is connected to a matching parent-sheet pin, aggregate global labels across other loaded project sheets, or reimplement KiCad's native label/net resolution. Native ERC and KiCad's exported netlist remain authoritative for actual connectivity.
 
 
+## Functional-frame title tabs and spacing
+
+A group can opt into a frame title tab by linking its UUID-backed objects:
+
+~~~json
+{
+  "schema_version": 1,
+  "groups": {
+    "power-input": {
+      "description_uuid": "group-description",
+      "frame_uuid": "group-frame",
+      "frame_title_tab_uuid": "group-title-tab",
+      "frame_title_text_box_uuid": "group-title-text",
+      "minimum_frame_gap_mm": 2.0
+    }
+  }
+}
+~~~
+
+SCH028 verifies that the referenced frame and tab are unique rectangular objects, that the tab shares a non-zero straight edge segment with the frame, and that the referenced title text-box rectangle is contained by the tab. The title-tab and title-text-box UUIDs must be supplied together, and a tab requires frame_uuid. minimum_frame_gap_mm is optional and checks the Euclidean edge-to-edge distance between distinct group frames; when two groups declare different thresholds, the larger threshold applies. A group that intentionally shares the same frame UUID with another group is not treated as a separate frame.
+
+The text-box check uses its serialized rectangle. It does not rasterize the final font or prove glyph-level clipping, nor does it infer group frames from unrelated rectangles. Unsupported or unresolved geometry is reported as unverified.
+
+
+## Project grid alignment
+
+A project may declare the schematic grid used for placement checks at the profile root:
+
+~~~json
+{
+  "schema_version": 1,
+  "grid_alignment": {
+    "spacing_mm": 2.54,
+    "origin_mm": [0.0, 0.0],
+    "tolerance_mm": 0.01,
+    "targets": ["symbol_origins", "label_anchors"],
+    "exempt_components": ["U3"],
+    "exempt_pins": ["J1.7"],
+    "exempt_labels": ["global:TEST"],
+    "exempt_coordinates_mm": [[25.4, 17.78]]
+  }
+}
+~~~
+
+SCH026 checks each selected coordinate against the nearest grid intersection independently on the X and Y axes. The maximum allowed deviation on either axis is `tolerance_mm`. The grid origin defaults to `[0, 0]`; the tolerance defaults to 0.001 mm. When `targets` is omitted, the rule checks placed symbol origins and label anchors only. Optional targets are `pin_anchors`, `junctions`, and `wire_endpoints`; these electrical geometry checks are not enabled by default because KiCad native ERC already reports some off-grid pin and wire conditions.
+
+Exemptions are explicit and scoped: `exempt_components` contains symbol references, `exempt_pins` contains `REF.PIN` identifiers, `exempt_labels` contains `kind:name` selectors, and `exempt_coordinates_mm` contains exact sheet-space anchors. Exemptions do not disable checks for other objects. SCH026 reports the actual off-grid anchor and its nearest grid point. It does not read or modify the KiCad project grid setting; spacing and origin are project-profile values.
+
+
+## Label scope policy
+
+A project can explicitly constrain global labels and require selected label names to use a particular scope on the currently loaded sheet:
+
+~~~json
+{
+  "schema_version": 1,
+  "label_scope_policy": {
+    "allowed_global_labels": ["GND", "VBUS"],
+    "forbidden_global_labels": ["DEBUG_INTERNAL"],
+    "required_label_scopes": {
+      "RESET": "hierarchical",
+      "SDA": "hierarchical",
+      "VDD_SENSE": "local"
+    }
+  }
+}
+~~~
+
+SCH027 treats an omitted `allowed_global_labels` as no allow-list restriction. An explicitly empty list permits no global labels. `forbidden_global_labels` always rejects the named global labels. `required_label_scopes` maps a label name to `local`, `global`, or `hierarchical`; every matching instance on the loaded sheet must use the requested scope, and a required label that is absent from that sheet is reported.
+
+The rule checks the serialized label objects in the current `.kicad_sch` file only. It does not confirm that a hierarchical label is connected to a matching parent-sheet pin, aggregate global labels across other loaded project sheets, or reimplement KiCad's native label/net resolution. Native ERC and KiCad's exported netlist remain authoritative for actual connectivity.
+
+
 ## Project grid alignment
 
 A project may declare the schematic grid used for placement checks at the profile root:

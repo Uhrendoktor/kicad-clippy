@@ -1,8 +1,8 @@
 # Rule expansion research and implementation backlog
 
-**Status:** living design backlog for PR #27/#28 and follow-on implementation through PR #32.
+**Status:** living design backlog for PR #27/#28 and follow-on implementation through PR #35.
 **Integration baseline:** PR #27 was merged into `main` as squash commit `9fb78ebe9924c7d557c5ca0b1a400a12761283cc` on 2026-11-19. PR #28 is rebased directly onto `main`; the candidates below remain future work unless explicitly marked implemented.  
-**Scope distinction:** the current implementation parses both `.kicad_sch` and `.kicad_pcb` S-expressions. SCH023–SCH027, PCB001 and the first PCB009 test-point exposure contract are implemented as described below. PCB002–PCB008 and PCB010–PCB012 remain research candidates; full PCB path/zone/stackup analysis still requires a copper connectivity model and dedicated board fixtures.
+**Scope distinction:** the current implementation parses both `.kicad_sch` and `.kicad_pcb` S-expressions. SCH023–SCH028, PCB001 and the first PCB009 test-point exposure contract are implemented as described below. PCB002–PCB008 and PCB010–PCB012 remain research candidates; full PCB path/zone/stackup analysis still requires a copper connectivity model and dedicated board fixtures.
 
 ## 1. Design principles
 
@@ -90,7 +90,7 @@ These are candidates for separate identifiers or separately configurable child r
 | Candidate | Suggested scope | Configuration/evidence required | Priority |
 |---|---|---|---|
 | Functional-frame overlap | Overlap between explicitly declared group frames | Group frame_uuid; implemented under SCH009 in this PR | Done here |
-| Frame title/tab geometry | Tab attached to frame, title inside tab, title text not clipped, frame-to-frame gap | Explicit frame/title UUIDs and renderer-aware bounds | P1 |
+| Frame title/tab geometry | Tab attached to frame, title inside tab, title text not clipped, frame-to-frame gap | SCH028 checks explicit frame/tab/title UUIDs, rectangular edge attachment, title-box containment and optional minimum Euclidean frame gap; exact glyph clipping remains unverified | Implemented (partial text geometry) |
 | Grid alignment | Symbol origins, pins, labels, junctions and wire endpoints on project grid | SCH026 is implemented with explicit spacing/origin/tolerance, symbol-origin and label-anchor defaults, opt-in pins/junctions/wire endpoints, and narrowly scoped exemptions; the profile does not duplicate native ERC anchor checks by default | Done (opt-in project contract) |
 | Hierarchical UUID uniqueness | Duplicate object UUIDs across all sheets and hierarchy paths | SCH024 detects duplicates inside the currently loaded schematic document; traversing and aggregating UUIDs across every hierarchical child sheet remains future work | P1 (partial) |
 | Label-scope policy | Forbid/allow global labels; require named labels to use local/global/hierarchical scope on the loaded sheet | SCH027 implements global-label allow-list/deny-list and required named-label scopes on the loaded sheet. Parent/child sheet-boundary checks and project-wide aggregation remain future work; do not reimplement native name resolution | Done (partial) |
@@ -214,3 +214,8 @@ SCH025 is profile-driven: every critical net listed in `required_test_point_nets
 ### Implemented label-scope boundary
 
 SCH027 applies `label_scope_policy.allowed_global_labels`, `forbidden_global_labels`, and `required_label_scopes` to labels parsed from the currently loaded schematic. An omitted allow-list means unrestricted global labels; an explicit empty list forbids all global labels. Required names must be present and every matching instance must use the requested scope. This check does not aggregate labels across project sheets or resolve hierarchical parent-sheet pins; native KiCad net resolution remains authoritative.
+
+
+### Implemented frame-title geometry boundary
+
+SCH028 is opt-in per functional group. The profile can link a frame rectangle, an attached rectangular title tab, and a title text box by UUID. The rule requires a non-zero shared edge segment between the tab and frame and checks that the serialized title text-box rectangle remains within the tab. A group may also declare `minimum_frame_gap_mm`; distinct declared group frames are checked by minimum Euclidean rectangle-to-rectangle distance. It does not infer which arbitrary rectangles are functional frames, simulate exact glyph rendering/clipping, or replace a full schematic renderer.

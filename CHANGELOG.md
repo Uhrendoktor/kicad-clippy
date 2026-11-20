@@ -4,6 +4,8 @@ Notable changes are documented here. This project is in early development and ha
 
 ## Unreleased
 
+- Added SCH028 profile-driven functional-frame title-tab attachment, title-box containment, and minimum Euclidean spacing between distinct declared group frames.
+
 - Added SCH027 profile-driven label-scope policy with global-label allow/deny lists and required local/global/hierarchical scopes on the currently loaded sheet; cross-sheet hierarchy resolution remains owned by KiCad.
 
 - Added SCH026 opt-in project grid alignment for selected symbol, pin, label, junction and wire anchors. Symbol origins and label anchors are the default targets; pin/junction/wire checks require explicit selection and support scoped exemptions.
