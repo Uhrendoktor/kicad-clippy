@@ -69,6 +69,14 @@ mod sch022;
 #[path = "profile_rules/sch025.rs"]
 mod sch025;
 
+/// Checks `SCH026` configurable alignment of selected schematic anchors to a project grid.
+#[path = "profile_rules/sch026.rs"]
+mod sch026;
+
+/// Checks `SCH028` UUID-linked functional-frame title tabs, title containment, and frame spacing.
+#[path = "profile_rules/sch028.rs"]
+mod sch028;
+
 /// Currently supported project-profile schema version.
 const SUPPORTED_PROFILE_SCHEMA_VERSION: u32 = 1;
 /// Minimum number of distinct pins required in a group contract.
@@ -205,6 +213,109 @@ pub struct SeparateWirePair {
     pub netlist_separate: bool,
 }
 
+/// Default coordinate tolerance for comparing schematic anchors with the configured grid, in millimetres.
+const DEFAULT_GRID_ALIGNMENT_TOLERANCE_MM: f64 = 0.001;
+
+/// A schematic object family selected for project grid-alignment validation.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GridAlignmentTarget {
+    /// Placed component symbol origins.
+    SymbolOrigins,
+    /// Transformed embedded-symbol pin anchors.
+    PinAnchors,
+    /// Local, global and hierarchical label anchors.
+    LabelAnchors,
+    /// Explicit schematic junction anchors.
+    Junctions,
+    /// Both endpoints of each physical wire segment.
+    WireEndpoints,
+}
+
+/// Returns the default grid targets: symbol origins and label anchors.
+///
+/// # Returns
+///
+/// A set containing symbol-origin and label-anchor targets, leaving electrical anchors opt-in.
+fn default_grid_alignment_targets() -> BTreeSet<GridAlignmentTarget> {
+    BTreeSet::from([
+        GridAlignmentTarget::SymbolOrigins,
+        GridAlignmentTarget::LabelAnchors,
+    ])
+}
+
+/// Returns the default grid origin at the sheet coordinate origin.
+///
+/// # Returns
+///
+/// The two-dimensional sheet coordinate origin, [0.0, 0.0], in millimetres.
+const fn default_grid_origin_mm() -> [f64; 2] {
+    [0.0, 0.0]
+}
+
+/// Returns the default coordinate tolerance for grid comparisons, in millimetres.
+///
+/// # Returns
+///
+/// The shared 0.001 mm coordinate tolerance.
+const fn default_grid_alignment_tolerance_mm() -> f64 {
+    DEFAULT_GRID_ALIGNMENT_TOLERANCE_MM
+}
+
+/// Opt-in project contract for aligning selected schematic anchors to a regular grid.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct GridAlignmentIntent {
+    /// Positive grid spacing in millimetres.
+    pub spacing_mm: f64,
+    /// Sheet-space grid origin as [x, y], in millimetres.
+    #[serde(default = "default_grid_origin_mm")]
+    pub origin_mm: [f64; 2],
+    /// Maximum allowed per-axis distance from the nearest grid coordinate, in millimetres.
+    #[serde(default = "default_grid_alignment_tolerance_mm")]
+    pub tolerance_mm: f64,
+    /// Object families to check. Defaults to symbol origins and label anchors; pin/junction/wire checks are explicit opt-ins.
+    #[serde(default = "default_grid_alignment_targets")]
+    pub targets: BTreeSet<GridAlignmentTarget>,
+    /// Component references exempt from symbol-origin grid checks.
+    #[serde(default)]
+    pub exempt_components: BTreeSet<String>,
+    /// Pin references in REF.PIN form exempt from pin-anchor grid checks.
+    #[serde(default)]
+    pub exempt_pins: BTreeSet<String>,
+    /// Label selectors in kind:name form, such as local:VDD, exempt from label-anchor grid checks.
+    #[serde(default)]
+    pub exempt_labels: BTreeSet<String>,
+    /// Exact sheet-space anchors exempt from coordinate checks, within the geometry equality tolerance.
+    #[serde(default)]
+    pub exempt_coordinates_mm: Vec<[f64; 2]>,
+}
+
+/// Label scope enforced for a named schematic label.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LabelScopeKind {
+    /// Ordinary sheet-local label.
+    Local,
+    /// Project-wide global label.
+    Global,
+    /// Hierarchical label exposed at the current sheet boundary.
+    Hierarchical,
+}
+
+/// Project-specific policy for global-label use and required label scopes on the loaded sheet.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct LabelScopePolicy {
+    /// When present, the only global label names permitted on the loaded sheet. An empty set forbids all global labels.
+    #[serde(default)]
+    pub allowed_global_labels: Option<BTreeSet<String>>,
+    /// Global label names forbidden on the loaded sheet, even when an allow-list is configured.
+    #[serde(default)]
+    pub forbidden_global_labels: BTreeSet<String>,
+    /// Label names and their required scopes on the loaded sheet.
+    #[serde(default)]
+    pub required_label_scopes: BTreeMap<String, LabelScopeKind>,
+}
+
 /// Declared purpose and engineering constraints for one component.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct ComponentIntent {
@@ -289,6 +400,15 @@ pub struct GroupIntent {
     /// Optional UUID of the schematic rectangle that encloses the functional group.
     #[serde(default)]
     pub frame_uuid: Option<String>,
+    /// Optional UUID of the rectangular title tab attached to this group's frame.
+    #[serde(default)]
+    pub frame_title_tab_uuid: Option<String>,
+    /// Optional UUID of the title text box contained by the declared frame title tab.
+    #[serde(default)]
+    pub frame_title_text_box_uuid: Option<String>,
+    /// Optional minimum Euclidean gap between this frame and other distinct declared group frames, in millimetres.
+    #[serde(default)]
+    pub minimum_frame_gap_mm: Option<f64>,
     /// Optional required clearance from group member origins and its description box to the frame edge.
     #[serde(default)]
     pub minimum_frame_clearance_mm: Option<f64>,
@@ -352,6 +472,12 @@ pub struct LintProfile {
     /// Named critical nets that must have at least one profile-declared test-point pin.
     #[serde(default)]
     pub required_test_point_nets: BTreeSet<String>,
+    /// Optional project grid contract for selected schematic anchor families.
+    #[serde(default)]
+    pub grid_alignment: Option<GridAlignmentIntent>,
+    /// Optional policy for global-label usage and required label scopes on this sheet.
+    #[serde(default)]
+    pub label_scope_policy: Option<LabelScopePolicy>,
 }
 
 /// Immutable data shared by all project-profile rule implementations.
@@ -472,6 +598,8 @@ impl LintProfile {
         diagnostics.extend(sch020::Sch020.check(&context));
         diagnostics.extend(sch022::Sch022.check(&context));
         diagnostics.extend(sch025::Sch025.check(&context));
+        diagnostics.extend(sch026::Sch026.check(&context));
+        diagnostics.extend(sch028::Sch028.check(&context));
         diagnostics.extend(sch014::Sch014.check(&context));
         diagnostics.extend(sch010::Sch010.check(&context));
         diagnostics.extend(sch017::Sch017.check(&context));
