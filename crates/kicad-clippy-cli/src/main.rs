@@ -63,7 +63,7 @@ enum Commands {
         /// Optional TOML policy for built-in rule levels and named presets.
         #[arg(long, value_name = "FILE")]
         policy: Option<PathBuf>,
-        /// Optional KiCad PCB file for board-level checks such as PCB001 (requires --profile).
+        /// Optional `KiCad` PCB file for board-level checks such as PCB001 (requires --profile).
         #[arg(long, value_name = "FILE")]
         board: Option<PathBuf>,
         /// Require complete component-intent metadata (requires --profile).
@@ -348,16 +348,13 @@ fn lint(schematic_path: &Path, options: LintOptions<'_>) -> Result<ExitCode, Cli
             )
             .diagnostics,
     );
-    if let Some(path) = profile_path {
-        let mut profile = LintProfile::from_path(path)?;
-        if strict {
-            profile.mode = ProfileMode::Strict;
-        }
-        diagnostics.extend(match board.as_ref() {
-            Some(board) => profile.validate_with_board(&schematic, netlist.as_ref(), board),
-            None => profile.validate_with_netlist(&schematic, netlist.as_ref()),
-        });
-    }
+    diagnostics.extend(validate_profile_inputs(
+        profile_path.as_deref(),
+        &schematic,
+        netlist.as_ref(),
+        board.as_ref(),
+        strict,
+    )?);
     diagnostics = apply_optional_rule_policy(policy_path, diagnostics)?;
     let summary = Summary::from_diagnostics(&diagnostics);
     let output = LintOutput {
@@ -385,6 +382,44 @@ fn lint(schematic_path: &Path, options: LintOptions<'_>) -> Result<ExitCode, Cli
         Ok(ExitCode::SUCCESS)
     }
 }
+
+/// Loads the optional component profile and validates it against schematic and board evidence.
+///
+/// # Arguments
+///
+/// * `profile_path` — Optional JSON project-profile path; `None` disables profile checks.
+/// * `schematic` — Parsed schematic containing the placed symbols and embedded pin geometry.
+/// * `netlist` — Optional exported schematic netlist used by logical component-pin contracts.
+/// * `board` — Optional parsed PCB used by board-level pad-distance contracts.
+/// * `strict` — Whether the loaded profile must enforce strict component metadata completeness.
+///
+/// # Returns
+///
+/// Profile diagnostics, including PCB001 findings when board-distance metadata is declared.
+///
+/// # Errors
+///
+/// Returns a profile I/O or decoding error when the specified JSON file cannot be loaded or validated.
+fn validate_profile_inputs(
+    profile_path: Option<&Path>,
+    schematic: &SchematicDocument,
+    netlist: Option<&Netlist>,
+    board: Option<&BoardDocument>,
+    strict: bool,
+) -> Result<Vec<Diagnostic>, CliError> {
+    let Some(profile_path) = profile_path else {
+        return Ok(Vec::new());
+    };
+    let mut profile = LintProfile::from_path(profile_path)?;
+    if strict {
+        profile.mode = ProfileMode::Strict;
+    }
+    Ok(board.map_or_else(
+        || profile.validate_with_netlist(schematic, netlist),
+        |board| profile.validate_with_board(schematic, netlist, board),
+    ))
+}
+
 /// Reads and decodes an optional rule policy written in TOML.
 ///
 /// # Arguments
