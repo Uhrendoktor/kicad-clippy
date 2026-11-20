@@ -302,15 +302,19 @@ pub(crate) fn validate_decoupling_pad_distances(
                         ),
                     ));
                 }
-                if return_pad.and_then(|pad| pad.net_name.as_deref()) != Some(expected_return_net) {
-                    diagnostics.push(Diagnostic::for_builtin_rule(
-                        BuiltinRuleId::Pcb001,
-                        Severity::Error,
-                        format!(
-                            "{reference} board return pad {} does not match schematic netlist net {expected_return_net:?}",
-                            contract.return_terminal
-                        ),
-                    ));
+                if let Some(actual_return_net) =
+                    return_pad.and_then(|pad| pad.net_name.as_deref())
+                {
+                    if actual_return_net != expected_return_net {
+                        diagnostics.push(Diagnostic::for_builtin_rule(
+                            BuiltinRuleId::Pcb001,
+                            Severity::Error,
+                            format!(
+                                "{reference} board return pad {} is on {actual_return_net:?}, but the schematic netlist assigns {expected_return_net:?}",
+                                contract.return_terminal
+                            ),
+                        ));
+                    }
                 }
             } else {
                 diagnostics.push(Diagnostic::for_builtin_rule(
@@ -336,7 +340,12 @@ pub(crate) fn validate_decoupling_pad_distances(
                     ));
                     continue;
                 }
-                (Some(expected_target), _) if target_pad.net_name.as_deref() != Some(expected_target) => {
+                (Some(expected_target), _)
+                    if target_pad
+                        .net_name
+                        .as_deref()
+                        .is_some_and(|actual| actual != expected_target) =>
+                {
                     diagnostics.push(Diagnostic::for_builtin_rule(
                         BuiltinRuleId::Pcb001,
                         Severity::Error,
@@ -348,7 +357,10 @@ pub(crate) fn validate_decoupling_pad_distances(
                     continue;
                 }
                 (Some(_), Some(expected_capacitor))
-                    if capacitor_pad.net_name.as_deref() != Some(expected_capacitor) =>
+                    if capacitor_pad
+                        .net_name
+                        .as_deref()
+                        .is_some_and(|actual| actual != expected_capacitor) =>
                 {
                     diagnostics.push(Diagnostic::for_builtin_rule(
                         BuiltinRuleId::Pcb001,
@@ -533,6 +545,117 @@ fn number(node: &Node) -> Option<f64> {
 mod tests {
     use super::BoardFacts;
     use kicad_clippy_parser::BoardDocument;
+
+    /// Builds an exported netlist containing only the supplied decoupling target and terminal mappings.
+    ///
+    /// # Arguments
+    ///
+    /// * `target_net` — Optional exported net assignment for IC pad U1.1.
+    /// * `capacitor_net` — Optional exported net assignment for capacitor target pad C1.1.
+    /// * `return_net` — Optional exported net assignment for capacitor return pad C1.2.
+    ///
+    /// # Returns
+    ///
+    /// A flattened netlist with exactly the pin-to-net assignments provided by the test.
+    fn decoupling_netlist(
+        target_net: Option<&str>,
+        capacitor_net: Option<&str>,
+        return_net: Option<&str>,
+    ) -> kicad_clippy_erc::Netlist {
+        let mut pin_nets = std::collections::BTreeMap::new();
+        for (reference, pin, net) in [
+            ("U1", "1", target_net),
+            ("C1", "1", capacitor_net),
+            ("C1", "2", return_net),
+        ] {
+            if let Some(net) = net {
+                pin_nets.insert(
+                    kicad_clippy_erc::PinRef {
+                        reference: reference.to_owned(),
+                        pin: pin.to_owned(),
+                    },
+                    net.to_owned(),
+                );
+            }
+        }
+        kicad_clippy_erc::Netlist {
+            pin_nets,
+            ..kicad_clippy_erc::Netlist::default()
+        }
+    }
+
+    /// Builds a board whose capacitor return pad is absent while target-side pad nets remain available.
+    ///
+    /// # Returns
+    ///
+    /// A parsed PCB with U1.1 and C1.1 assigned to VDD but without C1.2 board geometry.
+    fn board_without_return_pad() -> BoardDocument {
+        BoardDocument::from_text(
+            "missing-return-pad.kicad_pcb",
+            r#"(kicad_pcb
+                (footprint "Package:IC" (layer "F.Cu") (at 100 50 90)
+                    (property "Reference" "U1")
+                    (pad "1" smd rect (at 2 0) (size 1 1) (layers "F.Cu") (net 1 "VDD"))
+                )
+                (footprint "Package:Capacitor" (layer "F.Cu") (at 104 50 90)
+                    (property "Reference" "C1")
+                    (pad "1" smd rect (at 2 0) (size 1 1) (layers "F.Cu") (net 1 "VDD"))
+                )
+            )"#,
+        )
+        .expect("board fixture parses")
+    }
+
+    /// Does not treat an absent capacitor return pad as a confirmed netlist mismatch.
+    #[test]
+    fn pcb001_keeps_missing_return_pad_unverified_when_netlist_exists() {
+        let diagnostics = validate_decoupling_pad_distances(
+            &profile(10.0),
+            &board_without_return_pad(),
+            Some(&decoupling_netlist(Some("VDD"), Some("VDD"), Some("GND"))),
+        );
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "PCB001"
+                && item.severity == kicad_clippy_core::Severity::Warning
+                && item.message.contains("return-pad net is unverified")
+        }));
+        assert!(!diagnostics.iter().any(|item| {
+            item.code == "PCB001" && item.message.contains("board return pad 2 is on")
+        }));
+    }
+
+    /// Does not treat a missing board net assignment as a confirmed target-pad net mismatch.
+    #[test]
+    fn pcb001_keeps_missing_target_pad_net_unverified_when_netlist_exists() {
+        let board = BoardDocument::from_text(
+            "missing-target-net.kicad_pcb",
+            r#"(kicad_pcb
+                (footprint "Package:IC" (layer "F.Cu") (at 100 50 90)
+                    (property "Reference" "U1")
+                    (pad "1" smd rect (at 2 0) (size 1 1) (layers "F.Cu"))
+                )
+                (footprint "Package:Capacitor" (layer "F.Cu") (at 104 50 90)
+                    (property "Reference" "C1")
+                    (pad "1" smd rect (at 2 0) (size 1 1) (layers "F.Cu") (net 1 "VDD"))
+                    (pad "2" smd rect (at 0 2) (size 1 1) (layers "F.Cu") (net 2 "GND"))
+                )
+            )"#,
+        )
+        .expect("board fixture parses");
+        let diagnostics = validate_decoupling_pad_distances(
+            &profile(10.0),
+            &board,
+            Some(&decoupling_netlist(Some("VDD"), Some("VDD"), Some("GND"))),
+        );
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "PCB001"
+                && item.severity == kicad_clippy_core::Severity::Warning
+                && item.message.contains("pad net consistency is unverified")
+        }));
+        assert!(!diagnostics.iter().any(|item| {
+            item.code == "PCB001" && item.message.contains("differs from schematic netlist net")
+        }));
+    }
 
     /// Resolves front-side and back-side pad anchors after their footprint transforms.
     #[test]
