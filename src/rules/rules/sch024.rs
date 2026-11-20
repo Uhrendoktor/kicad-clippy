@@ -422,7 +422,10 @@ mod tests {
 
         let directory = tempfile::tempdir().expect("temporary project directory is created");
         let root_path = directory.path().join("root.kicad_sch");
-        let child_path = directory.path().join("external").join("absolute_child.kicad_sch");
+        let child_path = directory
+            .path()
+            .join("external")
+            .join("absolute_child.kicad_sch");
         fs::create_dir_all(child_path.parent().expect("child has a parent directory"))
             .expect("external child directory is created");
         fs::write(
