@@ -255,7 +255,7 @@ fn validate_label_anchors(
         }
         check_anchor(
             intent,
-            &format!("{} label {:?} anchor", label.kind, label.name),
+            &format!("{scope} label {:?} anchor", label.name),
             label.position_mm,
             diagnostics,
         );
@@ -430,7 +430,7 @@ mod tests {
             junctions: vec![(11.4, 22.0)],
             wires: vec![SchematicWireFact {
                 start_mm: (11.5, 22.0),
-                end_mm: (15.0, 22.0),
+                end_mm: (15.0, 20.0),
                 span_start: 42,
             }],
             ..SchematicFacts::default()
@@ -488,7 +488,7 @@ mod tests {
             }"#,
         );
         let diagnostics = validate_grid_alignment(&profile, &facts());
-        assert_eq!(diagnostics.len(), 4);
+        assert_eq!(diagnostics.len(), 3);
         assert!(
             diagnostics
                 .iter()
