@@ -5,7 +5,7 @@ import re
 import sys
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE_ROOT = ROOT / "crates"
+SOURCE_ROOT = ROOT / "src"
 
 PLACEHOLDER_DOC_PATTERNS = (
     r"behaves as required",

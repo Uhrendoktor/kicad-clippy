@@ -30,7 +30,7 @@ Parser and built-in rule mode can run without KiCad using `--skip-erc`, provided
 ```sh
 git clone https://github.com/Uhrendoktor/kicad-clippy.git
 cd kicad-clippy
-cargo build --workspace --locked
+cargo build --locked
 ```
 
 ## Usage
@@ -46,25 +46,26 @@ kicad-clippy lint path/to/design.kicad_sch --policy kicad-clippy.toml
 
 Select the KiCad CLI executable explicitly with `--kicad-cli PATH` or the `KICAD_CLI` environment variable. Without an explicit path, the CLI searches for `kicad-cli-nightly` and then `kicad-cli` on `PATH`.
 
-## Workspace layout
+## Code layout
 
-| Crate | Responsibility |
+The project is one Rust package. Its library keeps the implementation organized
+into focused modules, and the binary delegates to the shared CLI implementation.
+
+| Module | Responsibility |
 | --- | --- |
-| `kicad-clippy-core` | Source spans, diagnostics, typed built-in rule IDs and metadata registry. |
-| `kicad-clippy-parser` | Lossless KiCad schematic and PCB S-expression parsing. |
-| `kicad-clippy-erc` | KiCad CLI ERC and flattened-netlist adapters. |
-| `kicad-clippy-rules` | Built-in schematic rules and project-profile contracts. |
-| `kicad-clippy` | Command-line interface and output formatting. |
-
-See [architecture](docs/architecture.md), [architecture research](docs/architecture-research.md), [rule development](docs/rule-development.md), [rule policy](docs/rule-policy.md), and [rule coverage](docs/rules.md).
+| core | Source spans, diagnostics, typed built-in rule IDs, and rule metadata. |
+| parser | Lossless KiCad schematic and PCB S-expression parsing. |
+| erc | KiCad CLI ERC and flattened-netlist adapters. |
+| rules | Built-in schematic rules and project-profile contracts. |
+| cli | Command-line parsing, lint orchestration, and output formatting. |
 
 ## Development quality gates
 
 ```sh
 cargo fmt --all -- --check
-cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
-cargo test --workspace --all-features --locked
-cargo test --workspace --doc --locked
+cargo clippy --all-targets --all-features --locked -- -D warnings
+cargo test --all-features --locked
+cargo test --doc --locked
 ```
 
 See [contributing](CONTRIBUTING.md) for the development workflow.

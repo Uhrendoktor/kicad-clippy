@@ -21,7 +21,7 @@ Use the open-ended string namespace only for external diagnostics such as `KICAD
 
 ## Metadata and registration
 
-`RuleDescriptor` records the stable ID and explanatory metadata: name, category, summary, explanation, default level, optional documentation URL and tags. `builtin_rule_registry()` in `kicad-clippy-core` populates a deterministic descriptor for every value in `BuiltinRuleId::ALL` (SCH001–SCH022); it is the canonical built-in metadata catalogue. The completeness test ensures that adding a typed built-in ID without a descriptor fails validation. `RuleRegistry` is deterministic and rejects duplicate IDs.
+`RuleDescriptor` records the stable ID and explanatory metadata: name, category, summary, explanation, default level, optional documentation URL and tags. `builtin_rule_registry()` in `core` populates a deterministic descriptor for every value in `BuiltinRuleId::ALL` (SCH001–SCH022); it is the canonical built-in metadata catalogue. The completeness test ensures that adding a typed built-in ID without a descriptor fails validation. `RuleRegistry` is deterministic and rejects duplicate IDs.
 
 When a policy file is supplied, `default_level` provides the baseline for the `default` preset. The `strict` and `advisory` presets replace that baseline, and explicit per-rule levels take precedence. Without a policy file, descriptor metadata does not change runtime diagnostics; the pre-existing rule-emitted severities remain in force. See [rule policy](rule-policy.md) for the TOML schema and CLI behavior.
 
@@ -51,11 +51,11 @@ Rules receive immutable context and return normalized diagnostics. They do not m
 
 ## External extensions
 
-The in-process `RulePass` extension point is available to Rust crates that can link to `kicad-clippy-rules`. It is not yet a versioned third-party compatibility contract: the trait/context, options, analysis dependencies, diagnostic compatibility policy and resource limits still need formalization. Dynamic libraries or WASM rule packs remain deferred until those contracts are stable.
+The in-process `RulePass` extension point is available to Rust crates that can link to `rules`. It is not yet a versioned third-party compatibility contract: the trait/context, options, analysis dependencies, diagnostic compatibility policy and resource limits still need formalization. Dynamic libraries or WASM rule packs remain deferred until those contracts are stable.
 
 ## Source layout
 
-Every built-in identifier has a dedicated implementation file. Schematic geometry and label checks live in `crates/kicad-clippy-rules/src/rules/schNNN.rs`; profile-backed connectivity, group, component-intent, and decoupling checks live in `crates/kicad-clippy-rules/src/profile_rules/schNNN.rs`. The shared `generic.rs` module owns normalized schematic facts and common geometry helpers, while `metadata.rs` owns the profile data model and validation orchestration. Keep rule-specific diagnostics and helpers in the matching `schNNN.rs` module, and move a helper to the shared parent only when more than one rule depends on it.
+Every built-in identifier has a dedicated implementation file. Schematic geometry and label checks live in `src/rules/rules/schNNN.rs`; profile-backed connectivity, group, component-intent, and decoupling checks live in `src/rules/profile_rules/schNNN.rs`. The shared `generic.rs` module owns normalized schematic facts and common geometry helpers, while `metadata.rs` owns the profile data model and validation orchestration. Keep rule-specific diagnostics and helpers in the matching `schNNN.rs` module, and move a helper to the shared parent only when more than one rule depends on it.
 
 ## Tests required for each rule
 

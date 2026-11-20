@@ -18,7 +18,7 @@ Include:
 Install Rust stable with Cargo, rustfmt, and Clippy. Install KiCad if the change touches native ERC execution.
 
 ```sh
-cargo build --workspace --locked
+cargo build --locked
 ```
 
 ## Required local checks
@@ -27,12 +27,12 @@ Run these commands from the repository root:
 
 ```sh
 cargo fmt --all -- --check
-cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
-cargo test --workspace --all-features --locked
-cargo test --workspace --doc --locked
+cargo clippy --all-targets --all-features --locked -- -D warnings
+cargo test --all-features --locked
+cargo test --doc --locked
 ```
 
-All workspace crates inherit the lint policy from the root manifest. Do not add crate-local lint overrides merely to silence a warning. Fix the cause or document a narrowly scoped exception with a clear reason.
+All crate modules inherit the lint policy from the root manifest. Do not add crate-local lint overrides merely to silence a warning. Fix the cause or document a narrowly scoped exception with a clear reason.
 
 ## Rust conventions
 
