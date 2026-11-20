@@ -4,6 +4,8 @@ Notable changes are documented here. This project is in early development and ha
 
 ## Unreleased
 
+- Added SCH026 opt-in project grid alignment for selected symbol, pin, label, junction and wire anchors. Symbol origins and label anchors are the default targets; pin/junction/wire checks require explicit selection and support scoped exemptions.
+
 - Added SCH025 opt-in critical-net test-point coverage using `required_test_point_nets` and explicit test-point component pin maps; exported netlists verify the schematic assignments.
 - Added PCB009 test-point pad-exposure verification for placed reference/pad numbers, board-net assignment, and copper plus solder-mask layer presence. Physical probe/fixture reach remains out of scope.
 
