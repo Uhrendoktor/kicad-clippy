@@ -386,7 +386,7 @@ mod tests {
     };
     use crate::rules::{GridAlignmentIntent, GridAlignmentTarget, LintProfile};
     use crate::core::Severity;
-    use kicad_clippy_parser::SchematicDocument;
+    use crate::parser::SchematicDocument;
     use std::collections::BTreeSet;
 
     /// Parses a version-one profile with the supplied grid alignment object.
