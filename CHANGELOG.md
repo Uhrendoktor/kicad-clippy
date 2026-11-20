@@ -4,6 +4,8 @@ Notable changes are documented here. This project is in early development and ha
 
 ## Unreleased
 
+- SCH006 now supports profile-declared transformed body-to-body minimum clearance and horizontal/vertical member-origin alignment; unsupported curve-based body outlines are reported as unverified.
+- SCH010 now supports per-component/per-field maximum gaps from estimated Reference/Value glyph rectangles to supported transformed symbol bodies.
 - Split SCH004 physical wire topology from SCH014 logical netlist contracts. `common_pin_groups.netlist_connected` and `separate_wire_pairs.netlist_separate` now emit SCH014 findings; SCH004 no longer consumes exported netlist facts.
 - SCH015 now records effective embedded pin electrical types, honors selected pin alternates, and rejects redundant `required_no_connect_pins` declarations for intrinsically unconnected library pins.
 

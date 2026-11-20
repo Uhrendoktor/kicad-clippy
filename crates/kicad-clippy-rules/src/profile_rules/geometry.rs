@@ -47,7 +47,7 @@ pub(super) enum BodyShape {
 ///
 /// # Arguments
 ///
-/// * `reference` — Placed component reference designator.
+/// * `reference` — Reference designator used to select transformed primitives belonging to this placed symbol.
 /// * `facts` — Normalized schematic facts containing transformed symbol primitives.
 ///
 /// # Returns
@@ -146,12 +146,29 @@ pub(super) fn minimum_body_to_bounds_gap(
     minimum.is_finite().then_some(minimum.max(0.0))
 }
 
-/// Returns whether at least one supported shape is available and no curve geometry is unresolved.
+/// Checks whether a body geometry set is complete enough for reliable distance measurements.
+///
+/// # Arguments
+///
+/// * `body` — Resolved shapes collected for one component, including its unsupported-geometry marker.
+///
+/// # Returns
+///
+/// `true` when the body has at least one supported shape and no unresolved primitives.
 fn body_is_complete(body: &BodyGeometrySet) -> bool {
     !body.has_unsupported_geometry && !body.shapes.is_empty()
 }
 
-/// Returns the non-negative edge-to-edge gap between two supported body shapes.
+/// Calculates edge-to-edge clearance between two supported body shapes, including their strokes.
+///
+/// # Arguments
+///
+/// * `first` — First circle, polygon, or open path whose boundary contributes to the clearance.
+/// * `second` — Second circle, polygon, or open path whose boundary contributes to the clearance.
+///
+/// # Returns
+///
+/// The non-negative distance between the two supported shapes after subtracting stroke half-widths.
 fn shape_gap(first: &BodyShape, second: &BodyShape) -> f64 {
     match (first, second) {
         (
@@ -259,7 +276,16 @@ fn shape_gap(first: &BodyShape, second: &BodyShape) -> f64 {
     }
 }
 
-/// Returns the distance from a point to a polygonal area, including zero for containment.
+/// Measures the distance from a point to a polygonal area, including zero for containment.
+///
+/// # Arguments
+///
+/// * `point` — Schematic-coordinate point whose distance to the polygonal area is measured.
+/// * `polygon` — Ordered vertices of the filled polygon in schematic millimetres.
+///
+/// # Returns
+///
+/// The shortest non-negative distance from the point to the polygonal area or its boundary.
 fn point_polygon_gap(point: (f64, f64), polygon: &[(f64, f64)]) -> f64 {
     if point_in_polygon(point, polygon) {
         return 0.0;
@@ -269,7 +295,16 @@ fn point_polygon_gap(point: (f64, f64), polygon: &[(f64, f64)]) -> f64 {
         .fold(f64::INFINITY, f64::min)
 }
 
-/// Returns the edge-to-edge gap between two polygonal areas, treating overlap and containment as zero.
+/// Measures the edge-to-edge gap between two polygonal areas, treating overlap and containment as zero.
+///
+/// # Arguments
+///
+/// * `first` — Ordered vertices of the first filled polygon in schematic millimetres.
+/// * `second` — Ordered vertices of the second filled polygon in schematic millimetres.
+///
+/// # Returns
+///
+/// The shortest non-negative distance between polygon boundaries, or zero when their areas overlap.
 fn polygon_polygon_gap(first: &[(f64, f64)], second: &[(f64, f64)]) -> f64 {
     if first.is_empty() || second.is_empty() {
         return f64::INFINITY;
@@ -288,7 +323,16 @@ fn polygon_polygon_gap(first: &[(f64, f64)], second: &[(f64, f64)]) -> f64 {
         .fold(f64::INFINITY, f64::min)
 }
 
-/// Returns the edge-to-edge gap between an open path and a polygonal area.
+/// Measures the edge-to-edge gap between an open path and a polygonal area.
+///
+/// # Arguments
+///
+/// * `path` — Ordered vertices of the stroked open path in schematic millimetres.
+/// * `polygon` — Ordered vertices of the filled polygonal area in schematic millimetres.
+///
+/// # Returns
+///
+/// The shortest non-negative distance between the path and polygon, or zero when they intersect.
 fn path_polygon_gap(path: &[(f64, f64)], polygon: &[(f64, f64)]) -> f64 {
     if path.len() < 2 || polygon.len() < 3 {
         return f64::INFINITY;
@@ -308,7 +352,16 @@ fn path_polygon_gap(path: &[(f64, f64)], polygon: &[(f64, f64)]) -> f64 {
         .fold(f64::INFINITY, f64::min)
 }
 
-/// Returns the minimum edge-to-edge distance between two open polylines.
+/// Measures the minimum edge-to-edge distance between two open polylines.
+///
+/// # Arguments
+///
+/// * `first` — Ordered vertices of the first open path in schematic millimetres.
+/// * `second` — Ordered vertices of the second open path in schematic millimetres.
+///
+/// # Returns
+///
+/// The shortest non-negative distance between any segment pair from the two paths.
 fn path_path_gap(first: &[(f64, f64)], second: &[(f64, f64)]) -> f64 {
     if first.len() < 2 || second.len() < 2 {
         return f64::INFINITY;
@@ -328,14 +381,31 @@ fn path_path_gap(first: &[(f64, f64)], second: &[(f64, f64)]) -> f64 {
         .fold(f64::INFINITY, f64::min)
 }
 
-/// Returns the shortest distance between a point and an open polyline.
+/// Measures the shortest distance between a point and an open polyline.
+///
+/// # Arguments
+///
+/// * `point` — Schematic-coordinate point whose distance to the path is measured.
+/// * `path` — Ordered vertices defining the open path in schematic millimetres.
+///
+/// # Returns
+///
+/// The shortest Euclidean distance from the point to any segment of the path.
 fn point_path_distance(point: (f64, f64), path: &[(f64, f64)]) -> f64 {
     path.windows(2)
         .map(|segment| point_segment_distance(point, segment[0], segment[1]))
         .fold(f64::INFINITY, f64::min)
 }
 
-/// Iterates the closed edges of a polygon with at least three vertices.
+/// Iterates each edge, including the closing edge, of a polygon with at least three vertices.
+///
+/// # Arguments
+///
+/// * `points` — Ordered polygon vertices in schematic millimetres.
+///
+/// # Returns
+///
+/// An iterator over each consecutive vertex pair and the final-to-first closing edge.
 fn polygon_edges(points: &[(f64, f64)]) -> impl Iterator<Item = ((f64, f64), (f64, f64))> + '_ {
     points
         .iter()
@@ -343,7 +413,16 @@ fn polygon_edges(points: &[(f64, f64)]) -> impl Iterator<Item = ((f64, f64), (f6
         .map(move |(index, point)| (*point, points[(index + 1) % points.len()]))
 }
 
-/// Returns whether a point is inside or on the boundary of a polygon.
+/// Tests whether a point lies inside or on the boundary of a polygon.
+///
+/// # Arguments
+///
+/// * `point` — Schematic-coordinate point to test against the polygon.
+/// * `polygon` — Ordered vertices defining the filled polygon in schematic millimetres.
+///
+/// # Returns
+///
+/// `true` when the point is inside the polygon or within the configured boundary tolerance.
 fn point_in_polygon(point: (f64, f64), polygon: &[(f64, f64)]) -> bool {
     if polygon.len() < 3 {
         return false;
@@ -366,7 +445,17 @@ fn point_in_polygon(point: (f64, f64), polygon: &[(f64, f64)]) -> bool {
     inside
 }
 
-/// Returns the shortest Euclidean distance between a point and a finite segment.
+/// Measures the shortest Euclidean distance between a point and a finite segment.
+///
+/// # Arguments
+///
+/// * `point` — Schematic-coordinate point whose distance to the segment is measured.
+/// * `start` — First endpoint of the finite segment in schematic millimetres.
+/// * `end` — Second endpoint of the finite segment in schematic millimetres.
+///
+/// # Returns
+///
+/// The shortest Euclidean distance from the point to the finite segment.
 fn point_segment_distance(point: (f64, f64), start: (f64, f64), end: (f64, f64)) -> f64 {
     let delta_x = end.0 - start.0;
     let delta_y = end.1 - start.1;
@@ -384,7 +473,18 @@ fn point_segment_distance(point: (f64, f64), start: (f64, f64), end: (f64, f64))
     point_distance(point, nearest)
 }
 
-/// Returns the minimum distance between two finite segments, or zero when they intersect.
+/// Measures the minimum distance between two finite segments, returning zero at an intersection.
+///
+/// # Arguments
+///
+/// * `first_start` — First endpoint of the first segment in schematic millimetres.
+/// * `first_end` — Second endpoint of the first segment in schematic millimetres.
+/// * `second_start` — First endpoint of the second segment in schematic millimetres.
+/// * `second_end` — Second endpoint of the second segment in schematic millimetres.
+///
+/// # Returns
+///
+/// The shortest Euclidean distance between the finite segments, or zero when they intersect.
 fn segment_segment_distance(
     first_start: (f64, f64),
     first_end: (f64, f64),
@@ -400,7 +500,18 @@ fn segment_segment_distance(
         .min(point_segment_distance(second_end, first_start, first_end))
 }
 
-/// Returns whether two finite segments intersect, including collinear and tolerance-close endpoints.
+/// Tests whether two finite segments intersect, including collinear and tolerance-close endpoints.
+///
+/// # Arguments
+///
+/// * `first_start` — First endpoint of the first segment in schematic millimetres.
+/// * `first_end` — Second endpoint of the first segment in schematic millimetres.
+/// * `second_start` — First endpoint of the second segment in schematic millimetres.
+/// * `second_end` — Second endpoint of the second segment in schematic millimetres.
+///
+/// # Returns
+///
+/// `true` when the finite segments cross, overlap, or touch within geometry tolerance.
 fn segments_intersect(
     first_start: (f64, f64),
     first_end: (f64, f64),
@@ -418,7 +529,17 @@ fn segments_intersect(
         || (second_second == 0 && point_on_segment(first_end, second_start, second_end))
 }
 
-/// Returns the tolerance-aware orientation sign of three points.
+/// Determines the tolerance-aware orientation of a point relative to a directed segment.
+///
+/// # Arguments
+///
+/// * `start` — First endpoint of the directed segment in schematic millimetres.
+/// * `end` — Second endpoint of the directed segment in schematic millimetres.
+/// * `point` — Schematic-coordinate point whose orientation is classified.
+///
+/// # Returns
+///
+/// A negative, zero, or positive sign for clockwise, collinear, or counter-clockwise orientation.
 fn orientation_sign(start: (f64, f64), end: (f64, f64), point: (f64, f64)) -> i8 {
     let cross = (end.0 - start.0) * (point.1 - start.1) - (end.1 - start.1) * (point.0 - start.0);
     let scale = point_distance(start, end).max(1.0);
@@ -431,7 +552,17 @@ fn orientation_sign(start: (f64, f64), end: (f64, f64), point: (f64, f64)) -> i8
     }
 }
 
-/// Returns whether a point lies within the axis-aligned bounds of a segment.
+/// Checks whether a point lies within the axis-aligned bounds of a segment.
+///
+/// # Arguments
+///
+/// * `point` — Schematic-coordinate point to test against the segment bounds.
+/// * `start` — First endpoint of the finite segment in schematic millimetres.
+/// * `end` — Second endpoint of the finite segment in schematic millimetres.
+///
+/// # Returns
+///
+/// `true` when both point coordinates lie within the segment's tolerance-expanded bounds.
 fn point_on_segment(point: (f64, f64), start: (f64, f64), end: (f64, f64)) -> bool {
     point.0 >= start.0.min(end.0) - GEOMETRY_TOLERANCE_MM
         && point.0 <= start.0.max(end.0) + GEOMETRY_TOLERANCE_MM
@@ -439,12 +570,29 @@ fn point_on_segment(point: (f64, f64), start: (f64, f64), end: (f64, f64)) -> bo
         && point.1 <= start.1.max(end.1) + GEOMETRY_TOLERANCE_MM
 }
 
-/// Returns the Euclidean distance between two schematic points.
+/// Measures the Euclidean distance between two schematic points.
+///
+/// # Arguments
+///
+/// * `first` — First schematic-coordinate point in millimetres.
+/// * `second` — Second schematic-coordinate point in millimetres.
+///
+/// # Returns
+///
+/// The Euclidean separation between the two points in millimetres.
 fn point_distance(first: (f64, f64), second: (f64, f64)) -> f64 {
     (first.0 - second.0).hypot(first.1 - second.1)
 }
 
-/// Returns whether both coordinates of a schematic point are finite.
+/// Checks whether both coordinates of a schematic point are finite.
+///
+/// # Arguments
+///
+/// * `point` — Schematic-coordinate pair being checked for finite numeric values.
+///
+/// # Returns
+///
+/// `true` when both coordinates are finite floating-point numbers.
 fn finite_point(point: (f64, f64)) -> bool {
     point.0.is_finite() && point.1.is_finite()
 }

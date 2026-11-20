@@ -101,6 +101,17 @@ pub(super) fn validate_group_spacing(
 }
 
 /// Checks minimum Euclidean spacing between the symbol origins of every member pair.
+///
+/// # Arguments
+///
+/// * `group_id` — Stable group key used to identify the profile declaration in emitted diagnostics.
+/// * `group` — Group declaration containing the member references whose origins must be separated.
+/// * `facts` — Normalized placed-component facts containing resolved symbol origins.
+/// * `minimum_spacing` — Required minimum Euclidean distance between any two member origins, in millimetres.
+///
+/// # Returns
+///
+/// SCH006 diagnostics for missing origins or member pairs that violate the configured minimum spacing.
 fn validate_member_origin_spacing(
     group_id: &str,
     group: &GroupIntent,
@@ -149,6 +160,17 @@ fn validate_member_origin_spacing(
 }
 
 /// Checks minimum edge-to-edge clearance between supported body shapes for every member pair.
+///
+/// # Arguments
+///
+/// * `group_id` — Stable group key used to identify the profile declaration in emitted diagnostics.
+/// * `group` — Group declaration containing the member references whose body outlines are compared.
+/// * `facts` — Normalized transformed symbol primitives collected from the selected library units.
+/// * `minimum_clearance` — Required minimum edge-to-edge distance between member bodies, in millimetres.
+///
+/// # Returns
+///
+/// SCH006 diagnostics for insufficient body clearance or incomplete body geometry reported as unverified.
 fn validate_member_body_clearance(
     group_id: &str,
     group: &GroupIntent,
@@ -201,6 +223,18 @@ fn validate_member_body_clearance(
 }
 
 /// Checks that member origins share the declared horizontal row or vertical column.
+///
+/// # Arguments
+///
+/// * `group_id` — Stable group key used to identify the profile declaration in emitted diagnostics.
+/// * `group` — Group declaration containing the component references to align.
+/// * `facts` — Normalized placed-component facts containing resolved symbol origins.
+/// * `axis` — Horizontal-row or vertical-column direction selected by the group profile.
+/// * `tolerance_mm` — Maximum permitted perpendicular origin deviation from the shared row or column.
+///
+/// # Returns
+///
+/// SCH006 diagnostics for member origins that exceed the configured alignment tolerance or remain unresolved.
 fn validate_member_alignment(
     group_id: &str,
     group: &GroupIntent,
@@ -297,6 +331,16 @@ mod tests {
     use kicad_clippy_core::BuiltinRuleId;
 
     /// Creates a transformed rectangular outline for one placed component.
+    ///
+    /// # Arguments
+    ///
+    /// * `reference` — Placed component reference designator assigned to the generated outline.
+    /// * `left` — Left X coordinate of the rectangle in schematic millimetres.
+    /// * `right` — Right X coordinate of the rectangle in schematic millimetres.
+    ///
+    /// # Returns
+    ///
+    /// A closed four-vertex body primitive spanning the requested X coordinates.
     fn rectangle(reference: &str, left: f64, right: f64) -> SchematicPrimitiveFact {
         SchematicPrimitiveFact {
             reference: reference.to_owned(),

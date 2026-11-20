@@ -78,9 +78,9 @@ A label can join separate physical islands in KiCad's logical netlist; it must n
 
 ### 3.3 SCH010 and SCH006: placement constraints
 
-- Extend SCH010 with per-reference/per-field maximum distance from the actual symbol-body outline. A field-origin-to-symbol-origin radius is not an adequate substitute; use transformed body geometry and visible glyph bounds. Permit documented exceptions (for example, a long value placed deliberately on a clear side).
-- Extend SCH006 beyond symbol-origin spacing to body-to-body clearance, aligned rows/axes, adjacency/cluster compactness and reference-specific spacing. Keep electrical/mechanical courtyard constraints in PCB DRC.
-- Keep text bounds explicitly approximate until the KiCad renderer can provide exact glyph extents; do not describe estimated bounds as exact font rendering.
+- Implemented SCH010 per-component/per-field maximum gaps from estimated Reference/Value glyph rectangles to selected-unit transformed body geometry. Per-reference settings provide documented exceptions (for example, a long value placed deliberately on a clear side); exact renderer glyph extents remain future work.
+- Implemented SCH006 body-to-body clearance and horizontal/vertical member-origin alignment in addition to the existing symbol-origin spacing contract. Adjacency/cluster compactness and reference-specific spacing remain future work. Keep electrical/mechanical courtyard constraints in PCB DRC.
+- Keep text bounds explicitly approximate until the KiCad renderer can provide exact glyph extents; do not describe estimated bounds as exact font rendering. Arc/Bézier symbol body outlines remain unverified until a suitable transformed curve-distance model is added.
 
 ## 4. Schematic rules that merit their own checks
 

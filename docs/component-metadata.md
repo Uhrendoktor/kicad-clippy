@@ -163,7 +163,7 @@ The netlist adapter verifies actual target-pin and return-terminal net membershi
 
 ## Functional group documentation
 
-Profiles can also declare functional groups. Each group identifies its component members, the members requiring documentation, the UUID of its rendered description text box, and evidence. It can also set `kicad_group_uuid` to bind the profile contract to a native KiCad group object, `frame_uuid` to reference a drawn schematic rectangle that encloses group members, `minimum_frame_clearance_mm` to require a minimum inset from the frame edges for each member symbol origin and the group description text box, and `minimum_member_origin_spacing_mm` to declare a minimum Euclidean distance between member symbol origins, and `wire_length_budget_mm` to cap the total length of wire segments wholly contained by that frame. For each documented component, the function and rationale phrases must appear in that text box.
+Profiles can also declare functional groups. Each group identifies its component members, the members requiring documentation, the UUID of its rendered description text box, and evidence. It can also set `kicad_group_uuid` to bind the profile contract to a native KiCad group object, `frame_uuid` to reference a drawn schematic rectangle that encloses group members, `minimum_frame_clearance_mm` to require an inset from the frame edges, `minimum_member_origin_spacing_mm` to require Euclidean separation between member origins, `minimum_member_body_clearance_mm` to require edge-to-edge clearance between transformed member outlines, `alignment_axis` with `alignment_tolerance_mm` to keep member origins in a horizontal row or vertical column, and `wire_length_budget_mm` to cap the total length of wire segments wholly contained by the frame. For each documented component, the function and rationale phrases must appear in that text box.
 
     {
       "groups": {
@@ -173,6 +173,10 @@ Profiles can also declare functional groups. Each group identifies its component
           "description_uuid": "00000000-0000-0000-0000-000000000000",
           "kicad_group_uuid": "11111111-1111-4111-8111-111111111111",
           "frame_uuid": "22222222-2222-4222-8222-222222222222",
+          "minimum_member_origin_spacing_mm": 10.0,
+          "minimum_member_body_clearance_mm": 1.5,
+          "alignment_axis": "horizontal",
+          "alignment_tolerance_mm": 0.5,
           "wire_length_budget_mm": 95.0,
           "component_purposes": {
             "R1": {
@@ -189,7 +193,34 @@ Profiles can also declare functional groups. Each group identifies its component
       }
     }
 
+When `minimum_member_origin_spacing_mm` is configured, SCH006 compares every member-origin pair. When `minimum_member_body_clearance_mm` is configured, it compares selected-unit transformed body outlines, including each primitive's stroke half-width. Supported bodies include closed rectangles/polygons, circles, and open line paths. Missing outlines and bodies containing unsupported arc/Bézier curves produce an unverified warning rather than a guessed distance. The minimum body clearance must be finite and non-negative.
+
+Set `alignment_axis` to `horizontal` to keep member-origin Y coordinates within `alignment_tolerance_mm`, or `vertical` to keep X coordinates within that tolerance. The axis and tolerance must be supplied together; the tolerance must be finite and non-negative.
+
 A group is valid when it cites a document/page/figure or a reviewed screenshot asset, its members exist in the schematic, its description text box UUID resolves, and all component-purpose phrases are present. When `kicad_group_uuid` is set, SCH007 also resolves the native KiCad group and verifies that its placed-symbol members match the profile's component references in both directions. The native group check is opt-in so existing version-1 profiles without this field remain valid. When `frame_uuid` is set, SCH009 resolves the top-level KiCad rectangle with that UUID and checks each declared member's symbol origin, resolved embedded pin coordinates, estimated visible property-field glyph rectangles, description text-box bounds, selected-unit embedded symbol primitives, physical wire segments attached to member pins, visible glyph bounds for labels on those same wire components, and other text-box annotations that overlap the frame. Arc and Bézier primitive paths use the existing 0.01 mm flattened approximation with stroke half-width margin; label text bounds use estimated NewStroke glyph rectangles. Labels never create physical wire edges. Member-pin-connected wire islands are treated as group wiring, and any other wire segment that intersects the frame is also checked. Labels whose anchors/glyphs overlap the frame and top-level plain-text glyph bounds overlapping the frame are checked even when they are not attached to member pins; labels never create physical wire edges. Free-standing labels/wires outside the frame, unsupported raster image encodings, other non-text-box annotation types, and unresolvable symbol transforms remain outside the rule's coverage. Top-level vector graphics and embedded PNG/JPEG images are checked when their geometry can be resolved; bitmap bounds use the stored scale, image pixel dimensions and PPI/file-version compatibility rules. Finite non-cardinal rotations are applied to embedded pin and primitive coordinates; SCH005 still skips non-cardinal pin-axis checks. When `minimum_frame_clearance_mm` is set, SCH012 applies the configured inset to these same object families as well as member origins, resolved pins, estimated property glyphs and the group description text box. SCH006 separately checks minimum pairwise origin spacing. SCH016 uses the same frame to sum the lengths of wire segments whose two endpoints both lie inside it, then divides by `wire_length_budget_mm`. A score above 1.0 emits a warning with the actual total, budget, and normalized score. Segments crossing the frame edge are excluded; the budget must be finite and positive. This ports the original SCH017/SCH020 group-documentation intent while adding native grouping and frame-origin contracts.
+
+## Component field-to-body spacing
+
+A component can opt into maximum gaps for its visible Reference and/or Value fields by setting `max_field_body_gap_mm`:
+
+~~~json
+{
+  "components": {
+    "U1": {
+      "kind": "integrated_circuit",
+      "role": "controller",
+      "function": "Control logic",
+      "rationale": "Owns the system control function",
+      "max_field_body_gap_mm": {
+        "Reference": 4.0,
+        "Value": 6.0
+      }
+    }
+  }
+}
+~~~
+
+Each value is a finite, non-negative distance in millimetres. SCH010 measures from the estimated visible glyph rectangle to the component's own selected-unit transformed body geometry; a glyph rectangle that intersects or lies inside the body has zero gap. The map is per component and per field, so a deliberately long Value field can have a different allowance from its Reference field. Only `Reference` and `Value` are supported. Missing body geometry or a body containing arc/Bézier primitives is reported as unverified; the rule does not estimate a curve outline from its control points. Glyph rectangles remain NewStroke-based estimates, not exact KiCad renderer bounds.
 
 ## Netlist-backed decoupling verification
 

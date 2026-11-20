@@ -15,8 +15,8 @@ use std::collections::BTreeMap;
 ///
 /// # Arguments
 ///
-/// * `reference` — Placed component reference designator.
-/// * `maximum_gaps_mm` — Per-field maximum visible-glyph-to-body distances.
+/// * `reference` — Reference designator used to match one placed symbol's transformed outline and visible fields.
+/// * `maximum_gaps_mm` — Map from each visible field name to its maximum estimated glyph-rectangle-to-body distance in millimetres.
 /// * `facts` — Normalized transformed body primitives and visible field bounds.
 ///
 /// # Returns
@@ -135,6 +135,14 @@ mod tests {
     use std::collections::BTreeMap;
 
     /// Creates a simple rectangular body and one visible field for SCH010 gap tests.
+    ///
+    /// # Arguments
+    ///
+    /// * `field_bounds` — Left, top, right, and bottom coordinates of the estimated field glyph rectangle.
+    ///
+    /// # Returns
+    ///
+    /// Normalized facts containing the U1 rectangular body and its visible Reference field.
     fn body_and_field_facts(field_bounds: (f64, f64, f64, f64)) -> SchematicFacts {
         let mut facts = SchematicFacts::default();
         facts.symbol_primitives.push(SchematicPrimitiveFact {
