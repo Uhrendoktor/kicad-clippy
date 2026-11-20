@@ -182,13 +182,14 @@ fn shape_gap(first: &BodyShape, second: &BodyShape) -> f64 {
                 radius_mm: second_radius,
                 stroke_half_mm: second_stroke,
             },
-        ) => {
-            point_distance(*first_center, *second_center)
-                - first_radius
-                - second_radius
-                - first_stroke
-                - second_stroke
-        }
+        ) => circle_circle_shape_gap(
+            *first_center,
+            *first_radius,
+            *first_stroke,
+            *second_center,
+            *second_radius,
+            *second_stroke,
+        ),
         (
             BodyShape::Circle {
                 center_mm,
@@ -210,7 +211,13 @@ fn shape_gap(first: &BodyShape, second: &BodyShape) -> f64 {
                 radius_mm,
                 stroke_half_mm,
             },
-        ) => point_polygon_gap(*center_mm, points_mm) - radius_mm - stroke_half_mm - polygon_stroke,
+        ) => circle_polygon_shape_gap(
+            *center_mm,
+            *radius_mm,
+            *stroke_half_mm,
+            points_mm,
+            *polygon_stroke,
+        ),
         (
             BodyShape::Circle {
                 center_mm,
@@ -232,7 +239,13 @@ fn shape_gap(first: &BodyShape, second: &BodyShape) -> f64 {
                 radius_mm,
                 stroke_half_mm,
             },
-        ) => point_path_distance(*center_mm, points_mm) - radius_mm - stroke_half_mm - path_stroke,
+        ) => circle_path_shape_gap(
+            *center_mm,
+            *radius_mm,
+            *stroke_half_mm,
+            points_mm,
+            *path_stroke,
+        ),
         (
             BodyShape::Polygon {
                 points_mm: first_points,
@@ -242,7 +255,12 @@ fn shape_gap(first: &BodyShape, second: &BodyShape) -> f64 {
                 points_mm: second_points,
                 stroke_half_mm: second_stroke,
             },
-        ) => polygon_polygon_gap(first_points, second_points) - first_stroke - second_stroke,
+        ) => polygon_polygon_shape_gap(
+            first_points,
+            *first_stroke,
+            second_points,
+            *second_stroke,
+        ),
         (
             BodyShape::Polygon {
                 points_mm: polygon,
@@ -262,7 +280,7 @@ fn shape_gap(first: &BodyShape, second: &BodyShape) -> f64 {
                 points_mm: polygon,
                 stroke_half_mm: polygon_stroke,
             },
-        ) => path_polygon_gap(path, polygon) - polygon_stroke - path_stroke,
+        ) => polygon_path_shape_gap(path, *path_stroke, polygon, *polygon_stroke),
         (
             BodyShape::Path {
                 points_mm: first_points,
@@ -272,8 +290,146 @@ fn shape_gap(first: &BodyShape, second: &BodyShape) -> f64 {
                 points_mm: second_points,
                 stroke_half_mm: second_stroke,
             },
-        ) => path_path_gap(first_points, second_points) - first_stroke - second_stroke,
+        ) => path_path_shape_gap(first_points, *first_stroke, second_points, *second_stroke),
     }
+}
+
+/// Measures clearance between two stroked circular body primitives.
+///
+/// # Arguments
+///
+/// * `first_center` — Center of the first circle in schematic millimetres.
+/// * `first_radius` — Radius of the first circle in schematic millimetres.
+/// * `first_stroke` — Half the first circle's stroke width.
+/// * `second_center` — Center of the second circle in schematic millimetres.
+/// * `second_radius` — Radius of the second circle in schematic millimetres.
+/// * `second_stroke` — Half the second circle's stroke width.
+///
+/// # Returns
+///
+/// The non-negative edge-to-edge distance between the circles.
+fn circle_circle_shape_gap(
+    first_center: (f64, f64),
+    first_radius: f64,
+    first_stroke: f64,
+    second_center: (f64, f64),
+    second_radius: f64,
+    second_stroke: f64,
+) -> f64 {
+    point_distance(first_center, second_center)
+        - first_radius
+        - second_radius
+        - first_stroke
+        - second_stroke
+}
+
+/// Measures clearance between a stroked circle and a stroked polygon.
+///
+/// # Arguments
+///
+/// * `center` — Circle center in schematic millimetres.
+/// * `radius` — Circle radius in schematic millimetres.
+/// * `circle_stroke` — Half the circle stroke width.
+/// * `polygon` — Ordered polygon vertices in schematic millimetres.
+/// * `polygon_stroke` — Half the polygon stroke width.
+///
+/// # Returns
+///
+/// The non-negative edge-to-edge distance between the circle and polygon.
+fn circle_polygon_shape_gap(
+    center: (f64, f64),
+    radius: f64,
+    circle_stroke: f64,
+    polygon: &[(f64, f64)],
+    polygon_stroke: f64,
+) -> f64 {
+    point_polygon_gap(center, polygon) - radius - circle_stroke - polygon_stroke
+}
+
+/// Measures clearance between a stroked circle and a stroked open path.
+///
+/// # Arguments
+///
+/// * `center` — Circle center in schematic millimetres.
+/// * `radius` — Circle radius in schematic millimetres.
+/// * `circle_stroke` — Half the circle stroke width.
+/// * `path` — Ordered open-path points in schematic millimetres.
+/// * `path_stroke` — Half the path stroke width.
+///
+/// # Returns
+///
+/// The non-negative edge-to-edge distance between the circle and path.
+fn circle_path_shape_gap(
+    center: (f64, f64),
+    radius: f64,
+    circle_stroke: f64,
+    path: &[(f64, f64)],
+    path_stroke: f64,
+) -> f64 {
+    point_path_distance(center, path) - radius - circle_stroke - path_stroke
+}
+
+/// Measures clearance between two stroked polygons.
+///
+/// # Arguments
+///
+/// * `first` — First polygon's ordered vertices.
+/// * `first_stroke` — Half the first polygon stroke width.
+/// * `second` — Second polygon's ordered vertices.
+/// * `second_stroke` — Half the second polygon stroke width.
+///
+/// # Returns
+///
+/// The non-negative edge-to-edge distance between the polygonal areas.
+fn polygon_polygon_shape_gap(
+    first: &[(f64, f64)],
+    first_stroke: f64,
+    second: &[(f64, f64)],
+    second_stroke: f64,
+) -> f64 {
+    polygon_polygon_gap(first, second) - first_stroke - second_stroke
+}
+
+/// Measures clearance between a stroked polygon and a stroked open path.
+///
+/// # Arguments
+///
+/// * `path` — Ordered open-path points in schematic millimetres.
+/// * `path_stroke` — Half the path stroke width.
+/// * `polygon` — Ordered polygon vertices in schematic millimetres.
+/// * `polygon_stroke` — Half the polygon stroke width.
+///
+/// # Returns
+///
+/// The non-negative edge-to-edge distance between the polygon and path.
+fn polygon_path_shape_gap(
+    path: &[(f64, f64)],
+    path_stroke: f64,
+    polygon: &[(f64, f64)],
+    polygon_stroke: f64,
+) -> f64 {
+    path_polygon_gap(path, polygon) - polygon_stroke - path_stroke
+}
+
+/// Measures clearance between two stroked open paths.
+///
+/// # Arguments
+///
+/// * `first` — First path's ordered points in schematic millimetres.
+/// * `first_stroke` — Half the first path stroke width.
+/// * `second` — Second path's ordered points in schematic millimetres.
+/// * `second_stroke` — Half the second path stroke width.
+///
+/// # Returns
+///
+/// The non-negative edge-to-edge distance between the paths.
+fn path_path_shape_gap(
+    first: &[(f64, f64)],
+    first_stroke: f64,
+    second: &[(f64, f64)],
+    second_stroke: f64,
+) -> f64 {
+    path_path_gap(first, second) - first_stroke - second_stroke
 }
 
 /// Measures the distance from a point to a polygonal area, including zero for containment.
@@ -463,7 +619,8 @@ fn point_segment_distance(point: (f64, f64), start: (f64, f64), end: (f64, f64))
     if length_squared <= GEOMETRY_TOLERANCE_MM * GEOMETRY_TOLERANCE_MM {
         return point_distance(point, start);
     }
-    let projection = (((point.0 - start.0) * delta_x + (point.1 - start.1) * delta_y)
+    let projection = ((point.1 - start.1)
+        .mul_add(delta_y, (point.0 - start.0) * delta_x)
         / length_squared)
         .clamp(0.0, 1.0);
     let nearest = (
@@ -541,7 +698,8 @@ fn segments_intersect(
 ///
 /// A negative, zero, or positive sign for clockwise, collinear, or counter-clockwise orientation.
 fn orientation_sign(start: (f64, f64), end: (f64, f64), point: (f64, f64)) -> i8 {
-    let cross = (end.0 - start.0) * (point.1 - start.1) - (end.1 - start.1) * (point.0 - start.0);
+    let cross = (end.1 - start.1)
+        .mul_add(-(point.0 - start.0), (end.0 - start.0) * (point.1 - start.1));
     let scale = point_distance(start, end).max(1.0);
     if cross.abs() <= GEOMETRY_TOLERANCE_MM * scale {
         0
@@ -593,7 +751,7 @@ fn point_distance(first: (f64, f64), second: (f64, f64)) -> f64 {
 /// # Returns
 ///
 /// `true` when both coordinates are finite floating-point numbers.
-fn finite_point(point: (f64, f64)) -> bool {
+const fn finite_point(point: (f64, f64)) -> bool {
     point.0.is_finite() && point.1.is_finite()
 }
 
