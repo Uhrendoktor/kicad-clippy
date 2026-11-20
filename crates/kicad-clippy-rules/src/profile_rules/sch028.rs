@@ -173,8 +173,7 @@ fn raw_rectangle_bounds(graphic: &SchematicGraphicFact) -> Option<Rectangle> {
     if graphic
         .points_mm
         .iter()
-        .flatten()
-        .any(|coordinate| !coordinate.is_finite())
+        .any(|(x, y)| !x.is_finite() || !y.is_finite())
     {
         return None;
     }
@@ -470,6 +469,7 @@ mod tests {
         GroupIntent, LintProfile, SchematicFacts, SchematicFrameFact, SchematicGraphicFact,
         TextBoxFact,
     };
+    use kicad_clippy_core::Severity;
 
     /// Creates normalized facts with one frame, one rectangular title tab, and one title text box.
     ///
