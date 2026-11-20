@@ -616,7 +616,7 @@ mod title_block_tests {
         let facts = SchematicFacts::from_document(&schematic);
         let diagnostics =
             validate_required_title_block_fields(&profile(r#"["title","date","rev"]"#), &facts);
-        assert!(diagnostics.is_empty());
+        assert_eq!(diagnostics, Vec::new());
     }
 
     /// Rejects title-block fields that exist but contain only whitespace.

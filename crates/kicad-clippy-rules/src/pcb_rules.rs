@@ -35,7 +35,7 @@ impl BoardFacts {
     ///
     /// # Arguments
     ///
-    /// * document — Lossless board document with decoded footprint and pad expressions.
+    /// * `document` — Lossless PCB document whose footprint and pad expressions are normalized into board facts.
     ///
     /// # Returns
     ///
@@ -102,14 +102,14 @@ impl BoardFacts {
 }
 
 /// Parses a footprint reference from its modern property or legacy fp_text node.
-///
-/// # Arguments
-///
-/// * footprint — Placed footprint S-expression.
-///
-/// # Returns
-///
-/// The non-empty footprint reference, or None when it is missing.
+ ///
+ /// # Arguments
+ ///
+ /// * `footprint` — Placed footprint expression whose reference property or legacy reference text is inspected.
+ ///
+ /// # Returns
+ ///
+ /// The non-empty footprint reference, or `None` when it is missing.
 fn footprint_reference(footprint: &Node) -> Option<String> {
     for property in children(footprint, "property") {
         let items = list_items(property)?;
@@ -134,15 +134,15 @@ fn footprint_reference(footprint: &Node) -> Option<String> {
     None
 }
 
-/// Resolves a serialized X/Y coordinate and optional angle from an at child.
-///
-/// # Arguments
-///
-/// * node — Footprint or pad expression with an at child.
-///
-/// # Returns
-///
-/// Finite X/Y coordinates and angle in degrees; omitted angles default to zero.
+/// Resolves a serialized X/Y coordinate and optional angle from an `at` child.
+ ///
+ /// # Arguments
+ ///
+ /// * `node` — Footprint or pad expression whose serialized `at` coordinates provide its local position and angle.
+ ///
+ /// # Returns
+ ///
+ /// Finite X/Y coordinates and angle in degrees; omitted angles default to zero.
 fn coordinate_at(node: &Node) -> Option<(f64, f64, f64)> {
     let items = child_list(node, "at").and_then(list_items)?;
     let x = items.get(1).and_then(number)?;
@@ -152,14 +152,14 @@ fn coordinate_at(node: &Node) -> Option<(f64, f64, f64)> {
 }
 
 /// Reads an optional positive footprint scale from its serialized transform.
-///
-/// # Arguments
-///
-/// * footprint — Placed footprint S-expression.
-///
-/// # Returns
-///
-/// The X/Y scale pair, or None when no explicit scale is serialized.
+ ///
+ /// # Arguments
+ ///
+ /// * `footprint` — Placed footprint expression whose optional non-uniform scale pair is being read.
+ ///
+ /// # Returns
+ ///
+ /// The X/Y scale pair, or `None` when no explicit scale is serialized.
 fn footprint_scale(footprint: &Node) -> Option<(f64, f64)> {
     let items = child_list(footprint, "scale").and_then(list_items)?;
     Some((
@@ -169,16 +169,16 @@ fn footprint_scale(footprint: &Node) -> Option<(f64, f64)> {
 }
 
 /// Resolves a unique board pad by footprint reference and pad number.
-///
-/// # Arguments
-///
-/// * facts — Normalized board pad facts.
-/// * reference — Footprint reference designator.
-/// * number — Pad number to resolve.
-///
-/// # Returns
-///
-/// The unique matching pad, or None for an absent or ambiguous match.
+ ///
+ /// # Arguments
+ ///
+ /// * `facts` — Normalized board pad facts extracted from each placed footprint in the PCB.
+ /// * `reference` — Reference designator identifying the footprint that should own the requested pad.
+ /// * `number` — Serialized pad number to resolve within that specific footprint.
+ ///
+ /// # Returns
+ ///
+ /// The unique matching pad, or `None` for an absent or ambiguous match.
 fn unique_pad<'a>(
     facts: &'a BoardFacts,
     reference: &str,
@@ -193,16 +193,16 @@ fn unique_pad<'a>(
 }
 
 /// Runs PCB001 for each capacitor whose profile declares a maximum target pad-center distance.
-///
-/// # Arguments
-///
-/// * profile — Component-intent metadata containing optional decoupling pad-distance thresholds.
-/// * board — Parsed PCB with transformed footprint pad anchors and board net names.
-/// * netlist — Optional exported schematic netlist used to cross-check expected target/capacitor nets.
-///
-/// # Returns
-///
-/// PCB001 errors for excessive or inconsistent pad distances, and warnings when board facts are incomplete.
+ ///
+ /// # Arguments
+ ///
+ /// * `profile` — Component-intent metadata containing optional decoupling pad-distance thresholds.
+ /// * `board` — Parsed PCB with transformed footprint pad anchors and board net names.
+ /// * `netlist` — Optional exported schematic netlist used to cross-check target and return pad nets.
+ ///
+ /// # Returns
+ ///
+ /// PCB001 errors for excessive or inconsistent pad distances, and warnings when board facts are incomplete.
 pub(crate) fn validate_decoupling_pad_distances(
     profile: &LintProfile,
     board: &BoardDocument,
@@ -397,14 +397,14 @@ pub(crate) fn validate_decoupling_pad_distances(
 }
 
 /// Reports an unverified warning for each pad-distance contract when no board was supplied.
-///
-/// # Arguments
-///
-/// * profile — Component-intent declarations with optional PCB001 thresholds.
-///
-/// # Returns
-///
-/// PCB001 warnings stating that no board evidence was supplied for the declared check.
+ ///
+ /// # Arguments
+ ///
+ /// * `profile` — Component-intent declarations that include optional PCB001 pad-distance thresholds.
+ ///
+ /// # Returns
+ ///
+ /// PCB001 warnings stating that no board evidence was supplied for the declared check.
 pub(crate) fn validate_missing_board(profile: &LintProfile) -> Vec<Diagnostic> {
     profile
         .components
@@ -427,6 +427,14 @@ pub(crate) fn validate_missing_board(profile: &LintProfile) -> Vec<Diagnostic> {
 }
 
 /// Returns the direct list items of an S-expression list.
+ ///
+ /// # Arguments
+ ///
+ /// * `node` — S-expression node to inspect for a list value.
+ ///
+ /// # Returns
+ ///
+ /// The borrowed list-item slice when the node is a list, or `None` for an atom.
 fn list_items(node: &Node) -> Option<&[Node]> {
     if let Node::List { items, .. } = node {
         Some(items)
@@ -436,6 +444,14 @@ fn list_items(node: &Node) -> Option<&[Node]> {
 }
 
 /// Returns a list node's symbolic head.
+ ///
+ /// # Arguments
+ ///
+ /// * `node` — S-expression node whose first item may identify the expression kind.
+ ///
+ /// # Returns
+ ///
+ /// The symbolic expression name when the node is a list with a symbolic first item.
 fn head(node: &Node) -> Option<&str> {
     let Node::List { items, .. } = node else {
         return None;
@@ -450,6 +466,15 @@ fn head(node: &Node) -> Option<&str> {
 }
 
 /// Iterates over direct child lists with the requested head.
+ ///
+ /// # Arguments
+ ///
+ /// * `node` — Parent S-expression whose immediate list children are searched.
+ /// * `name` — Symbolic list-head name that identifies the child expressions to return.
+ ///
+ /// # Returns
+ ///
+ /// An iterator over matching direct child lists, preserving their source order.
 fn children<'a>(node: &'a Node, name: &'a str) -> impl Iterator<Item = &'a Node> + 'a {
     list_items(node)
         .into_iter()
@@ -459,11 +484,28 @@ fn children<'a>(node: &'a Node, name: &'a str) -> impl Iterator<Item = &'a Node>
 }
 
 /// Returns the first direct child list with the requested head.
+ ///
+ /// # Arguments
+ ///
+ /// * `node` — Parent S-expression whose immediate child expressions are searched.
+ /// * `name` — Symbolic list-head name identifying the requested child expression.
+ ///
+ /// # Returns
+ ///
+ /// The first matching direct child list, or `None` when the parent has no such child.
 fn child_list<'a>(node: &'a Node, name: &'a str) -> Option<&'a Node> {
     children(node, name).next()
 }
 
 /// Decodes a plain or quoted S-expression atom.
+ ///
+ /// # Arguments
+ ///
+ /// * `node` — Atom node containing a symbolic or quoted serialized value.
+ ///
+ /// # Returns
+ ///
+ /// The decoded atom text, or `None` when the supplied node is a list.
 fn atom_text(node: &Node) -> Option<&str> {
     let Node::Atom { atom, .. } = node else {
         return None;
@@ -474,6 +516,14 @@ fn atom_text(node: &Node) -> Option<&str> {
 }
 
 /// Parses an atom as a finite floating-point value.
+ ///
+ /// # Arguments
+ ///
+ /// * `node` — Atom node expected to contain a decimal number in the PCB serialization.
+ ///
+ /// # Returns
+ ///
+ /// The finite floating-point value, or `None` when parsing fails or the value is not finite.
 fn number(node: &Node) -> Option<f64> {
     let value = atom_text(node)?.parse::<f64>().ok()?;
     value.is_finite().then_some(value)
@@ -546,11 +596,12 @@ mod contract_tests {
     /// # Arguments
     ///
     /// * `capacitor_x` — X-origin of capacitor C1 in board coordinates.
-    /// * `capacitor_net` — Net assigned to C1.1.
+    /// * `capacitor_net` — Board-net name assigned to the capacitor target-terminal pad C1.1.
+    /// * `return_net` — Board-net name assigned to capacitor return-terminal pad C1.2.
     ///
     /// # Returns
     ///
-    /// A parsed PCB containing U1.1 and C1.1 at actual transformed pad anchors.
+    /// A parsed PCB containing U1.1, C1.1, and C1.2 at their transformed pad anchors.
     fn board(capacitor_x: f64, capacitor_net: &str, return_net: &str) -> BoardDocument {
         let source = format!(
             r#"(kicad_pcb

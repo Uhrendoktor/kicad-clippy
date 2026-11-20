@@ -423,6 +423,17 @@ impl LintProfile {
     ///
     /// Schematic profile diagnostics plus PCB001 pad-distance findings.
     #[must_use]
+    /// Validates schematic intent and PCB001 pad-distance contracts against a parsed board.
+    ///
+    /// # Arguments
+    ///
+    /// * `document` — Parsed schematic whose component and connectivity intent is checked.
+    /// * `netlist` — Optional exported schematic netlist used to verify target and capacitor pad nets.
+    /// * `board` — Parsed PCB document containing placed footprints and pads.
+    ///
+    /// # Returns
+    ///
+    /// Schematic profile diagnostics plus PCB001 pad-distance findings.
     pub fn validate_with_board(
         &self,
         document: &SchematicDocument,
@@ -432,13 +443,13 @@ impl LintProfile {
         self.validate_internal(document, netlist, Some(board))
     }
 
-    /// Shared profile validation path with optional PCB evidence.
+    /// Shared profile-validation path with optional PCB evidence.
     ///
     /// # Arguments
     ///
-    /// * document — Parsed schematic document being validated.
-    /// * netlist — Optional exported KiCad netlist.
-    /// * board — Optional parsed PCB document for board-level design-intent checks.
+    /// * `document` — Parsed schematic document whose profile rules are evaluated.
+    /// * `netlist` — Optional exported KiCad netlist used by logical pin-to-net contracts.
+    /// * `board` — Optional parsed PCB document used by board-level pad-distance contracts.
     ///
     /// # Returns
     ///

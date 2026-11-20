@@ -104,7 +104,7 @@ fn collect_uuid_occurrences(node: &Node, occurrences: &mut BTreeMap<String, Vec<
 ///
 /// # Arguments
 ///
-/// * `node` — S-expression atom to decode.
+/// * `node` — S-expression atom from an object's UUID or other serialized identifier field.
 ///
 /// # Returns
 ///
@@ -171,7 +171,7 @@ mod tests {
                 (rectangle (start 1 1) (end 5 5) (uuid "rectangle-1"))
             )"#,
         );
-        assert!(diagnostics.is_empty());
+        assert_eq!(diagnostics, Vec::new());
     }
 
     /// Finds repeated identifiers in nested objects, not only at the top level.

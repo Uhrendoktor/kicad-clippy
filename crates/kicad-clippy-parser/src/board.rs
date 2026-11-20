@@ -144,6 +144,14 @@ pub enum BoardParseError {
 }
 
 /// Returns the symbol naming the root S-expression.
+///
+/// # Arguments
+///
+/// * `document` — Parsed concrete syntax tree whose first expression represents the PCB document.
+///
+/// # Returns
+///
+/// The symbolic head of the first root list, or `None` when the document has no symbolic root.
 fn root_name(document: &CstDocument) -> Option<&str> {
     let Node::List { items, .. } = document.nodes.first()? else {
         return None;
