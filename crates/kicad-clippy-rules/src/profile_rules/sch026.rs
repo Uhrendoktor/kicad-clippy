@@ -551,7 +551,6 @@ mod tests {
         }));
     }
 
-
     /// Maps native KiCad global-label facts to the profile's concise global exemption selector.
     #[test]
     fn global_label_exemption_matches_native_kicad_label_kind() {
