@@ -178,7 +178,7 @@ The following primary and vendor sources support the proposed design checks. Dat
 
 ## 8. Completed handoff milestones and future work
 
-The following milestones are implemented in the current PR #28 branch:
+The following milestones are implemented in `main` through PR #28 and follow-up PRs #36/#37:
 
 - Complete SCH001–SCH022 descriptor catalogue and opt-in TOML rule policy with named presets and per-rule overrides.
 - SCH015 required no-connect profile intent, validated against transformed pin geometry and effective electrical type including selected alternates.
@@ -186,17 +186,20 @@ The following milestones are implemented in the current PR #28 branch:
 - Separation of SCH004 physical wire topology from SCH014 exported logical pin-to-net assertions.
 - SCH006 body-to-body clearance/alignment and SCH010 per-field maximum body-gap contracts.
 - SCH009 independently declared frame-overlap detection, alongside the wider rule and profile documentation updates.
+- Follow-up PR #36 implements SCH026 project-grid alignment, SCH027 loaded-sheet label-scope policy and SCH028 functional-frame title-tab geometry.
+- Follow-up PR #37 extends SCH024 UUID uniqueness across referenced child-sheet hierarchies, including relative/absolute paths, cycle protection and explicit warnings for unresolved children.
 
-The following PR #27/#28 cases have now been implemented in this follow-up: universal redundant no-connect-marker detection for resolved pins, opt-in required decoupling coverage per IC supply pin, opt-in schematic target-pin distance checks for decouplers, and opt-in required connector pin-map completeness. The contracts remain explicit and do not promote library-family guesses into universal rules.
+The following PR #27/#28 cases have also been implemented in follow-ups: universal redundant no-connect-marker detection for resolved pins, opt-in required decoupling coverage per IC supply pin, opt-in schematic target-pin distance checks for decouplers, and opt-in required connector pin-map completeness. The contracts remain explicit and do not promote library-family guesses into universal rules.
 
 Recommended future work, ordered by prerequisites:
 
-1. Add frame title/tab geometry, hierarchical UUID uniqueness, configurable grid alignment, label-scope policy and title-block metadata contracts.
-2. Continue strengthening family-specific SCH013 tests and diagnostic-parity regressions; extend the conservative netclass resolver only when KiCad project semantics can be resolved without guessing.
-3. Improve SCH009/SCH012 coverage for unsupported image encodings and remaining annotation types; add exact curve-based body geometry where a validated transform/distance model is available.
-4. Expand role-specific schematic contracts beyond the current SCH021/SCH022 coverage (pull-ups/dividers, LED current limiting, protection paths, connector completeness and test-point coverage).
-5. Extend the `.kicad_pcb` parser and board-fact model beyond pad layers/anchors; prioritize PCB003, PCB004 and PCB008 against annotated routing and board-outline fixtures.
+1. Continue strengthening family-specific SCH013 tests and diagnostic-parity regressions. Extend effective netclass resolution to KiCad regex/bus-member syntax and schematic directive-label, label-property and rule-area assignments only where project semantics can be resolved without guessing.
+2. Improve SCH009/SCH012 coverage for unsupported image encodings and remaining annotation types; add exact curve-based body geometry where a validated transform/distance model is available.
+3. Extend SCH006 with explicit adjacency, cluster compactness and subgroup-nesting contracts. Broaden SCH005 axis checks beyond cardinal rotations only when the transformed geometry is resolvable without guessing.
+4. Expand role-specific schematic contracts for still-uncovered intent such as pull-up/pull-down topology, LED current limiting, protection paths, oscillator support and bulk-capacitor requirements. SCH021 connector pin-map completeness, SCH025 test-point coverage and SCH022 decoupling contracts already cover their documented opt-in slices; direction/mating-interface and physical fixture-access evidence remain future work.
+5. Extend the `.kicad_pcb` parser and board-fact model beyond pad layers/anchors; prioritize PCB003, PCB004 and PCB008 against annotated routing and board-outline fixtures. PCB002–PCB008 and PCB010–PCB012 remain unimplemented candidates except the documented partial PCB001/PCB009 slices.
 6. Add board-layer/stackup/zone return-path analysis only after path connectivity and KiCad DRC integration are validated.
+7. Add controlled project-variable expansion for hierarchical `Sheetfile` paths, using KiCad-compatible resolution and explicit warnings for unsupported or unresolved variables.
 
 **Do not implement every candidate at once.** Each rule should arrive with a narrow contract, exact input facts, a documented false-positive policy, positive/negative fixtures and an explicit statement of what native ERC/DRC continues to own.
 
