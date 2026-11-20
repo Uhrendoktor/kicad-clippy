@@ -338,6 +338,7 @@ mod tests {
     };
     use crate::{GridAlignmentIntent, GridAlignmentTarget, LintProfile};
     use kicad_clippy_core::Severity;
+    use kicad_clippy_parser::SchematicDocument;
     use std::collections::BTreeSet;
 
     /// Parses a version-one profile with the supplied grid alignment object.
@@ -505,4 +506,30 @@ mod tests {
             ])
         );
     }
+    /// Confirms that the profile validation entry point executes SCH026 against extracted label anchors.
+    ///
+    /// # Returns
+    ///
+    /// Ok when an off-grid label is reported through the public profile validation path.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the schematic fixture cannot be parsed.
+    #[test]
+    fn profile_validation_dispatches_grid_alignment_rule() -> Result<(), Box<dyn std::error::Error>> {
+        let schematic = SchematicDocument::from_text(
+            "grid-alignment-dispatch.kicad_sch",
+            r#"(kicad_sch
+                (label "VDD" (at 11.3 22 0)
+                    (effects (font (size 1 1))))
+            )"#,
+        )?;
+        let profile = profile(r#"{"spacing_mm":5.0,"tolerance_mm":0.01}"#);
+        let diagnostics = profile.validate(&schematic);
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "SCH026" && item.message.contains("local label")
+        }));
+        Ok(())
+    }
+
 }
