@@ -5216,6 +5216,41 @@ mod tests {
                 .any(|item| item.code == "SCH005")
         );
     }
+    /// Confirms non-cardinal symbol rotations reject wires that do not follow the transformed oblique pin axis.
+    #[test]
+    fn non_cardinal_pin_wire_must_follow_transformed_pin_axis() {
+        let source = EMBEDDED_PIN.replace("(at 10 10 0)", "(at 10 10 45)");
+        let pin_coordinate = 10.0 - 2.54 * HALF_FACTOR.sqrt();
+        let wire_end_x = pin_coordinate + 1.27;
+        let doc = document(&format!(
+            "{source} (wire (pts (xy {pin_coordinate:.3} {pin_coordinate:.3}) (xy {wire_end_x:.3} {pin_coordinate:.3})))"
+        ));
+
+        assert!(run_builtin_rules(&doc).diagnostics.iter().any(|item| {
+            item.code == "SCH005"
+                && item.message.contains("J1 pin 1")
+                && item.message.contains("oblique")
+        }));
+    }
+
+    /// Accepts a wire segment that is parallel to the transformed axis of a non-cardinal placed pin.
+    #[test]
+    fn non_cardinal_pin_wire_is_accepted_when_parallel_to_transformed_axis() {
+        let source = EMBEDDED_PIN.replace("(at 10 10 0)", "(at 10 10 45)");
+        let pin_coordinate = 10.0 - 2.54 * HALF_FACTOR.sqrt();
+        let wire_end_coordinate = 10.0 - 3.81 * HALF_FACTOR.sqrt();
+        let doc = document(&format!(
+            "{source} (wire (pts (xy {pin_coordinate:.3} {pin_coordinate:.3}) (xy {wire_end_coordinate:.3} {wire_end_coordinate:.3})))"
+        ));
+
+        assert!(
+            !run_builtin_rules(&doc)
+                .diagnostics
+                .iter()
+                .any(|item| item.code == "SCH005")
+        );
+    }
+
     /// Confirms both the pin's position and electrical axis follow the placed symbol's rotation and mirror transform.
     #[test]
     fn pin_axis_and_position_follow_symbol_rotation_and_mirroring() {

@@ -6,7 +6,6 @@ use super::Segment;
 use super::SymbolTransform;
 use super::at_point;
 use super::atom_value;
-use super::cardinal_rotation;
 use super::child_list;
 use super::children;
 use super::embedded_symbol_pins;
@@ -21,13 +20,15 @@ use crate::core::Diagnostic;
 use kiutils_sexpr::Node;
 use kurbo::Point as CurvePoint;
 
-/// Represents the supported pinaxis alternatives.
+/// Represents the supported horizontal, vertical, or oblique pin-axis alternatives.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PinAxis {
     /// Wire axis parallel to the X coordinate.
     Horizontal,
     /// Wire axis parallel to the Y coordinate.
     Vertical,
+    /// Wire axis at a non-cardinal angle to both schematic coordinates.
+    Oblique,
 }
 
 impl PinAxis {
@@ -40,6 +41,7 @@ impl PinAxis {
         match self {
             Self::Horizontal => "horizontal",
             Self::Vertical => "vertical",
+            Self::Oblique => "oblique",
         }
     }
 }
@@ -128,9 +130,6 @@ fn pin_orientation_diagnostic(
     let pin_x = number(at.get(1)?)?;
     let pin_y = number(at.get(2)?)?;
     let pin_angle = number(at.get(3)?)?;
-    // SCH005 models only horizontal/vertical pin axes; other rotations are
-    // now usable for transformed geometry but remain outside this rule.
-    cardinal_rotation(transform.rotation)?;
     let affine = symbol_transform_affine(transform.rotation, transform.mirror.as_deref())?;
     let pin_offset = affine * CurvePoint::new(pin_x, pin_y);
     let point = Point {
@@ -139,11 +138,17 @@ fn pin_orientation_diagnostic(
     };
     let pin_angle = pin_angle.to_radians();
     let axis = affine * CurvePoint::new(pin_angle.cos(), pin_angle.sin());
-    let (axis_x, axis_y) = (axis.x, axis.y);
-    let expected_axis = if axis_x.abs() >= axis_y.abs() {
+    let axis_length = axis.x.hypot(axis.y);
+    if !axis_length.is_finite() || axis_length <= GEOMETRY_TOLERANCE_MM {
+        return None;
+    }
+    let (axis_x, axis_y) = (axis.x / axis_length, axis.y / axis_length);
+    let expected_axis = if axis_y.abs() <= GEOMETRY_TOLERANCE_MM {
         PinAxis::Horizontal
-    } else {
+    } else if axis_x.abs() <= GEOMETRY_TOLERANCE_MM {
         PinAxis::Vertical
+    } else {
+        PinAxis::Oblique
     };
     let touching_segments: Vec<_> = segments
         .iter()
@@ -152,9 +157,11 @@ fn pin_orientation_diagnostic(
     if touching_segments.is_empty() {
         return None;
     }
-    let aligned = touching_segments.iter().any(|segment| match expected_axis {
-        PinAxis::Horizontal => (segment.start.y - segment.end.y).abs() < GEOMETRY_TOLERANCE_MM,
-        PinAxis::Vertical => (segment.start.x - segment.end.x).abs() < GEOMETRY_TOLERANCE_MM,
+    let aligned = touching_segments.iter().any(|segment| {
+        let segment_x = segment.end.x - segment.start.x;
+        let segment_y = segment.end.y - segment.start.y;
+        let perpendicular_deviation_mm = (axis_x * segment_y - axis_y * segment_x).abs();
+        perpendicular_deviation_mm <= GEOMETRY_TOLERANCE_MM
     });
     if aligned {
         return None;
