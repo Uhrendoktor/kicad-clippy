@@ -67,11 +67,13 @@ pub enum BuiltinRuleId {
     Sch027,
     /// Represents the `SCH028` rule: Checks UUID-linked frame title tabs, title containment, and minimum group-frame spacing.
     Sch028,
+    /// Represents the `SCH029` rule: Checks profile-declared base-design population state, DNP flags, and meaningful component values.
+    Sch029,
 }
 
 impl BuiltinRuleId {
     /// All built-in rules in stable identifier order.
-    pub const ALL: [Self; 30] = [
+    pub const ALL: [Self; 31] = [
         Self::Sch001,
         Self::Sch002,
         Self::Sch003,
@@ -102,6 +104,7 @@ impl BuiltinRuleId {
         Self::Sch026,
         Self::Sch027,
         Self::Sch028,
+        Self::Sch029,
     ];
 
     /// Returns the canonical external code for this built-in rule, preserving the stable `SCHnnn` identifier.
@@ -142,6 +145,7 @@ impl BuiltinRuleId {
             Self::Sch026 => "SCH026",
             Self::Sch027 => "SCH027",
             Self::Sch028 => "SCH028",
+            Self::Sch029 => "SCH029",
         }
     }
 

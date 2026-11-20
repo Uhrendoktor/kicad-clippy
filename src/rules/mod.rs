@@ -26,7 +26,7 @@ mod pcb_rules;
 mod sch024;
 
 pub use generic::{
-    ComponentFact, MILLIMETRES_PER_MIL, RuleRun, SchematicArcFact, SchematicFacts,
+    ComponentFact, ComponentPopulationFact, MILLIMETRES_PER_MIL, RuleRun, SchematicArcFact, SchematicFacts,
     SchematicFieldFact, SchematicFrameFact, SchematicGraphicFact, SchematicGroupFact,
     SchematicImageFact, SchematicLabelFact, SchematicPinFact, SchematicPrimitiveFact,
     SchematicSymbolTextFact, SchematicTextFact, SchematicWireFact, TextBoxFact,

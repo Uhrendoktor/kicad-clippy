@@ -4,6 +4,7 @@ Notable changes are documented here. This project is in early development and ha
 
 ## Unreleased
 
+- Added opt-in SCH029 component population checks through `attributes.population`; verifies the saved base-design DNP flag, preserves meaningful Value text, and warns when KiCad design-variant overrides prevent validating an effective selected variant.
 - Added SCH026 opt-in project grid alignment for selected symbol, pin, label, junction and wire anchors. Symbol origins and label anchors are the default targets; pin, junction and wire-endpoint checks require explicit selection and support scoped exemptions.
 - Added SCH027 project label-scope policies: global-label allow/deny lists and required local/global/hierarchical scopes for selected names on the loaded sheet.
 - Added SCH028 functional-frame title-tab geometry and minimum frame spacing using explicit frame, tab and title-box UUIDs; exact rendered font clipping remains outside the check.
