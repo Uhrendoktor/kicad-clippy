@@ -29,7 +29,7 @@ struct BoardPadFact {
     probe_contact_width_mm: Option<f64>,
 }
 
-/// Normalized board facts currently required by PCB001.
+/// Normalized board facts currently required by PCB001 and PCB009.
 #[derive(Clone, Debug, Default)]
 struct BoardFacts {
     /// Placed footprint pads with transformed board-space anchors.
@@ -37,7 +37,7 @@ struct BoardFacts {
 }
 
 impl BoardFacts {
-    /// Extracts placed footprint pad anchors from a parsed PCB.
+    /// Extracts placed footprint pad anchors and supported probe-contact geometry from a parsed PCB.
     ///
     /// # Arguments
     ///
@@ -65,7 +65,9 @@ impl BoardFacts {
             if !matches!(layer, Some("F.Cu" | "B.Cu")) {
                 continue;
             }
-            let (scale_x, scale_y) = footprint_scale(footprint).unwrap_or((1.0, 1.0));
+            let serialized_scale_present = child_list(footprint, "scale").is_some();
+            let resolved_scale = footprint_scale(footprint);
+            let (scale_x, scale_y) = resolved_scale.unwrap_or((1.0, 1.0));
             if !scale_x.is_finite() || !scale_y.is_finite() || scale_x <= 0.0 || scale_y <= 0.0 {
                 continue;
             }
@@ -101,7 +103,11 @@ impl BoardFacts {
                     net_name,
                     position_mm: (origin_x + rotated_x, origin_y + rotated_y),
                     probe_exposed: pad_has_copper_and_mask_layers(pad),
-                    probe_contact_width_mm: pad_minimum_contact_width_mm(pad, scale_x, scale_y),
+                    probe_contact_width_mm: if serialized_scale_present && resolved_scale.is_none() {
+                        None
+                    } else {
+                        pad_minimum_contact_width_mm(pad, scale_x, scale_y)
+                    },
                 });
             }
         }
@@ -1492,6 +1498,28 @@ mod test_point_tests {
                 "rect",
                 "1.0 1.0",
                 "(scale 2 1)",
+                r#"(layers "F.Cu" "F.Mask")"#,
+            ),
+        );
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "PCB009"
+                && item.severity == crate::core::Severity::Warning
+                && item.message.contains("footprint scale is unsupported")
+        }));
+    }
+
+    /// Reports minimum probe-pad width as unverified when an explicit footprint scale is malformed.
+    #[test]
+    fn pcb009_warns_for_malformed_test_point_footprint_scale() {
+        let diagnostics = validate_test_point_pad_access(
+            &minimum_probe_width_profile("0.8"),
+            &test_point_board_with_pad_geometry(
+                Some("VDD"),
+                "F.Cu",
+                "smd",
+                "rect",
+                "1.0 1.0",
+                "(scale malformed 1)",
                 r#"(layers "F.Cu" "F.Mask")"#,
             ),
         );
