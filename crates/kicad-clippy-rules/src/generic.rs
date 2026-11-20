@@ -494,6 +494,8 @@ pub struct SchematicFacts {
     pub labels: Vec<SchematicLabelFact>,
     /// Explicit wire junction coordinates.
     pub junctions: Vec<(f64, f64)>,
+    /// Normalized title-block fields and their decoded values.
+    pub title_block_fields: BTreeMap<String, String>,
     /// Whether schematic-local labels, directives, or rule areas assign netclasses.
     pub has_netclass_assignments: bool,
 }
@@ -561,6 +563,7 @@ impl SchematicFacts {
             symbol_texts: collect_symbol_text_facts(root),
             labels: collect_label_facts(root),
             junctions: junctions.iter().map(|point| (point.x, point.y)).collect(),
+            title_block_fields: collect_title_block_fields(root),
             has_netclass_assignments: schematic_has_graphical_netclass_assignments(root),
         }
     }
@@ -1823,6 +1826,52 @@ fn collect_group_facts(root: &Node) -> Vec<SchematicGroupFact> {
         })
         .collect()
 }
+
+/// Extracts the decoded title, date, revision, company and comment fields from the sheet title block.
+///
+/// # Arguments
+///
+/// * `root` — Root schematic S-expression containing the optional `title_block` node.
+///
+/// # Returns
+///
+/// A map keyed by `title`, `date`, `rev`, `company`, or `commentN`, preserving blank fields when serialized.
+fn collect_title_block_fields(root: &Node) -> BTreeMap<String, String> {
+    let Some(title_block) = children(root, "title_block").next() else {
+        return BTreeMap::new();
+    };
+    let mut fields = BTreeMap::new();
+    for field_name in ["title", "date", "rev", "company"] {
+        if let Some(value) = children(title_block, field_name)
+            .next()
+            .and_then(list_items)
+            .and_then(|items| items.get(1))
+            .and_then(atom_value)
+        {
+            fields.insert(field_name.to_owned(), value.to_owned());
+        }
+    }
+    for comment in children(title_block, "comment") {
+        let Some(items) = list_items(comment) else {
+            continue;
+        };
+        let Some(index) = items
+            .get(1)
+            .and_then(atom_value)
+            .and_then(|value| value.parse::<u8>().ok())
+        else {
+            continue;
+        };
+        if !(1..=9).contains(&index) {
+            continue;
+        }
+        if let Some(value) = items.get(2).and_then(atom_value) {
+            fields.insert(format!("comment{index}"), value.to_owned());
+        }
+    }
+    fields
+}
+
 /// Extracts rectangular sheet frames and their axis-aligned bounds.
 ///
 /// # Arguments

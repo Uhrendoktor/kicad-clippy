@@ -207,7 +207,7 @@ struct BuiltinRuleMetadata {
 }
 
 /// Canonical metadata for the complete stable built-in rule set.
-const BUILTIN_RULE_METADATA: [BuiltinRuleMetadata; 22] = [
+const BUILTIN_RULE_METADATA: [BuiltinRuleMetadata; 25] = [
     BuiltinRuleMetadata {
         id: BuiltinRuleId::Sch001,
         name: "wire geometry",
@@ -405,6 +405,33 @@ const BUILTIN_RULE_METADATA: [BuiltinRuleMetadata; 22] = [
         explanation: "A decoupling declaration must identify the target IC pin, the capacitor's target and return terminals, the expected return net, and a cluster. When a netlist is supplied, target-side and return-side memberships are verified against KiCad's exported connectivity.",
         level: RuleLevel::Deny,
         tags: &["decoupling", "capacitors", "netlist", "profile"],
+    },
+    BuiltinRuleMetadata {
+        id: BuiltinRuleId::Sch023,
+        name: "required title-block fields",
+        category: "documentation",
+        summary: "Checks project-declared title, date, revision, company and comment fields on the current sheet.",
+        explanation: "A project can require selected native title-block fields without forcing a universal title-block style. Only fields explicitly listed by the profile are enforced.",
+        level: RuleLevel::Deny,
+        tags: &["title-block", "metadata", "sheet", "profile"],
+    },
+    BuiltinRuleMetadata {
+        id: BuiltinRuleId::Sch024,
+        name: "document UUID uniqueness",
+        category: "document-integrity",
+        summary: "Detects a UUID reused by multiple objects within the currently loaded schematic document.",
+        explanation: "Duplicate object identifiers make selection, grouping and cross-reference behavior ambiguous. This rule checks the parsed document only; hierarchy-wide aggregation across separately loaded sheets is a distinct future capability.",
+        level: RuleLevel::Deny,
+        tags: &["uuid", "document-integrity", "hierarchy"],
+    },
+    BuiltinRuleMetadata {
+        id: BuiltinRuleId::Pcb001,
+        name: "decoupling pad proximity",
+        category: "pcb-design-intent",
+        summary: "Checks profile-declared maximum pad-center distance from a target IC supply pad to its decoupling capacitor pad and verifies the declared capacitor return pad net.",
+        explanation: "PCB001 measures actual placed pad anchors after applying the serialized footprint transform, verifies target-side and return-side board net assignments, and optionally compares them with the exported schematic netlist. It does not analyze routed copper length, ground vias, zones, or return-loop quality; those require a copper connectivity model.",
+        level: RuleLevel::Deny,
+        tags: &["pcb", "decoupling", "pad-distance", "profile"],
     },
 ];
 

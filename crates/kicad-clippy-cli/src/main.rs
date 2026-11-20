@@ -18,7 +18,7 @@ use std::{
 use clap::{Parser, Subcommand, ValueEnum};
 use kicad_clippy_core::{Diagnostic, RulePolicy, Severity, SourceFile, builtin_rule_registry};
 use kicad_clippy_erc::{Netlist, NetlistError, export_netlist, run_native_erc};
-use kicad_clippy_parser::SchematicDocument;
+use kicad_clippy_parser::{BoardDocument, SchematicDocument};
 use kicad_clippy_rules::{
     LintProfile, MILLIMETRES_PER_MIL, ProfileMode, RuleEngine, SchematicFacts,
     physical_wire_component_ids, physical_wire_component_key,
@@ -63,6 +63,9 @@ enum Commands {
         /// Optional TOML policy for built-in rule levels and named presets.
         #[arg(long, value_name = "FILE")]
         policy: Option<PathBuf>,
+        /// Optional `KiCad` PCB file for board-level checks such as PCB001 (requires --profile).
+        #[arg(long, value_name = "FILE")]
+        board: Option<PathBuf>,
         /// Require complete component-intent metadata (requires --profile).
         #[arg(long)]
         strict: bool,
@@ -90,6 +93,8 @@ struct LintOptions<'a> {
     profile_path: Option<PathBuf>,
     /// Optional TOML rule policy, borrowed because policy loading does not consume the path.
     policy_path: Option<&'a Path>,
+    /// Optional PCB document used for board-level design-intent checks.
+    board_path: Option<PathBuf>,
     /// Whether complete component-intent metadata is required.
     strict: bool,
 }
@@ -100,6 +105,12 @@ enum CliError {
     /// Schematic file reading or parsing failed.
     #[error(transparent)]
     Schematic(#[from] kicad_clippy_parser::SchematicParseError),
+    /// Board file reading or parsing failed.
+    #[error(transparent)]
+    Board(#[from] kicad_clippy_parser::BoardParseError),
+    /// Board-level checks need a component-intent profile.
+    #[error("--board requires --profile FILE")]
+    BoardNeedsProfile,
     /// Native `KiCad` ERC invocation or report decoding failed.
     #[error(transparent)]
     Erc(#[from] kicad_clippy_erc::ErcError),
@@ -234,6 +245,7 @@ fn execute(cli: Cli) -> Result<ExitCode, CliError> {
             project,
             profile,
             policy,
+            board,
             strict,
         } => lint(
             &schematic,
@@ -244,6 +256,7 @@ fn execute(cli: Cli) -> Result<ExitCode, CliError> {
                 project_path: project.as_deref(),
                 profile_path: profile,
                 policy_path: policy.as_deref(),
+                board_path: board,
                 strict,
             },
         ),
@@ -271,12 +284,20 @@ fn lint(schematic_path: &Path, options: LintOptions<'_>) -> Result<ExitCode, Cli
         project_path,
         profile_path,
         policy_path,
+        board_path,
         strict,
     } = options;
     if strict && profile_path.is_none() {
         return Err(CliError::StrictNeedsProfile);
     }
+    if board_path.is_some() && profile_path.is_none() {
+        return Err(CliError::BoardNeedsProfile);
+    }
     let schematic = SchematicDocument::from_path(schematic_path)?;
+    let board = board_path
+        .as_ref()
+        .map(BoardDocument::from_path)
+        .transpose()?;
     let project = project_path
         .map(project_settings_from_project)
         .transpose()?;
@@ -327,13 +348,13 @@ fn lint(schematic_path: &Path, options: LintOptions<'_>) -> Result<ExitCode, Cli
             )
             .diagnostics,
     );
-    if let Some(path) = profile_path {
-        let mut profile = LintProfile::from_path(path)?;
-        if strict {
-            profile.mode = ProfileMode::Strict;
-        }
-        diagnostics.extend(profile.validate_with_netlist(&schematic, netlist.as_ref()));
-    }
+    diagnostics.extend(validate_profile_inputs(
+        profile_path.as_deref(),
+        &schematic,
+        netlist.as_ref(),
+        board.as_ref(),
+        strict,
+    )?);
     diagnostics = apply_optional_rule_policy(policy_path, diagnostics)?;
     let summary = Summary::from_diagnostics(&diagnostics);
     let output = LintOutput {
@@ -347,20 +368,80 @@ fn lint(schematic_path: &Path, options: LintOptions<'_>) -> Result<ExitCode, Cli
         summary,
     };
 
+    render_output(format, &output, schematic.source())
+}
+
+/// Renders a completed lint result and chooses the process exit code from its active errors.
+///
+/// # Arguments
+///
+/// * `format` — Output format selected for this invocation.
+/// * `output` — Completed lint result containing diagnostics and their summary.
+/// * `source` — Original schematic source used for text-renderer line context.
+///
+/// # Returns
+///
+/// `ExitCode::FAILURE` when the summary contains active errors, otherwise `ExitCode::SUCCESS`.
+///
+/// # Errors
+///
+/// Returns a renderer, JSON serialization, or standard-output I/O error when the result cannot be written.
+fn render_output(
+    format: OutputFormat,
+    output: &LintOutput,
+    source: &SourceFile,
+) -> Result<ExitCode, CliError> {
     match format {
-        OutputFormat::Text => render_text(&output, schematic.source())?,
+        OutputFormat::Text => render_text(output, source)?,
         OutputFormat::Json => {
-            let json = serde_json::to_string_pretty(&output)?;
+            let json = serde_json::to_string_pretty(output)?;
             writeln!(io::stdout().lock(), "{json}")?;
         }
     }
-
-    if output.summary.errors > 0 {
-        Ok(ExitCode::FAILURE)
+    Ok(if output.summary.errors > 0 {
+        ExitCode::FAILURE
     } else {
-        Ok(ExitCode::SUCCESS)
-    }
+        ExitCode::SUCCESS
+    })
 }
+
+/// Loads the optional component profile and validates it against schematic and board evidence.
+///
+/// # Arguments
+///
+/// * `profile_path` — Optional JSON project-profile path; `None` disables profile checks.
+/// * `schematic` — Parsed schematic containing the placed symbols and embedded pin geometry.
+/// * `netlist` — Optional exported schematic netlist used by logical component-pin contracts.
+/// * `board` — Optional parsed PCB used by board-level pad-distance contracts.
+/// * `strict` — Whether the loaded profile must enforce strict component metadata completeness.
+///
+/// # Returns
+///
+/// Profile diagnostics, including PCB001 findings when board-distance metadata is declared.
+///
+/// # Errors
+///
+/// Returns a profile I/O or decoding error when the specified JSON file cannot be loaded or validated.
+fn validate_profile_inputs(
+    profile_path: Option<&Path>,
+    schematic: &SchematicDocument,
+    netlist: Option<&Netlist>,
+    board: Option<&BoardDocument>,
+    strict: bool,
+) -> Result<Vec<Diagnostic>, CliError> {
+    let Some(profile_path) = profile_path else {
+        return Ok(Vec::new());
+    };
+    let mut profile = LintProfile::from_path(profile_path)?;
+    if strict {
+        profile.mode = ProfileMode::Strict;
+    }
+    Ok(board.map_or_else(
+        || profile.validate_with_netlist(schematic, netlist),
+        |board| profile.validate_with_board(schematic, netlist, board),
+    ))
+}
+
 /// Reads and decodes an optional rule policy written in TOML.
 ///
 /// # Arguments

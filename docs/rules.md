@@ -1,6 +1,6 @@
 # Built-in rules
 
-The current built-in catalogue defines stable IDs SCH001–SCH022 and separates reusable schematic checks from project-profile contracts.
+The current built-in catalogue defines stable schematic IDs SCH001–SCH024 plus PCB001 and separates reusable schematic checks from project-profile and board-level contracts.
 
 | ID | Historical rule | Rust status |
 | --- | --- | --- |
@@ -25,11 +25,14 @@ The current built-in catalogue defines stable IDs SCH001–SCH022 and separates 
 | SCH019 | Label-kind consistency | Implemented |
 | SCH020 | Component function/rationale documentation | Implemented for metadata-declared components |
 | SCH021 | Component metadata and role contracts | Implemented: strict metadata completeness, profile reference validity, role-specific connection requirements, connector interface-standard validation and opt-in `attributes.required_pins` completeness against expected pin-net mappings |
-| SCH022 | Decoupling contracts | Implemented partial: target pin/terminal and return net consistency, cluster consistency, opt-in required supply-pin coverage through `attributes.required_decoupling_pins`, and opt-in transformed pin-anchor distance through `decoupling.max_target_distance_mm`; PCB pad/copper path analysis remains out of scope |
+| SCH022 | Decoupling contracts | Implemented partial: target pin/terminal and return net consistency, cluster consistency, opt-in required supply-pin coverage through `attributes.required_decoupling_pins`, and opt-in schematic pin-anchor distance through `decoupling.max_target_distance_mm` |
+| SCH023 | Required title-block fields | Implemented opt-in: checks profile-declared `required_title_block_fields` against title/date/revision/company/comment1–comment9 fields on the currently loaded sheet |
+| SCH024 | Document UUID uniqueness | Implemented: detects duplicate object UUIDs within the loaded schematic document; cross-sheet hierarchy-wide uniqueness remains future work |
+| PCB001 | Decoupling pad proximity | Implemented partial: checks opt-in `decoupling.max_target_pad_distance_mm` between transformed target IC pad and capacitor target-pad centers, verifies capacitor return-pad agreement with `return_net`, and checks optional board/netlist parity; routed copper, vias, zones and return-loop checks remain future work |
 
 ## Descriptor catalogue
 
-The core crate exports `builtin_rule_registry()`, which builds one descriptive `RuleDescriptor` for every value in `BuiltinRuleId::ALL` (SCH001–SCH022). A regression test keeps the typed identifiers and descriptor catalogue in one-to-one correspondence and requires each descriptor to include a category, summary, rationale, documentation link, and searchable tags. The registry is deterministic and rejects duplicate IDs.
+The core crate exports `builtin_rule_registry()`, which builds one descriptive `RuleDescriptor` for every value in `BuiltinRuleId::ALL` (SCH001–SCH024 and PCB001). A regression test keeps the typed identifiers and descriptor catalogue in one-to-one correspondence and requires each descriptor to include a category, summary, rationale, documentation link, and searchable tags. The registry is deterministic and rejects duplicate IDs.
 
 When `--policy FILE` is supplied, the CLI uses descriptor `default_level` values as the `default` preset and supports `strict` and `advisory` baselines plus per-rule `allow`, `warn`, and `deny` overrides. Without a policy file, existing rule-emitted severities remain unchanged. Policy changes apply only to built-in `SCHnnn` diagnostics; native KiCad ERC findings are not altered. See [rule policy](rule-policy.md).
 
@@ -65,5 +68,9 @@ A rule ID is not considered ported merely because it appears in the catalogue. A
 SCH021 optionally accepts `components.<connector>.attributes.required_pins` as a comma-separated list. Every listed pin must have an expected logical net mapping through `connections.pin.N` or `pin_nets.N`; SCH014 verifies those mappings against the exported netlist.
 
 SCH022 optionally accepts `components.<IC>.attributes.required_decoupling_pins` and requires at least one decoupler contract for each listed IC pin. A decoupler may set `decoupling.max_target_distance_mm`; SCH022 compares the actual transformed IC pin anchor with the actual transformed capacitor terminal anchor. Missing or ambiguous geometry is reported as unverified. This does not measure PCB pad spacing or copper return paths.
+
+SCH023 optionally enforces `required_title_block_fields` at the profile root. Supported keys are `title`, `date`, `rev`, `company`, and `comment1` through `comment9`; only explicitly requested fields are checked, and required values must be non-empty. SCH024 scans UUIDs on objects in the currently loaded `.kicad_sch` document. It does not yet aggregate UUIDs across every child sheet in a hierarchical project.
+
+PCB001 is opt-in through a decoupling component's `decoupling.max_target_pad_distance_mm`. Run `kicad-clippy lint design.kicad_sch --profile project-profile.json --board design.kicad_pcb` to parse the board, apply each footprint's serialized transform to its pad anchors, check target/capacitor pad-center distance, require the capacitor return pad to use the declared `return_net`, and compare target/return board net names with the exported schematic netlist when present. Missing or ambiguous pads are unverified warnings. PCB001 does not calculate track length, current capacity, via proximity, zone connectivity, or return-loop inductance; KiCad DRC remains responsible for native manufacturing constraints.
 
 See [rule expansion research](rule-expansion-research.md) for the larger schematic/PCB candidate catalogue, native-rule boundaries, source references and ordered hand-off backlog.

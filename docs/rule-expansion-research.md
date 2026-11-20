@@ -2,7 +2,7 @@
 
 **Status:** living design backlog for the Rust implementation merged in PR #27 and follow-on work in PR #28.
 **Integration baseline:** PR #27 was merged into `main` as squash commit `9fb78ebe9924c7d557c5ca0b1a400a12761283cc` on 2026-11-19. PR #28 is rebased directly onto `main`; the candidates below remain future work unless explicitly marked implemented.  
-**Scope distinction:** the current parser and rules analyse .kicad_sch schematics. PCB-specific checks below are researched candidates, not implemented PCB functionality. A PCB parser/model and board-level fixtures are prerequisites.
+**Scope distinction:** the current implementation parses both `.kicad_sch` and `.kicad_pcb` S-expressions. SCH023/SCH024 and the first PCB001 pad-center contract are implemented as described below. PCB002–PCB012 remain research candidates; full PCB path/zone/stackup analysis still requires a copper connectivity model and dedicated board fixtures.
 
 ## 1. Design principles
 
@@ -92,16 +92,16 @@ These are candidates for separate identifiers or separately configurable child r
 | Functional-frame overlap | Overlap between explicitly declared group frames | Group frame_uuid; implemented under SCH009 in this PR | Done here |
 | Frame title/tab geometry | Tab attached to frame, title inside tab, title text not clipped, frame-to-frame gap | Explicit frame/title UUIDs and renderer-aware bounds | P1 |
 | Grid alignment | Symbol origins, pins, labels, junctions and wire endpoints on project grid | Grid spacing and per-object exceptions; native ERC already reports some off-grid pin/wire ends | P1 |
-| Hierarchical UUID uniqueness | Duplicate object UUIDs across all sheets and hierarchy paths | Complete hierarchical traversal; deterministic duplicate locations | P1 |
+| Hierarchical UUID uniqueness | Duplicate object UUIDs across all sheets and hierarchy paths | SCH024 detects duplicates inside the currently loaded schematic document; traversing and aggregating UUIDs across every hierarchical child sheet remains future work | P1 (partial) |
 | Label-scope policy | Forbid/allow global labels by scope; require hierarchical labels at declared sheet boundaries; detect unintended cross-sheet scope | Profile allowlist/denylist and hierarchy model; do not reimplement native name resolution | P1 |
 | Required no-connect intent | Explicit markers for profile-declared intentionally unused pins | Implemented by SCH015 using transformed embedded-pin coordinates and effective library pin type, including selected alternates | Done |
 | Redundant no-connect flags | Report explicit markers on pins whose effective library type is `unconnected` or `no_connect`, whether or not the pin appears in a profile | Implemented by SCH015 for all resolved placed pin facts, including selected units/alternates; ambiguous/unresolved pin geometry is not guessed | Done (resolved pins) |
 | Field-to-body maximum gap | Per-reference Reference/Value gap from transformed symbol body | Implemented by SCH010 with per-component/per-field thresholds and estimated glyph rectangles; curve-based body outlines remain unverified | Done (partial geometry) |
 | Functional-group spacing | Body clearance, alignment, adjacency and subgroup nesting | SCH006 implements body clearance and axis alignment; adjacency, cluster compactness and subgroup nesting remain future work | P1 (partial) |
-| Title-block metadata | Required title, revision, company, date, sheet number/count and project fields | Project policy and variable expansion rules | P2 |
+| Title-block metadata | Required title, revision, company, date and comment fields | Implemented by opt-in SCH023 `required_title_block_fields` for native title/date/rev/company/comment1–comment9 fields on the current sheet; sheet number/count, project variables and hierarchy-wide policies remain future work | P2 (partial) |
 | Component population/DNP | Optional parts retain real populated value and use DNP property rather than NC/DNP text in Value | Approved BOM/variant metadata and schematic DNP flag | P2 |
 | Decoupling coverage | Require every explicitly declared IC supply pin to have at least one decoupling capacitor contract | Implemented by SCH022 with `attributes.required_decoupling_pins`; exported netlist verifies each required target pin exists | Done (opt-in contract) |
-| Decoupler placement | Maximum capacitor-to-target-pin distance in the schematic and cluster compactness/PCB return-loop quality | SCH022 checks optional `max_target_distance_mm` using transformed symbol-pin anchors. Capacitor cluster compactness beyond target distance and PCB pad/copper return-loop analysis remain future work | P1 (partial) |
+| Decoupler placement | Maximum capacitor-to-target-pin distance in the schematic and maximum target-pad-to-capacitor-pad distance on the PCB; cluster compactness/return-loop quality | SCH022 checks optional `max_target_distance_mm` using transformed schematic pin anchors. PCB001 checks optional `max_target_pad_distance_mm` using transformed footprint pad centers and board net assignments. Copper path length, ground-via/zone connectivity and return-loop analysis remain future work | P1 (partial) |
 | Bulk-capacitor contract | Rail served, polarity, placement region and minimum voltage margin | Component ratings, rail voltage/tolerance/transient policy | P2 |
 | Pull-up/pull-down topology | Required pull-ups for declared open-drain interfaces; divider endpoints and bias requirements | Interface role and expected voltage/current ranges | P2 |
 | LED current limiting | Required series current-limiting path for declared indicator LEDs | LED Vf/current, supply range and resistor value/tolerance/power | P2 |
@@ -115,11 +115,11 @@ Native ERC overlap must be reviewed before implementation. For example, do not a
 
 ## 5. PCB rules that merit their own checks
 
-KiCad PCB DRC already covers ordinary electrical/manufacturing constraints and includes configurable high-speed constraints. The custom PCB rule family should check circuit intent and physical relationships that generic DRC cannot know from the board alone.
+PCB001 has a first implementation for declared decoupling pad-center distance. The other PCB002–PCB012 items below remain candidates. KiCad PCB DRC already covers ordinary electrical/manufacturing constraints and includes configurable high-speed constraints. The custom PCB rule family should check circuit intent and physical relationships that generic DRC cannot know from the board alone.
 
 | Candidate | Proposed rule family | What it should check | Required metadata / caveats | Priority |
 |---|---|---|---|---|
-| Decoupling placement and return loop | PCB001 | Capacitor proximity to target IC supply pad; short supply/return path; nearby ground via/plane connection; cluster compactness; capacitor-side relationship | Target pin, capacitor terminal, return net, capacitance/rating and datasheet-derived distance; must evaluate actual footprint pads and routed copper, not component origins | P1 |
+| Decoupling placement and return loop | PCB001 | Implemented first slice: maximum center-to-center distance between target IC supply pad and capacitor target pad, target/return pad net checks, and optional schematic-netlist parity | `max_target_pad_distance_mm`, target pin, capacitor target/return terminals and return-net metadata. Track/arc/via/zone connectivity, pad-edge distance, nearby ground vias, copper path length and return-loop quality remain future work | P1 (partial) |
 | Switching power-stage hot loop | PCB002 | Input capacitor/MOSFET/rectifier/inductor/output-capacitor placement and high-di/dt loop length/area; switch-node copper exposure and proximity to sensitive signals | Topology role map, switching-node nets, device-specific layout guidance; thresholds must come from controller datasheet/app note | P1 |
 | Kelvin/current-sense routing | PCB003 | Sense traces originate at resistor pad centers, run as a differential pair, avoid carrying load current and stay away from switching nodes | Sense-resistor reference/pads, sense pin pair, current direction and noise-sensitive net roles | P1 |
 | Oscillator/crystal layout | PCB004 | Crystal and load capacitors near oscillator pins; short load-cap return; separation from fast clocks/switching traces; reference-ground continuity below/around oscillator where applicable | Device-specific oscillator topology and datasheet/app note; guard rings are not universal | P2 |
@@ -134,7 +134,7 @@ KiCad PCB DRC already covers ordinary electrical/manufacturing constraints and i
 
 ### 5.1 PCB implementation dependencies
 
-Do not begin PCB001–PCB012 until the board model can resolve:
+Do not begin PCB002–PCB012 until the board model can resolve:
 - footprint reference, footprint UUID and 3D/board position/rotation/side;
 - pad number, pad position/shape/layer/net and padstack/via details;
 - track, arc, via and zone geometry with net/layer association;
@@ -195,7 +195,12 @@ Recommended future work, ordered by prerequisites:
 2. Continue strengthening family-specific SCH013 tests and diagnostic-parity regressions; extend the conservative netclass resolver only when KiCad project semantics can be resolved without guessing.
 3. Improve SCH009/SCH012 coverage for unsupported image encodings and remaining annotation types; add exact curve-based body geometry where a validated transform/distance model is available.
 4. Expand role-specific schematic contracts beyond the current SCH021/SCH022 coverage (pull-ups/dividers, LED current limiting, protection paths, connector completeness and test-point coverage).
-5. Build the `.kicad_pcb` parser and board-fact model; prioritize PCB001, PCB003 and PCB008 against annotated board fixtures.
+5. Extend the `.kicad_pcb` parser and board-fact model beyond PCB001 pad anchors; prioritize PCB002, PCB003 and PCB008 against annotated board fixtures.
 6. Add board-layer/stackup/zone return-path analysis only after path connectivity and KiCad DRC integration are validated.
 
 **Do not implement every candidate at once.** Each rule should arrive with a narrow contract, exact input facts, a documented false-positive policy, positive/negative fixtures and an explicit statement of what native ERC/DRC continues to own.
+
+
+### Implemented PCB evidence boundary
+
+The new `BoardDocument` parser retains the source text and S-expression spans for `.kicad_pcb` documents. PCB001 currently extracts placed F.Cu/B.Cu footprint pad anchors, applies the serialized footprint scale/rotation (KiCad already stores flipped pad-local coordinates and the adjusted footprint orientation), resolves each footprint reference and pad number, and checks the declared target/capacitor distance. It also checks the capacitor return pad against the declared return net and, when available, compares target/return pad net names with the exported schematic netlist. It does not yet extract routed tracks, arcs, vias, filled zones, board stackup or continuous copper regions. PCB002–PCB012 should not be described as implemented until those board facts and positive/negative fixtures exist.

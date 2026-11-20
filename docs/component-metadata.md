@@ -162,6 +162,24 @@ SCH022 requires each capacitor declared with role `decoupling` to provide `decou
 
 A decoupling capacitor may additionally set `max_target_distance_mm`. SCH022 measures the Euclidean distance between the transformed target IC pin anchor and transformed capacitor target-terminal anchor in schematic space. Missing or ambiguous pin geometry produces an unverified warning, not an assumed distance. This is a schematic-placement check only: it does not measure PCB pad distance, copper-path length, or return-loop area.
 
+For a board-level pad-center constraint, a decoupling contract may also set `max_target_pad_distance_mm`:
+
+~~~json
+{
+  "decoupling": {
+    "target_pin": "U1.21",
+    "target_terminal": "1",
+    "return_terminal": "2",
+    "return_net": "GND",
+    "cluster": "U1.VREG_1V2",
+    "max_target_distance_mm": 4.0,
+    "max_target_pad_distance_mm": 2.0
+  }
+}
+~~~
+
+Run the schematic lint with both `--profile project-profile.json` and `--board design.kicad_pcb`. PCB001 compares the actual transformed board-space center of the IC target pad with the capacitor target-terminal pad, including footprint rotation and front/back transforms. It verifies that the target IC pad and capacitor target pad use the same board net, that the capacitor return pad uses the declared `return_net`, and—when the profile CLI has exported a schematic netlist—that all three board pad net assignments agree with their schematic pin-to-net assignments. A missing/ambiguous pad is reported as unverified. This is a pad-center distance only—not routed path length, pad-edge clearance, via/plane connectivity, or return-loop analysis.
+
 An IC may declare an opt-in comma-separated `attributes.required_decoupling_pins` list, such as `"1, 2, 7"`. SCH022 requires at least one capacitor decoupling contract targeting every listed `REF.PIN`. When a KiCad netlist is available, each listed IC pin must also exist in that netlist. This list is the project's explicit supply-pin contract; the linter does not guess that every pin with a particular library electrical type requires a capacitor.
 
 The netlist adapter verifies actual target-pin and return-terminal net membership for decoupling capacitors. SCH004 separately checks profile-declared direct-wire pairs and common-pin groups against the physical wire graph built from transformed embedded-symbol pin coordinates. The graph never uses matching label names as connectivity edges. Automatic inference of every physical connection, physical proximity constraints, and shared-copper geometry analysis remain pending.
@@ -286,3 +304,19 @@ A connector can declare its full expected pin set with the comma-separated `attr
 ~~~
 
 SCH021 verifies that every listed pin has an expected net mapping in `connections.pin.N` or `pin_nets.N`. SCH014 independently verifies those mappings against the exported KiCad netlist. This check is opt-in because unpopulated, reserved, shield, and intentionally unused connector contacts differ by interface and product variant.
+
+
+## Required sheet title-block fields
+
+A project may require selected native KiCad title-block fields by adding `required_title_block_fields` at the profile root:
+
+~~~json
+{
+  "schema_version": 1,
+  "required_title_block_fields": ["title", "rev", "company", "comment1"]
+}
+~~~
+
+SCH023 supports `title`, `date`, `rev`, `company`, and `comment1` through `comment9`. Only the fields named by the profile are enforced; each must exist in the current sheet's `title_block` and contain non-whitespace text. This keeps the rule opt-in for projects that use their own title-block conventions. Sheet number/count and project-level metadata are not inferred by SCH023.
+
+SCH024 reports duplicate UUID values among objects in the currently loaded schematic document. It helps protect object selection, grouping and references from local duplicate identifiers. The CLI currently loads one `.kicad_sch` file per invocation, so duplicate identifiers across separately loaded hierarchical child sheets remain a distinct project-level check.

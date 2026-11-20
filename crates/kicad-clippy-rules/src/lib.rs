@@ -19,6 +19,11 @@ mod additional_profile_rules;
 mod generic;
 /// Defines the shared project-profile schema and orchestrates its dedicated connectivity, group, component-intent, and decoupling validators.
 mod metadata;
+/// Parses board pad coordinates and enforces declared PCB design-intent distances.
+mod pcb_rules;
+/// Checks UUID uniqueness within the currently loaded schematic document.
+#[path = "rules/sch024.rs"]
+mod sch024;
 
 pub use generic::{
     ComponentFact, MILLIMETRES_PER_MIL, RuleRun, SchematicArcFact, SchematicFacts,
@@ -156,6 +161,7 @@ impl RuleEngine {
             Box::new(generic::BuiltinGeometryPass) as Box<dyn RulePass>,
             Box::new(generic::BuiltinLabelPass),
             Box::new(generic::BuiltinAnnotationPass),
+            Box::new(sch024::DuplicateUuidPass),
         ] {
             engine.passes.insert(pass.name(), pass);
         }
@@ -414,7 +420,7 @@ mod tests {
         );
         Ok(())
     }
-    /// Regression test: verifies that the built-in engine registers all three standard passes and can run them on an empty schematic without SCH diagnostics.
+    /// Regression test: verifies that the built-in engine registers all four standard passes and can run them on an empty schematic without SCH diagnostics.
     ///
     /// # Returns
     ///
@@ -427,7 +433,7 @@ mod tests {
     fn built_in_engine_registers_and_runs_its_passes() -> Result<(), Box<dyn Error>> {
         let document = SchematicDocument::from_text("fixture.kicad_sch", "(kicad_sch)")?;
         let engine = RuleEngine::with_builtins();
-        assert_eq!(engine.len(), 3);
+        assert_eq!(engine.len(), 4);
         assert!(
             !engine
                 .run(&document)
