@@ -90,10 +90,10 @@ These are candidates for separate identifiers or separately configurable child r
 | Candidate | Suggested scope | Configuration/evidence required | Priority |
 |---|---|---|---|
 | Functional-frame overlap | Overlap between explicitly declared group frames | Group frame_uuid; implemented under SCH009 in this PR | Done here |
-| Frame title/tab geometry | Tab attached to frame, title inside tab, title text not clipped, frame-to-frame gap | Explicit frame/title UUIDs and renderer-aware bounds | P1 |
-| Grid alignment | Symbol origins, pins, labels, junctions and wire endpoints on project grid | Grid spacing and per-object exceptions; native ERC already reports some off-grid pin/wire ends | P1 |
+| Frame title/tab geometry | Tab attached to frame, title inside tab, title not clipped, frame-to-frame gap | SCH028 checks explicit frame/tab/title UUIDs, rectangular edge attachment, title-box containment and optional minimum Euclidean frame gap; exact glyph clipping remains unverified | Implemented (partial text geometry) |
+| Grid alignment | Symbol origins, pins, labels, junctions and wire endpoints on project grid | SCH026 uses explicit spacing/origin/tolerance, symbol-origin and label-anchor defaults, opt-in pins/junctions/wire endpoints, and narrowly scoped exemptions | Implemented (opt-in project contract) |
 | Hierarchical UUID uniqueness | Duplicate object UUIDs across all sheets and hierarchy paths | SCH024 detects duplicates inside the currently loaded schematic document; traversing and aggregating UUIDs across every hierarchical child sheet remains future work | P1 (partial) |
-| Label-scope policy | Forbid/allow global labels by scope; require hierarchical labels at declared sheet boundaries; detect unintended cross-sheet scope | Profile allowlist/denylist and hierarchy model; do not reimplement native name resolution | P1 |
+| Label-scope policy | Forbid/allow global labels; require named labels to use local/global/hierarchical scope on the loaded sheet | SCH027 implements global allow/deny lists and required named-label scopes on the loaded sheet. Parent/child sheet-boundary checks and project-wide aggregation remain future work; do not reimplement native name resolution | Done (partial) |
 | Required no-connect intent | Explicit markers for profile-declared intentionally unused pins | Implemented by SCH015 using transformed embedded-pin coordinates and effective library pin type, including selected alternates | Done |
 | Redundant no-connect flags | Report explicit markers on pins whose effective library type is `unconnected` or `no_connect`, whether or not the pin appears in a profile | Implemented by SCH015 for all resolved placed pin facts, including selected units/alternates; ambiguous/unresolved pin geometry is not guessed | Done (resolved pins) |
 | Field-to-body maximum gap | Per-reference Reference/Value gap from transformed symbol body | Implemented by SCH010 with per-component/per-field thresholds and estimated glyph rectangles; curve-based body outlines remain unverified | Done (partial geometry) |
@@ -209,3 +209,16 @@ The new `BoardDocument` parser retains the source text and S-expression spans fo
 ### Implemented test-point evidence boundary
 
 SCH025 is profile-driven: every critical net listed in `required_test_point_nets` must map to at least one component declared with kind/role `test_point`, using an explicit `pin_nets` mapping. The exported schematic netlist confirms that the mapped pin belongs to the requested net. PCB009 resolves the same reference/pad number in the board, verifies the assigned net, and checks for copper plus solder-mask layers. This does not prove that a probe can physically reach the pad or that an automated fixture has sufficient approach clearance.
+
+
+### Implemented project-grid boundary
+
+SCH026 is an opt-in profile contract. It checks only selected anchor families, defaulting to placed symbol origins and label anchors. Pin anchors, junctions and wire endpoints are explicit opt-ins. Grid spacing, origin and tolerance are validated, and narrowly scoped reference/pin/label/coordinate exemptions are available. It neither changes KiCad's project/editor grid nor overrides native ERC findings.
+
+### Implemented label-scope boundary
+
+SCH027 applies global-label allow/deny lists and required label-name scope declarations to labels in the currently loaded schematic file. It does not aggregate project-wide labels, resolve hierarchical labels against parent-sheet pins, or replace KiCad's native label/net resolution.
+
+### Implemented frame-title geometry boundary
+
+SCH028 is opt-in per functional group. The profile links a frame rectangle, attached title tab and title text box by UUID. The rule requires a non-zero shared edge segment between tab and frame and checks that the serialized title-box rectangle lies within the tab. Optional minimum frame gaps use Euclidean rectangle-to-rectangle distance. It does not infer arbitrary group frames or simulate exact glyph rendering/clipping.
