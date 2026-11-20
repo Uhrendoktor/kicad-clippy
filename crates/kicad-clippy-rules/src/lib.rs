@@ -420,7 +420,7 @@ mod tests {
         );
         Ok(())
     }
-    /// Regression test: verifies that the built-in engine registers all three standard passes and can run them on an empty schematic without SCH diagnostics.
+    /// Regression test: verifies that the built-in engine registers all four standard passes and can run them on an empty schematic without SCH diagnostics.
     ///
     /// # Returns
     ///
@@ -433,7 +433,7 @@ mod tests {
     fn built_in_engine_registers_and_runs_its_passes() -> Result<(), Box<dyn Error>> {
         let document = SchematicDocument::from_text("fixture.kicad_sch", "(kicad_sch)")?;
         let engine = RuleEngine::with_builtins();
-        assert_eq!(engine.len(), 3);
+        assert_eq!(engine.len(), 4);
         assert!(
             !engine
                 .run(&document)
