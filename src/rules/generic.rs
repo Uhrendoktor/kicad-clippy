@@ -268,6 +268,18 @@ pub struct ComponentFact {
     /// Symbol origin in millimetres, or `None` when no origin could be resolved.
     pub position_mm: Option<(f64, f64)>,
 }
+/// Population state and value text serialized on one placed symbol in the base design.
+#[derive(Clone, Debug)]
+pub struct ComponentPopulationFact {
+    /// Placed component reference designator.
+    pub reference: String,
+    /// Actual Value property text, or `None` when the property is absent or malformed.
+    pub value: Option<String>,
+    /// Base-design DNP state; `None` indicates an invalid serialized boolean.
+    pub dnp: Option<bool>,
+    /// Whether one or more per-instance variant overrides exist for this symbol.
+    pub has_variant_overrides: bool,
+}
 /// Native `KiCad` group name, UUID, and member UUIDs.
 #[derive(Clone, Debug)]
 pub struct SchematicGroupFact {
@@ -462,6 +474,8 @@ pub struct SchematicImageFact {
 pub struct SchematicFacts {
     /// Placed component references and origins.
     pub components: Vec<ComponentFact>,
+    /// Base-design value and DNP attributes for placed symbols.
+    pub component_populations: Vec<ComponentPopulationFact>,
     /// Top-level annotation text boxes and their geometry.
     pub text_boxes: Vec<TextBoxFact>,
     /// Top-level standalone text and estimated glyph bounds.
@@ -540,6 +554,7 @@ impl SchematicFacts {
         };
         Self {
             components: collect_component_facts(root),
+            component_populations: collect_component_population_facts(root),
             text_boxes: collect_text_box_facts(root),
             texts: collect_plain_text_facts(root),
             graphics: collect_sheet_graphic_facts(root),
@@ -602,6 +617,58 @@ fn collect_component_facts(root: &Node) -> Vec<ComponentFact> {
                 reference: reference.to_owned(),
                 uuid: uuid.map(str::to_owned),
                 position_mm,
+            })
+        })
+        .collect()
+}
+/// Extracts the base-design Value and DNP state for every placed symbol.
+///
+/// Variant overrides are detected separately because this fact set describes only
+/// the base design, not an arbitrarily selected `KiCad` project variant.
+///
+/// # Arguments
+///
+/// * `root` — Root S-expression node of the parsed schematic.
+///
+/// # Returns
+///
+/// Population facts for placed symbols with a resolvable reference designator.
+fn collect_component_population_facts(root: &Node) -> Vec<ComponentPopulationFact> {
+    children(root, "symbol")
+        .filter_map(|node| {
+            let property_value = |name: &str| {
+                children(node, "property").find_map(|property| {
+                    let items = list_items(property)?;
+                    (atom_value(items.get(1)?)? == name)
+                        .then(|| atom_value(items.get(2)?).map(str::to_owned))
+                        .flatten()
+                })
+            };
+            let reference = property_value("Reference")?;
+            if reference.starts_with('#') || reference.is_empty() {
+                return None;
+            }
+            let dnp = child_list(node, "dnp").map_or(Some(false), |state| {
+                list_items(state)
+                    .and_then(|items| items.get(1))
+                    .and_then(atom_value)
+                    .and_then(|value| match value {
+                        "yes" => Some(true),
+                        "no" => Some(false),
+                        _ => None,
+                    })
+            });
+            let mut has_variant_overrides = false;
+            if let Some(instances) = child_list(node, "instances") {
+                walk(instances, &mut |child| {
+                    has_variant_overrides |= head(child) == Some("variant");
+                });
+            }
+            Some(ComponentPopulationFact {
+                reference,
+                value: property_value("Value"),
+                dnp,
+                has_variant_overrides,
             })
         })
         .collect()
