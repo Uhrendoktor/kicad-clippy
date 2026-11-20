@@ -309,21 +309,11 @@ fn path_to_shape_gap(
         BodyShape::Polygon {
             points_mm,
             stroke_half_mm,
-        } => polygon_path_shape_gap(
-            path_vertices,
-            path_stroke_half,
-            points_mm,
-            *stroke_half_mm,
-        ),
+        } => polygon_path_shape_gap(path_vertices, path_stroke_half, points_mm, *stroke_half_mm),
         BodyShape::Path {
             points_mm,
             stroke_half_mm,
-        } => path_path_shape_gap(
-            path_vertices,
-            path_stroke_half,
-            points_mm,
-            *stroke_half_mm,
-        ),
+        } => path_path_shape_gap(path_vertices, path_stroke_half, points_mm, *stroke_half_mm),
     }
 }
 
