@@ -125,7 +125,7 @@ pub struct ComponentRole(
 );
 
 /// Pin-specific intent for a decoupling capacitor.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct DecouplingIntent {
     /// Reference and pin number, e.g. U1.21.
     pub target_pin: String,
