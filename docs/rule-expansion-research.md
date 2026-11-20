@@ -90,7 +90,7 @@ These are candidates for separate identifiers or separately configurable child r
 | Candidate | Suggested scope | Configuration/evidence required | Priority |
 |---|---|---|---|
 | Functional-frame overlap | Overlap between explicitly declared group frames | Group frame_uuid; implemented under SCH009 in this PR | Done here |
-| Frame title/tab geometry | Tab attached to frame, title inside tab, title text not clipped, frame-to-frame gap | Explicit frame/title UUIDs and renderer-aware bounds | P1 |
+| Frame title/tab geometry | Tab attached to frame, title inside tab, title not clipped, frame-to-frame gap | SCH028 checks explicit frame/tab/title UUIDs, rectangular edge attachment, title-box containment and optional minimum Euclidean frame gap; exact glyph clipping remains unverified | Implemented (partial text geometry) |
 | Grid alignment | Symbol origins, pins, labels, junctions and wire endpoints on project grid | SCH026 is implemented with explicit spacing/origin/tolerance, symbol-origin and label-anchor defaults, opt-in pins/junctions/wire endpoints, and narrowly scoped exemptions; the profile does not duplicate native ERC anchor checks by default | Done (opt-in project contract) |
 | Hierarchical UUID uniqueness | Duplicate object UUIDs across all sheets and hierarchy paths | SCH024 detects duplicates inside the currently loaded schematic document; traversing and aggregating UUIDs across every hierarchical child sheet remains future work | P1 (partial) |
 | Label-scope policy | Forbid/allow global labels; require named labels to use local/global/hierarchical scope on the loaded sheet | SCH027 implements the global allow-list/deny-list and required named-label scopes on the currently loaded sheet. Parent/child sheet-boundary checks and project-wide aggregation remain future work; do not reimplement native name resolution | Done (partial) |
@@ -214,3 +214,8 @@ SCH025 is profile-driven: every critical net listed in `required_test_point_nets
 ### Implemented label-scope boundary
 
 SCH027 applies `label_scope_policy.allowed_global_labels`, `forbidden_global_labels`, and `required_label_scopes` to the labels parsed from the currently loaded schematic file. The allow-list is optional (omitted means unrestricted; an explicit empty list forbids all global labels). Required named scopes are checked for missing labels and every matching label instance on that sheet. The rule does not resolve hierarchical-label connections against parent sheet pins, aggregate label names across child files, or replace KiCad's native electrical/net resolution.
+
+
+### Implemented frame-title geometry boundary
+
+SCH028 is opt-in per functional group. The profile can link a frame rectangle, an attached rectangular title tab, and a title text box by UUID. The rule requires a non-zero shared edge segment between the tab and frame and checks that the serialized title text-box rectangle remains within the tab. A group may also declare minimum_frame_gap_mm; distinct declared group frames are checked by minimum Euclidean rectangle-to-rectangle distance. It does not infer which arbitrary rectangles are functional frames, simulate exact glyph rendering/clipping, or replace a full schematic renderer.

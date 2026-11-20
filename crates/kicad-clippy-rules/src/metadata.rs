@@ -73,6 +73,10 @@ mod sch025;
 #[path = "profile_rules/sch026.rs"]
 mod sch026;
 
+/// Checks SCH028 title-tab attachment, title containment, and group-frame spacing.
+#[path = "profile_rules/sch028.rs"]
+mod sch028;
+
 /// Currently supported project-profile schema version.
 const SUPPORTED_PROFILE_SCHEMA_VERSION: u32 = 1;
 /// Minimum number of distinct pins required in a group contract.
@@ -396,6 +400,15 @@ pub struct GroupIntent {
     /// Optional UUID of the schematic rectangle that encloses the functional group.
     #[serde(default)]
     pub frame_uuid: Option<String>,
+    /// Optional UUID of the rectangular title tab attached to this group's frame.
+    #[serde(default)]
+    pub frame_title_tab_uuid: Option<String>,
+    /// Optional UUID of the title text box contained by the declared frame title tab.
+    #[serde(default)]
+    pub frame_title_text_box_uuid: Option<String>,
+    /// Optional minimum Euclidean gap between this frame and other distinct declared group frames, in millimetres.
+    #[serde(default)]
+    pub minimum_frame_gap_mm: Option<f64>,
     /// Optional required clearance from group member origins and its description box to the frame edge.
     #[serde(default)]
     pub minimum_frame_clearance_mm: Option<f64>,
@@ -585,6 +598,7 @@ impl LintProfile {
         diagnostics.extend(sch022::Sch022.check(&context));
         diagnostics.extend(sch025::Sch025.check(&context));
         diagnostics.extend(sch026::Sch026.check(&context));
+        diagnostics.extend(sch028::Sch028.check(&context));
         diagnostics.extend(sch014::Sch014.check(&context));
         diagnostics.extend(sch010::Sch010.check(&context));
         diagnostics.extend(sch017::Sch017.check(&context));
