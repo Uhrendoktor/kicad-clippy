@@ -33,7 +33,7 @@ The current built-in catalogue defines stable schematic IDs SCH001–SCH028 plus
 | SCH027 | Label scope policy | Implemented opt-in: applies a global-label allow-list and deny-list, and requires selected label names to use local/global/hierarchical scope on the currently loaded sheet; cross-sheet hierarchy validation remains future work |
 | SCH028 | Functional-frame title layout | Implemented opt-in: verifies UUID-linked rectangular title-tab attachment, title text-box containment within the tab, and configured minimum spacing between distinct group frames; title geometry uses serialized rectangles rather than exact font-rendering/clipping |
 | PCB001 | Decoupling pad proximity | Implemented partial: checks opt-in `decoupling.max_target_pad_distance_mm` between transformed target IC pad and capacitor target-pad centers, verifies capacitor return-pad agreement with `return_net`, and checks optional board/netlist parity; routed copper, vias, zones and return-loop checks remain future work |
-| PCB009 | Test-point pad exposure | Implemented partial, opt-in: verifies required test-point reference/pad numbers exist on the PCB, match the declared net, and include copper plus solder-mask layers; probe approach and fixture/enclosure access remain future work |
+| PCB009 | Test-point pad exposure and contact size | Implemented partial, opt-in: verifies required test-point reference/pad numbers exist on the PCB, match the declared net, and include copper plus solder-mask layers; an optional `attributes.minimum_probe_pad_width_mm` threshold checks the smaller dimension of circle, rectangle, oval, and round-rectangle pads after uniform footprint scaling; custom pads and non-uniform scales are unverified; probe approach and fixture/enclosure access remain future work |
 
 ## Descriptor catalogue
 
@@ -80,7 +80,7 @@ PCB001 is opt-in through a decoupling component's `decoupling.max_target_pad_dis
 
 SCH025 uses the profile root `required_test_point_nets` list. Each listed net must map to at least one component declared with kind and role `test_point`, with an explicit `pin_nets` entry. When an exported netlist is available, the mapped component pin must actually resolve to the required net; without a netlist, the declaration is reported as unverified.
 
-PCB009 uses the same required-net and test-point pin declarations. With `--board`, it resolves each reference/pad number to a placed footprint pad, checks its board net, and requires the pad layer list to include copper and solder mask. This verifies the serialized pad exposure layers only; it does not calculate probe approach, surrounding physical clearance, probe tip diameter, fixture reach, or enclosure access.
+PCB009 uses the same required-net and test-point pin declarations. With `--board`, it resolves each reference/pad number to a placed footprint pad, checks its board net, and requires the pad layer list to include copper and solder mask. A test-point component may additionally set `attributes.minimum_probe_pad_width_mm` to require a minimum smaller pad dimension. Only circle, rectangle, oval, and round-rectangle pads with uniform footprint scaling are measured; custom shapes and non-uniform scales are reported unverified. This contact-size check does not calculate probe approach, surrounding physical clearance, fixture reach, or enclosure access.
 
 See [rule expansion research](rule-expansion-research.md) for the larger schematic/PCB candidate catalogue, native-rule boundaries, source references and ordered hand-off backlog.
 
