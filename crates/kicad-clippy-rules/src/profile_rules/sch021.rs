@@ -296,7 +296,7 @@ mod tests {
     #[test]
     fn fully_mapped_required_connector_pins_are_accepted() {
         let intent = connector_intent("1, 2", &[("pin.1", "VBUS"), ("pin.2", "GND")]);
-        assert!(validate_role_contract("J1", &intent).is_empty());
+        assert_eq!(validate_role_contract("J1", &intent), Vec::new());
     }
 
     /// Reports an empty token in a connector required-pin declaration.

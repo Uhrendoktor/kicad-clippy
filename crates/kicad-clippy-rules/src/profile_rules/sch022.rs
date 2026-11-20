@@ -243,12 +243,12 @@ fn validate_decoupling_target_distance(
 /// Checks every profile-declared required IC power pin has at least one decoupler contract.
 ///
 /// The declaration is opt-in through `components.<IC>.attributes.required_decoupling_pins`.
-/// Pin existence is checked against KiCad's exported netlist when one is available.
+/// Pin existence is checked against `KiCad`'s exported netlist when one is available.
 ///
 /// # Arguments
 ///
 /// * `components` — All component-intent declarations in the project profile.
-/// * `netlist` — Optional flattened KiCad netlist used to verify each required IC pin exists.
+/// * `netlist` — Optional flattened `KiCad` netlist used to verify each required IC pin exists.
 ///
 /// # Returns
 ///
@@ -597,8 +597,9 @@ mod tests {
                 && item.message.contains("5.00 mm")
                 && item.message.contains("exceeding max_target_distance_mm")
         }));
-        assert!(
-            validate_decoupling_target_distance("C1", &decoupling(Some(5.0)), &facts).is_empty()
+        assert_eq!(
+            validate_decoupling_target_distance("C1", &decoupling(Some(5.0)), &facts),
+            Vec::new()
         );
     }
 

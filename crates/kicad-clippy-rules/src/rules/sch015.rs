@@ -174,7 +174,7 @@ mod tests {
         }));
     }
 
-    /// Reports a marker on a library pin whose type is already no_connect.
+    /// Reports a marker on a library pin whose type is already `no_connect`.
     #[test]
     fn redundant_flag_on_no_connect_pin_is_reported() {
         let document = schematic("no_connect", true);
@@ -192,6 +192,6 @@ mod tests {
     fn marker_on_connectable_passive_pin_is_not_redundant() {
         let document = schematic("passive", true);
         let facts = SchematicFacts::from_document(&document);
-        assert!(check_redundant_no_connect_markers(&facts).is_empty());
+        assert_eq!(check_redundant_no_connect_markers(&facts), Vec::new());
     }
 }
