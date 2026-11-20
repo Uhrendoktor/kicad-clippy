@@ -130,10 +130,10 @@ fn collect_hierarchy_uuids(
 
         match SchematicDocument::from_path(&canonical_path) {
             Ok(child_document) => {
-                collect_hierarchy_uuids(&child_document, visited_paths, occurrences, diagnostics)
+                collect_hierarchy_uuids(&child_document, visited_paths, occurrences, diagnostics);
             }
             Err(error) => {
-                diagnostics.push(child_sheet_warning(&canonical_path, &error.to_string()))
+                diagnostics.push(child_sheet_warning(&canonical_path, &error.to_string()));
             }
         }
     }
