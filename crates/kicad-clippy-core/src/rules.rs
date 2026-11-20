@@ -449,7 +449,13 @@ const BUILTIN_RULE_METADATA: [BuiltinRuleMetadata; 27] = [
         summary: "Checks that each required test-point component pin has a placed board pad on its expected net with copper and solder-mask layers.",
         explanation: "PCB009 resolves test-point reference/pad numbers against placed footprints, checks board net assignments, and verifies that the pad layer list includes copper and solder mask. This is an exposure-layer check only; it does not model probe approach, fixture geometry, enclosure access, or physical clearance around the pad.",
         level: RuleLevel::Deny,
-        tags: &["pcb", "test-point", "solder-mask", "accessibility", "profile"],
+        tags: &[
+            "pcb",
+            "test-point",
+            "solder-mask",
+            "accessibility",
+            "profile",
+        ],
     },
 ];
 

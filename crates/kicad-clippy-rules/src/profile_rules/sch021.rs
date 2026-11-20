@@ -96,7 +96,9 @@ pub(super) fn validate_role_contract(reference: &str, intent: &ComponentIntent) 
             diagnostics.push(Diagnostic::for_builtin_rule(
                 BuiltinRuleId::Sch021,
                 Severity::Error,
-                format!("{reference} test-point metadata must declare at least one pin_nets mapping"),
+                format!(
+                    "{reference} test-point metadata must declare at least one pin_nets mapping"
+                ),
             ));
         }
         for (pin, net) in &intent.pin_nets {
@@ -269,7 +271,6 @@ mod tests {
     use crate::metadata::{ComponentIntent, ComponentKind, ComponentRole};
     use std::collections::BTreeMap;
 
-
     /// Builds test-point metadata with the supplied role and pin-to-net mappings.
     ///
     /// # Arguments
@@ -314,26 +315,38 @@ mod tests {
         let wrong_role = test_point_intent("debug", &[("1", "VDD")]);
         let missing = validate_role_contract("TP1", &missing_mapping);
         let wrong = validate_role_contract("TP2", &wrong_role);
-        assert!(missing.iter().any(|item| item.message.contains("at least one pin_nets")));
-        assert!(wrong.iter().any(|item| item.message.contains("must use role")));
+        assert!(
+            missing
+                .iter()
+                .any(|item| item.message.contains("at least one pin_nets"))
+        );
+        assert!(
+            wrong
+                .iter()
+                .any(|item| item.message.contains("must use role"))
+        );
     }
 
     /// Rejects blank test-point pin-net fields.
     #[test]
     fn test_point_role_rejects_blank_pin_net_fields() {
         let intent = test_point_intent("test_point", &[("1", "   ")]);
-        assert!(validate_role_contract("TP1", &intent)
-            .iter()
-            .any(|item| item.message.contains("trimmed, non-empty")));
+        assert!(
+            validate_role_contract("TP1", &intent)
+                .iter()
+                .any(|item| item.message.contains("trimmed, non-empty"))
+        );
     }
 
     /// Rejects test-point net mappings with leading or trailing whitespace.
     #[test]
     fn test_point_role_rejects_untrimmed_net_names() {
         let intent = test_point_intent("test_point", &[("1", "VDD ")]);
-        assert!(validate_role_contract("TP1", &intent)
-            .iter()
-            .any(|item| item.message.contains("trimmed, non-empty")));
+        assert!(
+            validate_role_contract("TP1", &intent)
+                .iter()
+                .any(|item| item.message.contains("trimmed, non-empty"))
+        );
     }
 
     /// Builds connector metadata with the supplied required-pin list and expected net mappings.

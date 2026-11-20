@@ -581,7 +581,6 @@ pub fn validate_missing_board(profile: &LintProfile) -> Vec<Diagnostic> {
         .collect()
 }
 
-
 /// Checks each required test-point net against its declared, placed, exposed board pad.
 ///
 /// # Arguments
@@ -1113,7 +1112,6 @@ mod contract_tests {
     }
 }
 
-
 #[cfg(test)]
 mod test_point_tests {
     #![allow(clippy::expect_used, clippy::unwrap_used)]
@@ -1164,8 +1162,7 @@ mod test_point_tests {
         pad_kind: &str,
         layers: &str,
     ) -> BoardDocument {
-        let net_expression =
-            net.map_or_else(String::new, |name| format!("(net 1 \"{name}\")"));
+        let net_expression = net.map_or_else(String::new, |name| format!("(net 1 \"{name}\")"));
         let source = format!(
             r#"(kicad_pcb
                 (footprint "TestPoint:TP" (layer "{footprint_layer}") (at 10 10)
@@ -1216,9 +1213,8 @@ mod test_point_tests {
     /// Rejects a profile-declared test-point footprint pin that is absent from the PCB.
     #[test]
     fn pcb009_rejects_missing_test_point_pad() {
-        let board =
-            BoardDocument::from_text("missing-test-point.kicad_pcb", "(kicad_pcb)")
-                .expect("board parses");
+        let board = BoardDocument::from_text("missing-test-point.kicad_pcb", "(kicad_pcb)")
+            .expect("board parses");
         let diagnostics = validate_test_point_pad_access(&test_point_profile(), &board);
         assert!(diagnostics.iter().any(|item| {
             item.code == "PCB009" && item.message.contains("missing or ambiguous")
@@ -1231,9 +1227,11 @@ mod test_point_tests {
         let diagnostics = validate_missing_test_point_board(&test_point_profile());
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].code, "PCB009");
-        assert_eq!(diagnostics[0].severity, kicad_clippy_core::Severity::Warning);
+        assert_eq!(
+            diagnostics[0].severity,
+            kicad_clippy_core::Severity::Warning
+        );
     }
-
 
     /// Accepts a back-side SMD test-point pad only when its back-side mask is exposed.
     #[test]

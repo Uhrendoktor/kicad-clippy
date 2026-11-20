@@ -485,7 +485,9 @@ impl LintProfile {
                 diagnostics.extend(crate::pcb_rules::validate_decoupling_pad_distances(
                     self, board, netlist,
                 ));
-                diagnostics.extend(crate::pcb_rules::validate_test_point_pad_access(self, board));
+                diagnostics.extend(crate::pcb_rules::validate_test_point_pad_access(
+                    self, board,
+                ));
             }
             None => {
                 diagnostics.extend(crate::pcb_rules::validate_missing_board(self));

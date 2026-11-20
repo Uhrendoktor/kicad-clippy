@@ -206,7 +206,6 @@ mod tests {
         assert!(diagnostics[0].message.contains("not verified"));
     }
 
-
     /// Rejects a declared test-point pin that is missing from the exported netlist.
     #[test]
     fn test_point_pin_must_exist_in_exported_netlist() {
@@ -232,8 +231,7 @@ mod tests {
         let mut profile = profile(true);
         profile.required_test_point_nets.insert("   ".to_owned());
         profile.required_test_point_nets.insert(" VCC ".to_owned());
-        let diagnostics =
-            validate_required_test_point_nets(&profile, Some(&netlist(Some("VDD"))));
+        let diagnostics = validate_required_test_point_nets(&profile, Some(&netlist(Some("VDD"))));
         assert_eq!(
             diagnostics
                 .iter()
