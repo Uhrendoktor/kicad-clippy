@@ -495,14 +495,14 @@ mod tests {
         .expect("child schematic is written");
 
         let document = SchematicDocument::from_path(&root_path).expect("root schematic parses");
-        let diagnostics = RuleEngine::with_builtins()
+        let diagnostic_count = RuleEngine::with_builtins()
             .run(&document)
             .diagnostics
             .into_iter()
             .filter(|item| item.code == BuiltinRuleId::Sch024.as_str())
-            .collect::<Vec<_>>();
+            .count();
 
-        assert!(diagnostics.is_empty());
+        assert_eq!(diagnostic_count, 0);
     }
 
     /// Reports a warning instead of claiming complete hierarchy coverage when a child sheet is missing.
