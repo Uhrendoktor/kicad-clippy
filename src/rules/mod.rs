@@ -26,11 +26,11 @@ mod pcb_rules;
 mod sch024;
 
 pub use generic::{
-    ComponentFact, ComponentPopulationFact, MILLIMETRES_PER_MIL, RuleRun, SchematicArcFact, SchematicFacts,
-    SchematicFieldFact, SchematicFrameFact, SchematicGraphicFact, SchematicGroupFact,
-    SchematicImageFact, SchematicLabelFact, SchematicPinFact, SchematicPrimitiveFact,
-    SchematicSymbolTextFact, SchematicTextFact, SchematicWireFact, TextBoxFact,
-    physical_wire_component_ids, physical_wire_component_key, run_builtin_rules,
+    ComponentFact, ComponentPopulationFact, MILLIMETRES_PER_MIL, RuleRun, SchematicArcFact,
+    SchematicFacts, SchematicFieldFact, SchematicFrameFact, SchematicGraphicFact,
+    SchematicGroupFact, SchematicImageFact, SchematicLabelFact, SchematicPinFact,
+    SchematicPrimitiveFact, SchematicSymbolTextFact, SchematicTextFact, SchematicWireFact,
+    TextBoxFact, physical_wire_component_ids, physical_wire_component_key, run_builtin_rules,
 };
 pub use metadata::{
     CommonPinNetGroup, ComponentIntent, ComponentKind, ComponentPurpose, ComponentRole,

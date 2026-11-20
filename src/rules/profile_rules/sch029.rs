@@ -55,7 +55,9 @@ fn validate_component_population(
         return vec![Diagnostic::for_builtin_rule(
             BuiltinRuleId::Sch029,
             Severity::Warning,
-            format!("{reference} population state is unverified because its placed symbol facts could not be resolved"),
+            format!(
+                "{reference} population state is unverified because its placed symbol facts could not be resolved"
+            ),
         )];
     };
 
@@ -206,33 +208,41 @@ mod tests {
                 )
             )"#
         );
-        let document =
-            SchematicDocument::from_text("population-test.kicad_sch", source)
-                .expect("population schematic fixture parses");
+        let document = SchematicDocument::from_text("population-test.kicad_sch", source)
+            .expect("population schematic fixture parses");
         SchematicFacts::from_document(&document)
     }
 
     /// Accepts a populated component whose base-design DNP flag is disabled and Value is real.
     #[test]
     fn sch029_accepts_populated_component_with_real_value() {
-        let diagnostics =
-            validate_component_population("R1", &intent("populated"), &population_facts("10k", "no", false));
+        let diagnostics = validate_component_population(
+            "R1",
+            &intent("populated"),
+            &population_facts("10k", "no", false),
+        );
         assert!(diagnostics.is_empty());
     }
 
     /// Accepts a DNP component when the DNP flag is enabled and its real value is retained.
     #[test]
     fn sch029_accepts_dnp_component_with_real_value() {
-        let diagnostics =
-            validate_component_population("R1", &intent("dnp"), &population_facts("10k", "yes", false));
+        let diagnostics = validate_component_population(
+            "R1",
+            &intent("dnp"),
+            &population_facts("10k", "yes", false),
+        );
         assert!(diagnostics.is_empty());
     }
 
     /// Rejects a populated declaration when the saved base design marks the symbol DNP.
     #[test]
     fn sch029_rejects_population_flag_mismatch() {
-        let diagnostics =
-            validate_component_population("R1", &intent("populated"), &population_facts("10k", "yes", false));
+        let diagnostics = validate_component_population(
+            "R1",
+            &intent("populated"),
+            &population_facts("10k", "yes", false),
+        );
         assert!(diagnostics.iter().any(|item| {
             item.code == BuiltinRuleId::Sch029.as_str()
                 && item.severity == Severity::Error
@@ -243,8 +253,11 @@ mod tests {
     /// Rejects placeholder Value text instead of the actual component value for a DNP part.
     #[test]
     fn sch029_rejects_dnp_placeholder_in_value() {
-        let diagnostics =
-            validate_component_population("R1", &intent("dnp"), &population_facts("DNP", "yes", false));
+        let diagnostics = validate_component_population(
+            "R1",
+            &intent("dnp"),
+            &population_facts("DNP", "yes", false),
+        );
         assert!(diagnostics.iter().any(|item| {
             item.code == BuiltinRuleId::Sch029.as_str()
                 && item.severity == Severity::Error
@@ -263,15 +276,20 @@ mod tests {
         assert!(diagnostics.iter().any(|item| {
             item.code == BuiltinRuleId::Sch029.as_str()
                 && item.severity == Severity::Warning
-                && item.message.contains("validates only its saved base-design")
+                && item
+                    .message
+                    .contains("validates only its saved base-design")
         }));
     }
 
     /// Rejects unknown population values in the profile rather than silently guessing a state.
     #[test]
     fn sch029_rejects_unknown_population_value() {
-        let diagnostics =
-            validate_component_population("R1", &intent("maybe"), &population_facts("10k", "no", false));
+        let diagnostics = validate_component_population(
+            "R1",
+            &intent("maybe"),
+            &population_facts("10k", "no", false),
+        );
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].code, BuiltinRuleId::Sch029.as_str());
         assert_eq!(diagnostics[0].severity, Severity::Error);
