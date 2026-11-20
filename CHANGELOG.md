@@ -4,6 +4,7 @@ Notable changes are documented here. This project is in early development and ha
 
 ## Unreleased
 
+- Split SCH004 physical wire topology from SCH014 logical netlist contracts. `common_pin_groups.netlist_connected` and `separate_wire_pairs.netlist_separate` now emit SCH014 findings; SCH004 no longer consumes exported netlist facts.
 - SCH015 now records effective embedded pin electrical types, honors selected pin alternates, and rejects redundant `required_no_connect_pins` declarations for intrinsically unconnected library pins.
 
 - Added optional `--policy kicad-clippy.toml` support with `default`, `strict`, and `advisory` presets plus per-rule `allow`, `warn`, and `deny` overrides. Unknown rule IDs and TOML keys are rejected; native KiCad ERC severities are preserved, and no policy file retains existing rule severities.
