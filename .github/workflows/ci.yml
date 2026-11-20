@@ -6,6 +6,7 @@ on:
   push:
     branches:
       - main
+      - refactor/single-crate-modules
 
 permissions:
   contents: write
@@ -15,7 +16,59 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  consolidate:
+    if: github.ref == 'refs/heads/refactor/single-crate-modules'
+    name: Consolidate the five crates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/single-crate-modules
+      - name: Install stable Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+          rustc --version
+          cargo --version
+      - name: Consolidate modules, refresh the lock file, and commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/consolidate_crates.py
+          cargo fmt --all
+          set +e
+          cargo check --all-targets
+          check_status=$?
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "refactor: consolidate workspace into one crate"
+          git push origin "HEAD:$GITHUB_REF_NAME"
+          if [[ "$check_status" -ne 0 ]]; then
+            exit "$check_status"
+          fi
+      - name: Verify locked dependencies
+        run: cargo fetch --locked
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Enforce Rust documentation contract
+        run: python3 scripts/check-rust-docs.py
+      - name: Enforce named numeric constants
+        run: python3 scripts/check-rust-magic-numbers.py
+      - name: Run strict Clippy
+        run: cargo clippy --all-targets --all-features --locked -- -D warnings
+      - name: Run crate tests
+        run: cargo test --all-features --locked
+      - name: Run documentation tests
+        run: cargo test --doc --locked
+      - name: Build release binary
+        run: cargo build --release --locked
+
   rust-quality:
+    if: github.ref != 'refs/heads/refactor/single-crate-modules'
     name: Rust quality gates
     runs-on: ubuntu-24.04
     timeout-minutes: 25
@@ -115,6 +168,7 @@ jobs:
         run: cargo build --release --package kicad-clippy --locked
 
   native-erc:
+    if: github.ref != 'refs/heads/refactor/single-crate-modules'
     name: Native KiCad ERC smoke test
     runs-on: ubuntu-24.04
     timeout-minutes: 30
