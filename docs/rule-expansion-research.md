@@ -119,7 +119,7 @@ PCB001 has a first implementation for declared decoupling pad-center distance. T
 
 | Candidate | Proposed rule family | What it should check | Required metadata / caveats | Priority |
 |---|---|---|---|---|
-| Decoupling placement and return loop | PCB001 | Implemented first slice: maximum center-to-center distance between target IC supply pad and capacitor target pad, plus board-net agreement and optional schematic-netlist parity | `max_target_pad_distance_mm`, target pin, capacitor terminal and return-net metadata. Track/arc/via/zone connectivity, pad-edge distance, nearby ground vias, copper path length and return-loop quality remain future work | P1 (partial) |
+| Decoupling placement and return loop | PCB001 | Implemented first slice: maximum center-to-center distance between target IC supply pad and capacitor target pad, target/return pad net checks, and optional schematic-netlist parity | `max_target_pad_distance_mm`, target pin, capacitor target/return terminals and return-net metadata. Track/arc/via/zone connectivity, pad-edge distance, nearby ground vias, copper path length and return-loop quality remain future work | P1 (partial) |
 | Switching power-stage hot loop | PCB002 | Input capacitor/MOSFET/rectifier/inductor/output-capacitor placement and high-di/dt loop length/area; switch-node copper exposure and proximity to sensitive signals | Topology role map, switching-node nets, device-specific layout guidance; thresholds must come from controller datasheet/app note | P1 |
 | Kelvin/current-sense routing | PCB003 | Sense traces originate at resistor pad centers, run as a differential pair, avoid carrying load current and stay away from switching nodes | Sense-resistor reference/pads, sense pin pair, current direction and noise-sensitive net roles | P1 |
 | Oscillator/crystal layout | PCB004 | Crystal and load capacitors near oscillator pins; short load-cap return; separation from fast clocks/switching traces; reference-ground continuity below/around oscillator where applicable | Device-specific oscillator topology and datasheet/app note; guard rings are not universal | P2 |
@@ -134,7 +134,7 @@ PCB001 has a first implementation for declared decoupling pad-center distance. T
 
 ### 5.1 PCB implementation dependencies
 
-Do not begin PCB001–PCB012 until the board model can resolve:
+Do not begin PCB002–PCB012 until the board model can resolve:
 - footprint reference, footprint UUID and 3D/board position/rotation/side;
 - pad number, pad position/shape/layer/net and padstack/via details;
 - track, arc, via and zone geometry with net/layer association;
@@ -195,7 +195,7 @@ Recommended future work, ordered by prerequisites:
 2. Continue strengthening family-specific SCH013 tests and diagnostic-parity regressions; extend the conservative netclass resolver only when KiCad project semantics can be resolved without guessing.
 3. Improve SCH009/SCH012 coverage for unsupported image encodings and remaining annotation types; add exact curve-based body geometry where a validated transform/distance model is available.
 4. Expand role-specific schematic contracts beyond the current SCH021/SCH022 coverage (pull-ups/dividers, LED current limiting, protection paths, connector completeness and test-point coverage).
-5. Build the `.kicad_pcb` parser and board-fact model; prioritize PCB001, PCB003 and PCB008 against annotated board fixtures.
+5. Extend the `.kicad_pcb` parser and board-fact model beyond PCB001 pad anchors; prioritize PCB002, PCB003 and PCB008 against annotated board fixtures.
 6. Add board-layer/stackup/zone return-path analysis only after path connectivity and KiCad DRC integration are validated.
 
 **Do not implement every candidate at once.** Each rule should arrive with a narrow contract, exact input facts, a documented false-positive policy, positive/negative fixtures and an explicit statement of what native ERC/DRC continues to own.
@@ -203,4 +203,4 @@ Recommended future work, ordered by prerequisites:
 
 ### Implemented PCB evidence boundary
 
-The new `BoardDocument` parser retains the source text and S-expression spans for `.kicad_pcb` documents. PCB001 currently extracts placed F.Cu/B.Cu footprint pad anchors, applies footprint scale/rotation/side transforms, resolves each footprint reference and pad number, and checks the declared target/capacitor distance. It also compares pad net names and, when available, the exported schematic netlist. It does not yet extract routed tracks, arcs, vias, filled zones, board stackup or continuous copper regions. PCB002–PCB012 should not be described as implemented until those board facts and positive/negative fixtures exist.
+The new `BoardDocument` parser retains the source text and S-expression spans for `.kicad_pcb` documents. PCB001 currently extracts placed F.Cu/B.Cu footprint pad anchors, applies the serialized footprint scale/rotation (KiCad already stores flipped pad-local coordinates and the adjusted footprint orientation), resolves each footprint reference and pad number, and checks the declared target/capacitor distance. It also checks the capacitor return pad against the declared return net and, when available, compares target/return pad net names with the exported schematic netlist. It does not yet extract routed tracks, arcs, vias, filled zones, board stackup or continuous copper regions. PCB002–PCB012 should not be described as implemented until those board facts and positive/negative fixtures exist.
