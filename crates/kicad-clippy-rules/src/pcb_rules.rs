@@ -313,11 +313,9 @@ fn validate_one_decoupling_contract(
 ///
 /// # Arguments
 ///
-/// * `reference` — Reference designator of the decoupling capacitor.
+/// * `reference` — Reference designator of the decoupling capacitor whose pads are checked.
 /// * `contract` — Declared capacitor target and return terminals plus the expected return net.
-/// * `target_pad` — Resolved IC supply pad on the board.
-/// * `capacitor_pad` — Resolved capacitor pad connected to the target IC pin.
-/// * `return_pad` — Optional resolved capacitor return pad.
+/// * `pads` — Resolved target IC pad, capacitor target pad, and optional capacitor return pad.
 ///
 /// # Returns
 ///
@@ -379,11 +377,7 @@ fn validate_board_pad_nets(
 ///
 /// * `reference` — Reference designator of the decoupling capacitor.
 /// * `contract` — Target/return pin declarations and expected return net.
-/// * `target_reference` — Reference designator of the target IC.
-/// * `target_number` — Serialized number of the target IC supply pin.
-/// * `target_pad` — Resolved board pad belonging to the target IC supply pin.
-/// * `capacitor_pad` — Resolved board pad belonging to the capacitor target terminal.
-/// * `return_pad` — Optional board pad belonging to the capacitor return terminal.
+/// * `pads` — Resolved target-pin identity and board pad facts for capacitor target and return terminals.
 /// * `netlist` — Optional exported schematic netlist with logical pin-to-net assignments.
 ///
 /// # Returns
@@ -507,8 +501,7 @@ fn validate_schematic_board_net_parity(
 /// * `reference` — Reference designator of the decoupling capacitor.
 /// * `contract` — Decoupling contract identifying the target pin and capacitor target terminal.
 /// * `maximum_distance` — Maximum allowed board-space pad-center distance, in millimetres.
-/// * `target_pad` — Resolved IC target pad on the board.
-/// * `capacitor_pad` — Resolved capacitor target terminal pad on the board.
+/// * `pads` — Resolved target IC and capacitor target-terminal pad anchors on the board.
 ///
 /// # Returns
 ///
