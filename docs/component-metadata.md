@@ -320,7 +320,7 @@ A project may require selected native KiCad title-block fields by adding `requir
 
 SCH023 supports `title`, `date`, `rev`, `company`, and `comment1` through `comment9`. Only the fields named by the profile are enforced; each must exist in the current sheet's `title_block` and contain non-whitespace text. This keeps the rule opt-in for projects that use their own title-block conventions. Sheet number/count and project-level metadata are not inferred by SCH023.
 
-SCH024 reports duplicate UUID values among objects in the currently loaded schematic document. It helps protect object selection, grouping and references from local duplicate identifiers. The CLI currently loads one `.kicad_sch` file per invocation, so duplicate identifiers across separately loaded hierarchical child sheets remain a distinct project-level check.
+SCH024 reports duplicate UUID values across a path-based root schematic and each distinct child `.kicad_sch` file referenced by its `Sheetfile` properties. Relative paths resolve from the owning schematic file; absolute paths are followed as written. Canonical paths prevent cycles and repeated file loads, so a reused child file is counted once even when multiple sheet instances reference it. Missing or unreadable children produce an unverified warning rather than claiming complete hierarchy coverage. In-memory documents without an existing source path retain single-document behavior. Project-variable expansion in `Sheetfile` values is not performed by the linter; unresolved paths are reported as unverified.
 
 
 ## Required test-point coverage
