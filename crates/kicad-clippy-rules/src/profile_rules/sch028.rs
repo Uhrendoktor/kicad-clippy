@@ -1,9 +1,9 @@
 //! Checks UUID-linked functional-frame title tabs, title containment, and frame spacing.
 
 use super::{GroupIntent, LintProfile, ProfileRuleContext, SchematicFacts};
-use crate::generic::SchematicGraphicFact;
 use crate::Rule;
 use crate::generic::GEOMETRY_TOLERANCE_MM;
+use crate::generic::SchematicGraphicFact;
 use kicad_clippy_core::{BuiltinRuleId, Diagnostic, Severity};
 
 /// Concrete implementation of SCH028.
@@ -92,10 +92,7 @@ fn validate_group_title_layout(
 /// # Returns
 ///
 /// The rectangle bounds, or a static explanation when the UUID is missing, ambiguous, or invalid.
-fn unique_frame_bounds(
-    facts: &SchematicFacts,
-    uuid: &str,
-) -> Result<Rectangle, &'static str> {
+fn unique_frame_bounds(facts: &SchematicFacts, uuid: &str) -> Result<Rectangle, &'static str> {
     let mut matches = facts.frames.iter().filter(|frame| frame.uuid == uuid);
     let Some(frame) = matches.next() else {
         return Err("references a missing frame UUID");
@@ -103,8 +100,7 @@ fn unique_frame_bounds(
     if matches.next().is_some() {
         return Err("references an ambiguous frame UUID");
     }
-    valid_rectangle(frame.bounds_mm)
-        .ok_or("references a frame with invalid or zero-area bounds")
+    valid_rectangle(frame.bounds_mm).ok_or("references a frame with invalid or zero-area bounds")
 }
 
 /// Resolves a unique top-level rectangular graphic by its declared UUID.
@@ -148,7 +144,10 @@ fn unique_text_box_bounds(
     facts: &SchematicFacts,
     uuid: &str,
 ) -> Result<Option<Rectangle>, &'static str> {
-    let mut matches = facts.text_boxes.iter().filter(|text_box| text_box.uuid == uuid);
+    let mut matches = facts
+        .text_boxes
+        .iter()
+        .filter(|text_box| text_box.uuid == uuid);
     let Some(text_box) = matches.next() else {
         return Err("references a missing title text-box UUID");
     };
@@ -302,10 +301,7 @@ fn points_close(first: (f64, f64), second: (f64, f64)) -> bool {
 /// # Returns
 ///
 /// SCH028 errors for invalid thresholds, unresolved frames, or frame pairs closer than their effective configured gap.
-fn validate_minimum_frame_gaps(
-    profile: &LintProfile,
-    facts: &SchematicFacts,
-) -> Vec<Diagnostic> {
+fn validate_minimum_frame_gaps(profile: &LintProfile, facts: &SchematicFacts) -> Vec<Diagnostic> {
     if !profile
         .groups
         .values()
@@ -441,16 +437,9 @@ impl<'a> Rule<ProfileRuleContext<'a>> for Sch028 {
     fn check(&self, context: &ProfileRuleContext<'a>) -> Vec<Diagnostic> {
         let mut diagnostics = Vec::new();
         for (group_id, group) in &context.profile.groups {
-            diagnostics.extend(validate_group_title_layout(
-                group_id,
-                group,
-                context.facts,
-            ));
+            diagnostics.extend(validate_group_title_layout(group_id, group, context.facts));
         }
-        diagnostics.extend(validate_minimum_frame_gaps(
-            context.profile,
-            context.facts,
-        ));
+        diagnostics.extend(validate_minimum_frame_gaps(context.profile, context.facts));
         diagnostics
     }
 }
@@ -476,8 +465,8 @@ mod tests {
         DeclaredFrame, compare_declared_frame_gaps, rectangle_gap, validate_group_title_layout,
         validate_minimum_frame_gaps,
     };
-    use crate::{GroupIntent, LintProfile, SchematicFacts, SchematicFrameFact, TextBoxFact};
     use crate::generic::SchematicGraphicFact;
+    use crate::{GroupIntent, LintProfile, SchematicFacts, SchematicFrameFact, TextBoxFact};
     use kicad_clippy_core::Severity;
 
     /// Creates normalized facts with one frame, one rectangular title tab, and one title text box.
@@ -558,9 +547,11 @@ mod tests {
             (14.0, 5.0, 20.0, 9.0),
             Some((15.0, 6.0, 19.0, 8.0)),
         );
-        assert!(validate_group_title_layout("power", &title_group(), &facts)
-            .iter()
-            .any(|item| item.message.contains("does not share")));
+        assert!(
+            validate_group_title_layout("power", &title_group(), &facts)
+                .iter()
+                .any(|item| item.message.contains("does not share"))
+        );
     }
 
     /// Rejects a title text box that extends beyond the tab's rectangular bounds.
@@ -571,22 +562,23 @@ mod tests {
             (14.0, 6.0, 20.0, 10.0),
             Some((15.0, 7.0, 21.0, 9.0)),
         );
-        assert!(validate_group_title_layout("power", &title_group(), &facts)
-            .iter()
-            .any(|item| item.message.contains("extends outside")));
+        assert!(
+            validate_group_title_layout("power", &title_group(), &facts)
+                .iter()
+                .any(|item| item.message.contains("extends outside"))
+        );
     }
 
     /// Reports unresolved title geometry as unverified rather than treating it as valid.
     #[test]
     fn unresolved_title_box_geometry_is_unverified() {
-        let facts = title_facts(
-            (10.0, 10.0, 30.0, 30.0),
-            (14.0, 6.0, 20.0, 10.0),
-            None,
+        let facts = title_facts((10.0, 10.0, 30.0, 30.0), (14.0, 6.0, 20.0, 10.0), None);
+        assert!(
+            validate_group_title_layout("power", &title_group(), &facts)
+                .iter()
+                .any(|item| item.severity == Severity::Warning
+                    && item.message.contains("unverified"))
         );
-        assert!(validate_group_title_layout("power", &title_group(), &facts)
-            .iter()
-            .any(|item| item.severity == Severity::Warning && item.message.contains("unverified")));
     }
 
     /// Requires the title-tab and title-text-box UUIDs to be provided together.
@@ -599,9 +591,11 @@ mod tests {
             (14.0, 6.0, 20.0, 10.0),
             Some((15.0, 7.0, 19.0, 9.0)),
         );
-        assert!(validate_group_title_layout("power", &group, &facts)
-            .iter()
-            .any(|item| item.message.contains("together")));
+        assert!(
+            validate_group_title_layout("power", &group, &facts)
+                .iter()
+                .any(|item| item.message.contains("together"))
+        );
     }
 
     /// Accepts frames whose Euclidean edge gap exactly equals the effective minimum.
@@ -650,8 +644,8 @@ mod tests {
     /// Applies one group's minimum gap to every other profile-declared frame.
     #[test]
     fn configured_frame_gap_applies_to_peer_without_its_own_threshold() {
-        let mut profile: LintProfile = serde_json::from_str(r#"{"schema_version":1}"#)
-            .expect("valid profile");
+        let mut profile: LintProfile =
+            serde_json::from_str(r#"{"schema_version":1}"#).expect("valid profile");
         profile.groups.insert(
             "first".to_owned(),
             GroupIntent {
@@ -685,8 +679,8 @@ mod tests {
     /// Accepts groups intentionally referencing one shared frame UUID.
     #[test]
     fn shared_frame_uuid_is_not_treated_as_two_distinct_frames() {
-        let mut profile: LintProfile = serde_json::from_str(r#"{"schema_version":1}"#)
-            .expect("valid profile");
+        let mut profile: LintProfile =
+            serde_json::from_str(r#"{"schema_version":1}"#).expect("valid profile");
         profile.groups.insert(
             "first".to_owned(),
             GroupIntent {
