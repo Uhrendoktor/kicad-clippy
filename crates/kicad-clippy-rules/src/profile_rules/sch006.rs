@@ -1,41 +1,116 @@
-//! Checks `SCH006` minimum spacing between functional-group member symbols.
+//! Functional-group placement spacing, body clearance, and alignment contracts.
 
+use super::GroupAlignmentAxis;
 use super::GroupIntent;
 use super::SchematicFacts;
+use super::geometry::{body_geometry_for_reference, minimum_body_gap};
 use crate::generic::GEOMETRY_TOLERANCE_MM;
 use kicad_clippy_core::BuiltinRuleId;
 use kicad_clippy_core::Diagnostic;
 use kicad_clippy_core::Severity;
 
-/// Checks that a group's member symbols satisfy the spacing constraints declared by the profile.
+/// Checks a group's origin spacing, supported body clearance, and row/column alignment.
 ///
 /// # Arguments
 ///
 /// * `group_id` — Stable profile identifier for the group; it is included in any diagnostic produced by this check.
-/// * `group` — The group-intent record containing its members and declared constraints.
-/// * `facts` — Normalized schematic facts, including placed pins, wire segments, labels, frames, fields, and graphics.
+/// * `group` — The group-intent record containing its members and declared placement constraints.
+/// * `facts` — Normalized schematic facts, including component origins and transformed symbol bodies.
 ///
 /// # Returns
 ///
-/// Diagnostics when the requested minimum spacing is invalid or placed group-member origins are closer than that spacing.
+/// SCH006 diagnostics for invalid constraints, member origins that violate spacing/alignment,
+/// body outlines that violate the configured clearance, or geometry that cannot be verified.
 pub(super) fn validate_group_spacing(
     group_id: &str,
     group: &GroupIntent,
     facts: &SchematicFacts,
 ) -> Vec<Diagnostic> {
-    let Some(minimum_spacing) = group.minimum_member_origin_spacing_mm else {
-        return Vec::new();
-    };
-    if !minimum_spacing.is_finite() || minimum_spacing <= 0.0 {
-        return vec![Diagnostic::for_builtin_rule(
+    let mut diagnostics = Vec::new();
+    if let Some(minimum_spacing) = group.minimum_member_origin_spacing_mm {
+        if !minimum_spacing.is_finite() || minimum_spacing <= 0.0 {
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch006,
+                Severity::Error,
+                format!(
+                    "group {group_id} minimum_member_origin_spacing_mm must be a finite positive distance"
+                ),
+            ));
+        } else {
+            diagnostics.extend(validate_member_origin_spacing(
+                group_id,
+                group,
+                facts,
+                minimum_spacing,
+            ));
+        }
+    }
+
+    if let Some(minimum_clearance) = group.minimum_member_body_clearance_mm {
+        if !minimum_clearance.is_finite() || minimum_clearance < 0.0 {
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch006,
+                Severity::Error,
+                format!(
+                    "group {group_id} minimum_member_body_clearance_mm must be a finite non-negative distance"
+                ),
+            ));
+        } else {
+            diagnostics.extend(validate_member_body_clearance(
+                group_id,
+                group,
+                facts,
+                minimum_clearance,
+            ));
+        }
+    }
+
+    match (group.alignment_axis, group.alignment_tolerance_mm) {
+        (None, None) => {}
+        (Some(_), None) => diagnostics.push(Diagnostic::for_builtin_rule(
             BuiltinRuleId::Sch006,
             Severity::Error,
             format!(
-                "group {group_id} minimum_member_origin_spacing_mm must be a finite positive distance"
+                "group {group_id} alignment_axis requires alignment_tolerance_mm"
             ),
-        )];
+        )),
+        (None, Some(_)) => diagnostics.push(Diagnostic::for_builtin_rule(
+            BuiltinRuleId::Sch006,
+            Severity::Error,
+            format!(
+                "group {group_id} alignment_tolerance_mm requires alignment_axis"
+            ),
+        )),
+        (Some(axis), Some(tolerance_mm)) => {
+            if !tolerance_mm.is_finite() || tolerance_mm < 0.0 {
+                diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch006,
+                    Severity::Error,
+                    format!(
+                        "group {group_id} alignment_tolerance_mm must be a finite non-negative distance"
+                    ),
+                ));
+            } else {
+                diagnostics.extend(validate_member_alignment(
+                    group_id,
+                    group,
+                    facts,
+                    axis,
+                    tolerance_mm,
+                ));
+            }
+        }
     }
+    diagnostics
+}
 
+/// Checks minimum Euclidean spacing between the symbol origins of every member pair.
+fn validate_member_origin_spacing(
+    group_id: &str,
+    group: &GroupIntent,
+    facts: &SchematicFacts,
+    minimum_spacing: f64,
+) -> Vec<Diagnostic> {
     let mut positions = Vec::new();
     let mut diagnostics = Vec::new();
     for reference in &group.members {
@@ -48,7 +123,7 @@ pub(super) fn validate_group_spacing(
         };
         let Some((x_mm, y_mm)) = component.position_mm else {
             diagnostics.push(Diagnostic::for_builtin_rule(
-                    BuiltinRuleId::Sch006,
+                BuiltinRuleId::Sch006,
                 Severity::Error,
                 format!(
                     "group {group_id} member {reference} has no symbol-origin position for spacing validation"
@@ -77,8 +152,117 @@ pub(super) fn validate_group_spacing(
     diagnostics
 }
 
+/// Checks minimum edge-to-edge clearance between supported body shapes for every member pair.
+fn validate_member_body_clearance(
+    group_id: &str,
+    group: &GroupIntent,
+    facts: &SchematicFacts,
+    minimum_clearance: f64,
+) -> Vec<Diagnostic> {
+    let mut bodies = Vec::new();
+    let mut diagnostics = Vec::new();
+    for reference in &group.members {
+        let body = body_geometry_for_reference(reference, facts);
+        if body.shapes.is_empty() || body.has_unsupported_geometry {
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch006,
+                Severity::Warning,
+                format!(
+                    "group {group_id} member {reference} body clearance is unverified because its supported transformed outline is incomplete"
+                ),
+            ));
+            continue;
+        }
+        bodies.push((reference.as_str(), body));
+    }
+
+    for (index, first) in bodies.iter().enumerate() {
+        for second in bodies.iter().skip(index + 1) {
+            let Some(actual_clearance) = minimum_body_gap(&first.1, &second.1) else {
+                diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch006,
+                    Severity::Warning,
+                    format!(
+                        "group {group_id} body clearance between {} and {} is unverified",
+                        first.0, second.0
+                    ),
+                ));
+                continue;
+            };
+            if actual_clearance + GEOMETRY_TOLERANCE_MM < minimum_clearance {
+                diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch006,
+                    Severity::Error,
+                    format!(
+                        "group {group_id} members {} and {} have body clearance {:.2} mm; minimum is {:.2} mm",
+                        first.0, second.0, actual_clearance, minimum_clearance
+                    ),
+                ));
+            }
+        }
+    }
+    diagnostics
+}
+
+/// Checks that member origins share the declared horizontal row or vertical column.
+fn validate_member_alignment(
+    group_id: &str,
+    group: &GroupIntent,
+    facts: &SchematicFacts,
+    axis: GroupAlignmentAxis,
+    tolerance_mm: f64,
+) -> Vec<Diagnostic> {
+    let mut positions = Vec::new();
+    let mut diagnostics = Vec::new();
+    for reference in &group.members {
+        let Some(component) = facts
+            .components
+            .iter()
+            .find(|component| component.reference == *reference)
+        else {
+            continue;
+        };
+        let Some(position_mm) = component.position_mm else {
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch006,
+                Severity::Warning,
+                format!(
+                    "group {group_id} member {reference} has no resolved symbol origin; alignment is unverified"
+                ),
+            ));
+            continue;
+        };
+        positions.push((reference.as_str(), position_mm));
+    }
+
+    for (index, first) in positions.iter().enumerate() {
+        for second in positions.iter().skip(index + 1) {
+            let deviation_mm = match axis {
+                GroupAlignmentAxis::Horizontal => (first.1.1 - second.1.1).abs(),
+                GroupAlignmentAxis::Vertical => (first.1.0 - second.1.0).abs(),
+            };
+            if deviation_mm > tolerance_mm + GEOMETRY_TOLERANCE_MM {
+                let axis_name = match axis {
+                    GroupAlignmentAxis::Horizontal => "horizontal row",
+                    GroupAlignmentAxis::Vertical => "vertical column",
+                };
+                diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch006,
+                    Severity::Error,
+                    format!(
+                        "group {group_id} members {} and {} deviate {:.2} mm from a shared {axis_name}; tolerance is {:.2} mm",
+                        first.0, second.0, deviation_mm, tolerance_mm
+                    ),
+                ));
+            }
+        }
+    }
+    diagnostics
+}
+
 /// Concrete implementation of built-in rule SCH006.
 pub(super) struct Sch006;
+
 impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch006 {
     /// Returns the stable SCH006 identifier.
     ///
@@ -88,15 +272,16 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch006 {
     fn id(&self) -> BuiltinRuleId {
         BuiltinRuleId::Sch006
     }
-    /// Evaluates minimum member-origin spacing for each declared group.
+
+    /// Evaluates all declared group origin-spacing, body-clearance, and alignment constraints.
     ///
     /// # Arguments
     ///
-    /// * `context` — Project group declarations and normalized schematic component positions.
+    /// * `context` — Project group declarations and normalized schematic component/body geometry.
     ///
     /// # Returns
     ///
-    /// Diagnostics for invalid minimum-spacing contracts or member origins that are too close.
+    /// Diagnostics for invalid spacing/alignment settings, excessive body proximity, or unverified outlines.
     fn check(&self, context: &super::ProfileRuleContext<'a>) -> Vec<Diagnostic> {
         context
             .profile
@@ -104,5 +289,112 @@ impl<'a> crate::Rule<super::ProfileRuleContext<'a>> for Sch006 {
             .iter()
             .flat_map(|(id, group)| validate_group_spacing(id, group, context.facts))
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_group_spacing;
+    use crate::GroupAlignmentAxis;
+    use crate::generic::{ComponentFact, SchematicFacts, SchematicPrimitiveFact};
+    use crate::metadata::GroupIntent;
+    use kicad_clippy_core::BuiltinRuleId;
+
+    /// Creates a transformed rectangular outline for one placed component.
+    fn rectangle(reference: &str, left: f64, right: f64) -> SchematicPrimitiveFact {
+        SchematicPrimitiveFact {
+            reference: reference.to_owned(),
+            points_mm: vec![
+                (left, 0.0),
+                (right, 0.0),
+                (right, 2.0),
+                (left, 2.0),
+            ],
+            closed: true,
+            circle_mm: None,
+            arc_mm: None,
+            bezier_mm: None,
+            stroke_width_mm: 0.0,
+        }
+    }
+
+    /// Confirms body-to-body clearance is checked between transformed rectangles rather than origins.
+    #[test]
+    fn group_minimum_body_clearance_uses_transformed_outlines() {
+        let mut facts = SchematicFacts::default();
+        facts.components = vec![
+            ComponentFact {
+                reference: "R1".to_owned(),
+                uuid: None,
+                position_mm: Some((0.0, 0.0)),
+            },
+            ComponentFact {
+                reference: "C1".to_owned(),
+                uuid: None,
+                position_mm: Some((5.0, 0.0)),
+            },
+        ];
+        facts.symbol_primitives = vec![rectangle("R1", 0.0, 2.0), rectangle("C1", 5.0, 7.0)];
+        let group = GroupIntent {
+            members: vec!["R1".to_owned(), "C1".to_owned()],
+            minimum_member_body_clearance_mm: Some(4.0),
+            ..GroupIntent::default()
+        };
+        let diagnostics = validate_group_spacing("power", &group, &facts);
+        assert!(diagnostics.iter().any(|item| {
+            item.code == BuiltinRuleId::Sch006.as_str()
+                && item.message.contains("body clearance")
+                && item.message.contains("3.00 mm")
+        }));
+    }
+
+    /// Confirms horizontal and vertical origin alignment use a perpendicular tolerance.
+    #[test]
+    fn group_member_alignment_checks_perpendicular_axis() {
+        let mut facts = SchematicFacts::default();
+        facts.components = vec![
+            ComponentFact {
+                reference: "R1".to_owned(),
+                uuid: None,
+                position_mm: Some((0.0, 0.0)),
+            },
+            ComponentFact {
+                reference: "C1".to_owned(),
+                uuid: None,
+                position_mm: Some((5.0, 0.5)),
+            },
+        ];
+        let group = GroupIntent {
+            members: vec!["R1".to_owned(), "C1".to_owned()],
+            alignment_axis: Some(GroupAlignmentAxis::Horizontal),
+            alignment_tolerance_mm: Some(0.2),
+            ..GroupIntent::default()
+        };
+        assert!(validate_group_spacing("power", &group, &facts)
+            .iter()
+            .any(|item| item.message.contains("horizontal row")));
+    }
+
+    /// Confirms curve-based or absent member body outlines are reported as unverified.
+    #[test]
+    fn group_body_clearance_warns_for_unresolved_outline() {
+        let mut facts = SchematicFacts::default();
+        facts.symbol_primitives.push(SchematicPrimitiveFact {
+            reference: "R1".to_owned(),
+            points_mm: vec![(0.0, 0.0), (1.0, 1.0), (2.0, 0.0)],
+            closed: false,
+            circle_mm: None,
+            arc_mm: None,
+            bezier_mm: Some([(0.0, 0.0), (0.5, 0.0), (1.5, 1.0), (2.0, 1.0)]),
+            stroke_width_mm: 0.0,
+        });
+        let group = GroupIntent {
+            members: vec!["R1".to_owned()],
+            minimum_member_body_clearance_mm: Some(0.5),
+            ..GroupIntent::default()
+        };
+        assert!(validate_group_spacing("power", &group, &facts)
+            .iter()
+            .any(|item| item.severity == kicad_clippy_core::Severity::Warning));
     }
 }
