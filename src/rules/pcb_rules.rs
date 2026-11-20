@@ -192,8 +192,8 @@ fn footprint_scale(footprint: &Node) -> Option<(f64, f64)> {
 /// # Arguments
 ///
 /// * `pad` — Serialized footprint pad expression containing its shape and size.
-/// * `scale_x` — Serialized footprint X scale.
-/// * `scale_y` — Serialized footprint Y scale.
+/// * `scale_x` — Dimensionless factor applied to pad-local X coordinates by the placed-footprint transform.
+/// * `scale_y` — Dimensionless factor applied to pad-local Y coordinates by the placed-footprint transform.
 ///
 /// # Returns
 ///
@@ -1316,7 +1316,7 @@ mod test_point_tests {
     /// * `net` — Optional board net assigned to the pad.
     /// * `footprint_layer` — Front or back copper layer on which the footprint is placed.
     /// * `pad_kind` — Serialized pad technology token such as `smd` or `thru_hole`.
-    /// * `shape` — Serialized KiCad pad shape.
+    /// * `shape` — Serialized KiCad pad-shape token that selects the supported nominal contact-geometry model.
     /// * `size` — Serialized X/Y pad dimensions in millimetres.
     /// * `scale` — Optional complete `(scale x y)` footprint expression.
     /// * `layers` — Complete serialized pad layer-list expression.
