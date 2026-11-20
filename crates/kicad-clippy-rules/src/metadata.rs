@@ -229,6 +229,10 @@ pub enum GridAlignmentTarget {
 }
 
 /// Returns the default grid targets: symbol origins and label anchors.
+///
+/// # Returns
+///
+/// A set containing symbol-origin and label-anchor targets, leaving electrical anchors opt-in.
 fn default_grid_alignment_targets() -> BTreeSet<GridAlignmentTarget> {
     BTreeSet::from([
         GridAlignmentTarget::SymbolOrigins,
@@ -237,11 +241,19 @@ fn default_grid_alignment_targets() -> BTreeSet<GridAlignmentTarget> {
 }
 
 /// Returns the default grid origin at the sheet coordinate origin.
+///
+/// # Returns
+///
+/// The two-dimensional sheet coordinate origin, [0.0, 0.0], in millimetres.
 fn default_grid_origin_mm() -> [f64; 2] {
     [0.0, 0.0]
 }
 
 /// Returns the default coordinate tolerance for grid comparisons, in millimetres.
+///
+/// # Returns
+///
+/// The shared 0.001 mm coordinate tolerance.
 fn default_grid_alignment_tolerance_mm() -> f64 {
     DEFAULT_GRID_ALIGNMENT_TOLERANCE_MM
 }
