@@ -370,7 +370,6 @@ fn validate_board_pad_nets(
     diagnostics
 }
 
-
 /// Checks schematic and board evidence for the capacitor's declared return terminal.
 ///
 /// # Arguments
@@ -389,7 +388,8 @@ fn validate_return_pad_net_parity(
     pads: &ResolvedDecouplingPads<'_>,
     netlist: &Netlist,
 ) -> Vec<Diagnostic> {
-    let Some(expected_return_net) = netlist.net_for_pin(reference, &contract.return_terminal) else {
+    let Some(expected_return_net) = netlist.net_for_pin(reference, &contract.return_terminal)
+    else {
         return vec![Diagnostic::for_builtin_rule(
             BuiltinRuleId::Pcb001,
             Severity::Warning,
