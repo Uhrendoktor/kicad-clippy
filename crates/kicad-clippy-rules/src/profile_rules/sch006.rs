@@ -267,9 +267,11 @@ fn validate_member_alignment(
 
     for (index, first) in positions.iter().enumerate() {
         for second in positions.iter().skip(index + 1) {
+            let (first_reference, (first_x, first_y)) = *first;
+            let (second_reference, (second_x, second_y)) = *second;
             let deviation_mm = match axis {
-                GroupAlignmentAxis::Horizontal => (first.1.1 - second.1.1).abs(),
-                GroupAlignmentAxis::Vertical => (first.1.0 - second.1.0).abs(),
+                GroupAlignmentAxis::Horizontal => (first_y - second_y).abs(),
+                GroupAlignmentAxis::Vertical => (first_x - second_x).abs(),
             };
             if deviation_mm > tolerance_mm + GEOMETRY_TOLERANCE_MM {
                 let axis_name = match axis {
@@ -280,8 +282,8 @@ fn validate_member_alignment(
                     BuiltinRuleId::Sch006,
                     Severity::Error,
                     format!(
-                        "group {group_id} members {} and {} deviate {:.2} mm from a shared {axis_name}; tolerance is {:.2} mm",
-                        first.0, second.0, deviation_mm, tolerance_mm
+                        "group {group_id} members {first_reference} and {second_reference} deviate {:.2} mm from a shared {axis_name}; tolerance is {:.2} mm",
+                        deviation_mm, tolerance_mm
                     ),
                 ));
             }
