@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-//! KiCad schematic linting, including lossless parsing, native ERC integration,
+//! `KiCad` schematic linting, including lossless parsing, native ERC integration,
 //! built-in rules, project profiles, diagnostics, and the command-line front end.
 
 /// Command-line argument parsing, lint orchestration, and output rendering.
