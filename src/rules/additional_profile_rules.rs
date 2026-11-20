@@ -856,7 +856,7 @@ mod label_scope_policy_tests {
     #![allow(clippy::expect_used)]
 
     use super::validate_label_scope_policy;
-    use crate::{LabelScopeKind, LintProfile, SchematicFacts, SchematicLabelFact};
+    use crate::rules::{LabelScopeKind, LintProfile, SchematicFacts, SchematicLabelFact};
 
     /// Parses a version-one profile containing the supplied label-scope policy object.
     ///

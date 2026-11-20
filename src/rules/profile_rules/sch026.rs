@@ -384,7 +384,7 @@ mod tests {
     use crate::rules::generic::{
         ComponentFact, SchematicFacts, SchematicLabelFact, SchematicPinFact, SchematicWireFact,
     };
-    use crate::{GridAlignmentIntent, GridAlignmentTarget, LintProfile};
+    use crate::rules::{GridAlignmentIntent, GridAlignmentTarget, LintProfile};
     use crate::core::Severity;
     use crate::parser::SchematicDocument;
     use std::collections::BTreeSet;

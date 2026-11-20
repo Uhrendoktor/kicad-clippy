@@ -478,7 +478,7 @@ mod tests {
         validate_minimum_frame_gaps,
     };
     use crate::rules::generic::SchematicGraphicFact;
-    use crate::{GroupIntent, LintProfile, SchematicFacts, SchematicFrameFact, TextBoxFact};
+    use crate::rules::{GroupIntent, LintProfile, SchematicFacts, SchematicFrameFact, TextBoxFact};
     use crate::core::Severity;
 
     /// Creates normalized facts with one frame, one rectangular title tab, and one title text box.
