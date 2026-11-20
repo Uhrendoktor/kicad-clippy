@@ -118,14 +118,11 @@ fn atom_text(node: &Node) -> Option<&str> {
 #[cfg(test)]
 /// Tests duplicate-UUID detection on a loaded schematic document.
 mod tests {
-    use super::DuplicateUuidPass;
-    use crate::{RuleContext, RulePass};
-    use kicad_clippy_core::BuiltinRuleId;
+    use super::BuiltinRuleId;
+    use crate::RuleEngine;
     use kicad_clippy_parser::SchematicDocument;
-    use crate::{generic::SchematicFacts, generic::collect_segments, generic::collect_points};
-    use std::collections::BTreeMap;
 
-    /// Runs SCH024 for one parsed schematic fixture and returns its findings.
+    /// Runs the built-in engine for a parsed schematic and filters its SCH024 findings.
     ///
     /// # Arguments
     ///
@@ -133,24 +130,16 @@ mod tests {
     ///
     /// # Returns
     ///
-    /// The diagnostics emitted by SCH024 for the fixture.
+    /// Diagnostics emitted under SCH024 for the supplied schematic document.
     fn findings(source: &str) -> Vec<kicad_clippy_core::Diagnostic> {
         let document =
             SchematicDocument::from_text("duplicate-uuid.kicad_sch", source).expect("fixture parses");
-        let root = document.cst().nodes.first().expect("root exists");
-        let segments = collect_segments(root);
-        let junctions = collect_points(root, "junction");
-        let facts = SchematicFacts::from_document_with_geometry(&document, &segments, &junctions);
-        let context = RuleContext {
-            document: &document,
-            facts: &facts,
-            segments: &segments,
-            junctions: &junctions,
-            default_wire_stroke_width_mm: None,
-            project_wire_stroke_widths_mm: &BTreeMap::new(),
-            default_schematic_line_stroke_width_mm: None,
-        };
-        DuplicateUuidPass.run(&context)
+        RuleEngine::with_builtins()
+            .run(&document)
+            .diagnostics
+            .into_iter()
+            .filter(|item| item.code == BuiltinRuleId::Sch024.as_str())
+            .collect()
     }
 
     /// Reports one duplicate UUID even when it is attached to different object kinds.
