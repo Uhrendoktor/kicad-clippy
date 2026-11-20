@@ -1,4 +1,4 @@
-//! Functional-group placement spacing, body clearance, and alignment contracts.
+//! Functional-group placement spacing, body clearance, compactness, and alignment contracts.
 
 use super::GroupAlignmentAxis;
 use super::GroupIntent;
@@ -9,7 +9,7 @@ use crate::core::Diagnostic;
 use crate::core::Severity;
 use crate::rules::generic::GEOMETRY_TOLERANCE_MM;
 
-/// Checks a group's origin spacing, supported body clearance, and row/column alignment.
+/// Checks a group's origin spacing, supported body clearance and compactness, and row/column alignment.
 ///
 /// # Arguments
 ///
@@ -20,7 +20,7 @@ use crate::rules::generic::GEOMETRY_TOLERANCE_MM;
 /// # Returns
 ///
 /// SCH006 diagnostics for invalid constraints, member origins that violate spacing/alignment,
-/// body outlines that violate the configured clearance, or geometry that cannot be verified.
+/// body outlines that violate configured clearance/gap limits, or geometry that cannot be verified.
 pub(super) fn validate_group_spacing(
     group_id: &str,
     group: &GroupIntent,
@@ -61,6 +61,25 @@ pub(super) fn validate_group_spacing(
                 group,
                 facts,
                 minimum_clearance,
+            ));
+        }
+    }
+
+    if let Some(maximum_gap) = group.maximum_member_body_gap_mm {
+        if !maximum_gap.is_finite() || maximum_gap < 0.0 {
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch006,
+                Severity::Error,
+                format!(
+                    "group {group_id} maximum_member_body_gap_mm must be a finite non-negative distance"
+                ),
+            ));
+        } else {
+            diagnostics.extend(validate_member_body_gap(
+                group_id,
+                group,
+                facts,
+                maximum_gap,
             ));
         }
     }
@@ -222,6 +241,69 @@ fn validate_member_body_clearance(
     diagnostics
 }
 
+/// Checks the maximum nearest-edge gap between every pair of supported member bodies.
+///
+/// # Arguments
+///
+/// * `group_id` — Stable group key used to identify the profile declaration in emitted diagnostics.
+/// * `group` — Group declaration containing the member references whose body gaps must stay bounded.
+/// * `facts` — Normalized transformed symbol primitives collected from the selected library units.
+/// * `maximum_gap` — Maximum permitted nearest-edge distance between any pair of member bodies, in millimetres.
+///
+/// # Returns
+///
+/// SCH006 diagnostics for member pairs whose body gap exceeds the configured limit or whose geometry is unverified.
+fn validate_member_body_gap(
+    group_id: &str,
+    group: &GroupIntent,
+    facts: &SchematicFacts,
+    maximum_gap: f64,
+) -> Vec<Diagnostic> {
+    let mut bodies = Vec::new();
+    let mut diagnostics = Vec::new();
+    for reference in &group.members {
+        let body = body_geometry_for_reference(reference, facts);
+        if body.shapes.is_empty() || body.has_unsupported_geometry {
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Sch006,
+                Severity::Warning,
+                format!(
+                    "group {group_id} member {reference} body gap is unverified because its supported transformed outline is incomplete"
+                ),
+            ));
+            continue;
+        }
+        bodies.push((reference.as_str(), body));
+    }
+
+    for (index, first) in bodies.iter().enumerate() {
+        for second in bodies.iter().skip(index + 1) {
+            let Some(actual_gap) = minimum_body_gap(&first.1, &second.1) else {
+                diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch006,
+                    Severity::Warning,
+                    format!(
+                        "group {group_id} body gap between {} and {} is unverified",
+                        first.0, second.0
+                    ),
+                ));
+                continue;
+            };
+            if actual_gap > maximum_gap + GEOMETRY_TOLERANCE_MM {
+                diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Sch006,
+                    Severity::Error,
+                    format!(
+                        "group {group_id} members {} and {} have body gap {:.2} mm; maximum is {:.2} mm",
+                        first.0, second.0, actual_gap, maximum_gap
+                    ),
+                ));
+            }
+        }
+    }
+    diagnostics
+}
+
 /// Checks that member origins share the declared horizontal row or vertical column.
 ///
 /// # Arguments
@@ -304,7 +386,7 @@ impl<'a> crate::rules::Rule<super::ProfileRuleContext<'a>> for Sch006 {
         BuiltinRuleId::Sch006
     }
 
-    /// Evaluates all declared group origin-spacing, body-clearance, and alignment constraints.
+    /// Evaluates all declared group origin-spacing, body-clearance, compactness, and alignment constraints.
     ///
     /// # Arguments
     ///
@@ -312,7 +394,7 @@ impl<'a> crate::rules::Rule<super::ProfileRuleContext<'a>> for Sch006 {
     ///
     /// # Returns
     ///
-    /// Diagnostics for invalid spacing/alignment settings, excessive body proximity, or unverified outlines.
+    /// Diagnostics for invalid spacing/alignment settings, body gaps outside their limits, or unverified outlines.
     fn check(&self, context: &super::ProfileRuleContext<'a>) -> Vec<Diagnostic> {
         context
             .profile
@@ -383,6 +465,77 @@ mod tests {
             item.code == BuiltinRuleId::Sch006.as_str()
                 && item.message.contains("body clearance")
                 && item.message.contains("3.00 mm")
+        }));
+    }
+
+    /// Rejects member body pairs whose nearest-edge gap exceeds the declared compactness threshold.
+    #[test]
+    fn group_maximum_member_body_gap_rejects_distant_members() {
+        let facts = SchematicFacts {
+            symbol_primitives: vec![rectangle("R1", 0.0, 2.0), rectangle("C1", 5.0, 7.0)],
+            ..SchematicFacts::default()
+        };
+        let group = GroupIntent {
+            members: vec!["R1".to_owned(), "C1".to_owned()],
+            maximum_member_body_gap_mm: Some(2.5),
+            ..GroupIntent::default()
+        };
+        let diagnostics = validate_group_spacing("power", &group, &facts);
+        assert!(diagnostics.iter().any(|item| {
+            item.code == BuiltinRuleId::Sch006.as_str()
+                && item.severity == crate::core::Severity::Error
+                && item.message.contains("body gap")
+                && item.message.contains("3.00 mm")
+                && item.message.contains("maximum is 2.50 mm")
+        }));
+    }
+
+    /// Accepts member body pairs at the exact configured compactness boundary.
+    #[test]
+    fn group_maximum_member_body_gap_accepts_threshold_boundary() {
+        let facts = SchematicFacts {
+            symbol_primitives: vec![rectangle("R1", 0.0, 2.0), rectangle("C1", 5.0, 7.0)],
+            ..SchematicFacts::default()
+        };
+        let group = GroupIntent {
+            members: vec!["R1".to_owned(), "C1".to_owned()],
+            maximum_member_body_gap_mm: Some(3.0),
+            ..GroupIntent::default()
+        };
+        let diagnostics = validate_group_spacing("power", &group, &facts);
+        assert!(!diagnostics.iter().any(|item| {
+            item.code == BuiltinRuleId::Sch006.as_str() && item.message.contains("body gap")
+        }));
+    }
+
+    /// Leaves pairwise body compactness unverified when a member outline contains unsupported curves.
+    #[test]
+    fn group_maximum_member_body_gap_warns_for_unresolved_outline() {
+        let facts = SchematicFacts {
+            symbol_primitives: vec![
+                SchematicPrimitiveFact {
+                    reference: "R1".to_owned(),
+                    points_mm: vec![(0.0, 0.0), (1.0, 1.0), (2.0, 0.0)],
+                    closed: false,
+                    circle_mm: None,
+                    arc_mm: None,
+                    bezier_mm: Some([(0.0, 0.0), (0.5, 0.0), (1.5, 1.0), (2.0, 1.0)]),
+                    stroke_width_mm: 0.0,
+                },
+                rectangle("C1", 5.0, 7.0),
+            ],
+            ..SchematicFacts::default()
+        };
+        let group = GroupIntent {
+            members: vec!["R1".to_owned(), "C1".to_owned()],
+            maximum_member_body_gap_mm: Some(3.0),
+            ..GroupIntent::default()
+        };
+        let diagnostics = validate_group_spacing("power", &group, &facts);
+        assert!(diagnostics.iter().any(|item| {
+            item.code == BuiltinRuleId::Sch006.as_str()
+                && item.severity == crate::core::Severity::Warning
+                && item.message.contains("body gap is unverified")
         }));
     }
 
