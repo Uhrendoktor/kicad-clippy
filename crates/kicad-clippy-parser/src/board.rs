@@ -199,6 +199,8 @@ fn unescape_quoted_atoms(nodes: &mut [Node], source: &str) {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used, clippy::unwrap_used)]
+
     use super::{BoardDocument, BoardParseError};
 
     /// Parses a minimal board and preserves the original serialized source.
