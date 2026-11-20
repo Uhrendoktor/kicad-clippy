@@ -203,7 +203,7 @@ fn shape_gap(first: &BodyShape, second: &BodyShape) -> f64 {
             },
         ) => point_polygon_gap(*center_mm, points_mm)
             - radius_mm
-            - stroke_half
+            - stroke_half_mm
             - polygon_stroke,
         (
             BodyShape::Circle {
@@ -228,7 +228,7 @@ fn shape_gap(first: &BodyShape, second: &BodyShape) -> f64 {
             },
         ) => point_path_distance(*center_mm, points_mm)
             - radius_mm
-            - stroke_half
+            - stroke_half_mm
             - path_stroke,
         (
             BodyShape::Polygon {
