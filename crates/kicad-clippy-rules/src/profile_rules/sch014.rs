@@ -1,7 +1,7 @@
 //! Checks `SCH014` component pin-to-net expectations against the exported netlist.
 
-use super::ComponentIntent;
 use super::CommonPinNetGroup;
+use super::ComponentIntent;
 use super::SeparateWirePair;
 use super::valid_pin_ref;
 use kicad_clippy_core::BuiltinRuleId;
@@ -178,7 +178,9 @@ fn validate_separate_wire_pair_netlist(
         return vec![Diagnostic::for_builtin_rule(
             BuiltinRuleId::Sch014,
             Severity::Warning,
-            format!("separate-wire pair {pair_name} requests netlist_separate but no exported KiCad netlist was supplied"),
+            format!(
+                "separate-wire pair {pair_name} requests netlist_separate but no exported KiCad netlist was supplied"
+            ),
         )];
     };
     if !valid_pin_ref(&pair.first) || !valid_pin_ref(&pair.second) || pair.first == pair.second {
@@ -208,12 +210,18 @@ fn validate_separate_wire_pair_netlist(
         (None, _) => diagnostics.push(Diagnostic::for_builtin_rule(
             BuiltinRuleId::Sch014,
             Severity::Error,
-            format!("{} in separate-wire pair {pair_name} is absent from the exported KiCad netlist", pair.first),
+            format!(
+                "{} in separate-wire pair {pair_name} is absent from the exported KiCad netlist",
+                pair.first
+            ),
         )),
         (_, None) => diagnostics.push(Diagnostic::for_builtin_rule(
             BuiltinRuleId::Sch014,
             Severity::Error,
-            format!("{} in separate-wire pair {pair_name} is absent from the exported KiCad netlist", pair.second),
+            format!(
+                "{} in separate-wire pair {pair_name} is absent from the exported KiCad netlist",
+                pair.second
+            ),
         )),
         (Some(_), Some(_)) => {}
     }

@@ -487,11 +487,7 @@ pub(super) fn validate_separate_wire_pairs(
     let component_ids = physical_wire_component_ids(facts);
     let mut diagnostics = Vec::new();
     for pair in pairs {
-        diagnostics.extend(validate_separate_wire_pair(
-            pair,
-            facts,
-            &component_ids,
-        ));
+        diagnostics.extend(validate_separate_wire_pair(pair, facts, &component_ids));
     }
     diagnostics
 }
@@ -573,7 +569,6 @@ fn validate_separate_wire_pair(
             ),
         ));
     }
-
 
     diagnostics
 }
