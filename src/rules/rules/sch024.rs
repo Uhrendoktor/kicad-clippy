@@ -129,16 +129,12 @@ fn collect_hierarchy_uuids(
         }
 
         match SchematicDocument::from_path(&canonical_path) {
-            Ok(child_document) => collect_hierarchy_uuids(
-                &child_document,
-                visited_paths,
-                occurrences,
-                diagnostics,
-            ),
-            Err(error) => diagnostics.push(child_sheet_warning(
-                &canonical_path,
-                &error.to_string(),
-            )),
+            Ok(child_document) => {
+                collect_hierarchy_uuids(&child_document, visited_paths, occurrences, diagnostics)
+            }
+            Err(error) => {
+                diagnostics.push(child_sheet_warning(&canonical_path, &error.to_string()))
+            }
         }
     }
 }
@@ -179,7 +175,8 @@ fn collect_child_sheet_files(node: &Node, child_files: &mut BTreeSet<PathBuf>) {
                     atom: Atom::Symbol(name),
                     ..
                 }) if name == "property"
-            ) && property_items.get(1).and_then(atom_text) == Some("Sheetfile");
+            ) && property_items.get(1).and_then(atom_text)
+                == Some("Sheetfile");
             if is_sheet_file_property {
                 if let Some(file_name) = property_items.get(2).and_then(atom_text) {
                     if !file_name.trim().is_empty() {
@@ -403,8 +400,7 @@ mod tests {
         )
         .expect("grandchild schematic is written");
 
-        let document = SchematicDocument::from_path(&root_path)
-            .expect("root schematic parses");
+        let document = SchematicDocument::from_path(&root_path).expect("root schematic parses");
         let diagnostics = RuleEngine::with_builtins()
             .run(&document)
             .diagnostics
@@ -438,8 +434,7 @@ mod tests {
         )
         .expect("root schematic is written");
 
-        let document = SchematicDocument::from_path(&root_path)
-            .expect("root schematic parses");
+        let document = SchematicDocument::from_path(&root_path).expect("root schematic parses");
         let diagnostics = RuleEngine::with_builtins()
             .run(&document)
             .diagnostics
@@ -452,5 +447,4 @@ mod tests {
         assert!(diagnostics[0].message.contains("missing.kicad_sch"));
         assert!(diagnostics[0].message.contains("could not verify"));
     }
-
 }
