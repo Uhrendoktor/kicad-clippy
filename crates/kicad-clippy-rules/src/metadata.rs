@@ -448,7 +448,7 @@ impl LintProfile {
     /// # Arguments
     ///
     /// * `document` — Parsed schematic document whose profile rules are evaluated.
-    /// * `netlist` — Optional exported KiCad netlist used by logical pin-to-net contracts.
+    /// * `netlist` — Optional exported `KiCad` netlist used by logical pin-to-net contracts.
     /// * `board` — Optional parsed PCB document used by board-level pad-distance contracts.
     ///
     /// # Returns

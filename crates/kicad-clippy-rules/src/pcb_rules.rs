@@ -81,8 +81,8 @@ impl BoardFacts {
                 local_x *= scale_x;
                 local_y *= scale_y;
                 // The footprint transform applies scale, then its serialized rotation, then translation.
-                let rotated_x = local_x * cos_angle + local_y * sin_angle;
-                let rotated_y = local_y * cos_angle - local_x * sin_angle;
+                let rotated_x = local_x.mul_add(cos_angle, local_y * sin_angle);
+                let rotated_y = local_y.mul_add(cos_angle, -local_x * sin_angle);
                 let net_name = child_list(pad, "net")
                     .and_then(list_items)
                     .and_then(|items| items.get(2))
@@ -101,7 +101,7 @@ impl BoardFacts {
     }
 }
 
-/// Parses a footprint reference from its modern property or legacy fp_text node.
+/// Parses a footprint reference from its modern property or legacy `fp_text` node.
 ///
 /// # Arguments
 ///
@@ -192,219 +192,325 @@ fn unique_pad<'a>(
     matches.next().is_none().then_some(first)
 }
 
-/// Runs PCB001 for each capacitor whose profile declares a maximum target pad-center distance.
-///
-/// # Arguments
-///
-/// * `profile` — Component-intent metadata containing optional decoupling pad-distance thresholds.
-/// * `board` — Parsed PCB with transformed footprint pad anchors and board net names.
-/// * `netlist` — Optional exported schematic netlist used to cross-check target and return pad nets.
-///
-/// # Returns
-///
-/// PCB001 errors for excessive or inconsistent pad distances, and warnings when board facts are incomplete.
-pub(crate) fn validate_decoupling_pad_distances(
+pub(super) fn validate_decoupling_pad_distances(
     profile: &LintProfile,
     board: &BoardDocument,
     netlist: Option<&Netlist>,
 ) -> Vec<Diagnostic> {
     let facts = BoardFacts::from_document(board);
+    profile
+        .components
+        .iter()
+        .filter_map(|(reference, intent)| {
+            if intent.kind != ComponentKind::Capacitor || intent.role.0 != "decoupling" {
+                return None;
+            }
+            let contract = intent.decoupling.as_ref()?;
+            let maximum_distance = contract.max_target_pad_distance_mm?;
+            Some(validate_one_decoupling_contract(
+                reference,
+                contract,
+                maximum_distance,
+                &facts,
+                netlist,
+            ))
+        })
+        .flatten()
+        .collect()
+}
+
+/// Evaluates the board evidence for one profile-declared decoupling capacitor.
+///
+/// # Arguments
+///
+/// * `reference` — Reference designator of the capacitor whose contract is evaluated.
+/// * `contract` — Decoupling target, target/return terminal, and expected return-net metadata.
+/// * `maximum_distance` — Maximum allowed target-pad to capacitor-target-pad center distance, in millimetres.
+/// * `facts` — Normalized placed-board pad facts extracted from the supplied PCB.
+/// * `netlist` — Optional exported schematic netlist used to compare target and return connectivity.
+///
+/// # Returns
+///
+/// PCB001 diagnostics for missing/ambiguous pads, net mismatches, and distances above the declared maximum.
+fn validate_one_decoupling_contract(
+    reference: &str,
+    contract: &DecouplingIntent,
+    maximum_distance: f64,
+    facts: &BoardFacts,
+    netlist: Option<&Netlist>,
+) -> Vec<Diagnostic> {
+    if !maximum_distance.is_finite() || maximum_distance < 0.0 {
+        return Vec::new();
+    }
+    let Some((target_reference, target_number)) = contract.target_pin.rsplit_once('.') else {
+        return Vec::new();
+    };
+    let (Some(target_pad), Some(capacitor_pad)) = (
+        unique_pad(facts, target_reference, target_number),
+        unique_pad(facts, reference, &contract.target_terminal),
+    ) else {
+        return vec![Diagnostic::for_builtin_rule(
+            BuiltinRuleId::Pcb001,
+            Severity::Warning,
+            format!(
+                "{reference} PCB001 pad distance is unverified because board pad {} or {}.{} is absent or ambiguous",
+                contract.target_pin, reference, contract.target_terminal
+            ),
+        )];
+    };
+
+    let return_pad = unique_pad(facts, reference, &contract.return_terminal);
+    let mut diagnostics =
+        validate_board_pad_nets(reference, contract, &target_pad, &capacitor_pad, return_pad);
+    diagnostics.extend(validate_schematic_board_net_parity(
+        reference,
+        contract,
+        target_reference,
+        target_number,
+        &target_pad,
+        &capacitor_pad,
+        return_pad,
+        netlist,
+    ));
+    diagnostics.extend(validate_target_pad_distance(
+        reference,
+        contract,
+        maximum_distance,
+        &target_pad,
+        &capacitor_pad,
+    ));
+    diagnostics
+}
+
+/// Checks the board-side net assignments required by the decoupling contract.
+///
+/// # Arguments
+///
+/// * `reference` — Reference designator of the decoupling capacitor.
+/// * `contract` — Declared capacitor target and return terminals plus the expected return net.
+/// * `target_pad` — Resolved IC supply pad on the board.
+/// * `capacitor_pad` — Resolved capacitor pad connected to the target IC pin.
+/// * `return_pad` — Optional resolved capacitor return pad.
+///
+/// # Returns
+///
+/// PCB001 errors for board-net mismatches and warnings when required pad-net evidence is unavailable.
+fn validate_board_pad_nets(
+    reference: &str,
+    contract: &DecouplingIntent,
+    target_pad: &BoardPadFact,
+    capacitor_pad: &BoardPadFact,
+    return_pad: Option<&BoardPadFact>,
+) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
-    for (reference, intent) in &profile.components {
-        if intent.kind != ComponentKind::Capacitor || intent.role.0 != "decoupling" {
-            continue;
-        }
-        let Some(contract) = intent.decoupling.as_ref() else {
-            continue;
-        };
-        let Some(maximum_distance) = contract.max_target_pad_distance_mm else {
-            continue;
-        };
-        if !maximum_distance.is_finite() || maximum_distance < 0.0 {
-            continue;
-        }
-        let Some((target_reference, target_number)) = contract.target_pin.rsplit_once('.') else {
-            continue;
-        };
-        let (Some(target_pad), Some(capacitor_pad)) = (
-            unique_pad(&facts, target_reference, target_number),
-            unique_pad(&facts, reference, &contract.target_terminal),
-        ) else {
-            diagnostics.push(Diagnostic::for_builtin_rule(
-                BuiltinRuleId::Pcb001,
-                Severity::Warning,
-                format!(
-                    "{reference} PCB001 pad distance is unverified because board pad {} or {}.{} is absent or ambiguous",
-                    contract.target_pin, reference, contract.target_terminal
-                ),
-            ));
-            continue;
-        };
-
-        let return_pad = unique_pad(&facts, reference, &contract.return_terminal);
-        match return_pad.and_then(|pad| pad.net_name.as_deref()) {
-            Some(actual_return_net) if actual_return_net != contract.return_net => {
-                diagnostics.push(Diagnostic::for_builtin_rule(
-                    BuiltinRuleId::Pcb001,
-                    Severity::Error,
-                    format!(
-                        "{reference} capacitor return pad {} is on board net {actual_return_net:?}, not the declared return net {:?}",
-                        contract.return_terminal, contract.return_net
-                    ),
-                ));
-            }
-            None => diagnostics.push(Diagnostic::for_builtin_rule(
-                BuiltinRuleId::Pcb001,
-                Severity::Warning,
-                format!(
-                    "{reference} PCB001 return-pad net is unverified because capacitor pad {} is absent, ambiguous, or has no assigned board net",
-                    contract.return_terminal
-                ),
-            )),
-            _ => {}
-        }
-
-        match (&target_pad.net_name, &capacitor_pad.net_name) {
-            (Some(target_net), Some(capacitor_net)) if target_net != capacitor_net => {
-                diagnostics.push(Diagnostic::for_builtin_rule(
-                    BuiltinRuleId::Pcb001,
-                    Severity::Error,
-                    format!(
-                        "{reference} decoupling pad {} is on board net {capacitor_net:?}, but {} is on {target_net:?}",
-                        contract.target_terminal, contract.target_pin
-                    ),
-                ));
-                continue;
-            }
-            (None, _) | (_, None) => diagnostics.push(Diagnostic::for_builtin_rule(
-                BuiltinRuleId::Pcb001,
-                Severity::Warning,
-                format!(
-                    "{reference} PCB001 pad net consistency is unverified because {} or {}.{} has no assigned board net",
-                    contract.target_pin, reference, contract.target_terminal
-                ),
-            )),
-            _ => {}
-        }
-
-        if let Some(netlist) = netlist {
-            let target_net = netlist.net_for_pin(target_reference, target_number);
-            let capacitor_net = netlist.net_for_pin(reference, &contract.target_terminal);
-            let return_net = netlist.net_for_pin(reference, &contract.return_terminal);
-            if let Some(expected_return_net) = return_net {
-                if expected_return_net != contract.return_net {
-                    diagnostics.push(Diagnostic::for_builtin_rule(
-                        BuiltinRuleId::Pcb001,
-                        Severity::Error,
-                        format!(
-                            "{reference} schematic netlist assigns return pad {} to {expected_return_net:?}, not the declared return net {:?}",
-                            contract.return_terminal, contract.return_net
-                        ),
-                    ));
-                }
-                if let Some(actual_return_net) = return_pad.and_then(|pad| pad.net_name.as_deref())
-                {
-                    if actual_return_net != expected_return_net {
-                        diagnostics.push(Diagnostic::for_builtin_rule(
-                            BuiltinRuleId::Pcb001,
-                            Severity::Error,
-                            format!(
-                                "{reference} board return pad {} is on {actual_return_net:?}, but the schematic netlist assigns {expected_return_net:?}",
-                                contract.return_terminal
-                            ),
-                        ));
-                    }
-                }
-            } else {
-                diagnostics.push(Diagnostic::for_builtin_rule(
-                    BuiltinRuleId::Pcb001,
-                    Severity::Warning,
-                    format!(
-                        "{reference} PCB001 schematic-to-board return mapping is unverified because the exported netlist lacks {}.{}",
-                        reference, contract.return_terminal
-                    ),
-                ));
-            }
-            match (target_net, capacitor_net) {
-                (Some(expected_target), Some(expected_capacitor))
-                    if expected_target != expected_capacitor =>
-                {
-                    diagnostics.push(Diagnostic::for_builtin_rule(
-                        BuiltinRuleId::Pcb001,
-                        Severity::Error,
-                        format!(
-                            "{reference} schematic netlist does not place capacitor terminal {} on the same net as {}",
-                            contract.target_terminal, contract.target_pin
-                        ),
-                    ));
-                    continue;
-                }
-                (Some(expected_target), _)
-                    if target_pad
-                        .net_name
-                        .as_deref()
-                        .is_some_and(|actual| actual != expected_target) =>
-                {
-                    diagnostics.push(Diagnostic::for_builtin_rule(
-                        BuiltinRuleId::Pcb001,
-                        Severity::Error,
-                        format!(
-                            "{reference} board pad net {:?} for {} differs from schematic netlist net {expected_target:?}",
-                            target_pad.net_name, contract.target_pin
-                        ),
-                    ));
-                    continue;
-                }
-                (Some(_), Some(expected_capacitor))
-                    if capacitor_pad
-                        .net_name
-                        .as_deref()
-                        .is_some_and(|actual| actual != expected_capacitor) =>
-                {
-                    diagnostics.push(Diagnostic::for_builtin_rule(
-                        BuiltinRuleId::Pcb001,
-                        Severity::Error,
-                        format!(
-                            "{reference} capacitor board pad net {:?} differs from schematic netlist net {expected_capacitor:?}",
-                            capacitor_pad.net_name
-                        ),
-                    ));
-                    continue;
-                }
-                (None, _) | (_, None) => diagnostics.push(Diagnostic::for_builtin_rule(
-                    BuiltinRuleId::Pcb001,
-                    Severity::Warning,
-                    format!(
-                        "{reference} PCB001 schematic-to-board pin mapping is unverified because the exported netlist lacks {} or {}.{}",
-                        contract.target_pin, reference, contract.target_terminal
-                    ),
-                )),
-                _ => {}
-            }
-        } else {
-            diagnostics.push(Diagnostic::for_builtin_rule(
-                BuiltinRuleId::Pcb001,
-                Severity::Warning,
-                format!(
-                    "{reference} PCB001 board pad distance is evaluated, but schematic net parity is unverified because no exported netlist was supplied"
-                ),
-            ));
-        }
-
-        let distance = (target_pad.position_mm.0 - capacitor_pad.position_mm.0)
-            .hypot(target_pad.position_mm.1 - capacitor_pad.position_mm.1);
-        if distance > maximum_distance + PCB_DISTANCE_TOLERANCE_MM {
+    match return_pad.and_then(|pad| pad.net_name.as_deref()) {
+        Some(actual_return_net) if actual_return_net != contract.return_net => {
             diagnostics.push(Diagnostic::for_builtin_rule(
                 BuiltinRuleId::Pcb001,
                 Severity::Error,
                 format!(
-                    "{reference} capacitor pad {} is {distance:.2} mm from target pad {}, exceeding max_target_pad_distance_mm of {maximum_distance:.2} mm",
+                    "{reference} capacitor return pad {} is on board net {actual_return_net:?}, not the declared return net {:?}",
+                    contract.return_terminal, contract.return_net
+                ),
+            ));
+        }
+        None => diagnostics.push(Diagnostic::for_builtin_rule(
+            BuiltinRuleId::Pcb001,
+            Severity::Warning,
+            format!(
+                "{reference} PCB001 return-pad net is unverified because capacitor pad {} is absent, ambiguous, or has no assigned board net",
+                contract.return_terminal
+            ),
+        )),
+        _ => {}
+    }
+    match (&target_pad.net_name, &capacitor_pad.net_name) {
+        (Some(target_net), Some(capacitor_net)) if target_net != capacitor_net => {
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Pcb001,
+                Severity::Error,
+                format!(
+                    "{reference} decoupling pad {} is on board net {capacitor_net:?}, but {} is on {target_net:?}",
                     contract.target_terminal, contract.target_pin
                 ),
             ));
         }
+        (None, _) | (_, None) => diagnostics.push(Diagnostic::for_builtin_rule(
+            BuiltinRuleId::Pcb001,
+            Severity::Warning,
+            format!(
+                "{reference} PCB001 pad net consistency is unverified because {} or {}.{} has no assigned board net",
+                contract.target_pin, reference, contract.target_terminal
+            ),
+        )),
+        _ => {}
     }
     diagnostics
+}
+
+/// Compares board pad nets with the optional exported schematic netlist.
+///
+/// # Arguments
+///
+/// * `reference` — Reference designator of the decoupling capacitor.
+/// * `contract` — Target/return pin declarations and expected return net.
+/// * `target_reference` — Reference designator of the target IC.
+/// * `target_number` — Serialized number of the target IC supply pin.
+/// * `target_pad` — Resolved board pad belonging to the target IC supply pin.
+/// * `capacitor_pad` — Resolved board pad belonging to the capacitor target terminal.
+/// * `return_pad` — Optional board pad belonging to the capacitor return terminal.
+/// * `netlist` — Optional exported schematic netlist with logical pin-to-net assignments.
+///
+/// # Returns
+///
+/// PCB001 netlist-parity errors or warnings when schematic connectivity evidence is unavailable.
+fn validate_schematic_board_net_parity(
+    reference: &str,
+    contract: &DecouplingIntent,
+    target_reference: &str,
+    target_number: &str,
+    target_pad: &BoardPadFact,
+    capacitor_pad: &BoardPadFact,
+    return_pad: Option<&BoardPadFact>,
+    netlist: Option<&Netlist>,
+) -> Vec<Diagnostic> {
+    let Some(netlist) = netlist else {
+        return vec![Diagnostic::for_builtin_rule(
+            BuiltinRuleId::Pcb001,
+            Severity::Warning,
+            format!(
+                "{reference} PCB001 board pad distance is evaluated, but schematic net parity is unverified because no exported netlist was supplied"
+            ),
+        )];
+    };
+
+    let mut diagnostics = Vec::new();
+    let target_net = netlist.net_for_pin(target_reference, target_number);
+    let capacitor_net = netlist.net_for_pin(reference, &contract.target_terminal);
+    let return_net = netlist.net_for_pin(reference, &contract.return_terminal);
+    if let Some(expected_return_net) = return_net {
+        if expected_return_net != contract.return_net {
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Pcb001,
+                Severity::Error,
+                format!(
+                    "{reference} schematic netlist assigns return pad {} to {expected_return_net:?}, not the declared return net {:?}",
+                    contract.return_terminal, contract.return_net
+                ),
+            ));
+        }
+        if let Some(actual_return_net) = return_pad.and_then(|pad| pad.net_name.as_deref()) {
+            if actual_return_net != expected_return_net {
+                diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Pcb001,
+                    Severity::Error,
+                    format!(
+                        "{reference} board return pad {} is on {actual_return_net:?}, but the schematic netlist assigns {expected_return_net:?}",
+                        contract.return_terminal
+                    ),
+                ));
+            }
+        }
+    } else {
+        diagnostics.push(Diagnostic::for_builtin_rule(
+            BuiltinRuleId::Pcb001,
+            Severity::Warning,
+            format!(
+                "{reference} PCB001 schematic-to-board return mapping is unverified because the exported netlist lacks {}.{}",
+                reference, contract.return_terminal
+            ),
+        ));
+    }
+    match (target_net, capacitor_net) {
+        (Some(expected_target), Some(expected_capacitor))
+            if expected_target != expected_capacitor =>
+        {
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Pcb001,
+                Severity::Error,
+                format!(
+                    "{reference} schematic netlist does not place capacitor terminal {} on the same net as {}",
+                    contract.target_terminal, contract.target_pin
+                ),
+            ));
+        }
+        (Some(expected_target), _)
+            if target_pad
+                .net_name
+                .as_deref()
+                .is_some_and(|actual| actual != expected_target) =>
+        {
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Pcb001,
+                Severity::Error,
+                format!(
+                    "{reference} board pad net {:?} for {} differs from schematic netlist net {expected_target:?}",
+                    target_pad.net_name, contract.target_pin
+                ),
+            ));
+        }
+        (Some(_), Some(expected_capacitor))
+            if capacitor_pad
+                .net_name
+                .as_deref()
+                .is_some_and(|actual| actual != expected_capacitor) =>
+        {
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Pcb001,
+                Severity::Error,
+                format!(
+                    "{reference} capacitor board pad net {:?} differs from schematic netlist net {expected_capacitor:?}",
+                    capacitor_pad.net_name
+                ),
+            ));
+        }
+        (None, _) | (_, None) => diagnostics.push(Diagnostic::for_builtin_rule(
+            BuiltinRuleId::Pcb001,
+            Severity::Warning,
+            format!(
+                "{reference} PCB001 schematic-to-board pin mapping is unverified because the exported netlist lacks {} or {}.{}",
+                contract.target_pin, reference, contract.target_terminal
+            ),
+        )),
+        _ => {}
+    }
+    diagnostics
+}
+
+/// Checks the declared maximum center-to-center distance between target and capacitor pads.
+///
+/// # Arguments
+///
+/// * `reference` — Reference designator of the decoupling capacitor.
+/// * `contract` — Decoupling contract identifying the target pin and capacitor target terminal.
+/// * `maximum_distance` — Maximum allowed board-space pad-center distance, in millimetres.
+/// * `target_pad` — Resolved IC target pad on the board.
+/// * `capacitor_pad` — Resolved capacitor target terminal pad on the board.
+///
+/// # Returns
+///
+/// A PCB001 error when the measured distance exceeds the configured maximum, or no diagnostics otherwise.
+fn validate_target_pad_distance(
+    reference: &str,
+    contract: &DecouplingIntent,
+    maximum_distance: f64,
+    target_pad: &BoardPadFact,
+    capacitor_pad: &BoardPadFact,
+) -> Vec<Diagnostic> {
+    let distance = (target_pad.position_mm.0 - capacitor_pad.position_mm.0)
+        .hypot(target_pad.position_mm.1 - capacitor_pad.position_mm.1);
+    if distance > maximum_distance + PCB_DISTANCE_TOLERANCE_MM {
+        vec![Diagnostic::for_builtin_rule(
+            BuiltinRuleId::Pcb001,
+            Severity::Error,
+            format!(
+                "{reference} capacitor pad {} is {distance:.2} mm from target pad {}, exceeding max_target_pad_distance_mm of {maximum_distance:.2} mm",
+                contract.target_terminal, contract.target_pin
+            ),
+        )]
+    } else {
+        Vec::new()
+    }
 }
 
 /// Reports an unverified warning for each pad-distance contract when no board was supplied.
@@ -416,7 +522,7 @@ pub(crate) fn validate_decoupling_pad_distances(
 /// # Returns
 ///
 /// PCB001 warnings stating that no board evidence was supplied for the declared check.
-pub(crate) fn validate_missing_board(profile: &LintProfile) -> Vec<Diagnostic> {
+pub(super) fn validate_missing_board(profile: &LintProfile) -> Vec<Diagnostic> {
     profile
         .components
         .iter()
@@ -542,6 +648,8 @@ fn number(node: &Node) -> Option<f64> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used, clippy::unwrap_used)]
+
     use super::BoardFacts;
     use kicad_clippy_parser::BoardDocument;
 
@@ -574,6 +682,8 @@ mod tests {
 
 #[cfg(test)]
 mod contract_tests {
+    #![allow(clippy::expect_used, clippy::unwrap_used)]
+
     use super::{validate_decoupling_pad_distances, validate_missing_board};
     use crate::LintProfile;
     use kicad_clippy_parser::BoardDocument;

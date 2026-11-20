@@ -30,6 +30,7 @@ pub fn validate_profile_extensions(
     diagnostics
 }
 
+/// Native KiCad title-block field keys that SCH023 can require on a loaded sheet.
 const SUPPORTED_TITLE_BLOCK_FIELDS: [&str; 13] = [
     "title", "date", "rev", "company", "comment1", "comment2", "comment3", "comment4", "comment5",
     "comment6", "comment7", "comment8", "comment9",
@@ -560,6 +561,8 @@ mod tests {
 #[cfg(test)]
 /// Tests opt-in sheet title-block completeness contracts.
 mod title_block_tests {
+    #![allow(clippy::expect_used, clippy::unwrap_used)]
+
     use super::validate_required_title_block_fields;
     use crate::{LintProfile, SchematicFacts};
     use kicad_clippy_parser::SchematicDocument;

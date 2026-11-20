@@ -8,7 +8,7 @@ use kiutils_sexpr::{Atom, Node};
 use crate::{RuleContext, RulePass};
 
 /// A rule pass that detects duplicate object UUIDs in one parsed schematic document.
-pub(crate) struct DuplicateUuidPass;
+pub(super) struct DuplicateUuidPass;
 
 impl RulePass for DuplicateUuidPass {
     /// Returns the stable SCH024 rule-pass name.
@@ -121,6 +121,8 @@ fn atom_text(node: &Node) -> Option<&str> {
 #[cfg(test)]
 /// Tests duplicate-UUID detection on a loaded schematic document.
 mod tests {
+    #![allow(clippy::expect_used, clippy::unwrap_used)]
+
     use super::BuiltinRuleId;
     use crate::RuleEngine;
     use kicad_clippy_parser::SchematicDocument;
