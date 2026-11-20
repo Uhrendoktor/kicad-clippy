@@ -360,3 +360,28 @@ A project can list critical nets that must have an intentional test point:
 SCH025 requires every name in `required_test_point_nets` to map to at least one declared component with kind and role `test_point`. Each such component uses `pin_nets` to identify the exact footprint/symbol pin. When the CLI exports a KiCad netlist, SCH025 verifies that the declared pin is actually assigned to the required net; profile-only validation without a netlist is reported as unverified.
 
 PCB009 requires `--board design.kicad_pcb` and verifies that each declared reference/pad exists on the board, has the expected net, and has a pad layer list containing both copper and solder mask (including wildcard through-hole layer sets). This is a serialized layer-exposure check. It does not model the physical probe tip, surrounding pad clearance, fixture geometry, enclosure constraints, or whether a manufacturing fixture can reach the pad.
+
+
+## Project grid alignment
+
+A project may declare the schematic grid used for placement checks at the profile root:
+
+~~~json
+{
+  "schema_version": 1,
+  "grid_alignment": {
+    "spacing_mm": 2.54,
+    "origin_mm": [0.0, 0.0],
+    "tolerance_mm": 0.01,
+    "targets": ["symbol_origins", "label_anchors"],
+    "exempt_components": ["U3"],
+    "exempt_pins": ["J1.7"],
+    "exempt_labels": ["global:TEST"],
+    "exempt_coordinates_mm": [[25.4, 17.78]]
+  }
+}
+~~~
+
+SCH026 checks each selected coordinate against the nearest grid intersection independently on the X and Y axes. The maximum allowed deviation on either axis is `tolerance_mm`. The grid origin defaults to `[0, 0]`; the tolerance defaults to 0.001 mm. When `targets` is omitted, the rule checks placed symbol origins and label anchors only. Optional targets are `pin_anchors`, `junctions`, and `wire_endpoints`; these electrical geometry checks are not enabled by default because KiCad native ERC already reports some off-grid pin and wire conditions.
+
+Exemptions are explicit and scoped: `exempt_components` contains symbol references, `exempt_pins` contains `REF.PIN` identifiers, `exempt_labels` contains `kind:name` selectors, and `exempt_coordinates_mm` contains exact sheet-space anchors. Exemptions do not disable checks for other objects. SCH026 reports the actual off-grid anchor and its nearest grid point. It does not read or modify the KiCad project grid setting; spacing and origin are project-profile values.

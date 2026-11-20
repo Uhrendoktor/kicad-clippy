@@ -410,7 +410,7 @@ mod tests {
         assert!(diagnostics.iter().all(|item| item.code == "SCH026"));
         assert!(diagnostics.iter().all(|item| item.severity == Severity::Error));
         assert!(diagnostics.iter().any(|item| item.message.contains("component U1")));
-        assert!(diagnostics.iter().any(|item| item.message.contains("local label \"VDD\"")));
+        assert!(diagnostics.iter().any(|item| item.message.contains(r#"local label "VDD""#)));
         assert!(diagnostics.iter().all(|item| item.schematic_location.is_some()));
     }
 
