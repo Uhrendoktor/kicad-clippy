@@ -3524,29 +3524,6 @@ fn sub_symbol_unit_convert(name: &str) -> Option<(u32, u32)> {
     let (_, unit) = prefix.rsplit_once('_')?;
     Some((unit.parse().ok()?, convert.parse().ok()?))
 }
-/// Returns the nearest exact cardinal rotation when the supplied angle is a supported quarter-turn.
-///
-/// # Arguments
-///
-/// * `angle` — Rotation angle in degrees as serialized by `KiCad`.
-///
-/// # Returns
-///
-/// The normalized angle for an exact quarter-turn orientation, or `None` when the supplied angle is not cardinal.
-fn cardinal_rotation(angle: f64) -> Option<i32> {
-    let normalized = angle.rem_euclid(FULL_ROTATION_DEGREES);
-    [
-        (0.0, 0),
-        (QUARTER_ROTATION_DEGREES, 90),
-        (HALF_ROTATION_DEGREES, 180),
-        (THREE_QUARTER_ROTATION_DEGREES, 270),
-    ]
-    .into_iter()
-    .find_map(|(degrees, rotation)| {
-        ((normalized - degrees).abs() <= GEOMETRY_TOLERANCE_MM).then_some(rotation)
-    })
-}
-
 /// Builds the affine transform for a symbol's rotation and supported mirror state.
 ///
 /// # Arguments
