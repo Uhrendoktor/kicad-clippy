@@ -8,7 +8,7 @@ use kiutils_sexpr::{Atom, Node};
 use crate::{RuleContext, RulePass};
 
 /// A rule pass that detects duplicate object UUIDs in one parsed schematic document.
-pub(super) struct DuplicateUuidPass;
+pub struct DuplicateUuidPass;
 
 impl RulePass for DuplicateUuidPass {
     /// Returns the stable SCH024 rule-pass name.

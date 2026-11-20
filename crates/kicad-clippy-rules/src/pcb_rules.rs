@@ -217,7 +217,7 @@ struct ResolvedDecouplingPads<'a> {
 /// # Returns
 ///
 /// PCB001 errors for excessive or inconsistent pad distances, and warnings when board facts are incomplete.
-pub(super) fn validate_decoupling_pad_distances(
+pub fn validate_decoupling_pad_distances(
     profile: &LintProfile,
     board: &BoardDocument,
     netlist: Option<&Netlist>,
@@ -288,8 +288,8 @@ fn validate_one_decoupling_contract(
     let resolved_pads = ResolvedDecouplingPads {
         target_reference,
         target_number,
-        target_pad: &target_pad,
-        capacitor_pad: &capacitor_pad,
+        target_pad,
+        capacitor_pad,
         return_pad,
     };
     let mut diagnostics = validate_board_pad_nets(reference, contract, &resolved_pads);
@@ -370,6 +370,61 @@ fn validate_board_pad_nets(
     diagnostics
 }
 
+
+/// Checks schematic and board evidence for the capacitor's declared return terminal.
+///
+/// # Arguments
+///
+/// * `reference` — Reference designator of the capacitor whose return terminal is checked.
+/// * `contract` — Decoupling metadata containing the return terminal and expected return net.
+/// * `pads` — Resolved board-pad facts, including the optional capacitor return pad.
+/// * `netlist` — Exported schematic netlist used to resolve the return terminal's expected net.
+///
+/// # Returns
+///
+/// PCB001 errors for confirmed return-net mismatches and a warning when the netlist mapping is absent.
+fn validate_return_pad_net_parity(
+    reference: &str,
+    contract: &DecouplingIntent,
+    pads: &ResolvedDecouplingPads<'_>,
+    netlist: &Netlist,
+) -> Vec<Diagnostic> {
+    let Some(expected_return_net) = netlist.net_for_pin(reference, &contract.return_terminal) else {
+        return vec![Diagnostic::for_builtin_rule(
+            BuiltinRuleId::Pcb001,
+            Severity::Warning,
+            format!(
+                "{reference} PCB001 schematic-to-board return mapping is unverified because the exported netlist lacks {}.{}",
+                reference, contract.return_terminal
+            ),
+        )];
+    };
+    let mut diagnostics = Vec::new();
+    if expected_return_net != contract.return_net {
+        diagnostics.push(Diagnostic::for_builtin_rule(
+            BuiltinRuleId::Pcb001,
+            Severity::Error,
+            format!(
+                "{reference} schematic netlist assigns return pad {} to {expected_return_net:?}, not the declared return net {:?}",
+                contract.return_terminal, contract.return_net
+            ),
+        ));
+    }
+    if let Some(actual_return_net) = pads.return_pad.and_then(|pad| pad.net_name.as_deref()) {
+        if actual_return_net != expected_return_net {
+            diagnostics.push(Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Pcb001,
+                Severity::Error,
+                format!(
+                    "{reference} board return pad {} is on {actual_return_net:?}, but the schematic netlist assigns {expected_return_net:?}",
+                    contract.return_terminal
+                ),
+            ));
+        }
+    }
+    diagnostics
+}
+
 /// Compares board pad nets with the optional exported schematic netlist.
 ///
 /// # Arguments
@@ -398,43 +453,9 @@ fn validate_schematic_board_net_parity(
         )];
     };
 
-    let mut diagnostics = Vec::new();
+    let mut diagnostics = validate_return_pad_net_parity(reference, contract, pads, netlist);
     let target_net = netlist.net_for_pin(pads.target_reference, pads.target_number);
     let capacitor_net = netlist.net_for_pin(reference, &contract.target_terminal);
-    let return_net = netlist.net_for_pin(reference, &contract.return_terminal);
-    if let Some(expected_return_net) = return_net {
-        if expected_return_net != contract.return_net {
-            diagnostics.push(Diagnostic::for_builtin_rule(
-                BuiltinRuleId::Pcb001,
-                Severity::Error,
-                format!(
-                    "{reference} schematic netlist assigns return pad {} to {expected_return_net:?}, not the declared return net {:?}",
-                    contract.return_terminal, contract.return_net
-                ),
-            ));
-        }
-        if let Some(actual_return_net) = pads.return_pad.and_then(|pad| pad.net_name.as_deref()) {
-            if actual_return_net != expected_return_net {
-                diagnostics.push(Diagnostic::for_builtin_rule(
-                    BuiltinRuleId::Pcb001,
-                    Severity::Error,
-                    format!(
-                        "{reference} board return pad {} is on {actual_return_net:?}, but the schematic netlist assigns {expected_return_net:?}",
-                        contract.return_terminal
-                    ),
-                ));
-            }
-        }
-    } else {
-        diagnostics.push(Diagnostic::for_builtin_rule(
-            BuiltinRuleId::Pcb001,
-            Severity::Warning,
-            format!(
-                "{reference} PCB001 schematic-to-board return mapping is unverified because the exported netlist lacks {}.{}",
-                reference, contract.return_terminal
-            ),
-        ));
-    }
     match (target_net, capacitor_net) {
         (Some(expected_target), Some(expected_capacitor))
             if expected_target != expected_capacitor =>
@@ -536,7 +557,7 @@ fn validate_target_pad_distance(
 /// # Returns
 ///
 /// PCB001 warnings stating that no board evidence was supplied for the declared check.
-pub(super) fn validate_missing_board(profile: &LintProfile) -> Vec<Diagnostic> {
+pub fn validate_missing_board(profile: &LintProfile) -> Vec<Diagnostic> {
     profile
         .components
         .iter()
