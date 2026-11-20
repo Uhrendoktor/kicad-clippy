@@ -58,13 +58,9 @@ impl BoardFacts {
                 .and_then(list_items)
                 .and_then(|items| items.get(1))
                 .and_then(atom_text);
-            let Some(is_back) = match layer {
-                Some("F.Cu") => Some(false),
-                Some("B.Cu") => Some(true),
-                _ => None,
-            } else {
+            if !matches!(layer, Some("F.Cu" | "B.Cu")) {
                 continue;
-            };
+            }
             let (scale_x, scale_y) = footprint_scale(footprint).unwrap_or((1.0, 1.0));
             if !scale_x.is_finite()
                 || !scale_y.is_finite()
@@ -73,12 +69,9 @@ impl BoardFacts {
             {
                 continue;
             }
-            let effective_angle = if is_back {
-                -footprint_angle
-            } else {
-                footprint_angle
-            };
-            let radians = effective_angle.to_radians();
+            // KiCad serializes the flipped pad-local coordinates and the adjusted footprint angle.
+            // Apply the stored transform as-is; mirroring or negating it again would double-flip B.Cu pads.
+            let radians = footprint_angle.to_radians();
             let (sin_angle, cos_angle) = radians.sin_cos();
             for pad in children(footprint, "pad") {
                 let Some(number) = list_items(pad)
@@ -93,11 +86,7 @@ impl BoardFacts {
                 };
                 local_x *= scale_x;
                 local_y *= scale_y;
-                if is_back {
-                    // KiCad mirrors pad-local Y around the footprint X axis when a footprint is flipped.
-                    local_y = -local_y;
-                }
-                // The footprint transform applies scale, then rotation, then translation.
+                // The footprint transform applies scale, then its serialized rotation, then translation.
                 let rotated_x = local_x * cos_angle + local_y * sin_angle;
                 let rotated_y = local_y * cos_angle - local_x * sin_angle;
                 let net_name = child_list(pad, "net")
@@ -255,6 +244,29 @@ pub(crate) fn validate_decoupling_pad_distances(
             continue;
         };
 
+        let return_pad = unique_pad(&facts, reference, &contract.return_terminal);
+        match return_pad.and_then(|pad| pad.net_name.as_deref()) {
+            Some(actual_return_net) if actual_return_net != contract.return_net => {
+                diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Pcb001,
+                    Severity::Error,
+                    format!(
+                        "{reference} capacitor return pad {} is on board net {actual_return_net:?}, not the declared return net {:?}",
+                        contract.return_terminal, contract.return_net
+                    ),
+                ));
+            }
+            None => diagnostics.push(Diagnostic::for_builtin_rule(
+                BuiltinRuleId::Pcb001,
+                Severity::Warning,
+                format!(
+                    "{reference} PCB001 return-pad net is unverified because capacitor pad {} is absent, ambiguous, or has no assigned board net",
+                    contract.return_terminal
+                ),
+            )),
+            _ => {}
+        }
+
         match (&target_pad.net_name, &capacitor_pad.net_name) {
             (Some(target_net), Some(capacitor_net)) if target_net != capacitor_net => {
                 diagnostics.push(Diagnostic::for_builtin_rule(
@@ -281,6 +293,38 @@ pub(crate) fn validate_decoupling_pad_distances(
         if let Some(netlist) = netlist {
             let target_net = netlist.net_for_pin(target_reference, target_number);
             let capacitor_net = netlist.net_for_pin(reference, &contract.target_terminal);
+            let return_net = netlist.net_for_pin(reference, &contract.return_terminal);
+            if let Some(expected_return_net) = return_net {
+                if expected_return_net != contract.return_net {
+                    diagnostics.push(Diagnostic::for_builtin_rule(
+                        BuiltinRuleId::Pcb001,
+                        Severity::Error,
+                        format!(
+                            "{reference} schematic netlist assigns return pad {} to {expected_return_net:?}, not the declared return net {:?}",
+                            contract.return_terminal, contract.return_net
+                        ),
+                    ));
+                }
+                if return_pad.and_then(|pad| pad.net_name.as_deref()) != Some(expected_return_net) {
+                    diagnostics.push(Diagnostic::for_builtin_rule(
+                        BuiltinRuleId::Pcb001,
+                        Severity::Error,
+                        format!(
+                            "{reference} board return pad {} does not match schematic netlist net {expected_return_net:?}",
+                            contract.return_terminal
+                        ),
+                    ));
+                }
+            } else {
+                diagnostics.push(Diagnostic::for_builtin_rule(
+                    BuiltinRuleId::Pcb001,
+                    Severity::Warning,
+                    format!(
+                        "{reference} PCB001 schematic-to-board return mapping is unverified because the exported netlist lacks {}.{}",
+                        reference, contract.return_terminal
+                    ),
+                ));
+            }
             match (target_net, capacitor_net) {
                 (Some(expected_target), Some(expected_capacitor))
                     if expected_target != expected_capacitor =>
@@ -451,11 +495,11 @@ mod tests {
             r#"(kicad_pcb
                 (footprint "Package:Part" (layer "F.Cu") (at 100 50 90)
                     (property "Reference" "U1")
-                    (pad "1" smd rect (at 2 0) (size 1 1) (layers "F.Cu") (net 1 "VDD"))
+                    (pad "1" smd rect (at 2 1) (size 1 1) (layers "F.Cu") (net 1 "VDD"))
                 )
                 (footprint "Package:Part" (layer "B.Cu") (at 100 50 90)
                     (property "Reference" "C1")
-                    (pad "1" smd rect (at 2 0) (size 1 1) (layers "B.Cu") (net 1 "VDD"))
+                    (pad "1" smd rect (at 2 -1) (size 1 1) (layers "B.Cu") (net 1 "VDD"))
                 )
             )"#,
         )
@@ -463,10 +507,10 @@ mod tests {
         let facts = BoardFacts::from_document(&board);
         let target = super::unique_pad(&facts, "U1", "1").expect("front pad found");
         let capacitor = super::unique_pad(&facts, "C1", "1").expect("back pad found");
-        assert!((target.position_mm.0 - 100.0).abs() < 0.001);
+        assert!((target.position_mm.0 - 101.0).abs() < 0.001);
         assert!((target.position_mm.1 - 48.0).abs() < 0.001);
-        assert!((capacitor.position_mm.0 - 100.0).abs() < 0.001);
-        assert!((capacitor.position_mm.1 - 52.0).abs() < 0.001);
+        assert!((capacitor.position_mm.0 - 99.0).abs() < 0.001);
+        assert!((capacitor.position_mm.1 - 48.0).abs() < 0.001);
     }
 }
 
@@ -511,7 +555,11 @@ mod contract_tests {
     /// # Returns
     ///
     /// A parsed PCB containing U1.1 and C1.1 at actual transformed pad anchors.
-    fn board(capacitor_x: f64, capacitor_net: &str) -> BoardDocument {
+    fn board(
+        capacitor_x: f64,
+        capacitor_net: &str,
+        return_net: &str,
+    ) -> BoardDocument {
         let source = format!(
             r#"(kicad_pcb
                 (footprint "Package:IC" (layer "F.Cu") (at 100 50 90)
@@ -521,6 +569,7 @@ mod contract_tests {
                 (footprint "Package:Capacitor" (layer "F.Cu") (at {capacitor_x} 50 90)
                     (property "Reference" "C1")
                     (pad "1" smd rect (at 2 0) (size 1 1) (layers "F.Cu") (net 1 "{capacitor_net}"))
+                    (pad "2" smd rect (at 0 2) (size 1 1) (layers "F.Cu") (net 2 "{return_net}"))
                 )
             )"#
         );
@@ -531,7 +580,7 @@ mod contract_tests {
     #[test]
     fn pcb001_rejects_excessive_pad_center_distance() {
         let diagnostics =
-            validate_decoupling_pad_distances(&profile(3.0), &board(104.0, "VDD"), None);
+            validate_decoupling_pad_distances(&profile(3.0), &board(104.0, "VDD", "GND"), None);
         assert!(diagnostics.iter().any(|item| {
             item.code == "PCB001"
                 && item.message.contains("4.00 mm")
@@ -543,7 +592,7 @@ mod contract_tests {
     #[test]
     fn pcb001_accepts_pad_distance_at_threshold() {
         let diagnostics =
-            validate_decoupling_pad_distances(&profile(4.0), &board(104.0, "VDD"), None);
+            validate_decoupling_pad_distances(&profile(4.0), &board(104.0, "VDD", "GND"), None);
         assert!(!diagnostics.iter().any(|item| {
             item.code == "PCB001" && item.severity == kicad_clippy_core::Severity::Error
         }));
@@ -553,7 +602,7 @@ mod contract_tests {
     #[test]
     fn pcb001_rejects_mismatched_board_pad_nets() {
         let diagnostics =
-            validate_decoupling_pad_distances(&profile(10.0), &board(104.0, "GND"), None);
+            validate_decoupling_pad_distances(&profile(10.0), &board(104.0, "GND", "GND"), None);
         assert!(diagnostics.iter().any(|item| {
             item.code == "PCB001" && item.message.contains("but U1.1 is on")
         }));
@@ -578,6 +627,20 @@ mod contract_tests {
             item.code == "PCB001"
                 && item.severity == kicad_clippy_core::Severity::Warning
                 && item.message.contains("absent or ambiguous")
+        }));
+    }
+
+ 
+    /// Rejects a capacitor return pad that is assigned to a different board net than its contract.
+    #[test]
+    fn pcb001_rejects_mismatched_return_pad_net() {
+        let diagnostics =
+            validate_decoupling_pad_distances(&profile(10.0), &board(104.0, "VDD", "VDD"), None);
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "PCB001"
+                && item.severity == kicad_clippy_core::Severity::Error
+                && item.message.contains("return pad 2")
+                && item.message.contains("not the declared return net")
         }));
     }
 
