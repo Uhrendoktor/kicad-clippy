@@ -415,6 +415,9 @@ pub struct GroupIntent {
     /// Optional minimum Euclidean spacing between member symbol origins, in millimetres.
     #[serde(default)]
     pub minimum_member_origin_spacing_mm: Option<f64>,
+    /// Optional maximum Euclidean distance between any pair of member symbol origins, constraining group cluster diameter.
+    #[serde(default)]
+    pub maximum_member_origin_span_mm: Option<f64>,
     /// Optional minimum edge-to-edge clearance between supported member body outlines, in millimetres.
     #[serde(default)]
     pub minimum_member_body_clearance_mm: Option<f64>,

@@ -17,6 +17,7 @@ A Rust-based linter for KiCad schematic files. `kicad-clippy` combines repositor
 - Checks UUID-linked functional-frame title tabs, title-box containment and optional frame spacing.
 - Applies an optional TOML rule policy with `default`, `strict`, or `advisory` presets and per-rule `allow`, `warn`, or `deny` overrides.
 - Checks overlaps between independently declared functional-group frames and enforces profile-declared no-connect pin markers.
+- Constrains functional-group cluster diameter with optional maximum pairwise member-origin span (`maximum_member_origin_span_mm`).
 - Checks duplicate UUIDs across a root schematic and its referenced child-sheet hierarchy when the root file is loaded from disk.
 - Preserves source byte spans, physical coordinates, sheet paths and affected item UUIDs where available.
 - Emits human-readable or JSON diagnostics with an exit code based on active errors.

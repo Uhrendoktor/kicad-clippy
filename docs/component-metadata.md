@@ -187,7 +187,7 @@ The netlist adapter verifies actual target-pin and return-terminal net membershi
 
 ## Functional group documentation
 
-Profiles can also declare functional groups. Each group identifies its component members, the members requiring documentation, the UUID of its rendered description text box, and evidence. It can also set `kicad_group_uuid` to bind the profile contract to a native KiCad group object, `frame_uuid` to reference a drawn schematic rectangle that encloses group members, `minimum_frame_clearance_mm` to require an inset from the frame edges, `minimum_member_origin_spacing_mm` to require Euclidean separation between member origins, `minimum_member_body_clearance_mm` to require edge-to-edge clearance between transformed member outlines, `alignment_axis` with `alignment_tolerance_mm` to keep member origins in a horizontal row or vertical column, and `wire_length_budget_mm` to cap the total length of wire segments wholly contained by the frame. For each documented component, the function and rationale phrases must appear in that text box.
+Profiles can also declare functional groups. Each group identifies its component members, the members requiring documentation, the UUID of its rendered description text box, and evidence. It can also set `kicad_group_uuid` to bind the profile contract to a native KiCad group object, `frame_uuid` to reference a drawn schematic rectangle that encloses group members, `minimum_frame_clearance_mm` to require an inset from the frame edges, `minimum_member_origin_spacing_mm` to require Euclidean separation between member origins, `maximum_member_origin_span_mm` to cap the greatest pairwise distance between member origins and constrain cluster diameter, `minimum_member_body_clearance_mm` to require edge-to-edge clearance between transformed member outlines, `alignment_axis` with `alignment_tolerance_mm` to keep member origins in a horizontal row or vertical column, and `wire_length_budget_mm` to cap the total length of wire segments wholly contained by the frame. For each documented component, the function and rationale phrases must appear in that text box.
 
     {
       "groups": {
@@ -198,6 +198,7 @@ Profiles can also declare functional groups. Each group identifies its component
           "kicad_group_uuid": "11111111-1111-4111-8111-111111111111",
           "frame_uuid": "22222222-2222-4222-8222-222222222222",
           "minimum_member_origin_spacing_mm": 10.0,
+          "maximum_member_origin_span_mm": 35.0,
           "minimum_member_body_clearance_mm": 1.5,
           "alignment_axis": "horizontal",
           "alignment_tolerance_mm": 0.5,
@@ -216,6 +217,8 @@ Profiles can also declare functional groups. Each group identifies its component
         }
       }
     }
+
+When `maximum_member_origin_span_mm` is configured, SCH006 compares every pair of resolved member origins and reports any pair farther apart than the configured maximum. This constrains the group's origin-cluster diameter; it does not claim that members are physically adjacent or electrically connected. The value must be finite and non-negative. If a declared member has no resolved origin, SCH006 emits a warning and marks the compactness check unverified for that member rather than guessing its position.
 
 When `minimum_member_origin_spacing_mm` is configured, SCH006 compares every member-origin pair. When `minimum_member_body_clearance_mm` is configured, it compares selected-unit transformed body outlines, including each primitive's stroke half-width. Supported bodies include closed rectangles/polygons, circles, and open line paths. Missing outlines and bodies containing unsupported arc/Bézier curves produce an unverified warning rather than a guessed distance. The minimum body clearance must be finite and non-negative.
 
