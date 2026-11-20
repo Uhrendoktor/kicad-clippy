@@ -156,12 +156,12 @@ pub(super) fn minimum_body_to_bounds_gap(
     minimum.is_finite().then_some(minimum.max(0.0))
 }
 
-/// Checks whether a body geometry set contains enough resolved geometry for distance checks.
+/// Returns whether at least one supported shape is available and no curve geometry is unresolved.
 fn body_is_complete(body: &BodyGeometrySet) -> bool {
     !body.has_unsupported_geometry && !body.shapes.is_empty()
 }
 
-/// Calculates clearance between two supported body shapes, including their stroke half-widths.
+/// Returns the non-negative edge-to-edge gap between two supported body shapes.
 fn shape_gap(first: &BodyShape, second: &BodyShape) -> f64 {
     match (first, second) {
         (
@@ -273,7 +273,7 @@ fn shape_gap(first: &BodyShape, second: &BodyShape) -> f64 {
     }
 }
 
-/// Returns the minimum distance from a point to a polygonal area, including zero for containment.
+/// Returns the distance from a point to a polygonal area, including zero for containment.
 fn point_polygon_gap(point: (f64, f64), polygon: &[(f64, f64)]) -> f64 {
     if point_in_polygon(point, polygon) {
         return 0.0;
@@ -283,7 +283,7 @@ fn point_polygon_gap(point: (f64, f64), polygon: &[(f64, f64)]) -> f64 {
         .fold(f64::INFINITY, f64::min)
 }
 
-/// Returns the minimum gap between two polygonal areas, treating overlap and containment as zero.
+/// Returns the edge-to-edge gap between two polygonal areas, treating overlap and containment as zero.
 fn polygon_polygon_gap(first: &[(f64, f64)], second: &[(f64, f64)]) -> f64 {
     if first.is_empty() || second.is_empty() {
         return f64::INFINITY;
@@ -303,7 +303,7 @@ fn polygon_polygon_gap(first: &[(f64, f64)], second: &[(f64, f64)]) -> f64 {
         .fold(f64::INFINITY, f64::min)
 }
 
-/// Returns the minimum gap between an open path and a polygonal area.
+/// Returns the edge-to-edge gap between an open path and a polygonal area.
 fn path_polygon_gap(path: &[(f64, f64)], polygon: &[(f64, f64)]) -> f64 {
     if path.len() < 2 || polygon.len() < 3 {
         return f64::INFINITY;
@@ -324,7 +324,7 @@ fn path_polygon_gap(path: &[(f64, f64)], polygon: &[(f64, f64)]) -> f64 {
         .fold(f64::INFINITY, f64::min)
 }
 
-/// Returns the minimum distance between two open polylines.
+/// Returns the minimum edge-to-edge distance between two open polylines.
 fn path_path_gap(first: &[(f64, f64)], second: &[(f64, f64)]) -> f64 {
     if first.len() < 2 || second.len() < 2 {
         return f64::INFINITY;
@@ -359,7 +359,7 @@ fn polygon_edges(points: &[(f64, f64)]) -> impl Iterator<Item = ((f64, f64), (f6
         .map(move |(index, point)| (*point, points[(index + 1) % points.len()]))
 }
 
-/// Tests whether a point is inside or on the boundary of a polygon.
+/// Returns whether a point is inside or on the boundary of a polygon.
 fn point_in_polygon(point: (f64, f64), polygon: &[(f64, f64)]) -> bool {
     if polygon.len() < 3 {
         return false;
@@ -382,7 +382,7 @@ fn point_in_polygon(point: (f64, f64), polygon: &[(f64, f64)]) -> bool {
     inside
 }
 
-/// Calculates the shortest distance between a point and a finite segment.
+/// Returns the shortest Euclidean distance between a point and a finite segment.
 fn point_segment_distance(point: (f64, f64), start: (f64, f64), end: (f64, f64)) -> f64 {
     let delta_x = end.0 - start.0;
     let delta_y = end.1 - start.1;
@@ -400,7 +400,7 @@ fn point_segment_distance(point: (f64, f64), start: (f64, f64), end: (f64, f64))
     point_distance(point, nearest)
 }
 
-/// Calculates the minimum distance between two finite segments, returning zero at an intersection.
+/// Returns the minimum distance between two finite segments, or zero when they intersect.
 fn segment_segment_distance(
     first_start: (f64, f64),
     first_end: (f64, f64),
@@ -416,7 +416,7 @@ fn segment_segment_distance(
         .min(point_segment_distance(second_end, first_start, first_end))
 }
 
-/// Tests finite segment intersection, including collinear and tolerance-close endpoints.
+/// Returns whether two finite segments intersect, including collinear and tolerance-close endpoints.
 fn segments_intersect(
     first_start: (f64, f64),
     first_end: (f64, f64),
@@ -448,7 +448,7 @@ fn orientation_sign(start: (f64, f64), end: (f64, f64), point: (f64, f64)) -> i8
     }
 }
 
-/// Checks whether a point lies within the axis-aligned bounds of a segment.
+/// Returns whether a point lies within the axis-aligned bounds of a segment.
 fn point_on_segment(point: (f64, f64), start: (f64, f64), end: (f64, f64)) -> bool {
     point.0 >= start.0.min(end.0) - GEOMETRY_TOLERANCE_MM
         && point.0 <= start.0.max(end.0) + GEOMETRY_TOLERANCE_MM
@@ -461,7 +461,7 @@ fn point_distance(first: (f64, f64), second: (f64, f64)) -> f64 {
     (first.0 - second.0).hypot(first.1 - second.1)
 }
 
-/// Checks whether both coordinates of a schematic point are finite.
+/// Returns whether both coordinates of a schematic point are finite.
 fn finite_point(point: (f64, f64)) -> bool {
     point.0.is_finite() && point.1.is_finite()
 }
