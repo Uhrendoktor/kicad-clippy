@@ -37,12 +37,12 @@ pub fn validate_profile_extensions(
 ///
 /// * `profile` — Project-level contracts that opt into extra presentation and connectivity checks.
 /// * `facts` — Normalized schematic objects collected for the root sheet.
-/// * `document` — Optional parsed source document, required only by hierarchy-wide label policy.
+/// * `document` — Parsed source document, required only by hierarchy-wide label policy.
 ///
 /// # Returns
 ///
 /// Diagnostics for violated profile extensions and unverified hierarchy evidence.
-pub(crate) fn validate_profile_extensions_with_document(
+pub fn validate_profile_extensions_with_document(
     profile: &LintProfile,
     facts: &SchematicFacts,
     document: &SchematicDocument,
@@ -316,7 +316,7 @@ const SUPPORTED_TITLE_BLOCK_FIELDS: [&str; 13] = [
 struct ProjectLabelOccurrence {
     /// Serialized label name.
     name: String,
-    /// Native KiCad label kind.
+    /// Native `KiCad` label kind.
     kind: String,
     /// Source schematic file containing the label.
     source: PathBuf,
@@ -462,7 +462,7 @@ fn project_label_hierarchy_warning(source: &Path, reason: &str) -> Diagnostic {
 ///
 /// # Returns
 ///
-/// SCH027 findings for project-wide global-label restrictions, required-scope violations, and incomplete hierarchy evidence.
+/// SCH027 findings for project-wide label restrictions, required-scope violations, and incomplete hierarchy evidence.
 fn validate_project_wide_label_scope_policy(
     policy: &super::LabelScopePolicy,
     document: Option<&SchematicDocument>,
@@ -483,6 +483,7 @@ fn validate_project_wide_label_scope_policy(
             )];
         }
     };
+
     let mut occurrences = Vec::new();
     let mut diagnostics = Vec::new();
     collect_project_label_occurrences(
@@ -492,7 +493,34 @@ fn validate_project_wide_label_scope_policy(
         &mut occurrences,
         &mut diagnostics,
     );
+    let hierarchy_complete = !diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.severity == Severity::Warning);
+    diagnostics.extend(validate_project_global_labels(policy, &occurrences));
+    diagnostics.extend(validate_project_required_label_scopes(
+        policy,
+        &canonical_root,
+        &occurrences,
+        hierarchy_complete,
+    ));
+    diagnostics
+}
 
+/// Applies the global-label allow-list and deny-list to all readable project sheets.
+///
+/// # Arguments
+///
+/// * `policy` — Validated project-wide global-label allow/deny policy.
+/// * `occurrences` — Label objects collected from the root schematic and readable children.
+///
+/// # Returns
+///
+/// SCH027 errors for every global-label occurrence that violates the declared allow/deny policy.
+fn validate_project_global_labels(
+    policy: &super::LabelScopePolicy,
+    occurrences: &[ProjectLabelOccurrence],
+) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
     for occurrence in occurrences
         .iter()
         .filter(|occurrence| occurrence.kind == "global_label")
@@ -521,10 +549,28 @@ fn validate_project_wide_label_scope_policy(
             diagnostics.push(diagnostic);
         }
     }
+    diagnostics
+}
 
-    let hierarchy_complete = !diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.severity == Severity::Warning);
+/// Checks required label names and scopes over all readable project-label occurrences.
+///
+/// # Arguments
+///
+/// * `policy` — Validated project-wide required-label-scope declarations.
+/// * `root_path` — Canonical root file used to locate labels missing from the hierarchy.
+/// * `occurrences` — Label objects collected from every readable root/child schematic file.
+/// * `hierarchy_complete` — Whether every referenced child sheet could be resolved and parsed.
+///
+/// # Returns
+///
+/// SCH027 scope errors and missing-label errors, or warnings when unreadable child sheets prevent a complete absence check.
+fn validate_project_required_label_scopes(
+    policy: &super::LabelScopePolicy,
+    root_path: &Path,
+    occurrences: &[ProjectLabelOccurrence],
+    hierarchy_complete: bool,
+) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
     for (name, expected_scope) in &policy.required_label_scopes {
         let matching: Vec<_> = occurrences
             .iter()
@@ -547,18 +593,18 @@ fn validate_project_wide_label_scope_policy(
             };
             let mut diagnostic =
                 Diagnostic::for_builtin_rule(BuiltinRuleId::Sch027, severity, message);
-            diagnostic.source = Some(canonical_root.clone());
+            diagnostic.source = Some(root_path.to_path_buf());
             diagnostics.push(diagnostic);
             continue;
         }
-        for occurrence in matching {
+        diagnostics.extend(matching.into_iter().filter_map(|occurrence| {
             let actual_scope = match occurrence.kind.as_str() {
                 "label" => Some(super::LabelScopeKind::Local),
                 "global_label" => Some(super::LabelScopeKind::Global),
                 "hierarchical_label" => Some(super::LabelScopeKind::Hierarchical),
                 _ => None,
             };
-            if actual_scope != Some(*expected_scope) {
+            (actual_scope != Some(*expected_scope)).then(|| {
                 let mut diagnostic = Diagnostic::for_builtin_rule(
                     BuiltinRuleId::Sch027,
                     Severity::Error,
@@ -567,9 +613,9 @@ fn validate_project_wide_label_scope_policy(
                     ),
                 );
                 diagnostic.source = Some(occurrence.source.clone());
-                diagnostics.push(diagnostic);
-            }
-        }
+                diagnostic
+            })
+        }));
     }
     diagnostics
 }
