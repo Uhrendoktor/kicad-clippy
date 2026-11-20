@@ -1,6 +1,5 @@
 //! PCB facts and profile-driven board checks that complement native KiCad DRC.
 
-use std::collections::BTreeMap;
 
 use kicad_clippy_core::{BuiltinRuleId, Diagnostic, Severity};
 use kicad_clippy_erc::Netlist;
