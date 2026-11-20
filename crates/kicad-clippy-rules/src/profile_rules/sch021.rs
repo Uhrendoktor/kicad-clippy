@@ -117,7 +117,7 @@ pub(super) fn validate_role_contract(reference: &str, intent: &ComponentIntent) 
 ///
 /// # Arguments
 ///
-/// * `reference` — Placed connector reference designator.
+/// * `reference` — Reference designator of the connector instance whose required interface pins are being validated.
 /// * `intent` — Component metadata containing the optional `required_pins` attribute and pin mappings.
 ///
 /// # Returns

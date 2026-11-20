@@ -163,8 +163,8 @@ fn validate_decoupling_nets(
 /// # Arguments
 ///
 /// * `facts` — Normalized placed-symbol pin facts for the current schematic.
-/// * `reference` — Component reference designator.
-/// * `number` — Serialized library pin number.
+/// * `reference` — Reference designator identifying the placed component instance that owns the requested pin.
+/// * `number` — Pin number to resolve within the reference, matching the placed symbol's serialized pin map.
 ///
 /// # Returns
 ///
@@ -188,7 +188,7 @@ fn unique_pin_fact<'a>(
 /// # Arguments
 ///
 /// * `reference` — Reference designator of the decoupling capacitor.
-/// * `contract` — Explicit capacitor target/terminal contract.
+/// * `contract` — Decoupling metadata identifying the target IC pin and the capacitor terminal whose anchor is measured.
 /// * `facts` — Normalized transformed pin coordinates from the schematic.
 ///
 /// # Returns
@@ -469,8 +469,8 @@ mod tests {
     ///
     /// * `kind` — Component family for the intent.
     /// * `role` — Functional role for the intent.
-    /// * `decoupling` — Optional decoupling target/terminal contract.
-    /// * `attributes` — Extensible role-specific profile attributes.
+    /// * `decoupling` — Optional capacitor decoupling metadata identifying its target pin and target/return terminals.
+    /// * `attributes` — Key/value profile attributes used to configure the component's optional validation contracts.
     ///
     /// # Returns
     ///
