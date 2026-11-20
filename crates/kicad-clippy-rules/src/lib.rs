@@ -20,6 +20,8 @@ mod generic;
 /// Checks UUID uniqueness within the currently loaded schematic document.
 #[path = "rules/sch024.rs"]
 mod sch024;
+/// Parses board pad coordinates and enforces declared PCB design-intent distances.
+mod pcb_rules;
 /// Defines the shared project-profile schema and orchestrates its dedicated connectivity, group, component-intent, and decoupling validators.
 mod metadata;
 

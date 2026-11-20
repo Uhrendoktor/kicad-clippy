@@ -3,6 +3,7 @@ use crate::generic::GEOMETRY_TOLERANCE_MM;
 use crate::generic::SchematicFacts;
 use kicad_clippy_core::Diagnostic;
 use kicad_clippy_erc::Netlist;
+use kicad_clippy_parser::BoardDocument;
 use kicad_clippy_parser::SchematicDocument;
 use serde::Deserialize;
 use serde::Serialize;
@@ -141,6 +142,10 @@ pub struct DecouplingIntent {
     /// This is a symbol-pin placement contract, not a PCB copper-path measurement.
     #[serde(default)]
     pub max_target_distance_mm: Option<f64>,
+    /// Optional maximum Euclidean distance between target IC and capacitor pad centers on the PCB, in millimetres.
+    /// This pad-center check does not evaluate routed copper or the return loop.
+    #[serde(default)]
+    pub max_target_pad_distance_mm: Option<f64>,
 }
 
 /// A pair of placed pins that must share one physical wire-only network.
@@ -403,6 +408,47 @@ impl LintProfile {
         document: &SchematicDocument,
         netlist: Option<&Netlist>,
     ) -> Vec<Diagnostic> {
+        self.validate_internal(document, netlist, None)
+    }
+
+    /// Validates schematic intent and PCB001 pad-distance contracts against a parsed board.
+    ///
+    /// # Arguments
+    ///
+    /// * document — Parsed schematic whose component and connectivity intent is checked.
+    /// * netlist — Optional exported schematic netlist used to verify expected target/capacitor nets.
+    /// * board — Parsed PCB document containing placed footprints and pads.
+    ///
+    /// # Returns
+    ///
+    /// Schematic profile diagnostics plus PCB001 pad-distance findings.
+    #[must_use]
+    pub fn validate_with_board(
+        &self,
+        document: &SchematicDocument,
+        netlist: Option<&Netlist>,
+        board: &BoardDocument,
+    ) -> Vec<Diagnostic> {
+        self.validate_internal(document, netlist, Some(board))
+    }
+
+    /// Shared profile validation path with optional PCB evidence.
+    ///
+    /// # Arguments
+    ///
+    /// * document — Parsed schematic document being validated.
+    /// * netlist — Optional exported KiCad netlist.
+    /// * board — Optional parsed PCB document for board-level design-intent checks.
+    ///
+    /// # Returns
+    ///
+    /// Profile diagnostics, including an unverified warning when a PCB contract has no board evidence.
+    fn validate_internal(
+        &self,
+        document: &SchematicDocument,
+        netlist: Option<&Netlist>,
+        board: Option<&BoardDocument>,
+    ) -> Vec<Diagnostic> {
         let facts = SchematicFacts::from_document(document);
         let context = ProfileRuleContext {
             profile: self,
@@ -424,6 +470,14 @@ impl LintProfile {
         diagnostics.extend(sch006::Sch006.check(&context));
         diagnostics.extend(sch016::Sch016.check(&context));
         diagnostics.extend(sch004::Sch004.check(&context));
+        match board {
+            Some(board) => diagnostics.extend(crate::pcb_rules::validate_decoupling_pad_distances(
+                self,
+                board,
+                netlist,
+            )),
+            None => diagnostics.extend(crate::pcb_rules::validate_missing_board(self)),
+        }
         diagnostics
     }
 }

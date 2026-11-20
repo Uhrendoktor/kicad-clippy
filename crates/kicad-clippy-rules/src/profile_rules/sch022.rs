@@ -79,6 +79,16 @@ pub(super) fn validate_decoupling_intent(
             format!("{reference} max_target_distance_mm must be a finite non-negative distance"),
         ));
     }
+    if contract
+        .max_target_pad_distance_mm
+        .is_some_and(|distance| !distance.is_finite() || distance < 0.0)
+    {
+        diagnostics.push(Diagnostic::for_builtin_rule(
+            BuiltinRuleId::Sch022,
+            Severity::Error,
+            format!("{reference} max_target_pad_distance_mm must be a finite non-negative distance"),
+        ));
+    }
     if let Some(netlist) = netlist {
         diagnostics.extend(validate_decoupling_nets(reference, contract, netlist));
     }
@@ -514,6 +524,7 @@ mod tests {
             return_net: "GND".to_owned(),
             cluster: "U1.SUPPLY".to_owned(),
             max_target_distance_mm: maximum_distance_mm,
+            max_target_pad_distance_mm: None,
         }
     }
 
