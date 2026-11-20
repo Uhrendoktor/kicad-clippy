@@ -385,3 +385,27 @@ A project may declare the schematic grid used for placement checks at the profil
 SCH026 checks each selected coordinate against the nearest grid intersection independently on the X and Y axes. The maximum allowed deviation on either axis is `tolerance_mm`. The grid origin defaults to `[0, 0]`; the tolerance defaults to 0.001 mm. When `targets` is omitted, the rule checks placed symbol origins and label anchors only. Optional targets are `pin_anchors`, `junctions`, and `wire_endpoints`; these electrical geometry checks are not enabled by default because KiCad native ERC already reports some off-grid pin and wire conditions.
 
 Exemptions are explicit and scoped: `exempt_components` contains symbol references, `exempt_pins` contains `REF.PIN` identifiers, `exempt_labels` contains `kind:name` selectors, and `exempt_coordinates_mm` contains exact sheet-space anchors. Exemptions do not disable checks for other objects. SCH026 reports the actual off-grid anchor and its nearest grid point. It does not read or modify the KiCad project grid setting; spacing and origin are project-profile values.
+
+
+## Label scope policy
+
+A project can explicitly constrain global labels and require selected label names to use a particular scope on the currently loaded sheet:
+
+~~~json
+{
+  "schema_version": 1,
+  "label_scope_policy": {
+    "allowed_global_labels": ["GND", "VBUS"],
+    "forbidden_global_labels": ["DEBUG_INTERNAL"],
+    "required_label_scopes": {
+      "RESET": "hierarchical",
+      "SDA": "hierarchical",
+      "VDD_SENSE": "local"
+    }
+  }
+}
+~~~
+
+SCH027 treats an omitted `allowed_global_labels` as no allow-list restriction. An explicitly empty list permits no global labels. `forbidden_global_labels` always rejects the named global labels. `required_label_scopes` maps a label name to `local`, `global`, or `hierarchical`; every matching instance on the loaded sheet must use the requested scope, and a required label that is absent from that sheet is reported.
+
+The rule checks the serialized label objects in the current `.kicad_sch` file only. It does not confirm that a hierarchical label is connected to a matching parent-sheet pin, aggregate global labels across other loaded project sheets, or reimplement KiCad's native label/net resolution. Native ERC and KiCad's exported netlist remain authoritative for actual connectivity.
