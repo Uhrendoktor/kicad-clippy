@@ -131,6 +131,7 @@ impl<'a> Rule<ProfileRuleContext<'a>> for Sch010 {
 mod tests {
     use super::validate_component_field_body_gaps;
     use crate::generic::{SchematicFacts, SchematicFieldFact, SchematicPrimitiveFact};
+    use kicad_clippy_core::{BuiltinRuleId, Severity};
     use std::collections::BTreeMap;
 
     /// Creates a simple rectangular body and one visible field for SCH010 gap tests.
