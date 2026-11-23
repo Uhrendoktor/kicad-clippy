@@ -1177,10 +1177,45 @@ fn netclass_pattern_matches(pattern: &str, candidate: &str) -> Option<bool> {
     let regex_source = format!("^(?:{pattern})$");
     let regex_match = match Regex::new(&regex_source) {
         Ok(regex) => regex.is_match(candidate),
+        Err(_) if has_supported_kicad_formatting_wrapper(pattern) => {
+            return Some(wildcard_pattern_matches(pattern, candidate));
+        }
         Err(_) if pattern_has_regex_metacharacters(pattern) => return None,
         Err(_) => false,
     };
     Some(regex_match || wildcard_pattern_matches(pattern, candidate))
+}
+/// Recognizes balanced KiCad formatting wrappers that are literal text in net names.
+///
+/// # Arguments
+///
+/// * `pattern` — Netclass pattern whose balanced formatting wrappers are being identified.
+///
+/// # Returns
+///
+/// `true` when every brace pair is a supported `_`, `^`, or `~` formatting wrapper.
+fn has_supported_kicad_formatting_wrapper(pattern: &str) -> bool {
+    let mut wrappers = Vec::new();
+    for (index, character) in pattern.char_indices() {
+        match character {
+            '{' => {
+                let Some(marker) = pattern[..index].chars().next_back() else {
+                    return false;
+                };
+                if !matches!(marker, '_' | '^' | '~') {
+                    return false;
+                }
+                wrappers.push(marker);
+            }
+            '}' => {
+                if wrappers.pop().is_none() {
+                    return false;
+                }
+            }
+            _ => {}
+        }
+    }
+    !wrappers.is_empty() && wrappers.is_empty()
 }
 /// Checks whether every backslash escape belongs to the supported regular-expression subset.
 ///
