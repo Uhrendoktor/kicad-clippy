@@ -855,8 +855,7 @@ fn expand_netclass_bus_pattern_at_depth(pattern: &str, depth: usize) -> Option<V
     if let Some(group_members) = parse_netclass_bus_group(pattern) {
         let mut expanded = Vec::new();
         for member in group_members {
-            let mut member_patterns =
-                expand_netclass_bus_pattern_at_depth(&member, depth + 1)?;
+            let mut member_patterns = expand_netclass_bus_pattern_at_depth(&member, depth + 1)?;
             if expanded.len().saturating_add(member_patterns.len()) > MAX_NETCLASS_BUS_MEMBERS {
                 return None;
             }
@@ -1049,9 +1048,10 @@ fn split_netclass_bus_group_members(body: &str) -> Option<Vec<String>> {
                 bracket_depth = bracket_depth.checked_sub(1)?;
                 current.push(character);
             }
-            separator if (separator.is_whitespace() || separator == ',')
-                && brace_depth == 0
-                && bracket_depth == 0 =>
+            separator
+                if (separator.is_whitespace() || separator == ',')
+                    && brace_depth == 0
+                    && bracket_depth == 0 =>
             {
                 if !current.is_empty() {
                     members.push(std::mem::take(&mut current));
@@ -1096,8 +1096,8 @@ fn has_supported_netclass_regex_quantifier(pattern: &str) -> bool {
             .map_or((quantifier, None), |(minimum, maximum)| {
                 (minimum, Some(maximum))
             });
-        let valid_minimum = !minimum.is_empty()
-            && minimum.bytes().all(|byte| byte.is_ascii_digit());
+        let valid_minimum =
+            !minimum.is_empty() && minimum.bytes().all(|byte| byte.is_ascii_digit());
         let valid_maximum = maximum.is_none_or(|value| {
             value.is_empty() || value.bytes().all(|byte| byte.is_ascii_digit())
         });
@@ -1166,7 +1166,10 @@ fn netclass_regex_escapes_are_supported(pattern: &str) -> bool {
 /// `true` when regular-expression syntax is present and a failed regex compile must remain unresolved.
 fn pattern_has_regex_metacharacters(pattern: &str) -> bool {
     pattern.chars().any(|character| {
-        matches!(character as u32, 94 | 36 | 91 | 93 | 40 | 41 | 43 | 124 | 123 | 125 | 92)
+        matches!(
+            character as u32,
+            94 | 36 | 91 | 93 | 40 | 41 | 43 | 124 | 123 | 125 | 92
+        )
     })
 }
 /// Adds netclass names inherited from committed net chains containing the logical net.
@@ -1755,8 +1758,7 @@ SCH019 = "allow"
     #[test]
     fn bus_group_netclass_patterns_expand_nested_member_vectors() {
         let mut project = project_fixture();
-        project["net_settings"]["netclass_patterns"] =
-            serde_json::json!([{"pattern": "/PCI{North[0..2], South[3..5]}", "netclass": "HighSpeed"}]);
+        project["net_settings"]["netclass_patterns"] = serde_json::json!([{"pattern": "/PCI{North[0..2], South[3..5]}", "netclass": "HighSpeed"}]);
 
         for net_name in ["North0", "North2", "South3", "South5"] {
             let netlist = Netlist {
