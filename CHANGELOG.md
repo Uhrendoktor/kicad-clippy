@@ -4,6 +4,8 @@ Notable changes are documented here. This project is in early development and ha
 
 ## Unreleased
 
+- PCB009 can now enforce an opt-in `attributes.minimum_probe_pad_width_mm` contract for supported circle, rectangle, oval, and round-rectangle test-point pads after uniform footprint scaling. Unsupported pad geometry remains unverified.
+
 - Added opt-in SCH029 component population checks through `attributes.population`; verifies the saved base-design DNP flag, preserves meaningful Value text, and warns when KiCad design-variant overrides prevent validating an effective selected variant.
 - SCH006 body-clearance and cluster-compactness checks now include transformed circular-arc and cubic Bézier symbol outlines using a conservative margin for the shared 0.01 mm curve flattening tolerance. Incomplete curve facts remain unverified.
 

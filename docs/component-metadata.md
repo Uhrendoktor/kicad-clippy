@@ -171,7 +171,7 @@ Without `netlist_separate`, the rule only forbids a shared physical wire island;
 | Inductor / ferrite | power_filter, emi_filter, energy_storage, common_mode_choke | Record input/output nets, current rating, saturation and impedance/frequency target. |
 | Transistor / FET | load_switch, power_switch, level_shift, amplifier, gate_driver | Record gate/base control source, switched path, polarity, body-diode orientation and expected state. |
 | Connector | power_input, power_output, data_interface, programming, test, debug | Record interface standard, pin mapping, direction, mating connector and boundary ownership. |
-| Test point | test_point | Record the critical net and explicit component pin mapped to the physical probe pad. |
+| Test point | test_point | Record the critical net and explicit component pin mapped to the physical probe pad; optionally set `attributes.minimum_probe_pad_width_mm` to require a minimum pad contact width. |
 | IC | controller, regulator, driver, sensor, protection, logic | Record datasheet/source, power/ground pins, required support circuitry and exposed interfaces. |
 
 ## Implemented checks
@@ -180,6 +180,7 @@ Without `netlist_separate`, the rule only forbids a shared physical wire island;
 - SCH021: strict-mode component-intent coverage, profile references to unknown components, and required connection fields for supported component/role pairs. Connector intent also requires an `interface_standard` attribute and at least one non-empty `connections.pin.N` or `pin_nets.N` mapping.
 - SCH014: explicit component pin-to-net contracts against exported KiCad netlist membership, including connector `pin.N` maps.
 - SCH022: decoupling metadata completeness, valid `REF.PIN` target notation, distinct capacitor target/return terminals, netlist-backed target and return membership, and consistent return-net/cluster declarations among capacitors serving the same target pin.
+- PCB009: when `attributes.minimum_probe_pad_width_mm` is declared on a test-point component, the smaller dimension of supported circle, rectangle, oval, or round-rectangle pad geometry must meet the configured minimum after uniform footprint scaling. Unsupported pad shapes or non-uniform scaling are unverified, not guessed.
 
 SCH021's supported connection requirements are intentionally narrow and explicit: bulk capacitors require `rail` and `return`; pull-up/pull-down resistors require `signal` and `rail`; divider resistors require `high`, `tap`, and `low`; series, current-limit, and current-sense resistors require `input` and `output`; gate-bias resistors require `gate`, `bias`, and `return`; discharge/bleeder resistors require `storage` and `return`; ESD/clamp diodes require `protected` and `return`; flyback diodes require `anode`, `cathode`, `switched_node`, and `return`; reverse-polarity diodes require `input` and `protected_output`; inductors and ferrite beads require `input` and `output`; and transistors require `control`, `switched_high`, and `switched_low`. Other kind/role combinations are not assigned inferred requirements. For connectors, SCH021 checks for a non-empty `interface_standard` and at least one expected pin mapping through `connections.pin.N` or `pin_nets.N`; SCH014 separately checks declared pin mappings against the exported netlist.
 
@@ -208,6 +209,23 @@ Run the schematic lint with both `--profile project-profile.json` and `--board d
 An IC may declare an opt-in comma-separated `attributes.required_decoupling_pins` list, such as `"1, 2, 7"`. SCH022 requires at least one capacitor decoupling contract targeting every listed `REF.PIN`. When a KiCad netlist is available, each listed IC pin must also exist in that netlist. This list is the project's explicit supply-pin contract; the linter does not guess that every pin with a particular library electrical type requires a capacitor.
 
 The netlist adapter verifies actual target-pin and return-terminal net membership for decoupling capacitors. SCH004 separately checks profile-declared direct-wire pairs and common-pin groups against the physical wire graph built from transformed embedded-symbol pin coordinates. The graph never uses matching label names as connectivity edges. Automatic inference of every physical connection, physical proximity constraints, and shared-copper geometry analysis remain pending.
+
+Example test-point metadata with a minimum contact width:
+
+~~~json
+{
+  "kind": "test_point",
+  "role": "test_point",
+  "function": "VDD manufacturing measurement access",
+  "rationale": "Provides a probe pad sized for the specified fixture",
+  "pin_nets": {"1": "VDD"},
+  "attributes": {
+    "minimum_probe_pad_width_mm": "0.8"
+  }
+}
+~~~
+
+PCB009 measures the smaller of the serialized pad X/Y dimensions after uniform footprint scaling. It supports circle, rectangle, oval, and round-rectangle pads. Custom shapes and non-uniform footprint scales remain unverified. This is a pad-size contract only; it does not prove physical probe approach, surrounding clearance, or fixture reach.
 
 ## Functional group documentation
 
