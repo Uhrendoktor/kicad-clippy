@@ -474,6 +474,12 @@ fn validate_project_wide_label_scope_policy(
         )];
     };
     let root_path = document.source().path();
+    if !root_path.is_file() {
+        return vec![project_label_hierarchy_warning(
+            root_path,
+            "project_wide requires a path-based root schematic that exists on disk",
+        )];
+    }
     let canonical_root = match fs::canonicalize(root_path) {
         Ok(path) => path,
         Err(error) => {
