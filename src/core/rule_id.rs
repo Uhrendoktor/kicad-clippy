@@ -17,7 +17,7 @@ pub enum BuiltinRuleId {
     Sch004,
     /// Represents the `SCH005` rule: Checks that connected wires align with the axis of the embedded symbol pin.
     Sch005,
-    /// Represents the `SCH006` rule: Enforces group-member origin spacing, body clearance, pairwise body-gap limits, and alignment.
+    /// Represents the `SCH006` rule: Enforces group-member origin spacing, curve-aware body clearance, pairwise body-gap limits, and alignment.
     Sch006,
     /// Represents the `SCH007` rule: Checks that profile-declared members match the native `KiCad` schematic group.
     Sch007,

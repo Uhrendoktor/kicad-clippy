@@ -191,7 +191,7 @@ mod tests {
         let mut facts = body_and_field_facts((5.0, 0.5, 6.0, 1.5));
         facts.symbol_primitives.push(SchematicPrimitiveFact {
             reference: "U1".to_owned(),
-            points_mm: vec![(0.0, 0.0), (1.0, 1.0), (2.0, 0.0)],
+            points_mm: Vec::new(),
             closed: false,
             circle_mm: None,
             arc_mm: None,
