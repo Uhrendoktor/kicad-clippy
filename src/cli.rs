@@ -1171,9 +1171,9 @@ fn netclass_regex_escapes_are_supported(pattern: &str) -> bool {
 /// \`true\` when regular-expression syntax is present and a failed regex compile must remain unresolved.
 fn pattern_has_regex_metacharacters(pattern: &str) -> bool {
     pattern.chars().any(|character| {
-        matches!(
-            character,
-            '^' | '
+        matches!(character as u32, 94 | 36 | 91 | 93 | 40 | 41 | 43 | 124 | 123 | 125 | 92)
+    })
+}
 /// Adds netclass names inherited from committed net chains containing the logical net.
 ///
 /// # Arguments
