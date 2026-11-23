@@ -1057,7 +1057,7 @@ fn has_supported_netclass_regex_quantifier(pattern: &str) -> bool {
 fn netclass_pattern_matches(pattern: &str, candidate: &str) -> Option<bool> {
     // KiCad uses an advanced POSIX-style regular-expression matcher. Rust's regex engine
     // covers the common ERE subset but intentionally does not implement look-around or backreferences.
-    if pattern.contains("(?") {
+    if pattern.contains("(?") || !netclass_regex_escapes_are_supported(pattern) {
         return None;
     }
 
@@ -1068,6 +1068,1402 @@ fn netclass_pattern_matches(pattern: &str, candidate: &str) -> Option<bool> {
         Err(_) => false,
     };
     Some(regex_match || wildcard_pattern_matches(pattern, candidate))
+}
+/// Checks whether every backslash escape belongs to the supported POSIX-style regular-expression subset.
+///
+/// # Arguments
+///
+/// * `pattern` — Expanded KiCad netclass pattern to inspect.
+///
+/// # Returns
+///
+/// `true` when each escape quotes a supported regular-expression metacharacter; otherwise `false`.
+fn netclass_regex_escapes_are_supported(pattern: &str) -> bool {
+    let mut characters = pattern.chars();
+    while let Some(character) = characters.next() {
+        if character == '\\\\' {
+            let Some(escaped) = characters.next() else {
+                return false;
+            };
+            if !matches!(
+                escaped,
+                '\\\\' | '.' | '^' | '
+///
+/// # Arguments
+///
+/// * `pattern` — Project netclass pattern to inspect.
+///
+/// # Returns
+///
+/// `true` when regex syntax is present and a failed regex compile must remain unresolved.
+fn pattern_has_regex_metacharacters(pattern: &str) -> bool {
+    pattern.chars().any(|character| {
+        matches!(
+            character,
+            '^' | '
+/// Adds netclass names inherited from committed net chains containing the logical net.
+///
+/// # Arguments
+///
+/// * `settings` — The `net_settings` JSON object from the `KiCad` project.
+/// * `netlist` — Flattened netlist exported by `KiCad`, including pin-to-net and effective netclass data.
+/// * `net_name` — Exact logical net name whose project netclass assignments are being resolved.
+/// * `candidates` — Set to extend with each supported class assignment that applies to the net.
+///
+/// # Returns
+///
+/// `Some(())` after processing chain assignments; `None` when the assignment data has an unsupported shape.
+fn add_chain_netclass_assignments(
+    settings: &serde_json::Map<String, serde_json::Value>,
+    netlist: &Netlist,
+    net_name: &str,
+    candidates: &mut BTreeSet<String>,
+) -> Option<()> {
+    let chain_classes = match settings.get("net_chain_netclasses") {
+        None | Some(serde_json::Value::Null) => None,
+        Some(serde_json::Value::Object(assignments)) => Some(assignments),
+        _ => return None,
+    };
+    for chain in &netlist.chains {
+        if !chain.members.contains(net_name) {
+            continue;
+        }
+        let configured_class =
+            match chain_classes.and_then(|assignments| assignments.get(&chain.name)) {
+                Some(value) => Some(value.as_str()?),
+                None => None,
+            };
+        let exported_class = chain.netclass.as_deref();
+        let class_name = match (configured_class, exported_class) {
+            (Some(configured), Some(exported)) if configured != exported => return None,
+            (Some(configured), _) => Some(configured),
+            (None, Some(exported)) => Some(exported),
+            (None, None) => None,
+        };
+        if let Some(class_name) = class_name {
+            candidates.insert(class_name.to_owned());
+        }
+    }
+    Some(())
+}
+/// Checks that the project-derived candidate set is consistent with the effective class name exported by `KiCad`.
+///
+/// # Arguments
+///
+/// * `exported_class` — Effective class name reported by `KiCad`'s netlist exporter.
+/// * `net_name` — Exact logical net name whose project netclass assignments are being resolved.
+/// * `candidates` — Set to extend with each supported class assignment that applies to the net.
+///
+/// # Returns
+///
+/// `true` when `KiCad`'s exported effective class is compatible with the project-derived candidate set.
+fn exported_netclass_matches(
+    exported_class: &str,
+    net_name: &str,
+    candidates: &BTreeSet<String>,
+) -> bool {
+    if exported_class == "Default" {
+        candidates.is_empty() || (candidates.len() == 1 && candidates.contains("Default"))
+    } else if exported_class.strip_prefix("Effective for net: ") == Some(net_name) {
+        !candidates.is_empty()
+    } else {
+        candidates.len() == 1 && candidates.contains(exported_class)
+    }
+}
+/// Matches a project netclass pattern containing `*` and `?` against a complete net name.
+///
+/// # Arguments
+///
+/// * `pattern` — Supported netclass wildcard expression; `*` matches any sequence and `?` matches one character.
+/// * `candidate` — Complete net name being tested against the wildcard expression.
+///
+/// # Returns
+///
+/// `true` when the entire candidate string matches the pattern.
+fn wildcard_pattern_matches(pattern: &str, candidate: &str) -> bool {
+    let pattern: Vec<char> = pattern.chars().collect();
+    let candidate: Vec<char> = candidate.chars().collect();
+    let mut previous = vec![false; candidate.len() + 1];
+    previous[0] = true;
+
+    for pattern_char in pattern {
+        let mut current = vec![false; candidate.len() + 1];
+        match pattern_char {
+            '*' => {
+                current[0] = previous[0];
+                for index in 1..=candidate.len() {
+                    current[index] = previous[index] || current[index - 1];
+                }
+            }
+            '?' => {
+                current[1..].copy_from_slice(&previous[..candidate.len()]);
+            }
+            literal => {
+                for index in 1..=candidate.len() {
+                    current[index] = previous[index - 1] && candidate[index - 1] == literal;
+                }
+            }
+        }
+        previous = current;
+    }
+    previous[candidate.len()]
+}
+/// Writes the lint summary and diagnostics as human-readable text.
+///
+/// # Arguments
+///
+/// * `output` — Normalized lint output containing the diagnostics and summary counts.
+/// * `source` — Original source file used to resolve diagnostic spans and render highlighted text.
+///
+/// # Returns
+///
+/// `Ok(())` when all text was written successfully.
+///
+/// # Errors
+///
+/// Returns an I/O error when writing the summary or any formatted diagnostic to standard output fails.
+fn render_text(output: &LintOutput, source: &SourceFile) -> Result<(), io::Error> {
+    let mut stdout = io::stdout().lock();
+    writeln!(stdout, "kicad-clippy {}", output.tool_version)?;
+    writeln!(stdout, "S-expression syntax: valid ({})", output.schematic)?;
+
+    if output.erc_skipped {
+        writeln!(stdout, "Native KiCad ERC: skipped")?;
+    } else if let Some(version) = &output.kicad_version {
+        writeln!(stdout, "Native KiCad ERC: KiCad {version}")?;
+    } else {
+        writeln!(stdout, "Native KiCad ERC: completed")?;
+    }
+
+    if output.diagnostics.is_empty() && !output.erc_skipped {
+        writeln!(stdout, "No native ERC violations reported.")?;
+    }
+
+    for diagnostic in &output.diagnostics {
+        render_diagnostic(&mut stdout, diagnostic, source)?;
+    }
+
+    writeln!(
+        stdout,
+        "Summary: {} errors, {} warnings, {} notes, {} excluded",
+        output.summary.errors,
+        output.summary.warnings,
+        output.summary.notes,
+        output.summary.excluded
+    )?;
+    writeln!(stdout, "Built-in schematic rules: active")?;
+    Ok(())
+}
+/// Formats one diagnostic, including its source span and schematic location when those are available.
+///
+/// # Arguments
+///
+/// * `stdout` — Output writer receiving the formatted diagnostic.
+/// * `diagnostic` — Finding to render, including its message, severity, source span, and related context.
+/// * `source` — Original source file used to resolve diagnostic spans and render highlighted text.
+///
+/// # Returns
+///
+/// `Ok(())` when the diagnostic was written successfully.
+///
+/// # Errors
+///
+/// Returns an I/O error when the formatted report for this diagnostic cannot be written to the supplied output stream.
+fn render_diagnostic(
+    stdout: &mut impl Write,
+    diagnostic: &Diagnostic,
+    source: &SourceFile,
+) -> Result<(), io::Error> {
+    let mut message = diagnostic.message.clone();
+    if let Some(location) = diagnostic.schematic_location {
+        let _ = write!(
+            message,
+            " at ({:.3} mm, {:.3} mm)",
+            location.x_mm, location.y_mm
+        );
+    }
+    if let Some(sheet_path) = &diagnostic.sheet_path {
+        let _ = write!(message, " on sheet {sheet_path}");
+    }
+    if diagnostic.excluded {
+        message.push_str(" [excluded]");
+    }
+
+    let mut rendered = MietteDiagnostic::new(message)
+        .with_code(diagnostic.code.clone())
+        .with_severity(match diagnostic.severity {
+            Severity::Error => RenderSeverity::Error,
+            Severity::Warning => RenderSeverity::Warning,
+            Severity::Note => RenderSeverity::Advice,
+        });
+
+    if let Some(span) = diagnostic.span.filter(|span| source.slice(*span).is_some()) {
+        rendered = rendered.with_label(LabeledSpan::new_primary_with_span(
+            Some("here".to_owned()),
+            span.start..span.end,
+        ));
+    }
+
+    let mut guidance = Vec::new();
+    if let Some(explanation) = &diagnostic.explanation {
+        guidance.push(explanation.clone());
+    }
+    if let Some(help) = &diagnostic.help {
+        guidance.push(format!("Help: {help}"));
+    }
+    if !diagnostic.related.is_empty() {
+        let related = diagnostic
+            .related
+            .iter()
+            .map(|item| {
+                let mut description = item.description.clone();
+                if let Some(uuid) = &item.uuid {
+                    let _ = write!(description, " [{uuid}]");
+                }
+                if let Some(location) = item.location {
+                    let _ = write!(
+                        description,
+                        " at ({:.3} mm, {:.3} mm)",
+                        location.x_mm, location.y_mm
+                    );
+                }
+                description
+            })
+            .collect::<Vec<_>>()
+            .join("; ");
+        guidance.push(format!("Related items: {related}"));
+    }
+    if !guidance.is_empty() {
+        rendered = rendered.with_help(guidance.join("\n"));
+    }
+
+    let report = Report::new(rendered).with_source_code(NamedSource::new(
+        source.path().display().to_string(),
+        source.shared_text(),
+    ));
+    writeln!(stdout, "{report:?}")?;
+    Ok(())
+}
+/// Resolves the `KiCad` CLI executable, preferring an explicit path before searching the environment.
+///
+/// # Arguments
+///
+/// * `explicit` — Optional executable path supplied by the caller.
+///
+/// # Returns
+///
+/// The explicit executable path or the first `KiCad` CLI executable found on PATH.
+///
+/// # Errors
+///
+/// Returns `CliError::KiCadCliNotFound` when neither an explicit path, `KICAD_CLI`, nor a callable `kicad-cli` executable can be resolved.
+fn resolve_kicad_cli(explicit: Option<PathBuf>) -> Result<PathBuf, CliError> {
+    if let Some(path) = explicit {
+        return Ok(path);
+    }
+
+    if let Some(path) = std::env::var_os("KICAD_CLI") {
+        return Ok(PathBuf::from(path));
+    }
+
+    for candidate in ["kicad-cli-nightly", "kicad-cli"] {
+        if Command::new(candidate).arg("version").output().is_ok() {
+            return Ok(PathBuf::from(candidate));
+        }
+    }
+
+    Err(CliError::KiCadCliNotFound)
+}
+#[cfg(test)]
+/// Unit tests for project setting conversion, conservative netclass resolution, and summary counts.
+mod tests {
+    use crate::core::{Diagnostic, Severity};
+
+    use super::{
+        Summary, parse_rule_policy, project_default_schematic_line_stroke_width_mm,
+        project_netclass_wire_width_mm, project_wire_stroke_widths_mm, wildcard_pattern_matches,
+    };
+    use crate::erc::Netlist;
+    use crate::rules::SchematicFacts;
+    use std::collections::{BTreeMap, BTreeSet};
+    /// Checks that TOML policy presets and explicit per-rule levels decode into the typed policy model.
+    ///
+    /// # Returns
+    ///
+    /// Ok when the preset and overrides round-trip to their expected typed values.
+    ///
+    /// # Errors
+    ///
+    /// Returns a TOML error if a valid policy fixture cannot be decoded.
+    #[test]
+    fn rule_policy_toml_decodes_preset_and_overrides() -> Result<(), toml::de::Error> {
+        use crate::core::{RuleLevel, RulePreset};
+
+        let policy = parse_rule_policy(
+            r#"
+preset = "strict"
+
+[rules]
+SCH013 = "warn"
+SCH019 = "allow"
+"#,
+        )?;
+
+        assert_eq!(policy.preset, RulePreset::Strict);
+        assert_eq!(policy.rules.get("SCH013"), Some(&RuleLevel::Warn));
+        assert_eq!(policy.rules.get("SCH019"), Some(&RuleLevel::Allow));
+        Ok(())
+    }
+
+    /// Checks that unknown top-level TOML keys are rejected instead of silently ignored.
+    ///
+    /// # Returns
+    ///
+    /// Ok when a misspelled policy key causes TOML decoding to fail.
+    #[test]
+    fn rule_policy_toml_rejects_unknown_keys() {
+        assert!(parse_rule_policy("presett = \"strict\"\n").is_err());
+    }
+
+    /// Checks that the project's default schematic line width is interpreted in mils and converted to millimetres.
+    #[test]
+    fn project_default_schematic_line_width_reads_mils() {
+        let project = serde_json::json!({
+            "schematic": {
+                "drawing": {
+                    "default_line_thickness": 6.0
+                }
+            }
+        });
+
+        assert!(
+            project_default_schematic_line_stroke_width_mm(&project)
+                .is_some_and(|width| (width - 0.1524).abs() < 1.0e-12)
+        );
+    }
+    /// Checks that an absent, nonnumeric, zero, or negative default line width remains unresolved rather than being guessed.
+    #[test]
+    fn project_default_schematic_line_width_stays_unknown_when_missing_or_invalid() {
+        let missing = serde_json::json!({"schematic": {"drawing": {}}});
+        let zero = serde_json::json!({
+            "schematic": {"drawing": {"default_line_thickness": 0.0}}
+        });
+        let negative = serde_json::json!({
+            "schematic": {"drawing": {"default_line_thickness": -6.0}}
+        });
+
+        assert_eq!(
+            project_default_schematic_line_stroke_width_mm(&missing),
+            None
+        );
+        assert_eq!(project_default_schematic_line_stroke_width_mm(&zero), None);
+        assert_eq!(
+            project_default_schematic_line_stroke_width_mm(&negative),
+            None
+        );
+    }
+    /// Builds a valid project-settings fixture with `Default`, `HighSpeed`, `Critical`, and `Inheriting` netclasses and empty assignment lists.
+    ///
+    /// # Returns
+    ///
+    /// A mutable JSON value that tests customize to exercise class priority, wildcard matching, chain assignments, and default-width inheritance.
+    fn project_fixture() -> serde_json::Value {
+        serde_json::json!({
+            "net_settings": {
+                "classes": [
+                    {"name": "Default", "priority": 2_147_483_647, "wire_width": 8.0},
+                    {"name": "HighSpeed", "priority": 5, "wire_width": 18.0},
+                    {"name": "Critical", "priority": 1, "wire_width": 30.0},
+                    {"name": "Inheriting", "priority": 0}
+                ],
+                "netclass_assignments": {},
+                "netclass_patterns": [],
+                "net_chain_netclasses": {}
+            }
+        })
+    }
+    /// Checks that overlapping netclass patterns and exact assignments are resolved using `KiCad` class priority.
+    #[test]
+    fn overlapping_patterns_and_explicit_assignments_use_class_priority() {
+        let mut project = project_fixture();
+        project["net_settings"]["netclass_assignments"] =
+            serde_json::json!({"/USB-C": ["HighSpeed"]});
+        project["net_settings"]["netclass_patterns"] = serde_json::json!([
+            {"pattern": "/USB*", "netclass": "HighSpeed"},
+            {"pattern": "/USB-C", "netclass": "Critical"}
+        ]);
+        let netlist = Netlist {
+            nets: BTreeMap::from([(
+                "/USB-C".to_owned(),
+                crate::erc::NetlistNet {
+                    name: "/USB-C".to_owned(),
+                    class_name: Some("Effective for net: /USB-C".to_owned()),
+                    nodes: Vec::new(),
+                },
+            )]),
+            ..Netlist::default()
+        };
+
+        assert_eq!(
+            project_netclass_wire_width_mm(&project, &netlist, "/USB-C"),
+            Some(0.762)
+        );
+        assert!(wildcard_pattern_matches("/USB?", "/USB1"));
+        assert!(!wildcard_pattern_matches("/USB?", "/USB12"));
+    }
+    /// Checks that a selected class without its own wire width inherits the Default netclass width.
+    #[test]
+    fn class_without_wire_width_inherits_the_project_default() {
+        let mut project = project_fixture();
+        project["net_settings"]["netclass_assignments"] =
+            serde_json::json!({"/PWR": ["Inheriting"]});
+        let netlist = Netlist {
+            nets: BTreeMap::from([(
+                "/PWR".to_owned(),
+                crate::erc::NetlistNet {
+                    name: "/PWR".to_owned(),
+                    class_name: Some("Effective for net: /PWR".to_owned()),
+                    nodes: Vec::new(),
+                },
+            )]),
+            ..Netlist::default()
+        };
+
+        assert_eq!(
+            project_netclass_wire_width_mm(&project, &netlist, "/PWR"),
+            Some(0.2032)
+        );
+    }
+    /// Checks that a netclass assigned to a committed net chain is applied to each exported member net.
+    #[test]
+    fn committed_chain_netclass_is_applied_to_member_nets() {
+        let mut project = project_fixture();
+        project["net_settings"]["net_chain_netclasses"] = serde_json::json!({"DDR": "HighSpeed"});
+        let netlist = Netlist {
+            nets: BTreeMap::from([(
+                "/DDR_DQ0".to_owned(),
+                crate::erc::NetlistNet {
+                    name: "/DDR_DQ0".to_owned(),
+                    class_name: Some("Effective for net: /DDR_DQ0".to_owned()),
+                    nodes: Vec::new(),
+                },
+            )]),
+            chains: vec![crate::erc::NetlistChain {
+                name: "DDR".to_owned(),
+                netclass: Some("HighSpeed".to_owned()),
+                members: BTreeSet::from(["/DDR_DQ0".to_owned()]),
+            }],
+            ..Netlist::default()
+        };
+
+        assert_eq!(
+            project_netclass_wire_width_mm(&project, &netlist, "/DDR_DQ0"),
+            Some(0.4572)
+        );
+    }
+    /// Checks that conflicting or unsupported class-assignment syntax does not produce a guessed wire width.
+    #[test]
+    fn inconsistent_or_unmodeled_assignments_remain_unknown() {
+        let mut project = project_fixture();
+        for pattern in ["/^USB.*$/", "/USB.*/", "/DATA[7..0]", "/USB{DP DM}"] {
+            project["net_settings"]["netclass_patterns"] =
+                serde_json::json!([{"pattern": pattern, "netclass": "HighSpeed"}]);
+            assert_eq!(
+                project_netclass_wire_width_mm(&project, &Netlist::default(), "/USB1"),
+                None
+            );
+        }
+        project["net_settings"]["netclass_patterns"] =
+            serde_json::json!([{"pattern": "^/USB.*$", "netclass": "HighSpeed"}]);
+        let netlist = Netlist {
+            nets: BTreeMap::from([(
+                "/USB1".to_owned(),
+                crate::erc::NetlistNet {
+                    name: "/USB1".to_owned(),
+                    class_name: Some("HighSpeed".to_owned()),
+                    nodes: Vec::new(),
+                },
+            )]),
+            ..Netlist::default()
+        };
+        assert_eq!(
+            project_netclass_wire_width_mm(&project, &netlist, "/USB1"),
+            Some(0.4572)
+        );
+
+        project["net_settings"]["netclass_patterns"] = serde_json::json!([]);
+        assert_eq!(
+            project_netclass_wire_width_mm(&project, &netlist, "/USB1"),
+            None
+        );
+    }
+    /// Resolves a regular-expression netclass pattern against the complete hierarchical net name.
+    #[test]
+    fn regex_netclass_patterns_match_complete_net_names() {
+        let mut project = project_fixture();
+        project["net_settings"]["netclass_patterns"] =
+            serde_json::json!([{"pattern": "^/USB[0-9]+$", "netclass": "HighSpeed"}]);
+        let netlist = Netlist {
+            nets: BTreeMap::from([(
+                "/USB42".to_owned(),
+                crate::erc::NetlistNet {
+                    name: "/USB42".to_owned(),
+                    class_name: Some("HighSpeed".to_owned()),
+                    nodes: Vec::new(),
+                },
+            )]),
+            ..Netlist::default()
+        };
+
+        assert_eq!(
+            project_netclass_wire_width_mm(&project, &netlist, "/USB42"),
+            Some(0.4572)
+        );
+        assert_eq!(
+            project_netclass_wire_width_mm(&project, &netlist, "/USB42-extra"),
+            None
+        );
+    }
+    /// Expands descending and ascending numeric bus-vector ranges before resolving their member nets.
+    #[test]
+    fn bus_vector_netclass_patterns_expand_member_ranges() {
+        let mut project = project_fixture();
+        project["net_settings"]["netclass_patterns"] =
+            serde_json::json!([{"pattern": "/DATA[7..0]", "netclass": "HighSpeed"}]);
+
+        for net_name in ["/DATA7", "/DATA3", "/DATA0"] {
+            let netlist = Netlist {
+                nets: BTreeMap::from([(
+                    net_name.to_owned(),
+                    crate::erc::NetlistNet {
+                        name: net_name.to_owned(),
+                        class_name: Some("HighSpeed".to_owned()),
+                        nodes: Vec::new(),
+                    },
+                )]),
+                ..Netlist::default()
+            };
+            assert_eq!(
+                project_netclass_wire_width_mm(&project, &netlist, net_name),
+                Some(0.4572)
+            );
+        }
+    }
+    /// Expands bus-group members and nested vector members without carrying the decorative group name into each net.
+    #[test]
+    fn bus_group_netclass_patterns_expand_nested_member_vectors() {
+        let mut project = project_fixture();
+        project["net_settings"]["netclass_patterns"] =
+            serde_json::json!([{"pattern": "/{ /SDA /CLOCK[0..1]}", "netclass": "HighSpeed"}]);
+        let netlist = Netlist {
+            nets: BTreeMap::from([(
+                "/CLOCK1".to_owned(),
+                crate::erc::NetlistNet {
+                    name: "/CLOCK1".to_owned(),
+                    class_name: Some("HighSpeed".to_owned()),
+                    nodes: Vec::new(),
+                },
+            )]),
+            ..Netlist::default()
+        };
+
+        assert_eq!(
+            project_netclass_wire_width_mm(&project, &netlist, "/CLOCK1"),
+            Some(0.4572)
+        );
+    }
+    /// Leaves unsupported regex extensions and unbounded bus ranges unresolved rather than guessing a class width.
+    #[test]
+    fn unsupported_regex_extensions_and_bus_expansion_limits_remain_unknown() {
+        let mut project = project_fixture();
+        let netlist = Netlist {
+            nets: BTreeMap::from([(
+                "/USB1".to_owned(),
+                crate::erc::NetlistNet {
+                    name: "/USB1".to_owned(),
+                    class_name: Some("HighSpeed".to_owned()),
+                    nodes: Vec::new(),
+                },
+            )]),
+            ..Netlist::default()
+        };
+
+        project["net_settings"]["netclass_patterns"] =
+            serde_json::json!([{"pattern": "^/USB(?=1)$", "netclass": "HighSpeed"}]);
+        assert_eq!(
+            project_netclass_wire_width_mm(&project, &netlist, "/USB1"),
+            None
+        );
+
+        project["net_settings"]["netclass_patterns"] =
+            serde_json::json!([{"pattern": "^/USB\\\\d+$", "netclass": "HighSpeed"}]);
+        assert_eq!(
+            project_netclass_wire_width_mm(&project, &netlist, "/USB1"),
+            None
+        );
+
+        project["net_settings"]["netclass_patterns"] =
+            serde_json::json!([{"pattern": "/DATA[0..5000]", "netclass": "HighSpeed"}]);
+        assert_eq!(
+            project_netclass_wire_width_mm(&project, &netlist, "/USB1"),
+            None
+        );
+    }
+    /// Checks that a wire receives a project width only when its physical component maps unambiguously to one exported logical net.
+    #[test]
+    fn per_wire_width_requires_one_unambiguous_physical_component_net() {
+        use crate::erc::{NetlistNode, PinRef};
+        use crate::rules::{SchematicPinFact, SchematicWireFact};
+
+        let project = serde_json::json!({
+            "net_settings": {
+                "classes": [{"name": "Default", "wire_width": 10.0}],
+                "netclass_assignments": {},
+                "netclass_patterns": [],
+                "net_chain_netclasses": {}
+            }
+        });
+        let facts = SchematicFacts {
+            wires: vec![SchematicWireFact {
+                start_mm: (0.0, 0.0),
+                end_mm: (10.0, 0.0),
+                span_start: 42,
+            }],
+            pins: vec![
+                SchematicPinFact {
+                    reference: "J1".to_owned(),
+                    number: "1".to_owned(),
+                    position_mm: (0.0, 0.0),
+                    electrical_type: None,
+                },
+                SchematicPinFact {
+                    reference: "#PWR01".to_owned(),
+                    number: "1".to_owned(),
+                    position_mm: (0.0, 0.0),
+                    electrical_type: None,
+                },
+            ],
+            ..SchematicFacts::default()
+        };
+        let mut netlist = Netlist::default();
+        netlist.pin_nets.insert(
+            PinRef {
+                reference: "J1".to_owned(),
+                pin: "1".to_owned(),
+            },
+            "N1".to_owned(),
+        );
+        netlist.nets.insert(
+            "N1".to_owned(),
+            crate::erc::NetlistNet {
+                name: "N1".to_owned(),
+                class_name: Some("Default".to_owned()),
+                nodes: vec![NetlistNode {
+                    reference: "J1".to_owned(),
+                    pin: "1".to_owned(),
+                }],
+            },
+        );
+
+        let widths = project_wire_stroke_widths_mm(&project, &facts, &netlist);
+        assert_eq!(widths.get(&42), Some(&0.254));
+
+        let mut incomplete_netlist = netlist.clone();
+        incomplete_netlist.pin_nets.insert(
+            PinRef {
+                reference: "U2".to_owned(),
+                pin: "1".to_owned(),
+            },
+            "N2".to_owned(),
+        );
+        assert!(project_wire_stroke_widths_mm(&project, &facts, &incomplete_netlist).is_empty());
+
+        let conflicting_facts = SchematicFacts {
+            pins: vec![
+                SchematicPinFact {
+                    reference: "J1".to_owned(),
+                    number: "1".to_owned(),
+                    position_mm: (0.0, 0.0),
+                    electrical_type: None,
+                },
+                SchematicPinFact {
+                    reference: "J2".to_owned(),
+                    number: "1".to_owned(),
+                    position_mm: (10.0, 0.0),
+                    electrical_type: None,
+                },
+            ],
+            ..facts
+        };
+        netlist.pin_nets.insert(
+            PinRef {
+                reference: "J2".to_owned(),
+                pin: "1".to_owned(),
+            },
+            "N2".to_owned(),
+        );
+        assert!(project_wire_stroke_widths_mm(&project, &conflicting_facts, &netlist).is_empty());
+    }
+    /// Checks that schematic-local netclass directives prevent project-only settings from being treated as the effective wire width.
+    #[test]
+    fn schematic_netclass_directives_suppress_project_only_width_inference() {
+        let project = project_fixture();
+        let facts = SchematicFacts {
+            has_netclass_assignments: true,
+            ..SchematicFacts::default()
+        };
+        assert!(project_wire_stroke_widths_mm(&project, &facts, &Netlist::default()).is_empty());
+    }
+    /// Checks that excluded error diagnostics remain visible but do not increase the summary's active-error count.
+    #[test]
+    fn summary_counts_only_active_errors() {
+        let mut excluded = Diagnostic::new("ERC/EXCLUDED", Severity::Error, "ignored");
+        excluded.excluded = true;
+        let diagnostics = vec![
+            Diagnostic::new("ERC/ERROR", Severity::Error, "blocking"),
+            Diagnostic::new("ERC/WARNING", Severity::Warning, "review"),
+            Diagnostic::new("ERC/NOTE", Severity::Note, "info"),
+            excluded,
+        ];
+        let summary = Summary::from_diagnostics(&diagnostics);
+
+        assert_eq!(summary.errors, 1);
+        assert_eq!(summary.warnings, 1);
+        assert_eq!(summary.notes, 1);
+        assert_eq!(summary.excluded, 1);
+    }
+}
+ | '[' | ']' | '(' | ')' | '+' | '|' | '{' | '}' | '\\'
+        )
+    })
+}
+/// Adds netclass names inherited from committed net chains containing the logical net.
+///
+/// # Arguments
+///
+/// * `settings` — The `net_settings` JSON object from the `KiCad` project.
+/// * `netlist` — Flattened netlist exported by `KiCad`, including pin-to-net and effective netclass data.
+/// * `net_name` — Exact logical net name whose project netclass assignments are being resolved.
+/// * `candidates` — Set to extend with each supported class assignment that applies to the net.
+///
+/// # Returns
+///
+/// `Some(())` after processing chain assignments; `None` when the assignment data has an unsupported shape.
+fn add_chain_netclass_assignments(
+    settings: &serde_json::Map<String, serde_json::Value>,
+    netlist: &Netlist,
+    net_name: &str,
+    candidates: &mut BTreeSet<String>,
+) -> Option<()> {
+    let chain_classes = match settings.get("net_chain_netclasses") {
+        None | Some(serde_json::Value::Null) => None,
+        Some(serde_json::Value::Object(assignments)) => Some(assignments),
+        _ => return None,
+    };
+    for chain in &netlist.chains {
+        if !chain.members.contains(net_name) {
+            continue;
+        }
+        let configured_class =
+            match chain_classes.and_then(|assignments| assignments.get(&chain.name)) {
+                Some(value) => Some(value.as_str()?),
+                None => None,
+            };
+        let exported_class = chain.netclass.as_deref();
+        let class_name = match (configured_class, exported_class) {
+            (Some(configured), Some(exported)) if configured != exported => return None,
+            (Some(configured), _) => Some(configured),
+            (None, Some(exported)) => Some(exported),
+            (None, None) => None,
+        };
+        if let Some(class_name) = class_name {
+            candidates.insert(class_name.to_owned());
+        }
+    }
+    Some(())
+}
+/// Checks that the project-derived candidate set is consistent with the effective class name exported by `KiCad`.
+///
+/// # Arguments
+///
+/// * `exported_class` — Effective class name reported by `KiCad`'s netlist exporter.
+/// * `net_name` — Exact logical net name whose project netclass assignments are being resolved.
+/// * `candidates` — Set to extend with each supported class assignment that applies to the net.
+///
+/// # Returns
+///
+/// `true` when `KiCad`'s exported effective class is compatible with the project-derived candidate set.
+fn exported_netclass_matches(
+    exported_class: &str,
+    net_name: &str,
+    candidates: &BTreeSet<String>,
+) -> bool {
+    if exported_class == "Default" {
+        candidates.is_empty() || (candidates.len() == 1 && candidates.contains("Default"))
+    } else if exported_class.strip_prefix("Effective for net: ") == Some(net_name) {
+        !candidates.is_empty()
+    } else {
+        candidates.len() == 1 && candidates.contains(exported_class)
+    }
+}
+/// Matches a project netclass pattern containing `*` and `?` against a complete net name.
+///
+/// # Arguments
+///
+/// * `pattern` — Supported netclass wildcard expression; `*` matches any sequence and `?` matches one character.
+/// * `candidate` — Complete net name being tested against the wildcard expression.
+///
+/// # Returns
+///
+/// `true` when the entire candidate string matches the pattern.
+fn wildcard_pattern_matches(pattern: &str, candidate: &str) -> bool {
+    let pattern: Vec<char> = pattern.chars().collect();
+    let candidate: Vec<char> = candidate.chars().collect();
+    let mut previous = vec![false; candidate.len() + 1];
+    previous[0] = true;
+
+    for pattern_char in pattern {
+        let mut current = vec![false; candidate.len() + 1];
+        match pattern_char {
+            '*' => {
+                current[0] = previous[0];
+                for index in 1..=candidate.len() {
+                    current[index] = previous[index] || current[index - 1];
+                }
+            }
+            '?' => {
+                current[1..].copy_from_slice(&previous[..candidate.len()]);
+            }
+            literal => {
+                for index in 1..=candidate.len() {
+                    current[index] = previous[index - 1] && candidate[index - 1] == literal;
+                }
+            }
+        }
+        previous = current;
+    }
+    previous[candidate.len()]
+}
+/// Writes the lint summary and diagnostics as human-readable text.
+///
+/// # Arguments
+///
+/// * `output` — Normalized lint output containing the diagnostics and summary counts.
+/// * `source` — Original source file used to resolve diagnostic spans and render highlighted text.
+///
+/// # Returns
+///
+/// `Ok(())` when all text was written successfully.
+///
+/// # Errors
+///
+/// Returns an I/O error when writing the summary or any formatted diagnostic to standard output fails.
+fn render_text(output: &LintOutput, source: &SourceFile) -> Result<(), io::Error> {
+    let mut stdout = io::stdout().lock();
+    writeln!(stdout, "kicad-clippy {}", output.tool_version)?;
+    writeln!(stdout, "S-expression syntax: valid ({})", output.schematic)?;
+
+    if output.erc_skipped {
+        writeln!(stdout, "Native KiCad ERC: skipped")?;
+    } else if let Some(version) = &output.kicad_version {
+        writeln!(stdout, "Native KiCad ERC: KiCad {version}")?;
+    } else {
+        writeln!(stdout, "Native KiCad ERC: completed")?;
+    }
+
+    if output.diagnostics.is_empty() && !output.erc_skipped {
+        writeln!(stdout, "No native ERC violations reported.")?;
+    }
+
+    for diagnostic in &output.diagnostics {
+        render_diagnostic(&mut stdout, diagnostic, source)?;
+    }
+
+    writeln!(
+        stdout,
+        "Summary: {} errors, {} warnings, {} notes, {} excluded",
+        output.summary.errors,
+        output.summary.warnings,
+        output.summary.notes,
+        output.summary.excluded
+    )?;
+    writeln!(stdout, "Built-in schematic rules: active")?;
+    Ok(())
+}
+/// Formats one diagnostic, including its source span and schematic location when those are available.
+///
+/// # Arguments
+///
+/// * `stdout` — Output writer receiving the formatted diagnostic.
+/// * `diagnostic` — Finding to render, including its message, severity, source span, and related context.
+/// * `source` — Original source file used to resolve diagnostic spans and render highlighted text.
+///
+/// # Returns
+///
+/// `Ok(())` when the diagnostic was written successfully.
+///
+/// # Errors
+///
+/// Returns an I/O error when the formatted report for this diagnostic cannot be written to the supplied output stream.
+fn render_diagnostic(
+    stdout: &mut impl Write,
+    diagnostic: &Diagnostic,
+    source: &SourceFile,
+) -> Result<(), io::Error> {
+    let mut message = diagnostic.message.clone();
+    if let Some(location) = diagnostic.schematic_location {
+        let _ = write!(
+            message,
+            " at ({:.3} mm, {:.3} mm)",
+            location.x_mm, location.y_mm
+        );
+    }
+    if let Some(sheet_path) = &diagnostic.sheet_path {
+        let _ = write!(message, " on sheet {sheet_path}");
+    }
+    if diagnostic.excluded {
+        message.push_str(" [excluded]");
+    }
+
+    let mut rendered = MietteDiagnostic::new(message)
+        .with_code(diagnostic.code.clone())
+        .with_severity(match diagnostic.severity {
+            Severity::Error => RenderSeverity::Error,
+            Severity::Warning => RenderSeverity::Warning,
+            Severity::Note => RenderSeverity::Advice,
+        });
+
+    if let Some(span) = diagnostic.span.filter(|span| source.slice(*span).is_some()) {
+        rendered = rendered.with_label(LabeledSpan::new_primary_with_span(
+            Some("here".to_owned()),
+            span.start..span.end,
+        ));
+    }
+
+    let mut guidance = Vec::new();
+    if let Some(explanation) = &diagnostic.explanation {
+        guidance.push(explanation.clone());
+    }
+    if let Some(help) = &diagnostic.help {
+        guidance.push(format!("Help: {help}"));
+    }
+    if !diagnostic.related.is_empty() {
+        let related = diagnostic
+            .related
+            .iter()
+            .map(|item| {
+                let mut description = item.description.clone();
+                if let Some(uuid) = &item.uuid {
+                    let _ = write!(description, " [{uuid}]");
+                }
+                if let Some(location) = item.location {
+                    let _ = write!(
+                        description,
+                        " at ({:.3} mm, {:.3} mm)",
+                        location.x_mm, location.y_mm
+                    );
+                }
+                description
+            })
+            .collect::<Vec<_>>()
+            .join("; ");
+        guidance.push(format!("Related items: {related}"));
+    }
+    if !guidance.is_empty() {
+        rendered = rendered.with_help(guidance.join("\n"));
+    }
+
+    let report = Report::new(rendered).with_source_code(NamedSource::new(
+        source.path().display().to_string(),
+        source.shared_text(),
+    ));
+    writeln!(stdout, "{report:?}")?;
+    Ok(())
+}
+/// Resolves the `KiCad` CLI executable, preferring an explicit path before searching the environment.
+///
+/// # Arguments
+///
+/// * `explicit` — Optional executable path supplied by the caller.
+///
+/// # Returns
+///
+/// The explicit executable path or the first `KiCad` CLI executable found on PATH.
+///
+/// # Errors
+///
+/// Returns `CliError::KiCadCliNotFound` when neither an explicit path, `KICAD_CLI`, nor a callable `kicad-cli` executable can be resolved.
+fn resolve_kicad_cli(explicit: Option<PathBuf>) -> Result<PathBuf, CliError> {
+    if let Some(path) = explicit {
+        return Ok(path);
+    }
+
+    if let Some(path) = std::env::var_os("KICAD_CLI") {
+        return Ok(PathBuf::from(path));
+    }
+
+    for candidate in ["kicad-cli-nightly", "kicad-cli"] {
+        if Command::new(candidate).arg("version").output().is_ok() {
+            return Ok(PathBuf::from(candidate));
+        }
+    }
+
+    Err(CliError::KiCadCliNotFound)
+}
+#[cfg(test)]
+/// Unit tests for project setting conversion, conservative netclass resolution, and summary counts.
+mod tests {
+    use crate::core::{Diagnostic, Severity};
+
+    use super::{
+        Summary, parse_rule_policy, project_default_schematic_line_stroke_width_mm,
+        project_netclass_wire_width_mm, project_wire_stroke_widths_mm, wildcard_pattern_matches,
+    };
+    use crate::erc::Netlist;
+    use crate::rules::SchematicFacts;
+    use std::collections::{BTreeMap, BTreeSet};
+    /// Checks that TOML policy presets and explicit per-rule levels decode into the typed policy model.
+    ///
+    /// # Returns
+    ///
+    /// Ok when the preset and overrides round-trip to their expected typed values.
+    ///
+    /// # Errors
+    ///
+    /// Returns a TOML error if a valid policy fixture cannot be decoded.
+    #[test]
+    fn rule_policy_toml_decodes_preset_and_overrides() -> Result<(), toml::de::Error> {
+        use crate::core::{RuleLevel, RulePreset};
+
+        let policy = parse_rule_policy(
+            r#"
+preset = "strict"
+
+[rules]
+SCH013 = "warn"
+SCH019 = "allow"
+"#,
+        )?;
+
+        assert_eq!(policy.preset, RulePreset::Strict);
+        assert_eq!(policy.rules.get("SCH013"), Some(&RuleLevel::Warn));
+        assert_eq!(policy.rules.get("SCH019"), Some(&RuleLevel::Allow));
+        Ok(())
+    }
+
+    /// Checks that unknown top-level TOML keys are rejected instead of silently ignored.
+    ///
+    /// # Returns
+    ///
+    /// Ok when a misspelled policy key causes TOML decoding to fail.
+    #[test]
+    fn rule_policy_toml_rejects_unknown_keys() {
+        assert!(parse_rule_policy("presett = \"strict\"\n").is_err());
+    }
+
+    /// Checks that the project's default schematic line width is interpreted in mils and converted to millimetres.
+    #[test]
+    fn project_default_schematic_line_width_reads_mils() {
+        let project = serde_json::json!({
+            "schematic": {
+                "drawing": {
+                    "default_line_thickness": 6.0
+                }
+            }
+        });
+
+        assert!(
+            project_default_schematic_line_stroke_width_mm(&project)
+                .is_some_and(|width| (width - 0.1524).abs() < 1.0e-12)
+        );
+    }
+    /// Checks that an absent, nonnumeric, zero, or negative default line width remains unresolved rather than being guessed.
+    #[test]
+    fn project_default_schematic_line_width_stays_unknown_when_missing_or_invalid() {
+        let missing = serde_json::json!({"schematic": {"drawing": {}}});
+        let zero = serde_json::json!({
+            "schematic": {"drawing": {"default_line_thickness": 0.0}}
+        });
+        let negative = serde_json::json!({
+            "schematic": {"drawing": {"default_line_thickness": -6.0}}
+        });
+
+        assert_eq!(
+            project_default_schematic_line_stroke_width_mm(&missing),
+            None
+        );
+        assert_eq!(project_default_schematic_line_stroke_width_mm(&zero), None);
+        assert_eq!(
+            project_default_schematic_line_stroke_width_mm(&negative),
+            None
+        );
+    }
+    /// Builds a valid project-settings fixture with `Default`, `HighSpeed`, `Critical`, and `Inheriting` netclasses and empty assignment lists.
+    ///
+    /// # Returns
+    ///
+    /// A mutable JSON value that tests customize to exercise class priority, wildcard matching, chain assignments, and default-width inheritance.
+    fn project_fixture() -> serde_json::Value {
+        serde_json::json!({
+            "net_settings": {
+                "classes": [
+                    {"name": "Default", "priority": 2_147_483_647, "wire_width": 8.0},
+                    {"name": "HighSpeed", "priority": 5, "wire_width": 18.0},
+                    {"name": "Critical", "priority": 1, "wire_width": 30.0},
+                    {"name": "Inheriting", "priority": 0}
+                ],
+                "netclass_assignments": {},
+                "netclass_patterns": [],
+                "net_chain_netclasses": {}
+            }
+        })
+    }
+    /// Checks that overlapping netclass patterns and exact assignments are resolved using `KiCad` class priority.
+    #[test]
+    fn overlapping_patterns_and_explicit_assignments_use_class_priority() {
+        let mut project = project_fixture();
+        project["net_settings"]["netclass_assignments"] =
+            serde_json::json!({"/USB-C": ["HighSpeed"]});
+        project["net_settings"]["netclass_patterns"] = serde_json::json!([
+            {"pattern": "/USB*", "netclass": "HighSpeed"},
+            {"pattern": "/USB-C", "netclass": "Critical"}
+        ]);
+        let netlist = Netlist {
+            nets: BTreeMap::from([(
+                "/USB-C".to_owned(),
+                crate::erc::NetlistNet {
+                    name: "/USB-C".to_owned(),
+                    class_name: Some("Effective for net: /USB-C".to_owned()),
+                    nodes: Vec::new(),
+                },
+            )]),
+            ..Netlist::default()
+        };
+
+        assert_eq!(
+            project_netclass_wire_width_mm(&project, &netlist, "/USB-C"),
+            Some(0.762)
+        );
+        assert!(wildcard_pattern_matches("/USB?", "/USB1"));
+        assert!(!wildcard_pattern_matches("/USB?", "/USB12"));
+    }
+    /// Checks that a selected class without its own wire width inherits the Default netclass width.
+    #[test]
+    fn class_without_wire_width_inherits_the_project_default() {
+        let mut project = project_fixture();
+        project["net_settings"]["netclass_assignments"] =
+            serde_json::json!({"/PWR": ["Inheriting"]});
+        let netlist = Netlist {
+            nets: BTreeMap::from([(
+                "/PWR".to_owned(),
+                crate::erc::NetlistNet {
+                    name: "/PWR".to_owned(),
+                    class_name: Some("Effective for net: /PWR".to_owned()),
+                    nodes: Vec::new(),
+                },
+            )]),
+            ..Netlist::default()
+        };
+
+        assert_eq!(
+            project_netclass_wire_width_mm(&project, &netlist, "/PWR"),
+            Some(0.2032)
+        );
+    }
+    /// Checks that a netclass assigned to a committed net chain is applied to each exported member net.
+    #[test]
+    fn committed_chain_netclass_is_applied_to_member_nets() {
+        let mut project = project_fixture();
+        project["net_settings"]["net_chain_netclasses"] = serde_json::json!({"DDR": "HighSpeed"});
+        let netlist = Netlist {
+            nets: BTreeMap::from([(
+                "/DDR_DQ0".to_owned(),
+                crate::erc::NetlistNet {
+                    name: "/DDR_DQ0".to_owned(),
+                    class_name: Some("Effective for net: /DDR_DQ0".to_owned()),
+                    nodes: Vec::new(),
+                },
+            )]),
+            chains: vec![crate::erc::NetlistChain {
+                name: "DDR".to_owned(),
+                netclass: Some("HighSpeed".to_owned()),
+                members: BTreeSet::from(["/DDR_DQ0".to_owned()]),
+            }],
+            ..Netlist::default()
+        };
+
+        assert_eq!(
+            project_netclass_wire_width_mm(&project, &netlist, "/DDR_DQ0"),
+            Some(0.4572)
+        );
+    }
+    /// Checks that conflicting or unsupported class-assignment syntax does not produce a guessed wire width.
+    #[test]
+    fn inconsistent_or_unmodeled_assignments_remain_unknown() {
+        let mut project = project_fixture();
+        for pattern in ["/^USB.*$/", "/USB.*/", "/DATA[7..0]", "/USB{DP DM}"] {
+            project["net_settings"]["netclass_patterns"] =
+                serde_json::json!([{"pattern": pattern, "netclass": "HighSpeed"}]);
+            assert_eq!(
+                project_netclass_wire_width_mm(&project, &Netlist::default(), "/USB1"),
+                None
+            );
+        }
+        project["net_settings"]["netclass_patterns"] =
+            serde_json::json!([{"pattern": "^/USB.*$", "netclass": "HighSpeed"}]);
+        let netlist = Netlist {
+            nets: BTreeMap::from([(
+                "/USB1".to_owned(),
+                crate::erc::NetlistNet {
+                    name: "/USB1".to_owned(),
+                    class_name: Some("HighSpeed".to_owned()),
+                    nodes: Vec::new(),
+                },
+            )]),
+            ..Netlist::default()
+        };
+        assert_eq!(
+            project_netclass_wire_width_mm(&project, &netlist, "/USB1"),
+            None
+        );
+
+        project["net_settings"]["netclass_patterns"] = serde_json::json!([]);
+        assert_eq!(
+            project_netclass_wire_width_mm(&project, &netlist, "/USB1"),
+            None
+        );
+    }
+    /// Checks that a wire receives a project width only when its physical component maps unambiguously to one exported logical net.
+    #[test]
+    fn per_wire_width_requires_one_unambiguous_physical_component_net() {
+        use crate::erc::{NetlistNode, PinRef};
+        use crate::rules::{SchematicPinFact, SchematicWireFact};
+
+        let project = serde_json::json!({
+            "net_settings": {
+                "classes": [{"name": "Default", "wire_width": 10.0}],
+                "netclass_assignments": {},
+                "netclass_patterns": [],
+                "net_chain_netclasses": {}
+            }
+        });
+        let facts = SchematicFacts {
+            wires: vec![SchematicWireFact {
+                start_mm: (0.0, 0.0),
+                end_mm: (10.0, 0.0),
+                span_start: 42,
+            }],
+            pins: vec![
+                SchematicPinFact {
+                    reference: "J1".to_owned(),
+                    number: "1".to_owned(),
+                    position_mm: (0.0, 0.0),
+                    electrical_type: None,
+                },
+                SchematicPinFact {
+                    reference: "#PWR01".to_owned(),
+                    number: "1".to_owned(),
+                    position_mm: (0.0, 0.0),
+                    electrical_type: None,
+                },
+            ],
+            ..SchematicFacts::default()
+        };
+        let mut netlist = Netlist::default();
+        netlist.pin_nets.insert(
+            PinRef {
+                reference: "J1".to_owned(),
+                pin: "1".to_owned(),
+            },
+            "N1".to_owned(),
+        );
+        netlist.nets.insert(
+            "N1".to_owned(),
+            crate::erc::NetlistNet {
+                name: "N1".to_owned(),
+                class_name: Some("Default".to_owned()),
+                nodes: vec![NetlistNode {
+                    reference: "J1".to_owned(),
+                    pin: "1".to_owned(),
+                }],
+            },
+        );
+
+        let widths = project_wire_stroke_widths_mm(&project, &facts, &netlist);
+        assert_eq!(widths.get(&42), Some(&0.254));
+
+        let mut incomplete_netlist = netlist.clone();
+        incomplete_netlist.pin_nets.insert(
+            PinRef {
+                reference: "U2".to_owned(),
+                pin: "1".to_owned(),
+            },
+            "N2".to_owned(),
+        );
+        assert!(project_wire_stroke_widths_mm(&project, &facts, &incomplete_netlist).is_empty());
+
+        let conflicting_facts = SchematicFacts {
+            pins: vec![
+                SchematicPinFact {
+                    reference: "J1".to_owned(),
+                    number: "1".to_owned(),
+                    position_mm: (0.0, 0.0),
+                    electrical_type: None,
+                },
+                SchematicPinFact {
+                    reference: "J2".to_owned(),
+                    number: "1".to_owned(),
+                    position_mm: (10.0, 0.0),
+                    electrical_type: None,
+                },
+            ],
+            ..facts
+        };
+        netlist.pin_nets.insert(
+            PinRef {
+                reference: "J2".to_owned(),
+                pin: "1".to_owned(),
+            },
+            "N2".to_owned(),
+        );
+        assert!(project_wire_stroke_widths_mm(&project, &conflicting_facts, &netlist).is_empty());
+    }
+    /// Checks that schematic-local netclass directives prevent project-only settings from being treated as the effective wire width.
+    #[test]
+    fn schematic_netclass_directives_suppress_project_only_width_inference() {
+        let project = project_fixture();
+        let facts = SchematicFacts {
+            has_netclass_assignments: true,
+            ..SchematicFacts::default()
+        };
+        assert!(project_wire_stroke_widths_mm(&project, &facts, &Netlist::default()).is_empty());
+    }
+    /// Checks that excluded error diagnostics remain visible but do not increase the summary's active-error count.
+    #[test]
+    fn summary_counts_only_active_errors() {
+        let mut excluded = Diagnostic::new("ERC/EXCLUDED", Severity::Error, "ignored");
+        excluded.excluded = true;
+        let diagnostics = vec![
+            Diagnostic::new("ERC/ERROR", Severity::Error, "blocking"),
+            Diagnostic::new("ERC/WARNING", Severity::Warning, "review"),
+            Diagnostic::new("ERC/NOTE", Severity::Note, "info"),
+            excluded,
+        ];
+        let summary = Summary::from_diagnostics(&diagnostics);
+
+        assert_eq!(summary.errors, 1);
+        assert_eq!(summary.warnings, 1);
+        assert_eq!(summary.notes, 1);
+        assert_eq!(summary.excluded, 1);
+    }
+}
+ | '*' | '+' | '?' | '(' | ')' | '[' | ']' | '{' | '}' | '|'
+            ) {
+                return false;
+            }
+        }
+    }
+    true
 }
 /// Checks whether a pattern uses syntax that cannot safely be treated as a wildcard-only pattern.
 ///
