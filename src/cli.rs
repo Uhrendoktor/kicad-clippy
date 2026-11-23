@@ -1955,10 +1955,6 @@ SCH019 = "allow"
         assert_eq!(summary.excluded, 1);
     }
 }
- | '[' | ']' | '(' | ')' | '+' | '|' | '{' | '}' | '\\'
-        )
-    })
-}
 /// Adds netclass names inherited from committed net chains containing the logical net.
 ///
 /// # Arguments
