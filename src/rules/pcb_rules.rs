@@ -67,9 +67,10 @@ impl BoardFacts {
             }
             let serialized_scale_present = child_list(footprint, "scale").is_some();
             let resolved_scale = footprint_scale(footprint);
-            let scale_is_valid = resolved_scale.map_or(!serialized_scale_present, |(scale_x, scale_y)| {
-                scale_x.is_finite() && scale_y.is_finite() && scale_x > 0.0 && scale_y > 0.0
-            });
+            let scale_is_valid =
+                resolved_scale.map_or(!serialized_scale_present, |(scale_x, scale_y)| {
+                    scale_x.is_finite() && scale_y.is_finite() && scale_x > 0.0 && scale_y > 0.0
+                });
             let (scale_x, scale_y) = if scale_is_valid {
                 resolved_scale.unwrap_or((1.0, 1.0))
             } else {
@@ -589,10 +590,9 @@ fn validate_target_pad_distance(
     maximum_distance: f64,
     pads: &ResolvedDecouplingPads<'_>,
 ) -> Vec<Diagnostic> {
-    let (Some(target_position), Some(capacitor_position)) = (
-        pads.target_pad.position_mm,
-        pads.capacitor_pad.position_mm,
-    ) else {
+    let (Some(target_position), Some(capacitor_position)) =
+        (pads.target_pad.position_mm, pads.capacitor_pad.position_mm)
+    else {
         return vec![Diagnostic::for_builtin_rule(
             BuiltinRuleId::Pcb001,
             Severity::Warning,
@@ -601,8 +601,8 @@ fn validate_target_pad_distance(
             ),
         )];
     };
-    let distance = (target_position.0 - capacitor_position.0)
-        .hypot(target_position.1 - capacitor_position.1);
+    let distance =
+        (target_position.0 - capacitor_position.0).hypot(target_position.1 - capacitor_position.1);
     if distance > maximum_distance + PCB_DISTANCE_TOLERANCE_MM {
         vec![Diagnostic::for_builtin_rule(
             BuiltinRuleId::Pcb001,
@@ -988,7 +988,9 @@ mod tests {
         let target = super::unique_pad(&facts, "U1", "1").expect("front pad found");
         let capacitor = super::unique_pad(&facts, "C1", "1").expect("back pad found");
         let target_position = target.position_mm.expect("valid target transform resolves");
-        let capacitor_position = capacitor.position_mm.expect("valid capacitor transform resolves");
+        let capacitor_position = capacitor
+            .position_mm
+            .expect("valid capacitor transform resolves");
         assert!((target_position.0 - 101.0).abs() < 0.001);
         assert!((target_position.1 - 48.0).abs() < 0.001);
         assert!((capacitor_position.0 - 99.0).abs() < 0.001);
@@ -1585,11 +1587,13 @@ mod test_point_tests {
             r#"(layers "F.Cu" "F.Mask")"#,
         );
         let facts = BoardFacts::from_document(&board);
-        let pad = super::unique_pad(&facts, "TP1", "1").expect("serialized pad remains identifiable");
+        let pad =
+            super::unique_pad(&facts, "TP1", "1").expect("serialized pad remains identifiable");
         assert!(pad.position_mm.is_none());
         assert!(pad.probe_contact_width_mm.is_none());
 
-        let diagnostics = validate_test_point_pad_access(&minimum_probe_width_profile("0.8"), &board);
+        let diagnostics =
+            validate_test_point_pad_access(&minimum_probe_width_profile("0.8"), &board);
         assert!(diagnostics.iter().any(|item| {
             item.code == "PCB009"
                 && item.severity == crate::core::Severity::Warning
