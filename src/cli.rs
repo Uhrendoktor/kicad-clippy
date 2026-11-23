@@ -877,7 +877,7 @@ fn expand_netclass_bus_pattern_at_depth(pattern: &str, depth: usize) -> Option<V
 ///
 /// # Arguments
 ///
-/// * `pattern` — Candidate bus-vector pattern.
+/// * `pattern` — Candidate bus-vector pattern containing a prefix, numeric range, and optional suffix.
 ///
 /// # Returns
 ///
