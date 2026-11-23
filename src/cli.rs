@@ -1449,7 +1449,8 @@ mod tests {
 
     use super::{
         Summary, parse_rule_policy, project_default_schematic_line_stroke_width_mm,
-        project_netclass_wire_width_mm, project_wire_stroke_widths_mm, wildcard_pattern_matches,
+        project_netclass_wire_width_mm, project_wire_stroke_widths_mm,
+        split_netclass_bus_group_members, wildcard_pattern_matches,
     };
     use crate::erc::Netlist;
     use crate::rules::SchematicFacts;
