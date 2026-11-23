@@ -1706,6 +1706,31 @@ SCH019 = "allow"
             None
         );
     }
+    /// Applies the lower numeric priority when overlapping regex netclass patterns match one exported net.
+    #[test]
+    fn overlapping_regex_netclass_patterns_use_class_priority() {
+        let mut project = project_fixture();
+        project["net_settings"]["netclass_patterns"] = serde_json::json!([
+            {"pattern": "^/USB.*$", "netclass": "HighSpeed"},
+            {"pattern": "^/USB-C$", "netclass": "Critical"}
+        ]);
+        let netlist = Netlist {
+            nets: BTreeMap::from([(
+                "/USB-C".to_owned(),
+                crate::erc::NetlistNet {
+                    name: "/USB-C".to_owned(),
+                    class_name: Some("Effective for net: /USB-C".to_owned()),
+                    nodes: Vec::new(),
+                },
+            )]),
+            ..Netlist::default()
+        };
+
+        assert_eq!(
+            project_netclass_wire_width_mm(&project, &netlist, "/USB-C"),
+            Some(0.762)
+        );
+    }
     /// Expands descending and ascending numeric bus-vector ranges before resolving their member nets.
     #[test]
     fn bus_vector_netclass_patterns_expand_member_ranges() {
