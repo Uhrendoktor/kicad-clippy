@@ -18,6 +18,7 @@ Notable changes are documented here. This project is in early development and ha
 - SCH021 connectors may declare `attributes.required_pins`; every listed pin must have an expected net mapping in `connections.pin.N` or `pin_nets.N`.
 - SCH022 IC profiles may declare `attributes.required_decoupling_pins`, requiring a decoupling intent for each listed supply pin. Decoupling contracts may set `max_target_distance_mm` to enforce a maximum distance between transformed target-pin and capacitor-terminal anchors in schematic space.
 
+- SCH005 now checks connected wire segments against the full transformed embedded pin axis for finite non-cardinal symbol rotations and supported mirror transforms.
 - SCH006 now supports profile-declared transformed body-to-body minimum clearance, maximum pairwise body-gap limits for cluster compactness, and horizontal/vertical member-origin alignment; unsupported curve-based body outlines are reported as unverified.
 - SCH010 now supports per-component/per-field maximum gaps from estimated Reference/Value glyph rectangles to supported transformed symbol bodies.
 - Split SCH004 physical wire topology from SCH014 logical netlist contracts. `common_pin_groups.netlist_connected` and `separate_wire_pairs.netlist_separate` now emit SCH014 findings; SCH004 no longer consumes exported netlist facts.

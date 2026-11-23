@@ -3591,29 +3591,6 @@ fn sub_symbol_unit_convert(name: &str) -> Option<(u32, u32)> {
     let (_, unit) = prefix.rsplit_once('_')?;
     Some((unit.parse().ok()?, convert.parse().ok()?))
 }
-/// Returns the nearest exact cardinal rotation when the supplied angle is a supported quarter-turn.
-///
-/// # Arguments
-///
-/// * `angle` — Rotation angle in degrees as serialized by `KiCad`.
-///
-/// # Returns
-///
-/// The normalized angle for an exact quarter-turn orientation, or `None` when the supplied angle is not cardinal.
-fn cardinal_rotation(angle: f64) -> Option<i32> {
-    let normalized = angle.rem_euclid(FULL_ROTATION_DEGREES);
-    [
-        (0.0, 0),
-        (QUARTER_ROTATION_DEGREES, 90),
-        (HALF_ROTATION_DEGREES, 180),
-        (THREE_QUARTER_ROTATION_DEGREES, 270),
-    ]
-    .into_iter()
-    .find_map(|(degrees, rotation)| {
-        ((normalized - degrees).abs() <= GEOMETRY_TOLERANCE_MM).then_some(rotation)
-    })
-}
-
 /// Builds the affine transform for a symbol's rotation and supported mirror state.
 ///
 /// # Arguments
@@ -5283,6 +5260,41 @@ mod tests {
                 .any(|item| item.code == "SCH005")
         );
     }
+    /// Confirms non-cardinal symbol rotations reject wires that do not follow the transformed oblique pin axis.
+    #[test]
+    fn non_cardinal_pin_wire_must_follow_transformed_pin_axis() {
+        let source = EMBEDDED_PIN.replace("(at 10 10 0)", "(at 10 10 45)");
+        let pin_coordinate = 2.54_f64.mul_add(-HALF_FACTOR.sqrt(), 10.0);
+        let wire_end_x = pin_coordinate + 1.27;
+        let doc = document(&format!(
+            "{source} (wire (pts (xy {pin_coordinate:.3} {pin_coordinate:.3}) (xy {wire_end_x:.3} {pin_coordinate:.3})))"
+        ));
+
+        assert!(run_builtin_rules(&doc).diagnostics.iter().any(|item| {
+            item.code == "SCH005"
+                && item.message.contains("J1 pin 1")
+                && item.message.contains("oblique")
+        }));
+    }
+
+    /// Accepts a wire segment that is parallel to the transformed axis of a non-cardinal placed pin.
+    #[test]
+    fn non_cardinal_pin_wire_is_accepted_when_parallel_to_transformed_axis() {
+        let source = EMBEDDED_PIN.replace("(at 10 10 0)", "(at 10 10 45)");
+        let pin_coordinate = 2.54_f64.mul_add(-HALF_FACTOR.sqrt(), 10.0);
+        let wire_end_coordinate = 3.81_f64.mul_add(-HALF_FACTOR.sqrt(), 10.0);
+        let doc = document(&format!(
+            "{source} (wire (pts (xy {pin_coordinate:.3} {pin_coordinate:.3}) (xy {wire_end_coordinate:.3} {wire_end_coordinate:.3})))"
+        ));
+
+        assert!(
+            !run_builtin_rules(&doc)
+                .diagnostics
+                .iter()
+                .any(|item| item.code == "SCH005")
+        );
+    }
+
     /// Confirms both the pin's position and electrical axis follow the placed symbol's rotation and mirror transform.
     #[test]
     fn pin_axis_and_position_follow_symbol_rotation_and_mirroring() {
