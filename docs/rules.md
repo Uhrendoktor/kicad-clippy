@@ -1,6 +1,6 @@
 # Built-in rules
 
-The current built-in catalogue defines stable schematic IDs SCH001–SCH028 plus PCB001 and PCB009 and separates reusable schematic checks from project-profile and board-level contracts.
+The current built-in catalogue defines stable schematic IDs SCH001–SCH029 plus PCB001 and PCB009 and separates reusable schematic checks from project-profile and board-level contracts.
 
 | ID | Historical rule | Rust status |
 | --- | --- | --- |
@@ -35,11 +35,16 @@ The current built-in catalogue defines stable schematic IDs SCH001–SCH028 plus
 | PCB001 | Decoupling pad proximity | Implemented partial: checks opt-in `decoupling.max_target_pad_distance_mm` between transformed target IC pad and capacitor target-pad centers, verifies capacitor return-pad agreement with `return_net`, and checks optional board/netlist parity; routed copper, vias, zones and return-loop checks remain future work |
 | PCB009 | Test-point pad exposure and contact size | Implemented partial, opt-in: verifies required test-point reference/pad numbers exist on the PCB, match the declared net, and include copper plus solder-mask layers; an optional `attributes.minimum_probe_pad_width_mm` threshold checks the smaller dimension of circle, rectangle, oval, and round-rectangle pads after uniform footprint scaling; custom pads and non-uniform scales are unverified; probe approach and fixture/enclosure access remain future work |
 
+| SCH029 | Component population metadata | Implemented opt-in through `components.<reference>.attributes.population` (`populated` or `dnp`); checks the saved base-design `(dnp yes/no)` flag and rejects blank or placeholder Value fields; variant overrides are explicitly unverified |
 ## Descriptor catalogue
 
-The core module exports `builtin_rule_registry()`, which builds one descriptive `RuleDescriptor` for every value in `BuiltinRuleId::ALL` (SCH001–SCH028, PCB001 and PCB009). A regression test keeps the typed identifiers and descriptor catalogue in one-to-one correspondence and requires each descriptor to include a category, summary, rationale, documentation link, and searchable tags. The registry is deterministic and rejects duplicate IDs.
+The core module exports `builtin_rule_registry()`, which builds one descriptive `RuleDescriptor` for every value in `BuiltinRuleId::ALL` (SCH001–SCH029, PCB001 and PCB009). A regression test keeps the typed identifiers and descriptor catalogue in one-to-one correspondence and requires each descriptor to include a category, summary, rationale, documentation link, and searchable tags. The registry is deterministic and rejects duplicate IDs.
 
 When `--policy FILE` is supplied, the CLI uses descriptor `default_level` values as the `default` preset and supports `strict` and `advisory` baselines plus per-rule `allow`, `warn`, and `deny` overrides. Without a policy file, existing rule-emitted severities remain unchanged. Policy changes apply only to built-in `SCHnnn` diagnostics; native KiCad ERC findings are not altered. See [rule policy](rule-policy.md).
+
+## SCH029 population boundary
+
+SCH029 is opt-in through `components.<reference>.attributes.population`, whose accepted values are `populated` and `dnp`. It compares that declared intent with the placed symbol's base-design `(dnp yes|no)` attribute and requires the actual Value property to remain a meaningful component value rather than a blank, `NC`, or DNP placeholder. It does not infer population from reference designators, electrical connectivity, `in_bom`, or `on_board` flags. A symbol with serialized design-variant overrides emits an unverified warning because SCH029 currently checks the saved base design and does not select an active project variant. KiCad variant BOM/position-file exclusions are independent of DNP and remain outside this rule.
 
 ## Rule boundaries
 
