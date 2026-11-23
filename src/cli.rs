@@ -873,28 +873,76 @@ fn expand_netclass_bus_pattern_at_depth(pattern: &str, depth: usize) -> Option<V
 
     Some(vec![pattern.to_owned()])
 }
-/// Parses a simple numeric bus vector such as `/DATA[0..7]` or `D_{[1..2]}`.
+/// Parses a numeric bus vector with KiCad-style format wrappers and differential suffixes.
 ///
 /// # Arguments
 ///
-/// * `pattern` — Candidate bus-vector pattern containing a prefix, numeric range, and optional suffix.
+/// * `pattern` — Candidate bus-vector pattern containing a numeric range and optional formatting/suffix characters.
 ///
 /// # Returns
 ///
-/// The literal prefix, inclusive numeric range, and literal suffix when the pattern is supported.
-fn parse_netclass_bus_vector(pattern: &str) -> Option<(&str, usize, usize, &str)> {
-    let opening_bracket = pattern.rfind('[')?;
+/// The normalized name prefix, inclusive range endpoints, and supported suffix; unsupported notation is unresolved.
+fn parse_netclass_bus_vector(pattern: &str) -> Option<(String, usize, usize, String)> {
+    // Quoted/escaped vector prefixes need KiCad's full string-unescaping rules; do not guess them.
+    if pattern.as_bytes().contains(&92) || pattern.contains('"') {
+        return None;
+    }
+
+    let opening_bracket = pattern.find('[')?;
     let closing_bracket = pattern[opening_bracket + 1..].find(']')? + opening_bracket + 1;
     let range = &pattern[opening_bracket + 1..closing_bracket];
-    let suffix = &pattern[closing_bracket + 1..];
-    let prefix = &pattern[..opening_bracket];
+    let prefix_source = &pattern[..opening_bracket];
+    let suffix_source = &pattern[closing_bracket + 1..];
 
     if range.contains('[')
         || range.contains(']')
-        || prefix.contains(']')
-        || suffix.contains('[')
-        || suffix.contains(']')
+        || prefix_source.contains(']')
+        || suffix_source.contains('[')
+        || suffix_source.contains(']')
     {
+        return None;
+    }
+
+    let mut format_braces = Vec::new();
+    for (index, character) in prefix_source.char_indices() {
+        match character {
+            '{' => {
+                let marker = prefix_source[..index].chars().next_back()?;
+                if !matches!(marker, '_' | '^' | '~') {
+                    return None;
+                }
+                format_braces.push((index, marker));
+            }
+            '}' => {
+                format_braces.pop()?;
+            }
+            _ => {}
+        }
+    }
+
+    let (mut prefix, wraps_member_name) = match format_braces.as_slice() {
+        [] => (prefix_source.to_owned(), false),
+        [(opening, marker)] if *opening + 1 == prefix_source.len() => {
+            let marker_start = opening.checked_sub(marker.len_utf8())?;
+            (prefix_source[..marker_start].to_owned(), false)
+        }
+        [(_, _)] => (prefix_source.to_owned(), true),
+        _ => return None,
+    };
+
+    let mut suffix = String::new();
+    let mut closes_name_wrapper = false;
+    for character in suffix_source.chars() {
+        match character {
+            '}' if wraps_member_name && !closes_name_wrapper => {
+                suffix.push(character);
+                closes_name_wrapper = true;
+            }
+            '+' | '-' | 'P' | 'N' => suffix.push(character),
+            _ => return None,
+        }
+    }
+    if wraps_member_name != closes_name_wrapper {
         return None;
     }
 
@@ -909,7 +957,7 @@ fn parse_netclass_bus_vector(pattern: &str) -> Option<(&str, usize, usize, &str)
 
     let first = first.parse::<usize>().ok()?;
     let last = last.parse::<usize>().ok()?;
-    (first != last).then_some((prefix, first, last, suffix))
+    (first != last).then_some((std::mem::take(&mut prefix), first, last, suffix))
 }
 /// Parses a simple bus group into its top-level member patterns.
 ///
@@ -1756,17 +1804,17 @@ SCH019 = "allow"
             );
         }
     }
-    /// Expands numeric bus vectors while retaining suffix text around formatted subscript notation.
+    /// Expands a subscript wrapper that decorates only the bus range into plain member names.
     #[test]
-    fn bus_vector_netclass_patterns_preserve_suffixes() {
+    fn bus_vector_netclass_patterns_strip_range_formatting_wrapper() {
         let mut project = project_fixture();
         project["net_settings"]["netclass_patterns"] =
             serde_json::json!([{"pattern": "D_{[1..2]}", "netclass": "HighSpeed"}]);
         let netlist = Netlist {
             nets: BTreeMap::from([(
-                "D_{2}".to_owned(),
+                "D2".to_owned(),
                 crate::erc::NetlistNet {
-                    name: "D_{2}".to_owned(),
+                    name: "D2".to_owned(),
                     class_name: Some("HighSpeed".to_owned()),
                     nodes: Vec::new(),
                 },
@@ -1775,7 +1823,53 @@ SCH019 = "allow"
         };
 
         assert_eq!(
-            project_netclass_wire_width_mm(&project, &netlist, "D_{2}"),
+            project_netclass_wire_width_mm(&project, &netlist, "D2"),
+            Some(0.4572)
+        );
+    }
+    /// Preserves a formatting wrapper that decorates the member name itself.
+    #[test]
+    fn bus_vector_netclass_patterns_preserve_name_formatting_wrapper() {
+        let mut project = project_fixture();
+        project["net_settings"]["netclass_patterns"] =
+            serde_json::json!([{"pattern": "~{BE[0..1]}", "netclass": "HighSpeed"}]);
+        let netlist = Netlist {
+            nets: BTreeMap::from([(
+                "~{BE1}".to_owned(),
+                crate::erc::NetlistNet {
+                    name: "~{BE1}".to_owned(),
+                    class_name: Some("HighSpeed".to_owned()),
+                    nodes: Vec::new(),
+                },
+            )]),
+            ..Netlist::default()
+        };
+
+        assert_eq!(
+            project_netclass_wire_width_mm(&project, &netlist, "~{BE1}"),
+            Some(0.4572)
+        );
+    }
+    /// Preserves supported polarity suffixes when expanding numeric bus vectors.
+    #[test]
+    fn bus_vector_netclass_patterns_preserve_suffixes() {
+        let mut project = project_fixture();
+        project["net_settings"]["netclass_patterns"] =
+            serde_json::json!([{"pattern": "/DATA[1..2]+", "netclass": "HighSpeed"}]);
+        let netlist = Netlist {
+            nets: BTreeMap::from([(
+                "/DATA2+".to_owned(),
+                crate::erc::NetlistNet {
+                    name: "/DATA2+".to_owned(),
+                    class_name: Some("HighSpeed".to_owned()),
+                    nodes: Vec::new(),
+                },
+            )]),
+            ..Netlist::default()
+        };
+
+        assert_eq!(
+            project_netclass_wire_width_mm(&project, &netlist, "/DATA2+"),
             Some(0.4572)
         );
     }
