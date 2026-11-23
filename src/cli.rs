@@ -920,29 +920,31 @@ fn parse_netclass_bus_vector(pattern: &str) -> Option<(String, usize, usize, Str
         }
     }
 
-    let (mut prefix, wraps_member_name) = match format_braces.as_slice() {
-        [] => (prefix_source.to_owned(), false),
+    let (prefix, wraps_member_name, expects_closing_brace) = match format_braces.as_slice() {
+        [] => (prefix_source.to_owned(), false, false),
         [(opening, marker)] if *opening + 1 == prefix_source.len() => {
             let marker_start = opening.checked_sub(marker.len_utf8())?;
-            (prefix_source[..marker_start].to_owned(), false)
+            (prefix_source[..marker_start].to_owned(), false, true)
         }
-        [(_, _)] => (prefix_source.to_owned(), true),
+        [(_, _)] => (prefix_source.to_owned(), true, true),
         _ => return None,
     };
 
     let mut suffix = String::new();
-    let mut closes_name_wrapper = false;
+    let mut closes_format_wrapper = false;
     for character in suffix_source.chars() {
         match character {
-            '}' if wraps_member_name && !closes_name_wrapper => {
-                suffix.push(character);
-                closes_name_wrapper = true;
+            '}' if expects_closing_brace && !closes_format_wrapper => {
+                if wraps_member_name {
+                    suffix.push(character);
+                }
+                closes_format_wrapper = true;
             }
             '+' | '-' | 'P' | 'N' => suffix.push(character),
             _ => return None,
         }
     }
-    if wraps_member_name != closes_name_wrapper {
+    if expects_closing_brace != closes_format_wrapper {
         return None;
     }
 
@@ -957,7 +959,7 @@ fn parse_netclass_bus_vector(pattern: &str) -> Option<(String, usize, usize, Str
 
     let first = first.parse::<usize>().ok()?;
     let last = last.parse::<usize>().ok()?;
-    (first != last).then_some((std::mem::take(&mut prefix), first, last, suffix))
+    (first != last).then_some((prefix, first, last, suffix))
 }
 /// Parses a simple bus group into its top-level member patterns.
 ///
