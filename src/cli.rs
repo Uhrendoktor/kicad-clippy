@@ -1185,7 +1185,7 @@ fn netclass_pattern_matches(pattern: &str, candidate: &str) -> Option<bool> {
     };
     Some(regex_match || wildcard_pattern_matches(pattern, candidate))
 }
-/// Recognizes balanced KiCad formatting wrappers that are literal text in net names.
+/// Recognizes balanced `KiCad` formatting wrappers that are literal text in net names.
 ///
 /// # Arguments
 ///
@@ -1209,11 +1209,8 @@ fn has_supported_kicad_formatting_wrapper(pattern: &str) -> bool {
                 found_wrapper = true;
                 wrappers.push(marker);
             }
-            '}' => {
-                if wrappers.pop().is_none() {
-                    return false;
-                }
-            }
+            '}' if wrappers.pop().is_none() => return false,
+            '}' => {}
             _ => {}
         }
     }
