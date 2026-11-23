@@ -306,16 +306,19 @@ pub enum LabelScopeKind {
     Hierarchical,
 }
 
-/// Project-specific policy for global-label use and required label scopes on the loaded sheet.
+/// Project-specific policy for global-label use and required label scopes on one sheet or its referenced hierarchy.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct LabelScopePolicy {
-    /// When present, the only global label names permitted on the loaded sheet. An empty set forbids all global labels.
+    /// Apply the policy to the root schematic and every readable referenced child sheet, loading each canonical file once.
+    #[serde(default)]
+    pub project_wide: bool,
+    /// When present, the only global label names permitted on the loaded sheet or project hierarchy. An empty set forbids all global labels.
     #[serde(default)]
     pub allowed_global_labels: Option<BTreeSet<String>>,
-    /// Global label names forbidden on the loaded sheet, even when an allow-list is configured.
+    /// Global label names forbidden on the loaded sheet or project hierarchy, even when an allow-list is configured.
     #[serde(default)]
     pub forbidden_global_labels: BTreeSet<String>,
-    /// Label names and their required scopes on the loaded sheet.
+    /// Label names and their required scopes on the loaded sheet or project hierarchy.
     #[serde(default)]
     pub required_label_scopes: BTreeMap<String, LabelScopeKind>,
 }
@@ -598,9 +601,21 @@ impl LintProfile {
             netlist,
         };
         let mut diagnostics = Vec::new();
-        diagnostics.extend(
-            crate::rules::additional_profile_rules::validate_profile_extensions(self, &facts),
-        );
+        if self
+            .label_scope_policy
+            .as_ref()
+            .is_some_and(|policy| policy.project_wide)
+        {
+            diagnostics.extend(
+                crate::rules::additional_profile_rules::validate_profile_extensions_with_document(
+                    self, &facts, document,
+                ),
+            );
+        } else {
+            diagnostics.extend(
+                crate::rules::additional_profile_rules::validate_profile_extensions(self, &facts),
+            );
+        }
         diagnostics.extend(sch021::Sch021.check(&context));
         diagnostics.extend(sch020::Sch020.check(&context));
         diagnostics.extend(sch022::Sch022.check(&context));

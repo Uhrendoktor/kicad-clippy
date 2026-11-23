@@ -4,6 +4,8 @@ Notable changes are documented here. This project is in early development and ha
 
 ## Unreleased
 
+- SCH027 now supports an opt-in `label_scope_policy.project_wide` mode that aggregates global-label restrictions and required scopes across readable referenced child sheets, with cycle/reuse protection and unverified warnings for missing or invalid children.
+
 - PCB009 can now enforce an opt-in `attributes.minimum_probe_pad_width_mm` contract for supported circle, rectangle, oval, and round-rectangle test-point pads after uniform footprint scaling. Unsupported pad geometry remains unverified.
 
 - Added opt-in SCH029 component population checks through `attributes.population`; verifies the saved base-design DNP flag, preserves meaningful Value text, and warns when KiCad design-variant overrides prevent validating an effective selected variant.
