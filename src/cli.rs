@@ -929,7 +929,7 @@ fn parse_netclass_bus_group(pattern: &str) -> Option<Vec<String>> {
         if in_quotes {
             if escaped {
                 escaped = false;
-            } else if character == '\\\\' {
+            } else if character as u32 == 92 {
                 escaped = true;
             } else if character == '"' {
                 in_quotes = false;
@@ -964,7 +964,7 @@ fn parse_netclass_bus_group(pattern: &str) -> Option<Vec<String>> {
         if in_quotes {
             if escaped {
                 escaped = false;
-            } else if character == '\\\\' {
+            } else if character as u32 == 92 {
                 escaped = true;
             } else if character == '"' {
                 in_quotes = false;
@@ -1012,10 +1012,12 @@ fn split_netclass_bus_group_members(body: &str) -> Option<Vec<String>> {
 
     while let Some(character) = characters.next() {
         if in_quotes {
-            match character {
-                '"' => in_quotes = false,
-                '\\\\' => current.push(characters.next()?),
-                _ => current.push(character),
+            if character == '"' {
+                in_quotes = false;
+            } else if character as u32 == 92 {
+                current.push(characters.next()?);
+            } else {
+                current.push(character);
             }
             continue;
         }
@@ -1024,7 +1026,7 @@ fn split_netclass_bus_group_members(body: &str) -> Option<Vec<String>> {
             in_quotes = true;
             continue;
         }
-        if character == '\\\\' && characters.peek() == Some(&' ') {
+        if character as u32 == 92 && characters.peek() == Some(&' ') {
             let _ = characters.next();
             current.push(' ');
             continue;
@@ -1147,7 +1149,7 @@ fn netclass_regex_escapes_are_supported(pattern: &str) -> bool {
                 return false;
             }
             escaped = false;
-        } else if byte == b'\\' {
+        } else if byte == 92 {
             escaped = true;
         }
     }
@@ -1778,7 +1780,10 @@ SCH019 = "allow"
     #[test]
     fn bus_group_member_splitter_handles_comma_and_quoted_names() {
         assert_eq!(
-            split_netclass_bus_group_members(r#"CLK, DATA[0..1] "DATA BUS" CTRL CLK"#),
+            split_netclass_bus_group_members(&format!(
+                r#"CLK, DATA[0..1] "DATA BUS" CTRL{} CLK"#,
+                char::from(92_u8)
+            )),
             Some(vec![
                 "CLK".to_owned(),
                 "DATA[0..1]".to_owned(),
