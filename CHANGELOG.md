@@ -39,7 +39,7 @@ Notable changes are documented here. This project is in early development and ha
 
 - Added SCH013 no-connect marker X strokes using KiCad's fixed 48-mil marker size; when `--project` supplies a positive `schematic.drawing.default_line_thickness`, its mil-to-mm pen width is combined with the wire width. Without project settings, checking remains centerline-only.
 
-- Added per-wire SCH013 netclass width resolution from the KiCad flattened netlist and project settings: exact/wildcard patterns, multiple explicit assignments, committed net-chain classes, class priorities and Default wire-width inheritance are supported when physical wire components map to one logical net; directive/rule-area assignments, regex/bus-expansion patterns and ambiguous components remain unknown.
+- Added per-wire SCH013 netclass width resolution for KiCad regex and wildcard patterns, bounded numeric bus-vector and bus-group expansion, multiple explicit assignments, committed net-chain classes, class priorities and Default wire-width inheritance; unsupported regex/bus syntax, schematic-local assignments and ambiguous components remain unknown.
 - Added SCH013 hierarchical sheet frame/body obstacles with local exceptions for wires terminating at matching sheet-pin anchors; wires continuing into the sheet body remain checked.
 - Corrected SCH013 embedded bitmap obstacles to use the serialized rotation and actual four-corner PNG/JPEG footprint instead of the axis-aligned bounding box; image dimensions still follow the existing version-aware PPI and scale rules.
 - Added SCH013 stroked bus-line and wire-to-bus entry obstacles; only wire endpoints matching a bus-entry anchor receive a local contact exception, and direct wire/bus crossings remain diagnosed.
