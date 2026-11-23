@@ -28,7 +28,7 @@ use regex::Regex;
 use serde::Serialize;
 use thiserror::Error;
 
-/// KiCad's default netclass wire width, in mils.
+/// `KiCad`'s default netclass wire width, in mils.
 const DEFAULT_NETCLASS_WIRE_WIDTH_MILS: f64 = 6.0;
 /// Maximum number of member patterns expanded from one project bus assignment.
 const MAX_NETCLASS_BUS_MEMBERS: usize = 4096;
@@ -811,7 +811,7 @@ fn add_pattern_netclass_assignments(
     }
     Some(())
 }
-/// Expands the supported KiCad bus-vector and bus-group forms used in project netclass patterns.
+/// Expands the supported `KiCad` bus-vector and bus-group forms used in project netclass patterns.
 ///
 /// # Arguments
 ///
@@ -1112,8 +1112,8 @@ fn has_supported_netclass_regex_quantifier(pattern: &str) -> bool {
 ///
 /// # Arguments
 ///
-/// * `pattern` — Expanded KiCad wildcard or regular-expression pattern used for the match.
-/// * `candidate` — Complete hierarchical net name exported by KiCad and checked against the pattern.
+/// * `pattern` — Expanded `KiCad` wildcard or regular-expression pattern used for the match.
+/// * `candidate` — Complete hierarchical net name exported by `KiCad` and checked against the pattern.
 ///
 /// # Returns
 ///
@@ -1136,7 +1136,7 @@ fn netclass_pattern_matches(pattern: &str, candidate: &str) -> Option<bool> {
 ///
 /// # Arguments
 ///
-/// * `pattern` — Expanded KiCad netclass pattern whose escape sequences are being checked.
+/// * `pattern` — Expanded `KiCad` netclass pattern whose escape sequences are being checked.
 ///
 /// # Returns
 ///
