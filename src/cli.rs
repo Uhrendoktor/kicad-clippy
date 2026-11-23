@@ -1154,7 +1154,7 @@ fn netclass_regex_escapes_are_supported(pattern: &str) -> bool {
                 return false;
             }
             escaped = false;
-        } else if byte == 92 {
+        } else if byte == b'\\' {
             escaped = true;
         }
     }
@@ -1677,14 +1677,24 @@ SCH019 = "allow"
         project["net_settings"]["netclass_patterns"] =
             serde_json::json!([{"pattern": "^/USB[0-9]+$", "netclass": "HighSpeed"}]);
         let netlist = Netlist {
-            nets: BTreeMap::from([(
-                "/USB42".to_owned(),
-                crate::erc::NetlistNet {
-                    name: "/USB42".to_owned(),
-                    class_name: Some("HighSpeed".to_owned()),
-                    nodes: Vec::new(),
-                },
-            )]),
+            nets: BTreeMap::from([
+                (
+                    "/USB42".to_owned(),
+                    crate::erc::NetlistNet {
+                        name: "/USB42".to_owned(),
+                        class_name: Some("HighSpeed".to_owned()),
+                        nodes: Vec::new(),
+                    },
+                ),
+                (
+                    "/USB42-extra".to_owned(),
+                    crate::erc::NetlistNet {
+                        name: "/USB42-extra".to_owned(),
+                        class_name: Some("HighSpeed".to_owned()),
+                        nodes: Vec::new(),
+                    },
+                ),
+            ]),
             ..Netlist::default()
         };
 
@@ -1750,7 +1760,7 @@ SCH019 = "allow"
     fn bus_group_netclass_patterns_expand_nested_member_vectors() {
         let mut project = project_fixture();
         project["net_settings"]["netclass_patterns"] =
-            serde_json::json!([{"pattern": "/PCI{North[0..2] South[3..5]}", "netclass": "HighSpeed"}]);
+            serde_json::json!([{"pattern": "/PCI{North[0..2], South[3..5]}", "netclass": "HighSpeed"}]);
 
         for net_name in ["North0", "North2", "South3", "South5"] {
             let netlist = Netlist {
@@ -1770,6 +1780,19 @@ SCH019 = "allow"
                 Some(0.4572)
             );
         }
+    }
+    /// Splits bus-group members on commas and whitespace while preserving quoted and escaped spaces.
+    #[test]
+    fn bus_group_member_splitter_handles_comma_and_quoted_names() {
+        assert_eq!(
+            split_netclass_bus_group_members(r#"CLK, DATA[0..1] "DATA BUS" CTRL\\ CLK"#),
+            Some(vec![
+                "CLK".to_owned(),
+                "DATA[0..1]".to_owned(),
+                "DATA BUS".to_owned(),
+                "CTRL CLK".to_owned(),
+            ])
+        );
     }
     /// Leaves unsupported regex extensions and unbounded bus ranges unresolved rather than guessing a class width.
     #[test]
