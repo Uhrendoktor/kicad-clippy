@@ -24,11 +24,18 @@ use crate::rules::{
 };
 use clap::{Parser, Subcommand, ValueEnum};
 use miette::{LabeledSpan, MietteDiagnostic, NamedSource, Report, Severity as RenderSeverity};
+use regex::Regex;
 use serde::Serialize;
 use thiserror::Error;
 
 /// `KiCad`'s default netclass wire width, in mils.
 const DEFAULT_NETCLASS_WIRE_WIDTH_MILS: f64 = 6.0;
+/// Maximum number of member patterns expanded from one project bus assignment.
+const MAX_NETCLASS_BUS_MEMBERS: usize = 4096;
+/// Maximum recursive nesting depth accepted when expanding project bus groups.
+const MAX_NETCLASS_BUS_EXPANSION_DEPTH: usize = 16;
+/// Minimum member count required for a string to be treated as a bus group.
+const MIN_NETCLASS_BUS_GROUP_MEMBERS: usize = 2;
 
 /// Clippy-inspired checks for `KiCad` schematic source files.
 #[derive(Debug, Parser)]
@@ -793,25 +800,460 @@ fn add_pattern_netclass_assignments(
             for assignment in patterns {
                 let pattern = assignment.get("pattern")?.as_str()?;
                 let class_name = assignment.get("netclass")?.as_str()?;
-                // Regex and bus-member expansion remain unresolved until their
-                // KiCad matcher semantics are represented by this resolver.
-                let pattern_bytes = pattern.as_bytes();
-                if pattern_bytes.contains(&b'^')
-                    || pattern_bytes.contains(&b'$')
-                    || (pattern.starts_with('/') && pattern.ends_with('/'))
-                    || pattern_bytes.contains(&b'[')
-                    || pattern_bytes.contains(&b'{')
-                {
-                    return None;
-                }
-                if wildcard_pattern_matches(pattern, net_name) {
-                    candidates.insert(class_name.to_owned());
+                for member_pattern in expand_netclass_bus_pattern(pattern)? {
+                    if netclass_pattern_matches(&member_pattern, net_name)? {
+                        candidates.insert(class_name.to_owned());
+                    }
                 }
             }
         }
         _ => return None,
     }
     Some(())
+}
+/// Expands the supported `KiCad` bus-vector and bus-group forms used in project netclass patterns.
+///
+/// # Arguments
+///
+/// * `pattern` — Original project netclass pattern, possibly containing a bus vector or group.
+///
+/// # Returns
+///
+/// The expanded member patterns, or the original pattern when it is not a recognized bus form.
+/// Returns `None` when a recognized expansion exceeds the conservative depth or member limits.
+fn expand_netclass_bus_pattern(pattern: &str) -> Option<Vec<String>> {
+    expand_netclass_bus_pattern_at_depth(pattern, 0)
+}
+/// Expands one bus pattern while enforcing recursion and output-size limits.
+///
+/// # Arguments
+///
+/// * `pattern` — Pattern or bus member to expand.
+/// * `depth` — Current recursive bus-group nesting depth.
+///
+/// # Returns
+///
+/// Expanded member patterns, or a singleton containing the original input when it is not a bus.
+fn expand_netclass_bus_pattern_at_depth(pattern: &str, depth: usize) -> Option<Vec<String>> {
+    if depth > MAX_NETCLASS_BUS_EXPANSION_DEPTH {
+        return None;
+    }
+
+    if let Some((prefix, first, last, suffix)) = parse_netclass_bus_vector(pattern) {
+        let member_count = first.abs_diff(last).checked_add(1)?;
+        if member_count > MAX_NETCLASS_BUS_MEMBERS {
+            return None;
+        }
+
+        let mut members = Vec::with_capacity(member_count);
+        for index in first.min(last)..=first.max(last) {
+            members.push(format!("{prefix}{index}{suffix}"));
+        }
+        return Some(members);
+    }
+
+    if let Some(group_members) = parse_netclass_bus_group(pattern) {
+        let mut expanded = Vec::new();
+        for member in group_members {
+            let mut member_patterns = expand_netclass_bus_pattern_at_depth(&member, depth + 1)?;
+            if expanded.len().saturating_add(member_patterns.len()) > MAX_NETCLASS_BUS_MEMBERS {
+                return None;
+            }
+            expanded.append(&mut member_patterns);
+        }
+        return Some(expanded);
+    }
+
+    if pattern.contains('{') || pattern.contains('}') {
+        // Do not treat unrecognized formatting/group braces as a literal netclass pattern.
+        if !has_supported_netclass_regex_quantifier(pattern) {
+            return None;
+        }
+    }
+
+    Some(vec![pattern.to_owned()])
+}
+/// Parses a numeric bus vector with KiCad-style format wrappers and differential suffixes.
+///
+/// # Arguments
+///
+/// * `pattern` — Candidate bus-vector pattern containing a numeric range and optional formatting/suffix characters.
+///
+/// # Returns
+///
+/// The normalized name prefix, inclusive range endpoints, and supported suffix; unsupported notation is unresolved.
+fn parse_netclass_bus_vector(pattern: &str) -> Option<(String, usize, usize, String)> {
+    // Quoted/escaped vector prefixes need KiCad's full string-unescaping rules; do not guess them.
+    if pattern.as_bytes().contains(&92) || pattern.contains('"') {
+        return None;
+    }
+
+    let opening_bracket = pattern.find('[')?;
+    let closing_bracket = pattern[opening_bracket + 1..].find(']')? + opening_bracket + 1;
+    let range = &pattern[opening_bracket + 1..closing_bracket];
+    let prefix_source = &pattern[..opening_bracket];
+    let suffix_source = &pattern[closing_bracket + 1..];
+
+    if range.contains('[')
+        || range.contains(']')
+        || prefix_source.contains(']')
+        || suffix_source.contains('[')
+        || suffix_source.contains(']')
+    {
+        return None;
+    }
+
+    let mut format_braces = Vec::new();
+    for (index, character) in prefix_source.char_indices() {
+        match character {
+            '{' => {
+                let marker = prefix_source[..index].chars().next_back()?;
+                if !matches!(marker, '_' | '^' | '~') {
+                    return None;
+                }
+                format_braces.push((index, marker));
+            }
+            '}' => {
+                format_braces.pop()?;
+            }
+            _ => {}
+        }
+    }
+
+    let (prefix, wraps_member_name, expects_closing_brace) = match format_braces.as_slice() {
+        [] => (prefix_source.to_owned(), false, false),
+        [(opening, marker)] if *opening + 1 == prefix_source.len() => {
+            let marker_start = opening.checked_sub(marker.len_utf8())?;
+            (prefix_source[..marker_start].to_owned(), false, true)
+        }
+        [(_, _)] => (prefix_source.to_owned(), true, true),
+        _ => return None,
+    };
+
+    let mut suffix = String::new();
+    let mut closes_format_wrapper = false;
+    for character in suffix_source.chars() {
+        match character {
+            '}' if expects_closing_brace && !closes_format_wrapper => {
+                if wraps_member_name {
+                    suffix.push(character);
+                }
+                closes_format_wrapper = true;
+            }
+            '+' | '-' | 'P' | 'N' => suffix.push(character),
+            _ => return None,
+        }
+    }
+    if expects_closing_brace != closes_format_wrapper {
+        return None;
+    }
+
+    let (first, last) = range.split_once("..")?;
+    if first.is_empty()
+        || last.is_empty()
+        || !first.bytes().all(|byte| byte.is_ascii_digit())
+        || !last.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return None;
+    }
+
+    let first = first.parse::<usize>().ok()?;
+    let last = last.parse::<usize>().ok()?;
+    (first != last).then_some((prefix, first, last, suffix))
+}
+/// Parses a simple bus group into its top-level member patterns.
+///
+/// # Arguments
+///
+/// * `pattern` — Candidate bus-group pattern such as `/PCI{North[0..2] South[3..5]}`.
+///
+/// # Returns
+///
+/// The top-level members when a balanced group with at least two members is recognized.
+fn parse_netclass_bus_group(pattern: &str) -> Option<Vec<String>> {
+    let mut in_quotes = false;
+    let mut escaped = false;
+    let mut opening_brace = None;
+    for (index, character) in pattern.char_indices() {
+        if in_quotes {
+            if escaped {
+                escaped = false;
+            } else if character as u32 == 92 {
+                escaped = true;
+            } else if character == '"' {
+                in_quotes = false;
+            }
+            continue;
+        }
+
+        if character == '"' {
+            in_quotes = true;
+            continue;
+        }
+        if character != '{' {
+            continue;
+        }
+
+        let formatting_marker_precedes_brace = pattern[..index]
+            .chars()
+            .next_back()
+            .is_some_and(|preceding| matches!(preceding, '_' | '^' | '~'));
+        if !formatting_marker_precedes_brace {
+            opening_brace = Some(index);
+            break;
+        }
+    }
+    let opening_brace = opening_brace?;
+
+    let mut nesting = 0_usize;
+    let mut in_quotes = false;
+    let mut escaped = false;
+    let mut closing_brace = None;
+    for (relative_index, character) in pattern[opening_brace..].char_indices() {
+        if in_quotes {
+            if escaped {
+                escaped = false;
+            } else if character as u32 == 92 {
+                escaped = true;
+            } else if character == '"' {
+                in_quotes = false;
+            }
+            continue;
+        }
+
+        match character {
+            '"' => in_quotes = true,
+            '{' => nesting += 1,
+            '}' => {
+                nesting = nesting.checked_sub(1)?;
+                if nesting == 0 {
+                    closing_brace = Some(opening_brace + relative_index);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let closing_brace = closing_brace?;
+    if closing_brace + 1 != pattern.len() {
+        return None;
+    }
+
+    let members = split_netclass_bus_group_members(&pattern[opening_brace + 1..closing_brace])?;
+    (members.len() >= MIN_NETCLASS_BUS_GROUP_MEMBERS).then_some(members)
+}
+/// Splits a bus-group body on whitespace or commas outside nested bus vectors and groups.
+///
+/// # Arguments
+///
+/// * `body` — Text between the outer bus-group braces.
+///
+/// # Returns
+///
+/// Top-level member tokens, or `None` when nested delimiters or quoted names are unbalanced.
+fn split_netclass_bus_group_members(body: &str) -> Option<Vec<String>> {
+    let mut members = Vec::new();
+    let mut current = String::new();
+    let mut brace_depth = 0_usize;
+    let mut bracket_depth = 0_usize;
+    let mut in_quotes = false;
+    let mut characters = body.chars().peekable();
+
+    while let Some(character) = characters.next() {
+        if in_quotes {
+            if character == '"' {
+                in_quotes = false;
+            } else if character as u32 == 92 {
+                current.push(characters.next()?);
+            } else {
+                current.push(character);
+            }
+            continue;
+        }
+
+        if character == '"' {
+            in_quotes = true;
+            continue;
+        }
+        if character as u32 == 92 && characters.peek() == Some(&' ') {
+            let _ = characters.next();
+            current.push(' ');
+            continue;
+        }
+
+        match character {
+            '{' => {
+                brace_depth += 1;
+                current.push(character);
+            }
+            '}' => {
+                brace_depth = brace_depth.checked_sub(1)?;
+                current.push(character);
+            }
+            '[' => {
+                bracket_depth += 1;
+                current.push(character);
+            }
+            ']' => {
+                bracket_depth = bracket_depth.checked_sub(1)?;
+                current.push(character);
+            }
+            separator
+                if (separator.is_whitespace() || separator == ',')
+                    && brace_depth == 0
+                    && bracket_depth == 0 =>
+            {
+                if !current.is_empty() {
+                    members.push(std::mem::take(&mut current));
+                }
+            }
+            _ => current.push(character),
+        }
+    }
+
+    if in_quotes || brace_depth != 0 || bracket_depth != 0 {
+        return None;
+    }
+    if !current.is_empty() {
+        members.push(current);
+    }
+    Some(members)
+}
+/// Checks whether all brace pairs in a pattern form supported regular-expression quantifiers.
+///
+/// # Arguments
+///
+/// * `pattern` — Pattern containing braces that were not parsed as a bus group.
+///
+/// # Returns
+///
+/// `true` when each brace pair is a numeric quantifier such as `{2}`, `{2,4}`, or `{2,}`.
+fn has_supported_netclass_regex_quantifier(pattern: &str) -> bool {
+    let mut remaining = pattern;
+    while let Some(opening) = remaining.find('{') {
+        let Some(closing) = remaining[opening + 1..].find('}') else {
+            return false;
+        };
+        let closing = opening + 1 + closing;
+        let quantifier = &remaining[opening + 1..closing];
+        let previous = remaining[..opening].chars().next_back();
+        let previous_can_be_repeated = previous.is_some_and(|character| {
+            character.is_ascii_alphanumeric()
+                || matches!(character, ')' | ']' | '}' | '.' | '*' | '+' | '?')
+        });
+        let (minimum, maximum) = quantifier
+            .split_once(',')
+            .map_or((quantifier, None), |(minimum, maximum)| {
+                (minimum, Some(maximum))
+            });
+        let valid_minimum =
+            !minimum.is_empty() && minimum.bytes().all(|byte| byte.is_ascii_digit());
+        let valid_maximum = maximum.is_none_or(|value| {
+            value.is_empty() || value.bytes().all(|byte| byte.is_ascii_digit())
+        });
+        if !previous_can_be_repeated || !valid_minimum || !valid_maximum {
+            return false;
+        }
+        remaining = &remaining[closing + 1..];
+    }
+    !remaining.contains('}')
+}
+/// Determines whether one expanded netclass pattern matches a complete exported net name.
+///
+/// # Arguments
+///
+/// * `pattern` — Expanded `KiCad` wildcard or regular-expression pattern used for the match.
+/// * `candidate` — Complete hierarchical net name exported by `KiCad` and checked against the pattern.
+///
+/// # Returns
+///
+/// `Some(true/false)` for supported patterns; `None` when extensions outside the supported
+/// expression subset would make a negative match unsafe to infer.
+fn netclass_pattern_matches(pattern: &str, candidate: &str) -> Option<bool> {
+    if pattern.contains("(?") || !netclass_regex_escapes_are_supported(pattern) {
+        return None;
+    }
+
+    let regex_source = format!("^(?:{pattern})$");
+    let regex_match = match Regex::new(&regex_source) {
+        Ok(regex) => regex.is_match(candidate),
+        Err(_) if has_supported_kicad_formatting_wrapper(pattern) => {
+            return Some(wildcard_pattern_matches(pattern, candidate));
+        }
+        Err(_) if pattern_has_regex_metacharacters(pattern) => return None,
+        Err(_) => false,
+    };
+    Some(regex_match || wildcard_pattern_matches(pattern, candidate))
+}
+/// Recognizes balanced `KiCad` formatting wrappers that are literal text in net names.
+///
+/// # Arguments
+///
+/// * `pattern` — Netclass pattern whose balanced formatting wrappers are being identified.
+///
+/// # Returns
+///
+/// `true` when every brace pair is a supported `_`, `^`, or `~` formatting wrapper.
+fn has_supported_kicad_formatting_wrapper(pattern: &str) -> bool {
+    let mut wrappers = Vec::new();
+    let mut found_wrapper = false;
+    for (index, character) in pattern.char_indices() {
+        match character {
+            '{' => {
+                let Some(marker) = pattern[..index].chars().next_back() else {
+                    return false;
+                };
+                if !matches!(marker, '_' | '^' | '~') {
+                    return false;
+                }
+                found_wrapper = true;
+                wrappers.push(marker);
+            }
+            '}' if wrappers.pop().is_none() => return false,
+            _ => {}
+        }
+    }
+    found_wrapper && wrappers.is_empty()
+}
+/// Checks whether every backslash escape belongs to the supported regular-expression subset.
+///
+/// # Arguments
+///
+/// * `pattern` — Expanded `KiCad` netclass pattern whose escape sequences are being checked.
+///
+/// # Returns
+///
+/// `true` when every escape quotes a supported regular-expression metacharacter; otherwise `false`.
+fn netclass_regex_escapes_are_supported(pattern: &str) -> bool {
+    let mut escaped = false;
+    for byte in pattern.bytes() {
+        if escaped {
+            if !b"\\.^$*+?()[]{}|".contains(&byte) {
+                return false;
+            }
+            escaped = false;
+        } else if byte == 92 {
+            escaped = true;
+        }
+    }
+    !escaped
+}
+/// Checks whether a pattern uses syntax that cannot safely be treated as a wildcard-only pattern.
+///
+/// # Arguments
+///
+/// * `pattern` — Project netclass pattern whose metacharacters decide whether a failed regex compile stays unresolved.
+///
+/// # Returns
+///
+/// `true` when regular-expression syntax is present and a failed regex compile must remain unresolved.
+fn pattern_has_regex_metacharacters(pattern: &str) -> bool {
+    pattern.chars().any(|character| {
+        matches!(
+            character as u32,
+            94 | 36 | 91 | 93 | 40 | 41 | 43 | 124 | 123 | 125 | 92
+        )
+    })
 }
 /// Adds netclass names inherited from committed net chains containing the logical net.
 ///
@@ -1093,7 +1535,8 @@ mod tests {
 
     use super::{
         Summary, parse_rule_policy, project_default_schematic_line_stroke_width_mm,
-        project_netclass_wire_width_mm, project_wire_stroke_widths_mm, wildcard_pattern_matches,
+        project_netclass_wire_width_mm, project_wire_stroke_widths_mm,
+        split_netclass_bus_group_members, wildcard_pattern_matches,
     };
     use crate::erc::Netlist;
     use crate::rules::SchematicFacts;
@@ -1300,10 +1743,244 @@ SCH019 = "allow"
         };
         assert_eq!(
             project_netclass_wire_width_mm(&project, &netlist, "/USB1"),
-            None
+            Some(0.4572)
         );
 
         project["net_settings"]["netclass_patterns"] = serde_json::json!([]);
+        assert_eq!(
+            project_netclass_wire_width_mm(&project, &netlist, "/USB1"),
+            None
+        );
+    }
+    /// Resolves a regular-expression netclass pattern against the complete hierarchical net name.
+    #[test]
+    fn regex_netclass_patterns_match_complete_net_names() {
+        let mut project = project_fixture();
+        project["net_settings"]["netclass_patterns"] =
+            serde_json::json!([{"pattern": "^/USB[0-9]+$", "netclass": "HighSpeed"}]);
+        let netlist = Netlist {
+            nets: BTreeMap::from([
+                (
+                    "/USB42".to_owned(),
+                    crate::erc::NetlistNet {
+                        name: "/USB42".to_owned(),
+                        class_name: Some("HighSpeed".to_owned()),
+                        nodes: Vec::new(),
+                    },
+                ),
+                (
+                    "/USB42-extra".to_owned(),
+                    crate::erc::NetlistNet {
+                        name: "/USB42-extra".to_owned(),
+                        class_name: Some("HighSpeed".to_owned()),
+                        nodes: Vec::new(),
+                    },
+                ),
+            ]),
+            ..Netlist::default()
+        };
+
+        assert_eq!(
+            project_netclass_wire_width_mm(&project, &netlist, "/USB42"),
+            Some(0.4572)
+        );
+        assert_eq!(
+            project_netclass_wire_width_mm(&project, &netlist, "/USB42-extra"),
+            None
+        );
+    }
+    /// Applies the lower numeric priority when overlapping regex netclass patterns match one exported net.
+    #[test]
+    fn overlapping_regex_netclass_patterns_use_class_priority() {
+        let mut project = project_fixture();
+        project["net_settings"]["netclass_patterns"] = serde_json::json!([
+            {"pattern": "^/USB.*$", "netclass": "HighSpeed"},
+            {"pattern": "^/USB-C$", "netclass": "Critical"}
+        ]);
+        let netlist = Netlist {
+            nets: BTreeMap::from([(
+                "/USB-C".to_owned(),
+                crate::erc::NetlistNet {
+                    name: "/USB-C".to_owned(),
+                    class_name: Some("Effective for net: /USB-C".to_owned()),
+                    nodes: Vec::new(),
+                },
+            )]),
+            ..Netlist::default()
+        };
+
+        assert_eq!(
+            project_netclass_wire_width_mm(&project, &netlist, "/USB-C"),
+            Some(0.762)
+        );
+    }
+    /// Expands descending and ascending numeric bus-vector ranges before resolving their member nets.
+    #[test]
+    fn bus_vector_netclass_patterns_expand_member_ranges() {
+        let mut project = project_fixture();
+        project["net_settings"]["netclass_patterns"] =
+            serde_json::json!([{"pattern": "/DATA[7..0]", "netclass": "HighSpeed"}]);
+
+        for net_name in ["/DATA7", "/DATA3", "/DATA0"] {
+            let netlist = Netlist {
+                nets: BTreeMap::from([(
+                    net_name.to_owned(),
+                    crate::erc::NetlistNet {
+                        name: net_name.to_owned(),
+                        class_name: Some("HighSpeed".to_owned()),
+                        nodes: Vec::new(),
+                    },
+                )]),
+                ..Netlist::default()
+            };
+            assert_eq!(
+                project_netclass_wire_width_mm(&project, &netlist, net_name),
+                Some(0.4572)
+            );
+        }
+    }
+    /// Expands a subscript wrapper that decorates only the bus range into plain member names.
+    #[test]
+    fn bus_vector_netclass_patterns_strip_range_formatting_wrapper() {
+        let mut project = project_fixture();
+        project["net_settings"]["netclass_patterns"] =
+            serde_json::json!([{"pattern": "D_{[1..2]}", "netclass": "HighSpeed"}]);
+        let netlist = Netlist {
+            nets: BTreeMap::from([(
+                "D2".to_owned(),
+                crate::erc::NetlistNet {
+                    name: "D2".to_owned(),
+                    class_name: Some("HighSpeed".to_owned()),
+                    nodes: Vec::new(),
+                },
+            )]),
+            ..Netlist::default()
+        };
+
+        assert_eq!(
+            project_netclass_wire_width_mm(&project, &netlist, "D2"),
+            Some(0.4572)
+        );
+    }
+    /// Preserves a formatting wrapper that decorates the member name itself.
+    #[test]
+    fn bus_vector_netclass_patterns_preserve_name_formatting_wrapper() {
+        let mut project = project_fixture();
+        project["net_settings"]["netclass_patterns"] =
+            serde_json::json!([{"pattern": "~{BE[0..1]}", "netclass": "HighSpeed"}]);
+        let netlist = Netlist {
+            nets: BTreeMap::from([(
+                "~{BE1}".to_owned(),
+                crate::erc::NetlistNet {
+                    name: "~{BE1}".to_owned(),
+                    class_name: Some("HighSpeed".to_owned()),
+                    nodes: Vec::new(),
+                },
+            )]),
+            ..Netlist::default()
+        };
+
+        assert_eq!(
+            project_netclass_wire_width_mm(&project, &netlist, "~{BE1}"),
+            Some(0.4572)
+        );
+    }
+    /// Preserves supported polarity suffixes when expanding numeric bus vectors.
+    #[test]
+    fn bus_vector_netclass_patterns_preserve_suffixes() {
+        let mut project = project_fixture();
+        project["net_settings"]["netclass_patterns"] =
+            serde_json::json!([{"pattern": "/DATA[1..2]+", "netclass": "HighSpeed"}]);
+        let netlist = Netlist {
+            nets: BTreeMap::from([(
+                "/DATA2+".to_owned(),
+                crate::erc::NetlistNet {
+                    name: "/DATA2+".to_owned(),
+                    class_name: Some("HighSpeed".to_owned()),
+                    nodes: Vec::new(),
+                },
+            )]),
+            ..Netlist::default()
+        };
+
+        assert_eq!(
+            project_netclass_wire_width_mm(&project, &netlist, "/DATA2+"),
+            Some(0.4572)
+        );
+    }
+    /// Expands KiCad-style bus-group member vectors without carrying the group prefix into member net names.
+    #[test]
+    fn bus_group_netclass_patterns_expand_nested_member_vectors() {
+        let mut project = project_fixture();
+        project["net_settings"]["netclass_patterns"] = serde_json::json!([{"pattern": "/PCI{North[0..2], South[3..5]}", "netclass": "HighSpeed"}]);
+
+        for net_name in ["North0", "North2", "South3", "South5"] {
+            let netlist = Netlist {
+                nets: BTreeMap::from([(
+                    net_name.to_owned(),
+                    crate::erc::NetlistNet {
+                        name: net_name.to_owned(),
+                        class_name: Some("HighSpeed".to_owned()),
+                        nodes: Vec::new(),
+                    },
+                )]),
+                ..Netlist::default()
+            };
+
+            assert_eq!(
+                project_netclass_wire_width_mm(&project, &netlist, net_name),
+                Some(0.4572)
+            );
+        }
+    }
+    /// Splits bus-group members on commas and whitespace while preserving quoted and escaped spaces.
+    #[test]
+    fn bus_group_member_splitter_handles_comma_and_quoted_names() {
+        assert_eq!(
+            split_netclass_bus_group_members(&format!(
+                r#"CLK, DATA[0..1] "DATA BUS" CTRL{} CLK"#,
+                char::from(92_u8)
+            )),
+            Some(vec![
+                "CLK".to_owned(),
+                "DATA[0..1]".to_owned(),
+                "DATA BUS".to_owned(),
+                "CTRL CLK".to_owned(),
+            ])
+        );
+    }
+    /// Leaves unsupported regex extensions and unbounded bus ranges unresolved rather than guessing a class width.
+    #[test]
+    fn unsupported_regex_extensions_and_bus_expansion_limits_remain_unknown() {
+        let mut project = project_fixture();
+        let netlist = Netlist {
+            nets: BTreeMap::from([(
+                "/USB1".to_owned(),
+                crate::erc::NetlistNet {
+                    name: "/USB1".to_owned(),
+                    class_name: Some("HighSpeed".to_owned()),
+                    nodes: Vec::new(),
+                },
+            )]),
+            ..Netlist::default()
+        };
+
+        project["net_settings"]["netclass_patterns"] =
+            serde_json::json!([{"pattern": "^/USB(?=1)$", "netclass": "HighSpeed"}]);
+        assert_eq!(
+            project_netclass_wire_width_mm(&project, &netlist, "/USB1"),
+            None
+        );
+
+        project["net_settings"]["netclass_patterns"] =
+            serde_json::json!([{"pattern": "^/USB\\d+$", "netclass": "HighSpeed"}]);
+        assert_eq!(
+            project_netclass_wire_width_mm(&project, &netlist, "/USB1"),
+            None
+        );
+
+        project["net_settings"]["netclass_patterns"] =
+            serde_json::json!([{"pattern": "/DATA[0..5000]", "netclass": "HighSpeed"}]);
         assert_eq!(
             project_netclass_wire_width_mm(&project, &netlist, "/USB1"),
             None

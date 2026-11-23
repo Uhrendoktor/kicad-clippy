@@ -166,7 +166,9 @@ The following primary and vendor sources support the proposed design checks. Dat
 ### KiCad documentation
 
 - [KiCad 10 PCB Editor manual](https://docs.kicad.org/10.0/en/pcbnew/pcbnew.html) — native DRC, board setup constraints, high-speed constraints, footprint constraints, rule areas, stackup and fabrication checks.
-- [KiCad 10 Schematic Editor manual](https://docs.kicad.org/10.0/en/eeschema/eeschema.html) — wire endpoint connection semantics, local/global/hierarchical label scope, no-connect flag versus electrical pin type unconnected, ERC findings, grids and hierarchy.
+- [KiCad 10 Schematic Editor manual](https://docs.kicad.org/10.0/en/eeschema/eeschema.html) — wire endpoint connection semantics, local/global/hierarchical label scope, no-connect flag versus electrical pin type unconnected, ERC findings, grids and hierarchy. Its netclass section documents wildcard (`*`, `?`) and regular-expression patterns against full hierarchical net names.
+- [KiCad `NET_SETTINGS` implementation](https://docs.kicad.org/doxygen/net__settings_8cpp_source.html) — expands netclass patterns through `ForEachBusMember` before creating matchers; `ParseBusVector` and `ParseBusGroup` handle numeric vectors and recursively expanded groups.
+- [KiCad bus/netclass regression tests](https://docs.kicad.org/doxygen/test__issue16915__bus__netclass_8cpp.html) — covers `/IN[0..7]` member matching and `/PCI{North[0..2] South[3..5]}` nested group-vector expansion.
 
 ### Board-level design guidance
 
@@ -193,7 +195,7 @@ The following PR #27/#28 cases have also been implemented in follow-ups: univers
 
 Recommended future work, ordered by prerequisites:
 
-1. Continue strengthening family-specific SCH013 tests and diagnostic-parity regressions. Extend effective netclass resolution to KiCad regex/bus-member syntax and schematic directive-label, label-property and rule-area assignments only where project semantics can be resolved without guessing.
+1. Continue strengthening family-specific SCH013 tests and diagnostic-parity regressions. Extend effective netclass resolution to schematic directive-label, label-property and rule-area assignments only where project semantics can be resolved without guessing; supported project regex patterns and numeric bus-vector/group expansion are now implemented, including KiCad's distinction between formatting that decorates only the range (removed during expansion) and formatting that wraps the signal name (preserved), plus supported `+`, `-`, `P` and `N` suffixes. Quoted or escaped vector prefixes remain conservative/unknown.
 2. Improve SCH009/SCH012 coverage for unsupported image encodings and remaining annotation types; add exact curve-based body geometry where a validated transform/distance model is available.
 3. SCH006 now supports maximum pairwise body gaps for explicit cluster compactness and conservatively includes flattened circular-arc/cubic-Bézier body outlines with a documented tolerance margin. Extend it with adjacency and subgroup-nesting contracts; exact non-flattened curve-distance geometry remains future work. SCH005 axis checks now cover non-cardinal rotations where the transformed pin axis resolves.
 4. SCH029 now validates opt-in saved base-design population/DNP state and meaningful Value text; selected design-variant and approved BOM metadata remain future work. Expand role-specific schematic contracts for still-uncovered intent such as pull-up/pull-down topology, LED current limiting, protection paths, oscillator support and bulk-capacitor requirements. SCH021 connector pin-map completeness, SCH025 test-point coverage and SCH022 decoupling contracts already cover their documented opt-in slices; direction/mating-interface and physical fixture-access evidence remain future work.
