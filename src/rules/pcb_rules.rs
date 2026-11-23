@@ -1554,7 +1554,7 @@ mod test_point_tests {
     #[test]
     fn pcb009_uses_conservative_dimension_for_near_uniform_scale() {
         let diagnostics = validate_test_point_pad_access(
-            &minimum_probe_width_profile("1.0002"),
+            &minimum_probe_width_profile("1.0012"),
             &test_point_board_with_pad_geometry(
                 Some("VDD"),
                 "F.Cu",
