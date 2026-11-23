@@ -839,7 +839,7 @@ fn expand_netclass_bus_pattern_at_depth(pattern: &str, depth: usize) -> Option<V
         return None;
     }
 
-    if let Some((prefix, first, last)) = parse_netclass_bus_vector(pattern) {
+    if let Some((prefix, first, last, suffix)) = parse_netclass_bus_vector(pattern) {
         let member_count = first.abs_diff(last).checked_add(1)?;
         if member_count > MAX_NETCLASS_BUS_MEMBERS {
             return None;
@@ -848,11 +848,11 @@ fn expand_netclass_bus_pattern_at_depth(pattern: &str, depth: usize) -> Option<V
         let mut members = Vec::with_capacity(member_count);
         if first <= last {
             for index in first..=last {
-                members.push(format!("{prefix}{index}"));
+                members.push(format!("{prefix}{index}{suffix}"));
             }
         } else {
             for index in (last..=first).rev() {
-                members.push(format!("{prefix}{index}"));
+                members.push(format!("{prefix}{index}{suffix}"));
             }
         }
         return Some(members);
@@ -881,7 +881,7 @@ fn expand_netclass_bus_pattern_at_depth(pattern: &str, depth: usize) -> Option<V
 
     Some(vec![pattern.to_owned()])
 }
-/// Parses a simple numeric bus vector such as `/DATA[0..7]`.
+/// Parses a simple numeric bus vector such as `/DATA[0..7]` or `D_{[1..2]}`.
 ///
 /// # Arguments
 ///
@@ -889,11 +889,23 @@ fn expand_netclass_bus_pattern_at_depth(pattern: &str, depth: usize) -> Option<V
 ///
 /// # Returns
 ///
-/// The literal prefix and inclusive numeric range when the pattern is a supported vector.
-fn parse_netclass_bus_vector(pattern: &str) -> Option<(&str, usize, usize)> {
-    let without_closing_bracket = pattern.strip_suffix(']')?;
-    let opening_bracket = without_closing_bracket.rfind('[')?;
-    let range = &without_closing_bracket[opening_bracket + 1..];
+/// The literal prefix, inclusive numeric range, and literal suffix when the pattern is supported.
+fn parse_netclass_bus_vector(pattern: &str) -> Option<(&str, usize, usize, &str)> {
+    let opening_bracket = pattern.rfind('[')?;
+    let closing_bracket = pattern[opening_bracket + 1..].find(']')? + opening_bracket + 1;
+    let range = &pattern[opening_bracket + 1..closing_bracket];
+    let suffix = &pattern[closing_bracket + 1..];
+    let prefix = &pattern[..opening_bracket];
+
+    if range.contains('[')
+        || range.contains(']')
+        || prefix.contains(']')
+        || suffix.contains('[')
+        || suffix.contains(']')
+    {
+        return None;
+    }
+
     let (first, last) = range.split_once("..")?;
     if first.is_empty()
         || last.is_empty()
@@ -905,7 +917,7 @@ fn parse_netclass_bus_vector(pattern: &str) -> Option<(&str, usize, usize)> {
 
     let first = first.parse::<usize>().ok()?;
     let last = last.parse::<usize>().ok()?;
-    (first != last).then_some((&pattern[..opening_bracket], first, last))
+    (first != last).then_some((prefix, first, last, suffix))
 }
 /// Parses a simple bus group into its top-level member patterns.
 ///
@@ -917,21 +929,58 @@ fn parse_netclass_bus_vector(pattern: &str) -> Option<(&str, usize, usize)> {
 ///
 /// The top-level members when a balanced group with at least two members is recognized.
 fn parse_netclass_bus_group(pattern: &str) -> Option<Vec<String>> {
-    let opening_brace = pattern.char_indices().find_map(|(index, character)| {
-        if character != '{' {
-            return None;
+    let mut in_quotes = false;
+    let mut escaped = false;
+    let mut opening_brace = None;
+    for (index, character) in pattern.char_indices() {
+        if in_quotes {
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == '"' {
+                in_quotes = false;
+            }
+            continue;
         }
+
+        if character == '"' {
+            in_quotes = true;
+            continue;
+        }
+        if character != '{' {
+            continue;
+        }
+
         let formatting_marker_precedes_brace = pattern[..index]
             .chars()
             .next_back()
             .is_some_and(|preceding| matches!(preceding, '_' | '^' | '~'));
-        (!formatting_marker_precedes_brace).then_some(index)
-    })?;
+        if !formatting_marker_precedes_brace {
+            opening_brace = Some(index);
+            break;
+        }
+    }
+    let opening_brace = opening_brace?;
 
     let mut nesting = 0_usize;
+    let mut in_quotes = false;
+    let mut escaped = false;
     let mut closing_brace = None;
     for (relative_index, character) in pattern[opening_brace..].char_indices() {
+        if in_quotes {
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == '"' {
+                in_quotes = false;
+            }
+            continue;
+        }
+
         match character {
+            '"' => in_quotes = true,
             '{' => nesting += 1,
             '}' => {
                 nesting = nesting.checked_sub(1)?;
@@ -965,8 +1014,29 @@ fn split_netclass_bus_group_members(body: &str) -> Option<Vec<String>> {
     let mut current = String::new();
     let mut brace_depth = 0_usize;
     let mut bracket_depth = 0_usize;
+    let mut in_quotes = false;
+    let mut characters = body.chars().peekable();
 
-    for character in body.chars() {
+    while let Some(character) = characters.next() {
+        if in_quotes {
+            match character {
+                '"' => in_quotes = false,
+                '\\' => current.push(characters.next()?),
+                _ => current.push(character),
+            }
+            continue;
+        }
+
+        if character == '"' {
+            in_quotes = true;
+            continue;
+        }
+        if character == '\\' && characters.peek() == Some(&' ') {
+            let _ = characters.next();
+            current.push(' ');
+            continue;
+        }
+
         match character {
             '{' => {
                 brace_depth += 1;
@@ -984,7 +1054,7 @@ fn split_netclass_bus_group_members(body: &str) -> Option<Vec<String>> {
                 bracket_depth = bracket_depth.checked_sub(1)?;
                 current.push(character);
             }
-            whitespace if whitespace.is_whitespace()
+            separator if (separator.is_whitespace() || separator == ',')
                 && brace_depth == 0
                 && bracket_depth == 0 =>
             {
@@ -996,7 +1066,7 @@ fn split_netclass_bus_group_members(body: &str) -> Option<Vec<String>> {
         }
     }
 
-    if brace_depth != 0 || bracket_depth != 0 {
+    if in_quotes || brace_depth != 0 || bracket_depth != 0 {
         return None;
     }
     if !current.is_empty() {
@@ -1652,17 +1722,17 @@ SCH019 = "allow"
             );
         }
     }
-    /// Expands bus-group members and nested vector members without carrying the decorative group name into each net.
+    /// Expands numeric bus vectors while retaining suffix text around formatted subscript notation.
     #[test]
-    fn bus_group_netclass_patterns_expand_nested_member_vectors() {
+    fn bus_vector_netclass_patterns_preserve_suffixes() {
         let mut project = project_fixture();
         project["net_settings"]["netclass_patterns"] =
-            serde_json::json!([{"pattern": "/{ /SDA /CLOCK[0..1]}", "netclass": "HighSpeed"}]);
+            serde_json::json!([{"pattern": "D_{[1..2]}", "netclass": "HighSpeed"}]);
         let netlist = Netlist {
             nets: BTreeMap::from([(
-                "/CLOCK1".to_owned(),
+                "D_{2}".to_owned(),
                 crate::erc::NetlistNet {
-                    name: "/CLOCK1".to_owned(),
+                    name: "D_{2}".to_owned(),
                     class_name: Some("HighSpeed".to_owned()),
                     nodes: Vec::new(),
                 },
@@ -1671,9 +1741,35 @@ SCH019 = "allow"
         };
 
         assert_eq!(
-            project_netclass_wire_width_mm(&project, &netlist, "/CLOCK1"),
+            project_netclass_wire_width_mm(&project, &netlist, "D_{2}"),
             Some(0.4572)
         );
+    }
+    /// Expands bus-group members and nested vector members without carrying the decorative group name into each net.
+    #[test]
+    fn bus_group_netclass_patterns_expand_nested_member_vectors() {
+        let mut project = project_fixture();
+        project["net_settings"]["netclass_patterns"] =
+            serde_json::json!([{"pattern": "/PCI{North[0..2] South[3..5]}", "netclass": "HighSpeed"}]);
+
+        for net_name in ["North0", "North2", "South3", "South5"] {
+            let netlist = Netlist {
+                nets: BTreeMap::from([(
+                    net_name.to_owned(),
+                    crate::erc::NetlistNet {
+                        name: net_name.to_owned(),
+                        class_name: Some("HighSpeed".to_owned()),
+                        nodes: Vec::new(),
+                    },
+                )]),
+                ..Netlist::default()
+            };
+
+            assert_eq!(
+                project_netclass_wire_width_mm(&project, &netlist, net_name),
+                Some(0.4572)
+            );
+        }
     }
     /// Leaves unsupported regex extensions and unbounded bus ranges unresolved rather than guessing a class width.
     #[test]
