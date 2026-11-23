@@ -1785,7 +1785,7 @@ SCH019 = "allow"
     #[test]
     fn bus_group_member_splitter_handles_comma_and_quoted_names() {
         assert_eq!(
-            split_netclass_bus_group_members(r#"CLK, DATA[0..1] "DATA BUS" CTRL\\ CLK"#),
+            split_netclass_bus_group_members(r#"CLK, DATA[0..1] "DATA BUS" CTRL\ CLK"#),
             Some(vec![
                 "CLK".to_owned(),
                 "DATA[0..1]".to_owned(),
