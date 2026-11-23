@@ -4,7 +4,7 @@ This document describes the built-in rule identity and the intended execution co
 
 ## Built-in identifiers
 
-Use `BuiltinRuleId` for built-in rules. It is a closed enum covering SCH001–SCH022, provides stable string conversion for output, and rejects unknown built-in IDs when parsing. For example:
+Use `BuiltinRuleId` for built-in rules. It is a closed enum covering SCH001–SCH029 plus PCB001 and PCB009, provides stable string conversion for output, and rejects unknown built-in IDs when parsing. For example:
 
 ```rust
 use kicad_clippy_core::{BuiltinRuleId, Diagnostic, Severity};
@@ -21,7 +21,7 @@ Use the open-ended string namespace only for external diagnostics such as `KICAD
 
 ## Metadata and registration
 
-`RuleDescriptor` records the stable ID and explanatory metadata: name, category, summary, explanation, default level, optional documentation URL and tags. `builtin_rule_registry()` in `core` populates a deterministic descriptor for every value in `BuiltinRuleId::ALL` (SCH001–SCH022); it is the canonical built-in metadata catalogue. The completeness test ensures that adding a typed built-in ID without a descriptor fails validation. `RuleRegistry` is deterministic and rejects duplicate IDs.
+`RuleDescriptor` records the stable ID and explanatory metadata: name, category, summary, explanation, default level, optional documentation URL and tags. `builtin_rule_registry()` in `core` populates a deterministic descriptor for every value in `BuiltinRuleId::ALL` (SCH001–SCH029 plus PCB001 and PCB009); it is the canonical built-in metadata catalogue. The completeness test ensures that adding a typed built-in ID without a descriptor fails validation. `RuleRegistry` is deterministic and rejects duplicate IDs.
 
 When a policy file is supplied, `default_level` provides the baseline for the `default` preset. The `strict` and `advisory` presets replace that baseline, and explicit per-rule levels take precedence. Without a policy file, descriptor metadata does not change runtime diagnostics; the pre-existing rule-emitted severities remain in force. See [rule policy](rule-policy.md) for the TOML schema and CLI behavior.
 

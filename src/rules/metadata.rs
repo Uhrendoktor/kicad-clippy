@@ -77,6 +77,10 @@ mod sch026;
 #[path = "profile_rules/sch028.rs"]
 mod sch028;
 
+/// Checks `SCH029` profile-declared base-design population and DNP consistency.
+#[path = "profile_rules/sch029.rs"]
+mod sch029;
+
 /// Currently supported project-profile schema version.
 const SUPPORTED_PROFILE_SCHEMA_VERSION: u32 = 1;
 /// Minimum number of distinct pins required in a group contract.
@@ -618,6 +622,7 @@ impl LintProfile {
         diagnostics.extend(sch025::Sch025.check(&context));
         diagnostics.extend(sch026::Sch026.check(&context));
         diagnostics.extend(sch028::Sch028.check(&context));
+        diagnostics.extend(sch029::Sch029.check(&context));
         diagnostics.extend(sch014::Sch014.check(&context));
         diagnostics.extend(sch010::Sch010.check(&context));
         diagnostics.extend(sch017::Sch017.check(&context));

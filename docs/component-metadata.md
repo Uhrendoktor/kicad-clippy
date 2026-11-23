@@ -33,6 +33,30 @@ For a decoupler, metadata distinguishes the IC pin from the capacitor terminal: 
 
 Strict mode requires metadata for every placed component except references explicitly listed in ignore_components. Metadata for references absent from the schematic is an error. Every declared component must include a useful function and rationale.
 
+## Population and DNP intent
+
+Optional assembly parts should keep their real electrical Value and use KiCad's DNP flag instead of changing the Value to `NC`, `DNP`, or a similar placeholder. Declare the expected saved base-design state with `attributes.population`:
+
+~~~json
+{
+  "components": {
+    "R12": {
+      "kind": "resistor",
+      "role": "pull_up",
+      "function": "Optional pull-up for the debug interface",
+      "rationale": "Provides a bias path when required",
+      "attributes": {
+        "population": "dnp"
+      }
+    }
+  }
+}
+~~~
+
+The accepted values are `populated` and `dnp`. SCH029 checks the placed symbol's serialized `(dnp yes|no)` flag and rejects blank or placeholder Value text while leaving real values such as `10k`, `100nF`, or a part number intact. The check is opt-in and does not infer that a component should be populated from its reference, role, or electrical connection.
+
+SCH029 currently validates only the saved base-design DNP state. KiCad 10 design-variant overrides are stored per symbol instance and can independently change DNP state and other fields; when SCH029 detects variant override data, it emits an unverified warning rather than claiming the selected variant was checked. Selecting and validating a named project variant is future work. KiCad's `in_bom` and `on_board` flags are not equated with DNP: BOM and position-file exclusion are separate controls.
+
 ## Role-specific connection contracts
 
 Besides the decoupling block, every component intent can carry two extensible maps:

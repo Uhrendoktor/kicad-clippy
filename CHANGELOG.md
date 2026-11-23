@@ -6,6 +6,7 @@ Notable changes are documented here. This project is in early development and ha
 
 - SCH027 now supports an opt-in `label_scope_policy.project_wide` mode that aggregates global-label restrictions and required scopes across readable referenced child sheets, with cycle/reuse protection and unverified warnings for missing or invalid children.
 
+- Added opt-in SCH029 component population checks through `attributes.population`; verifies the saved base-design DNP flag, preserves meaningful Value text, and warns when KiCad design-variant overrides prevent validating an effective selected variant.
 - SCH006 body-clearance and cluster-compactness checks now include transformed circular-arc and cubic Bézier symbol outlines using a conservative margin for the shared 0.01 mm curve flattening tolerance. Incomplete curve facts remain unverified.
 
 - Added SCH026 opt-in project grid alignment for selected symbol, pin, label, junction and wire anchors. Symbol origins and label anchors are the default targets; pin, junction and wire-endpoint checks require explicit selection and support scoped exemptions.

@@ -207,7 +207,7 @@ struct BuiltinRuleMetadata {
 }
 
 /// Canonical metadata for the complete stable built-in rule set.
-const BUILTIN_RULE_METADATA: [BuiltinRuleMetadata; 30] = [
+const BUILTIN_RULE_METADATA: [BuiltinRuleMetadata; 31] = [
     BuiltinRuleMetadata {
         id: BuiltinRuleId::Sch001,
         name: "wire geometry",
@@ -483,6 +483,15 @@ const BUILTIN_RULE_METADATA: [BuiltinRuleMetadata; 30] = [
         explanation: "SCH028 uses explicit frame, tab, and title-text-box UUIDs; it does not infer arbitrary rectangles as group frames. The check verifies serialized rectangular bounds and shared-edge attachment. Text-box containment is a geometric rectangle check, not an exact font-rendering or clipping simulation.",
         level: RuleLevel::Deny,
         tags: &["group-frame", "title-tab", "spacing", "layout", "profile"],
+    },
+    BuiltinRuleMetadata {
+        id: BuiltinRuleId::Sch029,
+        name: "component population metadata",
+        category: "component-intent",
+        summary: "Checks opt-in component population declarations against the saved base-design DNP flags and rejects placeholder Value text.",
+        explanation: "SCH029 uses explicit component profile intent and KiCad's serialized DNP attribute. It validates the saved base design only; detected design-variant overrides are reported as unverified because the profile does not select an active variant.",
+        level: RuleLevel::Deny,
+        tags: &["population", "dnp", "bom", "component-intent", "profile"],
     },
 ];
 
