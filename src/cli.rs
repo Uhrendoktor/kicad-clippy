@@ -1081,13 +1081,13 @@ fn netclass_pattern_matches(pattern: &str, candidate: &str) -> Option<bool> {
 fn netclass_regex_escapes_are_supported(pattern: &str) -> bool {
     let mut characters = pattern.chars();
     while let Some(character) = characters.next() {
-        if character == '\\\\' {
+        if character == '\\' {
             let Some(escaped) = characters.next() else {
                 return false;
             };
             if !matches!(
                 escaped,
-                '\\\\' | '.' | '^' | '
+                '\\' | '.' | '^' | '
 ///
 /// # Arguments
 ///
@@ -1696,7 +1696,7 @@ SCH019 = "allow"
         );
 
         project["net_settings"]["netclass_patterns"] =
-            serde_json::json!([{"pattern": "^/USB\\\\d+$", "netclass": "HighSpeed"}]);
+            serde_json::json!([{"pattern": "^/USB\\d+$", "netclass": "HighSpeed"}]);
         assert_eq!(
             project_netclass_wire_width_mm(&project, &netlist, "/USB1"),
             None
