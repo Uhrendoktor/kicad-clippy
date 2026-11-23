@@ -1047,16 +1047,14 @@ fn has_supported_netclass_regex_quantifier(pattern: &str) -> bool {
 ///
 /// # Arguments
 ///
-/// * `pattern` — Expanded KiCad wildcard or regular-expression pattern.
-/// * `candidate` — Complete hierarchical net name exported by KiCad.
+/// * pattern — Expanded KiCad wildcard or regular-expression pattern.
+/// * candidate — Complete hierarchical net name exported by KiCad.
 ///
 /// # Returns
 ///
-/// `Some(true/false)` for supported patterns; `None` when regex extensions outside the
-/// supported expression subset would make a negative match unsafe to infer.
+/// Some(true/false) for supported patterns; None when extensions outside the supported
+/// expression subset would make a negative match unsafe to infer.
 fn netclass_pattern_matches(pattern: &str, candidate: &str) -> Option<bool> {
-    // KiCad uses an advanced POSIX-style regular-expression matcher. Rust's regex engine
-    // covers the common ERE subset but intentionally does not implement look-around or backreferences.
     if pattern.contains("(?") || !netclass_regex_escapes_are_supported(pattern) {
         return None;
     }
@@ -1073,34 +1071,39 @@ fn netclass_pattern_matches(pattern: &str, candidate: &str) -> Option<bool> {
 ///
 /// # Arguments
 ///
-/// * `pattern` — Expanded KiCad netclass pattern to inspect.
+/// * pattern — Expanded KiCad netclass pattern to inspect.
 ///
 /// # Returns
 ///
-/// `true` when each escape quotes a supported regular-expression metacharacter; otherwise `false`.
+/// True when each escape quotes a supported regular-expression metacharacter; otherwise false.
 fn netclass_regex_escapes_are_supported(pattern: &str) -> bool {
-    let mut characters = pattern.chars();
-    while let Some(character) = characters.next() {
-        if character == '\\' {
-            let Some(escaped) = characters.next() else {
+    let mut escaped = false;
+    for byte in pattern.bytes() {
+        if escaped {
+            if !b"\\.^$*+?()[]{}|".contains(&byte) {
                 return false;
-            };
-            if !matches!(
-                escaped,
-                '\\' | '.' | '^' | '
+            }
+            escaped = false;
+        } else if byte == 92 {
+            escaped = true;
+        }
+    }
+    !escaped
+}
+/// Checks whether a pattern uses syntax that cannot safely be treated as a wildcard-only pattern.
 ///
 /// # Arguments
 ///
-/// * `pattern` — Project netclass pattern to inspect.
+/// * pattern — Project netclass pattern to inspect.
 ///
 /// # Returns
 ///
-/// `true` when regex syntax is present and a failed regex compile must remain unresolved.
+/// True when regular-expression syntax is present and a failed regex compile must remain unresolved.
 fn pattern_has_regex_metacharacters(pattern: &str) -> bool {
-    pattern.chars().any(|character| {
-        matches!(
-            character,
-            '^' | '
+    pattern
+        .bytes()
+        .any(|byte| matches!(byte, 94 | 36 | 91 | 93 | 40 | 41 | 43 | 124 | 123 | 125 | 92))
+}
 /// Adds netclass names inherited from committed net chains containing the logical net.
 ///
 /// # Arguments
