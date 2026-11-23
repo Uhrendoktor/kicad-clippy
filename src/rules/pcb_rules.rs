@@ -21,8 +21,8 @@ struct BoardPadFact {
     number: String,
     /// Board net name assigned to the pad, or None when it is unconnected/unresolved.
     net_name: Option<String>,
-    /// Pad anchor transformed into board coordinates, in millimetres.
-    position_mm: (f64, f64),
+    /// Pad anchor transformed into board coordinates, or None when its footprint transform is invalid.
+    position_mm: Option<(f64, f64)>,
     /// Whether the pad is assigned to copper and solder-mask layers for surface exposure.
     probe_exposed: bool,
     /// Minimum supported contact width after a uniform footprint scale, or None when the shape/transform is unsupported.
@@ -67,10 +67,15 @@ impl BoardFacts {
             }
             let serialized_scale_present = child_list(footprint, "scale").is_some();
             let resolved_scale = footprint_scale(footprint);
-            let (scale_x, scale_y) = resolved_scale.unwrap_or((1.0, 1.0));
-            if !scale_x.is_finite() || !scale_y.is_finite() || scale_x <= 0.0 || scale_y <= 0.0 {
-                continue;
-            }
+            let scale_is_valid = resolved_scale.map_or(!serialized_scale_present, |(scale_x, scale_y)| {
+                scale_x.is_finite() && scale_y.is_finite() && scale_x > 0.0 && scale_y > 0.0
+            });
+            let (scale_x, scale_y) = if scale_is_valid {
+                resolved_scale.unwrap_or((1.0, 1.0))
+            } else {
+                // Retain pad identity/net/exposure while refusing to invent a transformed location or size.
+                (1.0, 1.0)
+            };
             // KiCad serializes the flipped pad-local coordinates and the adjusted footprint angle.
             // Apply the stored transform as-is; mirroring or negating it again would double-flip B.Cu pads.
             let radians = footprint_angle.to_radians();
@@ -101,13 +106,13 @@ impl BoardFacts {
                     reference: reference.clone(),
                     number: number.to_owned(),
                     net_name,
-                    position_mm: (origin_x + rotated_x, origin_y + rotated_y),
+                    position_mm: scale_is_valid
+                        .then_some((origin_x + rotated_x, origin_y + rotated_y)),
                     probe_exposed: pad_has_copper_and_mask_layers(pad),
-                    probe_contact_width_mm: if serialized_scale_present && resolved_scale.is_none()
-                    {
-                        None
-                    } else {
+                    probe_contact_width_mm: if scale_is_valid {
                         pad_minimum_contact_width_mm(pad, scale_x, scale_y)
+                    } else {
+                        None
                     },
                 });
             }
@@ -216,7 +221,7 @@ fn pad_minimum_contact_width_mm(pad: &Node, scale_x: f64, scale_y: f64) -> Optio
     if width_mm <= 0.0 || height_mm <= 0.0 {
         return None;
     }
-    let contact_width_mm = width_mm.min(height_mm) * scale_x;
+    let contact_width_mm = (width_mm * scale_x).min(height_mm * scale_y);
     (contact_width_mm.is_finite() && contact_width_mm > 0.0).then_some(contact_width_mm)
 }
 
@@ -584,8 +589,20 @@ fn validate_target_pad_distance(
     maximum_distance: f64,
     pads: &ResolvedDecouplingPads<'_>,
 ) -> Vec<Diagnostic> {
-    let distance = (pads.target_pad.position_mm.0 - pads.capacitor_pad.position_mm.0)
-        .hypot(pads.target_pad.position_mm.1 - pads.capacitor_pad.position_mm.1);
+    let (Some(target_position), Some(capacitor_position)) = (
+        pads.target_pad.position_mm,
+        pads.capacitor_pad.position_mm,
+    ) else {
+        return vec![Diagnostic::for_builtin_rule(
+            BuiltinRuleId::Pcb001,
+            Severity::Warning,
+            format!(
+                "{reference} capacitor pad-distance requirement is unverified because a footprint transform is invalid or unsupported"
+            ),
+        )];
+    };
+    let distance = (target_position.0 - capacitor_position.0)
+        .hypot(target_position.1 - capacitor_position.1);
     if distance > maximum_distance + PCB_DISTANCE_TOLERANCE_MM {
         vec![Diagnostic::for_builtin_rule(
             BuiltinRuleId::Pcb001,
@@ -970,10 +987,12 @@ mod tests {
         let facts = BoardFacts::from_document(&board);
         let target = super::unique_pad(&facts, "U1", "1").expect("front pad found");
         let capacitor = super::unique_pad(&facts, "C1", "1").expect("back pad found");
-        assert!((target.position_mm.0 - 101.0).abs() < 0.001);
-        assert!((target.position_mm.1 - 48.0).abs() < 0.001);
-        assert!((capacitor.position_mm.0 - 99.0).abs() < 0.001);
-        assert!((capacitor.position_mm.1 - 48.0).abs() < 0.001);
+        let target_position = target.position_mm.expect("valid target transform resolves");
+        let capacitor_position = capacitor.position_mm.expect("valid capacitor transform resolves");
+        assert!((target_position.0 - 101.0).abs() < 0.001);
+        assert!((target_position.1 - 48.0).abs() < 0.001);
+        assert!((capacitor_position.0 - 99.0).abs() < 0.001);
+        assert!((capacitor_position.1 - 48.0).abs() < 0.001);
     }
 }
 
@@ -1528,6 +1547,56 @@ mod test_point_tests {
             item.code == "PCB009"
                 && item.severity == crate::core::Severity::Warning
                 && item.message.contains("footprint scale is unsupported")
+        }));
+    }
+
+    /// Uses the smaller independently scaled dimension when scale factors are within tolerance.
+    #[test]
+    fn pcb009_uses_conservative_dimension_for_near_uniform_scale() {
+        let diagnostics = validate_test_point_pad_access(
+            &minimum_probe_width_profile("1.0002"),
+            &test_point_board_with_pad_geometry(
+                Some("VDD"),
+                "F.Cu",
+                "smd",
+                "rect",
+                "2.0 1.0",
+                "(scale 1.0005 1.0)",
+                r#"(layers "F.Cu" "F.Mask")"#,
+            ),
+        );
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "PCB009"
+                && item.severity == crate::core::Severity::Error
+                && item.message.contains("minimum contact width")
+        }));
+    }
+
+    /// Keeps pads identifiable but unverified when a parsed footprint scale is non-positive.
+    #[test]
+    fn pcb009_warns_for_non_positive_test_point_footprint_scale() {
+        let board = test_point_board_with_pad_geometry(
+            Some("VDD"),
+            "F.Cu",
+            "smd",
+            "rect",
+            "1.0 1.0",
+            "(scale 0 1)",
+            r#"(layers "F.Cu" "F.Mask")"#,
+        );
+        let facts = BoardFacts::from_document(&board);
+        let pad = super::unique_pad(&facts, "TP1", "1").expect("serialized pad remains identifiable");
+        assert!(pad.position_mm.is_none());
+        assert!(pad.probe_contact_width_mm.is_none());
+
+        let diagnostics = validate_test_point_pad_access(&minimum_probe_width_profile("0.8"), &board);
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "PCB009"
+                && item.severity == crate::core::Severity::Warning
+                && item.message.contains("footprint scale is unsupported")
+        }));
+        assert!(!diagnostics.iter().any(|item| {
+            item.code == "PCB009" && item.message.contains("pad is missing or ambiguous")
         }));
     }
 
