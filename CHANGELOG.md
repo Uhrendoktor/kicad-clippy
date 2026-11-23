@@ -6,6 +6,8 @@ Notable changes are documented here. This project is in early development and ha
 
 - PCB009 can now enforce an opt-in `attributes.minimum_probe_pad_width_mm` contract for supported circle, rectangle, oval, and round-rectangle test-point pads after uniform footprint scaling. Unsupported pad geometry remains unverified.
 
+- SCH006 body-clearance and cluster-compactness checks now include transformed circular-arc and cubic Bézier symbol outlines using a conservative margin for the shared 0.01 mm curve flattening tolerance. Incomplete curve facts remain unverified.
+
 - Added SCH026 opt-in project grid alignment for selected symbol, pin, label, junction and wire anchors. Symbol origins and label anchors are the default targets; pin, junction and wire-endpoint checks require explicit selection and support scoped exemptions.
 - Added SCH027 project label-scope policies: global-label allow/deny lists and required local/global/hierarchical scopes for selected names on the loaded sheet.
 - Added SCH028 functional-frame title-tab geometry and minimum frame spacing using explicit frame, tab and title-box UUIDs; exact rendered font clipping remains outside the check.

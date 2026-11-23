@@ -3,10 +3,14 @@
 use crate::rules::HALF_FACTOR;
 use crate::rules::generic::{GEOMETRY_TOLERANCE_MM, SchematicFacts, SchematicPrimitiveFact};
 
+/// Conservative clearance margin for curve paths flattened by the shared schematic fact extractor, in millimetres.
+const BODY_CURVE_FLATTEN_TOLERANCE_MM: f64 = 0.01;
+
 /// Resolved symbol-body geometry for one placed reference.
 ///
-/// Curve-based primitives are marked unresolved because their body outline is
-/// not represented by the original control points.
+/// Circular arcs and cubic Béziers use the already-transformed, adaptively
+/// flattened path points from schematic facts. Their flattening tolerance is
+/// subtracted conservatively from measured clearances.
 #[derive(Clone, Debug, Default)]
 pub(super) struct BodyGeometrySet {
     /// Supported body shapes transformed into schematic coordinates.
@@ -15,7 +19,7 @@ pub(super) struct BodyGeometrySet {
     pub(super) has_unsupported_geometry: bool,
 }
 
-/// A supported closed body, circle, or open stroked body path.
+/// A supported closed body, circle, or open stroked body path, including flattened curves.
 #[derive(Clone, Debug)]
 pub(super) enum BodyShape {
     /// Circular body represented by its center and radius.
@@ -52,7 +56,7 @@ pub(super) enum BodyShape {
 ///
 /// # Returns
 ///
-/// Supported body shapes plus an unresolved flag when a curve or invalid primitive
+/// Supported body shapes plus an unresolved flag when an invalid or incomplete primitive
 /// prevents the complete body outline from being represented.
 pub(super) fn body_geometry_for_reference(
     reference: &str,
@@ -806,9 +810,6 @@ fn body_shape_from_primitive(primitive: &SchematicPrimitiveFact) -> Option<BodyS
             stroke_half_mm,
         });
     }
-    if primitive.arc_mm.is_some() || primitive.bezier_mm.is_some() {
-        return None;
-    }
     if primitive
         .points_mm
         .iter()
@@ -816,15 +817,21 @@ fn body_shape_from_primitive(primitive: &SchematicPrimitiveFact) -> Option<BodyS
     {
         return None;
     }
+    let curve_margin_mm = if primitive.arc_mm.is_some() || primitive.bezier_mm.is_some() {
+        BODY_CURVE_FLATTEN_TOLERANCE_MM
+    } else {
+        0.0
+    };
+    let conservative_stroke_half_mm = stroke_half_mm + curve_margin_mm;
     if primitive.closed && primitive.points_mm.len() >= 3 {
         Some(BodyShape::Polygon {
             points_mm: primitive.points_mm.clone(),
-            stroke_half_mm,
+            stroke_half_mm: conservative_stroke_half_mm,
         })
     } else if primitive.points_mm.len() >= 2 {
         Some(BodyShape::Path {
             points_mm: primitive.points_mm.clone(),
-            stroke_half_mm,
+            stroke_half_mm: conservative_stroke_half_mm,
         })
     } else {
         None
@@ -833,7 +840,10 @@ fn body_shape_from_primitive(primitive: &SchematicPrimitiveFact) -> Option<BodyS
 
 #[cfg(test)]
 mod tests {
-    use super::{BodyGeometrySet, BodyShape, minimum_body_gap, minimum_body_to_bounds_gap};
+    use super::{
+        BODY_CURVE_FLATTEN_TOLERANCE_MM, BodyGeometrySet, BodyShape, minimum_body_gap,
+        minimum_body_to_bounds_gap,
+    };
 
     /// Checks polygon and circle distances, including overlap and field bounds inside a body.
     #[test]
@@ -871,6 +881,100 @@ mod tests {
             has_unsupported_geometry: false,
         };
         assert_eq!(minimum_body_gap(&second, &circle), Some(2.0));
+    }
+
+    /// Uses flattened circular-arc and cubic Bézier paths for conservative body-gap calculations.
+    #[test]
+    fn body_geometry_accepts_flattened_arc_and_bezier_outlines() {
+        use super::body_geometry_for_reference;
+        use crate::rules::generic::{SchematicArcFact, SchematicFacts, SchematicPrimitiveFact};
+
+        let arc = SchematicPrimitiveFact {
+            reference: "U1".to_owned(),
+            points_mm: vec![
+                (-1.0, 0.0),
+                (-0.707, 0.707),
+                (0.0, 1.0),
+                (0.707, 0.707),
+                (1.0, 0.0),
+            ],
+            closed: false,
+            circle_mm: None,
+            arc_mm: Some(SchematicArcFact {
+                center_mm: (0.0, 0.0),
+                radius_mm: 1.0,
+                start_angle_rad: std::f64::consts::PI,
+                sweep_rad: -std::f64::consts::PI,
+            }),
+            bezier_mm: None,
+            stroke_width_mm: 0.2,
+        };
+        let bezier = SchematicPrimitiveFact {
+            reference: "U2".to_owned(),
+            points_mm: vec![(4.0, 0.0), (5.0, 0.75), (6.0, 0.75), (7.0, 0.0)],
+            closed: false,
+            circle_mm: None,
+            arc_mm: None,
+            bezier_mm: Some([(4.0, 0.0), (5.0, 1.0), (6.0, 1.0), (7.0, 0.0)]),
+            stroke_width_mm: 0.0,
+        };
+        let facts = SchematicFacts {
+            symbol_primitives: vec![arc, bezier],
+            ..SchematicFacts::default()
+        };
+
+        let arc_body = body_geometry_for_reference("U1", &facts);
+        assert!(!arc_body.has_unsupported_geometry);
+        assert!(matches!(
+            arc_body.shapes.as_slice(),
+            [BodyShape::Path { stroke_half_mm, .. }]
+                if (*stroke_half_mm - 0.11).abs() < 1.0e-9
+        ));
+
+        let bezier_body = body_geometry_for_reference("U2", &facts);
+        assert!(!bezier_body.has_unsupported_geometry);
+        assert!(matches!(
+            bezier_body.shapes.as_slice(),
+            [BodyShape::Path { stroke_half_mm, .. }]
+                if (*stroke_half_mm - BODY_CURVE_FLATTEN_TOLERANCE_MM).abs() < 1.0e-9
+        ));
+
+        let distant_body = BodyGeometrySet {
+            shapes: vec![BodyShape::Polygon {
+                points_mm: vec![(9.0, -1.0), (10.0, -1.0), (10.0, 2.0), (9.0, 2.0)],
+                stroke_half_mm: 0.0,
+            }],
+            has_unsupported_geometry: false,
+        };
+        assert!(minimum_body_gap(&bezier_body, &distant_body).is_some());
+    }
+
+    /// Preserves closed cubic Bézier outlines as filled body polygons.
+    #[test]
+    fn body_geometry_accepts_closed_bezier_outlines() {
+        use super::body_geometry_for_reference;
+        use crate::rules::generic::{SchematicFacts, SchematicPrimitiveFact};
+
+        let primitive = SchematicPrimitiveFact {
+            reference: "U1".to_owned(),
+            points_mm: vec![(0.0, 0.0), (1.0, -1.0), (2.0, 0.0), (1.0, 1.0)],
+            closed: true,
+            circle_mm: None,
+            arc_mm: None,
+            bezier_mm: Some([(0.0, 0.0), (1.0, -1.0), (2.0, 0.0), (1.0, 1.0)]),
+            stroke_width_mm: 0.0,
+        };
+        let facts = SchematicFacts {
+            symbol_primitives: vec![primitive],
+            ..SchematicFacts::default()
+        };
+
+        let body = body_geometry_for_reference("U1", &facts);
+        assert!(!body.has_unsupported_geometry);
+        assert!(matches!(
+            body.shapes.as_slice(),
+            [BodyShape::Polygon { .. }]
+        ));
     }
 
     /// Checks that open paths contribute their stroke width to body-to-body clearance.
