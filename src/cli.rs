@@ -1196,6 +1196,7 @@ fn netclass_pattern_matches(pattern: &str, candidate: &str) -> Option<bool> {
 /// `true` when every brace pair is a supported `_`, `^`, or `~` formatting wrapper.
 fn has_supported_kicad_formatting_wrapper(pattern: &str) -> bool {
     let mut wrappers = Vec::new();
+    let mut found_wrapper = false;
     for (index, character) in pattern.char_indices() {
         match character {
             '{' => {
@@ -1205,6 +1206,7 @@ fn has_supported_kicad_formatting_wrapper(pattern: &str) -> bool {
                 if !matches!(marker, '_' | '^' | '~') {
                     return false;
                 }
+                found_wrapper = true;
                 wrappers.push(marker);
             }
             '}' => {
@@ -1215,7 +1217,7 @@ fn has_supported_kicad_formatting_wrapper(pattern: &str) -> bool {
             _ => {}
         }
     }
-    !wrappers.is_empty() && wrappers.is_empty()
+    found_wrapper && wrappers.is_empty()
 }
 /// Checks whether every backslash escape belongs to the supported regular-expression subset.
 ///
