@@ -1210,7 +1210,6 @@ fn has_supported_kicad_formatting_wrapper(pattern: &str) -> bool {
                 wrappers.push(marker);
             }
             '}' if wrappers.pop().is_none() => return false,
-            '}' => {}
             _ => {}
         }
     }
